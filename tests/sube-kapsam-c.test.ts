@@ -5,13 +5,13 @@
 // Çalıştırma: npx tsx --test tests/sube-kapsam-c.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 import { expenseSplit } from "../src/app/panel/harcamalar/summary";
 import { countLogBranch, countLogDetail, loggedItems } from "../src/app/panel/sayim/logic";
-import { ALL_BRANCHES, companyWideNote, mcpBranchScope, requestInScope } from "../src/lib/branches";
+import { ALL_BRANCHES, mcpBranchScope, requestInScope } from "../src/lib/branches";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice } from "../src/lib/calc/types";
 import { branchesClosed, digestGroups, digestItemInGroup } from "../src/lib/notify-recipients";
@@ -110,10 +110,10 @@ test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsam�
   assert.match(read("src/app/panel/page.tsx"), /href=\{`\/api\/export\?ay=\$\{month\}&\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(scope\)\}`\}/);
   const route = read("src/app/api/export/route.ts");
   assert.match(route, /const scope = raw \? parseBranchScope\(raw, await listBranches\(\)\) : ALL_BRANCHES;/);
-  // Şube ayrımı parça 6: Cari hareketleri Tedarikçi bakiyeleri alanının kipiyle, beyan her kipte "Tümü"yle
+  // Şube ayrımı parça 6: Cari hareketleri Tedarikçi bakiyeleri alanının kipiyle; Vergi sekmesi 27 Kasım 2026'da kalktı
   assert.match(route, /const cariScope = await areaScope\("tedarikciler"\);/);
   assert.match(route, /loadCariExport\(cariScope\)/);
-  assert.match(route, /withBranchScope\(ALL_BRANCHES, async \(\) => loadTaxView\(/);
+  assert.doesNotMatch(route, /loadTaxView/);
   // Kapak "Kapsam" satırı ve sayfaların üst bilgisi (davranışı tests/export-bicim.test.ts sınar)
   const wbSrc = read("src/app/api/export/workbook.ts");
   assert.match(wbSrc, /`\$\{n\} şubesi: satış, kasa, personel/);
@@ -164,25 +164,11 @@ test("sabah e-postası şubenin başlığıyla: konu şubenin adıyla başlar, g
   assert.deepEqual(renderDigest([], "2026-11-24", null, null, null, null, null), plain, "şube yoksa birebir aynı");
 });
 
-test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de yok", () => {
-  const known = [
-    { id: "tuzla", name: "Tuzla", kind: "fiziksel" as const, posSource: "modpos" as const, active: true, openedOn: null, sortOrder: 1 },
-    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "asilpos" as const, active: true, openedOn: null, sortOrder: 2 },
-  ];
-  assert.equal(companyWideNote("vergi", ALL_BRANCHES, known), null);
-  const note = companyWideNote("tedarikciler", "marina", known);
-  assert.equal(note?.title, "Marina seçili: bu ekran firma geneli");
-  assert.match(note!.text, /cari hesabı firmanındır/);
+test("firma geneli ekranların notu kalktı (Vergi bölümüyle, 27 Kasım 2026); alanı olan ekranlarda görünüm çipi", () => {
   // Faturalar firma geneli değil (25 Kasım 2026, docs/SUBE.md › Faturanın şubesi): seçili şubenin faturaları
   assert.doesNotMatch(read("src/app/panel/faturalar/page.tsx"), /<CompanyWideNotice/);
-  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): üç sekmesi notu çizer, çipi yok
-  const vergi = companyWideNote("vergi", "marina", known);
-  assert.equal(vergi?.title, "Marina seçili: bu ekran firma geneli");
-  assert.match(vergi!.text, /^Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez/);
-  for (const file of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx"]) {
-    assert.match(read(file), /<CompanyWideNotice screen="vergi" \/>/, file);
-    assert.doesNotMatch(read(file), /<BranchViewChip/, file);
-  }
+  // Not yalnız Vergi'nin üç sekmesinde kalmıştı; bileşen ve kuralı Vergi'yle birlikte kalktı
+  assert.equal(existsSync(join(process.cwd(), "src/components/panel/company-wide-notice.tsx")), false);
   // Alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube ayrımı parça 4: Tedarikçiler, Nakit planı; parça 5:
   // Tutarlılık, Mutabakat)
   for (const [file, area] of [
@@ -194,7 +180,6 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
   }
   assert.match(read("src/app/panel/tedarikciler/page.tsx"), /<BranchViewChip area="tedarikciler"/);
   assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /<BranchViewChip area="nakit"/);
-  assert.doesNotMatch(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\(/);
 });
 
 test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve bilinmeyen şube seçenekleriyle reddedilir", () => {

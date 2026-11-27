@@ -36,7 +36,7 @@ test("başlıkta elle bağlam ve Excel yok: eyebrow ve excel prop'ları kalktı,
   }
   const header = read("src/components/panel/page-header.tsx");
   assert.doesNotMatch(header, /EYEBROW_ALIAS|Excel: /);
-  // Grubun adını taşıyan giriş ekranında (Vergi, KDV, SGK; Ayarlar) satır başlığı tekrarlamaz (contextLineOf)
+  // Grubun adını taşıyan giriş ekranında (Ayarlar) satır başlığı tekrarlamaz (contextLineOf)
   assert.match(header, /const group = path \? contextLineOf\(path, role, title\) : undefined;/);
   // Bağlam satırı yalnız masaüstünde (telefonda üst çubuk ekranın adını zaten yazar)
   assert.match(header, /\{group \? <p className="[^"]*\bmax-sm:hidden\b[^"]*">\{group\}<\/p> : null\}/);
@@ -54,8 +54,6 @@ test("her sayfa başlığı adresini verir (bağlam satırı ondan); iki rolün 
     }
   }
   assert.ok(n > 60, `${n} başlık`);
-  // Vergi'nin ortak başlığı bulunulan sekmenin adresini verir
-  assert.match(read("src/app/panel/vergi/ui.tsx"), /<PageHeader path=\{current\}/);
   // İki rolün açtığı ve bağlamı role göre değişen sayfalar: yüklenirken personelin (en dar), yüklenince kullanıcının rolü
   for (const p of ["karaoke", "hatirlaticilarim", "receteler", "kontrol"]) {
     const src = read(`src/app/panel/${p}/page.tsx`);
@@ -73,10 +71,6 @@ test("bir ekran bir ad: kenar çubuğu, H1, sekme başlığı, palet ve telefon 
     ["/panel/personel", "Giderler & maaşlar", "Maaşlar", "Maaşlar", "Maaşlar"],
     ["/panel/hatirlaticilar", "Ödemeler", "Ödemeler", "Ödemeler", "Ödemeler"],
     ["/panel/hatirlaticilar/nakit", "Nakit planı", "Nakit planı", "Nakit planı", "Nakit planı"],
-    ["/panel/vergi", "Özet", "Vergi, KDV, SGK", "Vergi, KDV, SGK", "Vergi, KDV, SGK"],
-    ["/panel/vergi/gelir-gider", "Vergi kârı", "Vergi kârı", "Vergi kârı", "Vergi kârı"],
-    ["/panel/vergi/demirbas", "Demirbaş", "Demirbaş", "Demirbaş", "Demirbaş"],
-    ["/panel/vergi/kurallar", "Muhasebeci", "Muhasebeci", "Muhasebeci", "Muhasebeci"],
   ];
   const tree = navTreeFor("admin");
   const palette = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER];
@@ -92,10 +86,6 @@ test("bir ekran bir ad: kenar çubuğu, H1, sekme başlığı, palet ve telefon 
   assert.match(read("src/app/panel/tutarlilik/page.tsx"), /const TITLE = "Tutarlılık";/);
   assert.match(read("src/app/panel/personel/page.tsx"), /title="Maaşlar"/);
   assert.match(read("src/app/panel/hatirlaticilar/reminders-client.tsx"), /title="Ödemeler"/);
-  assert.match(read("src/app/panel/vergi/page.tsx"), /title="Vergi, KDV, SGK"/);
-  assert.match(read("src/app/panel/vergi/gelir-gider/page.tsx"), /const TITLE = "Vergi kârı";/);
-  assert.match(read("src/app/panel/vergi/demirbas/page.tsx"), /const TITLE = "Demirbaş";/);
-  assert.match(read("src/app/panel/vergi/kurallar/page.tsx"), /const TITLE = "Muhasebeci";/);
   // Ödemeler ↔ Nakit planı sekmeyle bağlı; Ödemeler başlığındaki "Nakit planı" düğmesi kalktı (K7)
   const reminders = read("src/app/panel/hatirlaticilar/reminders-client.tsx");
   assert.match(reminders, /<SectionTabs section="odeme" current="\/panel\/hatirlaticilar" role="admin" \/>/);
@@ -106,13 +96,6 @@ test("bir ekran bir ad: kenar çubuğu, H1, sekme başlığı, palet ve telefon 
 test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   // Çapa → onu taşıyan dosya ve kaynaktaki biçimi
   const ANCHORS: Record<string, [string, RegExp]> = {
-    "/panel/vergi#kdv": ["src/app/panel/vergi/tax-calendar.tsx", /kdv1: "kdv"/],
-    "/panel/vergi#sgk": ["src/app/panel/vergi/tax-calendar.tsx", /sgk: "sgk"/],
-    "/panel/vergi#muhtasar": ["src/app/panel/vergi/tax-calendar.tsx", /mphb: "muhtasar"/],
-    // Bölüm 3: çapa "Şirketin kâr vergisi" kartının kendisinde (docs/planlar/ux-sade.md §7.6)
-    "/panel/vergi#kar-vergisi": ["src/app/panel/vergi/tax-cards.tsx", /<Card id="kar-vergisi"/],
-    "/panel/vergi/gelir-gider#siniflandir": ["src/app/panel/vergi/gelir-gider/classify-list.tsx", /id="siniflandir"/],
-    "/panel/vergi/kurallar#sorular": ["src/app/panel/vergi/kurallar/page.tsx", /id="sorular"/],
     "/panel/gelir-gider#kar-zarar": ["src/app/panel/gelir-gider/page.tsx", /id="kar-zarar"/],
     "/panel/personel#sgk-oranlari": ["src/app/panel/personel/staff-editor.tsx", /const RATES_ANCHOR = "sgk-oranlari";/],
     "/panel/ayarlar#oranlar": ["src/app/panel/ayarlar/sections.ts", /id: "oranlar"/],
@@ -125,11 +108,7 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   const hashed = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER].filter((i) => i.href.includes("#")).map((i) => i.href);
   assert.deepEqual([...hashed].sort(), Object.keys(ANCHORS).sort());
   for (const [href, [file, re]] of Object.entries(ANCHORS)) assert.match(read(file), re, href);
-  // Takvimde çapa türün ilk satırında; satır kapalı kalır, halkayla belirir
-  const cal = read("src/app/panel/vergi/tax-calendar.tsx");
-  // Halka iki yoldan: :target (adres çubuğu, aynı sayfada ⌘K) ve HashScroll'un işareti (uygulamanın içinden gelince:
-  // Next pushState'le gezer, :target boş kalır)
-  assert.match(cal, /<li\s+id=\{anchor\}\s+className=\{\s*anchor\s*\?\s*"scroll-mt-20 target:ring-2 target:ring-ink\/20 target:ring-inset data-\[hash-hit\]:ring-2 data-\[hash-hit\]:ring-ink\/20 data-\[hash-hit\]:ring-inset"/);
+  // HashScroll'un işareti (uygulamanın içinden gelince Next pushState'le gezer, :target boş kalır)
   const hashScroll = read("src/components/panel/hash-scroll.tsx");
   assert.match(hashScroll, /export const HASH_HIT_ATTR = "data-hash-hit";/);
   assert.match(hashScroll, /hit\?\.removeAttribute\(HASH_HIT_ATTR\);[\s\S]*hit\?\.setAttribute\(HASH_HIT_ATTR, ""\);/);
@@ -151,9 +130,6 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   // Başka sayfadan gelen çapa: sayfa sunucudan sonradan aktığı için Next'in kaydırması hedefi bulamayabilir; hedef
   // sayfanın akan içeriği çizilince kendisi iner (HashScroll ya da bölümün kendi hash dinleyicisi)
   const LANDS: Record<string, [string, RegExp]> = {
-    "/panel/vergi": ["src/app/panel/vergi/page.tsx", /<HashScroll key=\{`capa-\$\{year\}`\} \/>/],
-    "/panel/vergi/gelir-gider": ["src/app/panel/vergi/gelir-gider/page.tsx", /<HashScroll key=\{`capa-\$\{q\.key\}`\} \/>/],
-    "/panel/vergi/kurallar": ["src/app/panel/vergi/kurallar/page.tsx", /<HashScroll \/>/],
     "/panel/gelir-gider": ["src/app/panel/gelir-gider/page.tsx", /<HashScroll key=\{`capa-\$\{year\}`\} \/>/],
     "/panel/personel": ["src/app/panel/personel/staff-editor.tsx", /window\.addEventListener\("hashchange", fromHash\)/],
     // Bölümün eski adlı çapası da (HASH_ALIASES) aynı bölüme iner
@@ -164,20 +140,13 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   for (const [path, [file, re]] of Object.entries(LANDS)) assert.match(read(file), re, path);
 });
 
-test("eski adlar ekranda kalmadı: Muhasebeci (eski Kurallar sekmesi), Maaşlar (eski Personel), Giderler & maaşlar", () => {
+test("eski adlar ekranda kalmadı: Maaşlar (eski Personel), Giderler & maaşlar", () => {
   // [dosya, eski metin, yeni metin]
   const RENAMED: [string, string, string][] = [
-    // Bölüm 3: kartın adı "Şirketin vergi ayarları" (docs/planlar/ux-sade.md §7.9)
-    ["src/lib/tax/corporate.ts", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Şirketin vergi ayarları)"],
-    ["src/app/panel/vergi/demirbas/page.tsx", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Şirketin vergi ayarları)"],
-    ["src/app/panel/vergi/demirbas/page.tsx", "(Giderler &amp; personel)", "(Giderler &amp; maaşlar)"],
-    ["src/app/panel/vergi/gelir-gider/page.tsx", "Kurallar › Vergi ayarları'ndan", "Muhasebeci › Şirketin vergi ayarları'ndan"],
     ["src/app/panel/giderler/expenses-client.tsx", ">Personel sayfasından</TD>", ">Maaşlar sayfasından</TD>"],
     ["src/app/panel/giderler/expenses-client.tsx", 'label="Personel sayfasına git"', 'label="Maaşlar sayfasına git"'],
     ["src/app/panel/giderler/expenses-client.tsx", "</Badge> Personel sayfasından", "</Badge> Maaşlar sayfasından"],
     ["src/app/panel/gelir-gider/row-links.ts", 'label: "Personel", scope: "row"', 'label: "Maaşlar", scope: "row"'],
-    ["src/lib/tax/pnl.ts", "\"Personel'e ekleyin\"", "\"Maaşlar'a ekleyin\""],
-    ["src/lib/tax/rules.ts", "\"Bordroda (Personel'e ekleyin)\"", "\"Bordroda (Maaşlar'a ekleyin)\""],
   ];
   for (const [file, before, after] of RENAMED) {
     const text = read(file);
@@ -216,10 +185,6 @@ const NEW_DESCRIPTIONS: readonly string[] = [
   "src/app/panel/gelir-gider/page.tsx",
   "src/app/panel/hatirlaticilar/page.tsx",
   "src/app/panel/hatirlaticilar/reminders-client.tsx",
-  "src/app/panel/vergi/ui.tsx",
-  "src/app/panel/vergi/gelir-gider/page.tsx",
-  "src/app/panel/vergi/demirbas/page.tsx",
-  "src/app/panel/vergi/kurallar/page.tsx",
   "src/app/panel/ayarlar/page.tsx",
   "src/app/panel/kullanicilar/page.tsx",
   "src/app/panel/parasut/page.tsx",
@@ -227,10 +192,10 @@ const NEW_DESCRIPTIONS: readonly string[] = [
   "src/app/panel/yardim/page.tsx",
 ];
 
-/** Başlık öğesinin (`<PageHeader`, `<VergiHeader`, yerel `<Header`) öznitelik metni: süslü parantez derinliği 0'daki ilk `>` */
+/** Başlık öğesinin (`<PageHeader`, yerel `<Header`) öznitelik metni: süslü parantez derinliği 0'daki ilk `>` */
 function headerAttrs(src: string): string[] {
   const out: string[] = [];
-  for (const m of src.matchAll(/<(?:PageHeader|VergiHeader|Header)\b/g)) {
+  for (const m of src.matchAll(/<(?:PageHeader|Header)\b/g)) {
     let depth = 0;
     let i = m.index! + m[0].length;
     for (; i < src.length; i++) {
@@ -268,7 +233,6 @@ test("§8: yeni açıklamalar tek cümle, en çok 100 harf; eski uzun metin ⓘ'
   }
   assert.deepEqual(long, []);
   // Örnekler (metin aynen)
-  assert.match(read("src/app/panel/vergi/ui.tsx"), /export const OZET_DESCRIPTION = "Devlete ödenecekler: KDV, SGK, maaş vergileri ve kâr vergisi; tahmini tutar ve son gün\.";/);
   assert.match(read("src/app/panel/zayi/page.tsx"), /description="Atılan, bozulan \(zayi\) ve ödenmeden verilen \(ikram\) ürünleri girin\."/);
   assert.doesNotMatch(read("src/app/panel/zayi/page.tsx"), /Tutarlılık ekranı/, "personel Tutarlılık'ı açamaz");
   // Yöneticinin "Nasıl çalışır?"u: başlıkta ⓘ; personelin ekranında yönetici kavramı içeren `more` yok

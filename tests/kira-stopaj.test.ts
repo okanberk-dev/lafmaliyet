@@ -1,5 +1,5 @@
-// Kira: resmi (sözleşme) kira, otomatik stopaj, vergi kârında yalnız resmi brüt, muhtasarın kira stopajı satırı ve
-// "açık güne göre oranla" (sahibin kararı, 4 Kasım 2026). Excel verisi: Kira 160.000 ₺/ay (KDV yok), Temmuz 23 açık gün.
+// Kira: resmi (sözleşme) kira, Gelir-gider'in otomatik "Kira stopajı" maliyeti ve "açık güne göre oranla" (sahibin
+// kararı, 4 Kasım 2026). Vergi kârı ve muhtasar Vergi bölümüyle birlikte 27 Kasım 2026'da kaldırıldı. Excel verisi: Kira 160.000 ₺/ay (KDV yok), Temmuz 23 açık gün.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -8,9 +8,6 @@ import { test } from "node:test";
 
 import { createModel, officialRentGross, stopajKey } from "../src/lib/calc/engine";
 import type { Dataset, FixedExpense } from "../src/lib/calc/types";
-import { muhtasarItemsFromModel } from "../src/lib/tax/muhtasar";
-import { bridge, taxMonths, taxPnlInputFromModel } from "../src/lib/tax/pnl";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -59,30 +56,4 @@ test("açık güne göre oranlama: kira tam ay (Temmuz 160.000, 23/31 değil); s
     months: [...base.months, { month: "2026-11", openDays: 3, posRevenue: 30_000, discounts: 0, offRevenue: 0, note: null }],
   }).pnlMonth("2026-11");
   close(nov.cells.get(`fixed:${kira.id}`)!.value!, (160_000 * 3) / 30, "süren ay: 3/30");
-});
-
-test("vergi kârı: kira gideri yalnız resmi brüt 100.000; belgesiz 80.000 (160.000 + 20.000 − 100.000); stopaj ayrıca yok; köprü tutar", () => {
-  const model = createModel(withKira({ officialAmount: 100_000, officialBasis: "brut", prorate: false, taxDoc: "belgeli" }));
-  const input = taxPnlInputFromModel(model, { settings: DEFAULT_TAX_SETTINGS, today: "2026-11-04", adjustments: [], assets: [], filings: [] });
-  const oct = taxMonths(input, 2026).find((m) => m.month === "2026-10")!;
-  const belgeli = oct.expense.rows.find((r) => r.key === "belgeli")!;
-  const item = belgeli.items!.find((i) => i.label.startsWith("Kira"))!;
-  assert.equal(item.label, "Kira (resmi brüt kira)");
-  close(item.amount, 100_000, "resmi brüt gider");
-  assert.ok(!belgeli.items!.some((i) => /stopaj/i.test(i.label)), "stopaj ayrıca gider değil");
-  const rest = oct.excluded.find((x) => x.key === `fixed:${kira.id}`)!;
-  assert.equal(rest.reason, "yok");
-  close(rest.amount, 80_000, "belgesiz");
-  assert.match(rest.note!, /^Belgesiz, vergide sayılmaz: ödenen kira 160\.000\s₺ \+ stopaj 20\.000\s₺ − resmi brüt 100\.000\s₺$/);
-  // Köprü: Gelir-gider'deki gider (kira + stopaj) → vergideki gider (resmi brüt); kalan kuruş farkı yok
-  const b = bridge(oct).rows;
-  const sum = b.filter((r) => r.key !== "start" && r.key !== "end").reduce((a, r) => a + r.amount, 0);
-  close(b[0].amount + sum, b.at(-1)!.amount, "köprü");
-});
-
-test("muhtasar: resmi kirası olan kalemin stopajı resmi brütten (160.000'den değil), profil seçilmemiş olsa da", () => {
-  const model = createModel(withKira({ officialAmount: 100_000, officialBasis: "brut", prorate: false, taxWithholding: null }));
-  const items = muhtasarItemsFromModel(model, "2026-10");
-  const k = items.find((i) => i.id === kira.id)!;
-  assert.deepEqual([k.amount, k.withholding], [100_000, "kira"]);
 });

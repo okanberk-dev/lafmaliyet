@@ -322,9 +322,9 @@ test("KDV, muhtasar ve geçici vergi tutarı Ödendi ve ertelemede seriden silin
   assert.match(done, /amountCleared: clear, clearedKind: clear \? travelingAmountKind\(r\) : null/);
   assert.match(done, / · tutar silindi \(vergi\)/);
   assert.doesNotMatch(src, /vatAmountTravels/);
-  // Geçici vergi "Ödendi"si kalıcı kayda çeyrek dönemiyle (kurumlar vergisi yalnız ödenmiş geçici vergiyi mahsup eder)
-  assert.match(done, /isProvisionalTaxReminder\(r\) \? "gecici" : null/);
-  assert.match(done, /rememberVatPaid\(\{ id: rid, kind: vatKind, dueDate: r\.dueDate, next, periods: paidPeriodsOf\(row, r\.dueDate, next, vatKind\), amount: r\.amount \}\)/);
+  // KDV'nin ve geçici verginin kalıcı Ödendi kaydı (payments.vat-paid) Vergi bölümüyle 27 Kasım 2026'da kalktı: yazan ve
+  // silen yok (kayıt yerinde)
+  assert.doesNotMatch(src, /rememberVatPaid|forgetVatPaid|paidPeriodsOf|vat-paid/);
   const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
   assert.match(postpone, /taxAmountTravels\(r\)/);
   // Ertelenen dönemin kopyası tutarı taşır
@@ -414,7 +414,7 @@ test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutars�
   assert.equal(fixedReminderText({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11"), "40.000\u00a0₺ · aylık");
 });
 
-test("Vergi: muhtasar, geçici vergi ve yerel vergi hatırlatıcıları başlıktan (docs/VERGI.md)", () => {
+test("Vergi hatırlatıcıları başlıktan: muhtasar, geçici vergi ve yerel vergi (şubenin nakit akışının dışı)", () => {
   const r = (title: string, kind: ReminderRow["kind"] = "vergi") => ({ title, kind });
   assert.equal(isMuhtasarReminder(r("Muhtasar ve prim hizmet beyannamesi")), true);
   assert.equal(isMuhtasarReminder(r("Kira stopajı", "kira")), true);

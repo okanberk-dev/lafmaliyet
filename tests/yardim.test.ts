@@ -92,16 +92,15 @@ test("yöneticinin yardımı: ModPOS Z ve banka POS Z (yazarkasa) karşılaştı
 });
 
 
-test("yöneticinin yardımı: Vergi sorusu (dalga 12, docs/planlar/vergi.md §4.6): tahmin, beyanname değil; menü yolu ve Muhasebeciye sorulacaklar", () => {
+test("yöneticinin yardımı: Vergi sorusu (Vergi bölümü 27 Kasım 2026'da kaldırıldı): muhasebeci yürütür, ödeme Ödemeler'e", () => {
   const start = PAGE.indexOf('id: "vergi"');
-  assert.ok(start > PAGE.indexOf('id: "kdv-tahmini"'), "vergi sorusu KDV tahmininden sonra, Gider, ödeme ve ekip grubunda");
-  const item = PAGE.slice(start, PAGE.indexOf("icon: Landmark", start));
-  assert.match(item, /q: "Vergi sayfasındaki rakamlar beyanname mi\?"/);
-  for (const s of ["Hayır, tahmindir.", "2026 kurallarıyla tahmin eder", "şirketin tamamının beyannamesidir", "muhasebecinizle bir kez gözden geçirin"]) assert.ok(item.includes(s), s);
-  assert.match(item, /Hayır, tahmindir\.\{" "\}\n\s*<Path href="\/panel\/vergi" \/>/);
-  assert.deepEqual(pathOf("/panel/vergi"), ["Vergi, KDV, SGK", "Özet"]);
-  assert.deepEqual(pathOf("/panel/vergi/kurallar"), ["Vergi, KDV, SGK", "Muhasebeci"]);
-  assert.match(PAGE, /\{ href: "\/panel\/vergi\/kurallar#sorular", label: "Muhasebeciye sorulacaklar" \}/);
+  assert.ok(start > PAGE.indexOf('id: "nakit-plani"'), "Nakit planı sorusundan sonra, Gider, ödeme ve ekip grubunda");
+  const item = PAGE.slice(start, PAGE.indexOf("links:", start));
+  assert.match(item, /q: "Vergi ve KDV hesabı nerede\?"/);
+  for (const s of ["Panelde vergi bölümü yok", "muhasebeciniz yürütür", "panel vergi tahmini yapmaz", "Ürün ve fatura KDV"]) assert.ok(item.includes(s), s);
+  assert.match(item, /<Path href="\/panel\/hatirlaticilar" \/>/);
+  assert.doesNotMatch(PAGE, /id: "kdv-tahmini"|\/panel\/vergi|nakit#kdv/);
+  assert.deepEqual(pathOf("/panel/vergi"), []);
 });
 
 // ---------------------------------------------------------------- Sade metinler (sahibin isteği 24.11.2026)

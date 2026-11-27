@@ -1,10 +1,10 @@
 // Fatura sınıflandırma (sahibin istekleri, 25 Kasım 2026; docs/PARASUT.md › 5f):
 // 1. karışık fatura kalem kalem: hammaddeye bağlı kalem mal alışı, kalanı faturanın kategorisi; nedenli "hammadde değil"
 //    kalem nedeninin yeri. Fatura tutarı kalemlere net tutarlarıyla orantılı bölünür (fatura altı iskonto da), kuruş
-//    toplamı tutar. Gelir-gider, mal maliyeti, vergi ve dışa aktarım aynı payları kullanır. Kalemsiz ya da hiçbir kalemi
+//    toplamı tutar. Gelir-gider, mal maliyeti ve dışa aktarım aynı payları kullanır. Kalemsiz ya da hiçbir kalemi
 //    ayrılmayan faturada rakamlar değişmez (geçmiş aylar sessizce değişmesin).
 // 2. tedarikçi bazlı "hep hammadde değil" kuralı; 3. "Temizlik & Sarf" kategorisi ve temizlik firması ↔ malzemesi;
-// 6. "hammadde değil"in nedeni (Sarf, Demirbaş, Hizmet, Deneme) ve Vergi › Demirbaş önerisi.
+// 6. "hammadde değil"in nedeni (Sarf, Demirbaş, Hizmet, Deneme).
 // Çalıştırma: npx tsx --test tests/fatura-kalem.test.ts
 
 import assert from "node:assert/strict";
@@ -18,9 +18,6 @@ import { INVOICE_CATEGORIES } from "../src/lib/constants";
 import { LINKABLE_CATEGORIES } from "../src/lib/invoice-linking";
 import { GOODS_PART, invoiceParts, lineTarget, parseReason, REASON_TARGET, splitLinesFor, SUPPLIES_CATEGORY } from "../src/lib/invoice-split";
 import { addIgnoredSupplier, notIngredientOf, parseIgnored, parseIgnoredSuppliers, removeIgnoredSupplier } from "../src/lib/product-ignore";
-import { lineAssetCandidates } from "../src/lib/tax/assets";
-import { taxMonths, taxPnlInputFromModel } from "../src/lib/tax/pnl";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { pickCategory } from "../src/server/parasut/mapping";
 
@@ -108,24 +105,6 @@ test("Gelir-gider: mal faturasında 'Sarf' denmiş kalem sarfa, 'Demirbaş' denm
   const m = createModel(ds([inv(3, "Metro", "Hammadde & İçecek", 12_000, 0, [{ net: 1_500, to: null }, { net: 500, to: SUPPLIES_CATEGORY }, { net: 10_000, to: "Kuruluş & Demirbaş" }])]));
   close(m.goodsPurchases(MONTH), 1_500, "yalnız gıda");
   close(m.pnlMonth(MONTH).cells.get("expense:90")!.value!, 500, "sarf");
-  // Demirbaş payı Vergi › Demirbaş'ta öneri olur (sahip onaylar)
-  const c = lineAssetCandidates(m.ds.invoices, []);
-  assert.equal(c.length, 1);
-  close(c[0].net, 10_000, "demirbaş payı");
-  assert.equal(lineAssetCandidates(m.ds.invoices, [{ invoiceId: 900_003, cost: 10_000 }]).length, 0, "listeye eklenince öneri kalkar");
-});
-
-test("Vergi: kalem kalem SMM'ye mal payı, kalanı payının kategorisinde gider; toplam gider aynı", () => {
-  const mixed = inv(2, "Avansas", SUPPLIES_CATEGORY, 1000, 500, [{ net: 300, to: GOODS_PART }, { net: 700, to: null }]);
-  const run = (i: Invoice) => {
-    const model = createModel({ ...ds([i]), currentMonth: "2026-12" });
-    const input = taxPnlInputFromModel(model, { settings: DEFAULT_TAX_SETTINGS, today: "2026-12-10", adjustments: [], assets: [], filings: [] });
-    return taxMonths(input, 2026).find((x) => x.month === MONTH)!;
-  };
-  const a = run(mixed);
-  const b = run({ ...mixed, lines: undefined });
-  close(a.expense.purchases - b.expense.purchases, 150, "SMM alışı +150 (süt)");
-  close(a.expense.invoices - b.expense.invoices, -150, "fatura giderleri −150");
 });
 
 test("dışa aktarım ve stoğa giren fatura kontrolü aynı payları okur", () => {

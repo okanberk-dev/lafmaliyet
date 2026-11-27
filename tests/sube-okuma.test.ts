@@ -99,11 +99,11 @@ test("kasa satırları işletme geneli ekranda: kasanın adı (birden çok kasad
   );
 });
 
-test("kasadan faturalı alımlar: ekranlar seçili şubeyle süzer, vergi ve e-posta özeti süzmez", () => {
+test("kasadan faturalı alımlar: ekranlar seçili şubeyle süzer, e-posta özeti süzmez", () => {
   for (const f of ["src/server/actions/notifications.ts", "src/server/data/today.ts", "src/app/panel/page.tsx", "src/app/panel/faturalar/page.tsx"]) {
     assert.match(read(f), /scopeCashOutInvoiceState\(/, `${f} süzmüyor`);
   }
-  for (const f of ["src/server/notify/digest.ts", "src/server/data/tax.ts"]) assert.doesNotMatch(read(f), /scopeCashOutInvoiceState/, `${f} işletme geneli kalmalı`);
+  for (const f of ["src/server/notify/digest.ts"]) assert.doesNotMatch(read(f), /scopeCashOutInvoiceState/, `${f} işletme geneli kalmalı`);
   // Yükleyici süzmez: eşleştirme havuzu işletme geneli
   const loader = read("src/server/data/cash-out-invoices.ts");
   const body = loader.slice(loader.indexOf("export async function loadCashOutInvoiceState"));

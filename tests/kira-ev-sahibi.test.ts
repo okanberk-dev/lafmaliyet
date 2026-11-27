@@ -1,9 +1,8 @@
 // Kira ev sahibi türü (Faz 5): kira bölümündeki sabit giderde `landlordType` şahıs | şirket | boş.
 // - şahıs: KDV hiçbir yerde yok (nakit planı kiranın KDV'sini eklemez, kalemin KDV'si boş ya da %20 olsa da); stopaj %20
-//   resmi kiradan (resmi tutar + brüt / net) tek kaynak: Gelir-gider'in stopaj satırı ve muhtasarın matrahı. Sabit tutarlı
-//   "Kira stopajı" hatırlatıcısı muhtasarın yalnız kira stopajının yerine geçer (VG-02; tests/nakit-plani.test.ts);
-//   "Kira stopajı" adlı ayrı bir sabit gider varsa stopaj satırı uyarır (iki kez sayılabilir).
-// - şirket: %20 KDV, stopaj yok (resmi kira yazılmış olsa da), muhtasar "en az"a düşmez (belgesi fatura sayılır).
+//   resmi kiradan (resmi tutar + brüt / net) tek kaynak: Gelir-gider'in stopaj satırı. "Kira stopajı" adlı ayrı bir sabit
+//   gider varsa stopaj satırı uyarır (iki kez sayılabilir). Muhtasar Vergi bölümüyle 27 Kasım 2026'da kaldırıldı.
+// - şirket: %20 KDV, stopaj yok (resmi kira yazılmış olsa da).
 // - boş: bugünkü davranış.
 // §6: Tuzla 160.000 ₺/ay şahsa, KDV yok, stopaj resmi 100.000 ₺ brütten (20.000); Marina Kasım 0 (Aralık'tan), Aralık'tan
 // 160.000 KDV hariç, nakit planı 192.000, KDV 32.000.
@@ -20,7 +19,6 @@ import { createModel, stopajKey } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
 import type { Dataset, FixedExpense } from "../src/lib/calc/types";
 import { fixedVatRate } from "../src/lib/constants";
-import { muhtasarItemsFromModel, muhtasarMonth, withholdingUnknown } from "../src/lib/tax/muhtasar";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -47,13 +45,13 @@ const paidMonthly = (ds: Dataset, month: string) => {
   return { paid: f.amount * (1 + (f.vatRate ?? 0) - (f.withholdingRate ?? 0)), vatRate: f.vatRate ?? 0, withholding: f.withholding ?? null };
 };
 
-test("§6 Tuzla: şahsa kira 160.000, KDV yok, stopaj resmi 100.000 brütten 20.000 (tek kaynak: Gelir-gider ve muhtasar)", () => {
+test("§6 Tuzla: şahsa kira 160.000, KDV yok, stopaj resmi 100.000 brütten 20.000 (tek kaynak: Gelir-gider)", () => {
   const ds = withKira({ landlordType: "sahis", officialAmount: 100_000, officialBasis: "brut", prorate: false, branchId: "tuzla" });
   assert.equal(ds.fixedExpenses.find((f) => f.id === kira.id)!.vatRate ?? null, null, "kalemin KDV'si boş (bölüm varsayılanı %20)");
   const pm = createModel(ds).pnlMonth("2026-11");
   close(pm.cells.get(`fixed:${kira.id}`)!.value!, 160_000, "kira");
   close(pm.cells.get(stopajKey(kira.id))!.value!, 20_000, "stopaj resmi brütten");
-  // Nakit planı: ev sahibine KDV'siz 160.000 (192.000 değil); stopaj muhtasarla ayrıca
+  // Nakit planı: ev sahibine KDV'siz 160.000 (192.000 değil); stopajı muhasebeci muhtasarla öder (planda yok)
   const p = paidMonthly(ds, "2026-11");
   close(p.paid, 160_000, "nakit planı");
   assert.equal(p.vatRate, 0);
@@ -61,12 +59,6 @@ test("§6 Tuzla: şahsa kira 160.000, KDV yok, stopaj resmi 100.000 brütten 20.
   // KDV oranı %20 yazılmış olsa da şahsa kirada KDV yok
   close(paidMonthly(withKira({ landlordType: "sahis", officialAmount: 100_000, vatRate: 0.2, branchId: "tuzla" }), "2026-11").paid, 160_000, "kalemde %20 yazılı");
   assert.equal(fixedVatRate({ section: "kira", vatRate: 0.2, landlordType: "sahis" }), 0);
-  // Muhtasar: matrah resmi brüt 100.000, stopaj 20.000; "en az" değil
-  const item = muhtasarItemsFromModel(createModel(ds), "2026-11").find((i) => i.id === kira.id)!;
-  assert.deepEqual([item.amount, item.withholding], [100_000, "kira"]);
-  assert.equal(withholdingUnknown(item), false);
-  const m = muhtasarMonth({ period: "2026-11", items: [item] });
-  assert.equal(m.stopajTotal, 20_000);
   // Net resmi kira 80.000 → brüt 100.000 (aynı stopaj)
   close(createModel(withKira({ landlordType: "sahis", officialAmount: 80_000, officialBasis: "net" })).pnlMonth("2026-11").cells.get(stopajKey(kira.id))!.value!, 20_000, "net → brüt");
 });
@@ -77,13 +69,11 @@ test("şahıs, resmi kira yazılmamış: tutar brüt sayılır, stopaj ödemeden
   close(p.paid, 128_000, "160.000 × 0,8");
   assert.equal(p.withholding, "kira");
   assert.equal(createModel(ds).pnlMonth("2026-11").cells.get(stopajKey(kira.id)), undefined);
-  const item = muhtasarItemsFromModel(createModel(ds), "2026-11").find((i) => i.id === kira.id)!;
-  assert.deepEqual([item.amount, item.withholding], [160_000, "kira"]);
 });
 
-test("§6 Marina: şirkete kira Kasım 0, Aralık'tan 160.000 KDV hariç; nakit planı 192.000 (KDV 32.000); stopaj yok, muhtasar 'en az' değil", () => {
+test("§6 Marina: şirkete kira Kasım 0, Aralık'tan 160.000 KDV hariç; nakit planı 192.000 (KDV 32.000); stopaj yok", () => {
   // Resmi kira yazılmış olsa da şirkete kirada stopaj yok
-  const ds = withKira({ landlordType: "sirket", officialAmount: 100_000, officialBasis: "brut", startMonth: "2026-12", prorate: false, branchId: "marina", taxDoc: null, taxWithholding: null });
+  const ds = withKira({ landlordType: "sirket", officialAmount: 100_000, officialBasis: "brut", startMonth: "2026-12", prorate: false, branchId: "marina", taxWithholding: null });
   const m = createModel(ds);
   assert.equal(m.pnlMonth("2026-11").cells.get(`fixed:${kira.id}`)!.value, null, "Kasım: kalem başlamadı");
   close(m.pnlMonth("2026-12").cells.get(`fixed:${kira.id}`)!.value!, 160_000, "Aralık");
@@ -94,18 +84,12 @@ test("§6 Marina: şirkete kira Kasım 0, Aralık'tan 160.000 KDV hariç; nakit 
   close(p.paid - 160_000, 32_000, "KDV");
   assert.equal(p.withholding, null);
   assert.equal(fixedVatRate({ section: "kira", vatRate: 0, landlordType: "sirket" }), 0.2, "şirkete kirada %20");
-  const item = muhtasarItemsFromModel(m, "2026-12").find((i) => i.id === kira.id)!;
-  assert.equal(item.withholding, null);
-  assert.equal(item.doc, "fatura", "belgesi fatura sayılır");
-  assert.equal(withholdingUnknown(item), false, "muhtasar 'en az'a düşmez");
 });
 
 test("ev sahibi türü boş: bugünkü davranış (resmi kiralı kalemde stopaj satırı, nakit planı kalemin KDV'siyle)", () => {
   const ds = withKira({ officialAmount: 100_000, officialBasis: "brut", prorate: false });
   close(createModel(ds).pnlMonth("2026-11").cells.get(stopajKey(kira.id))!.value!, 20_000, "stopaj");
   close(paidMonthly(ds, "2026-11").paid, 192_000, "bölümün varsayılanı %20");
-  const plain = muhtasarItemsFromModel(createModel(withKira({})), "2026-11").find((i) => i.id === kira.id)!;
-  assert.equal(withholdingUnknown(plain), true, "profili seçilmemiş kira 'en az'");
 });
 
 test("tek kaynak: 'Kira stopajı' adlı ayrı bir sabit gider varken stopaj satırı ve Genel bakış uyarır (tutar değişmez)", () => {

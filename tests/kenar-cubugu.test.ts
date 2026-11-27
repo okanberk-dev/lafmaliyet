@@ -80,7 +80,7 @@ test("⌘K aynı sayfanın çapasında tarayıcının çapa gezinmesini kullanı
   // Adres karenin dışında da değişecekse yönlendirici (başka dönem, başka sayfa, çapasız kayıt)
   assert.equal(samePageHash("/panel/komisyonlar?ay=2026-10#pluxee", at("/panel/komisyonlar", "?ay=2026-09")), null);
   assert.equal(samePageHash("/panel/personel#sgk-oranlari", at("/panel")), null);
-  assert.equal(samePageHash("/panel/vergi#kdv", at("/panel/vergi/gelir-gider")), null);
+  assert.equal(samePageHash("/panel/ayarlar#oranlar", at("/panel/personel")), null);
   assert.equal(samePageHash("/panel/ayarlar", at("/panel/ayarlar")), null);
   assert.equal(samePageHash("/panel/ayarlar#", at("/panel/ayarlar")), null);
   // Paletin her kare adresli kaydı kendi sayfasında karesini verir
@@ -95,8 +95,8 @@ test("⌘K aynı sayfanın çapasında tarayıcının çapa gezinmesini kullanı
   assert.match(palette, /else window\.location\.hash = hash;/);
 });
 
-test("etkin satır kenar çubuğunun kaydırma kutusunda görünür (Vergi grubu listenin sonunda)", () => {
-  // 1440×900: kutu 176-794; Muhasebeci 802-838 (görünmüyordu), Demirbaş 764-800 (kırpıktı)
+test("etkin satır kenar çubuğunun kaydırma kutusunda görünür (listenin sonundaki grup)", () => {
+  // 1440×900: kutu 176-794; listenin sonundaki satır 802-838 (görünmüyordu), bir üstündeki 764-800 (kırpıktı)
   const box = { top: 176, bottom: 794 };
   assert.equal(revealDelta(box, { top: 802, bottom: 838 }), 52);
   assert.equal(revealDelta(box, { top: 764, bottom: 800 }), 14);
@@ -165,7 +165,7 @@ const outline = (tree: NavNode[]) => tree.map((n) => (n.children ? `${n.label} �
 const hrefsOf = (tree: NavNode[]) => tree.flatMap((n) => (n.children ? n.children.map((c) => c.href) : [n.href!]));
 /**
  * Ağacın bu adresi açan satırı (alt ekran ve sekme de: /panel/kasa/fiyatlar → Kasa raporu). Adresin ?sorgu ve #çapa
- * kısmı atılır: paletin kare adresli kaydı (ör. KDV → /panel/vergi#kdv) ekranın satırından açılır
+ * kısmı atılır: paletin kare adresli kaydı (ör. SGK oranı → /panel/personel#sgk-oranlari) ekranın satırından açılır
  */
 const reaches = (tree: NavNode[], pathname: string) => {
   const path = pathname.replace(/[?#].*$/, "");
@@ -192,8 +192,7 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Kâr & ödemeler › Gelir-gider, Ödemeler, Nakit planı, Mutabakat",
     // 26 Kas 2026 (docs/RAPORLAR.md): dört rapor kendi grubunda, yalnız yöneticide
     "Raporlar › Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme",
-    // Vergi (dalga 12) kendi grubunda; adı KDV ve SGK'yı da söyler, kapalı kenar çubuğunda görünür
-    "Vergi, KDV, SGK › Özet, Vergi kârı, Demirbaş, Muhasebeci",
+    // Vergi, KDV, SGK grubu 27 Kas 2026'da kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor)
     "Ayarlar › Genel ayarlar, Kullanıcılar & roller, Şubeler, Paraşüt entegrasyonu",
     "Yardım (/panel/yardim)",
   ]);
@@ -228,7 +227,7 @@ test("personelin ağacı değişmedi (içerik ve sıra; yalnız Hızlı sayım k
   const staffLabels = new Set(navTreeFor("staff").map((n) => n.label));
   // Yöneticinin grup başlıkları ağaçtan türer (yeni grup da denetlenir); Menü personelde Reçete defteri bağlantısına döner
   const adminHeads = NAV_TREE.filter((n) => n.children && !n.roles.includes("staff")).map((n) => n.label);
-  assert.ok(adminHeads.includes("Vergi, KDV, SGK") && adminHeads.includes("Kâr & ödemeler"), adminHeads.join(", "));
+  assert.ok(adminHeads.includes("Kâr & ödemeler") && !adminHeads.includes("Vergi, KDV, SGK"), adminHeads.join(", "));
   for (const head of [...adminHeads, "Genel bakış", "Onaylar", "Menü"]) assert.ok(!staffLabels.has(head), head);
   // Personelin ağacındaki her ekranı personel açabilir (yönetici ekranı sızmaz)
   for (const href of hrefsOf(navTreeFor("staff"))) assert.ok(canOpen("staff", href), href);
@@ -249,15 +248,16 @@ test("tek alt sayfası kalan grup o sayfanın bağlantısına döner (personelde
 test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve alt menü aynı adresleri tutar", () => {
   // Gruplamadan önceki (25 Eki 2026) yönetici ağacının bütün adresleri; yalnız yerleri değişti. Hızlı sayım ve Mal
   // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts);
-  // Vergi dalga 12'de eklendi; 29 Eki 2026'da Fiyatlar, Nakit planı ve Vergi'nin dört ekranı kendi satırlarında;
+  // Vergi dalga 12'de eklendi, 27 Kas 2026'da kaldırıldı (eski adresleri Genel bakış'a yönlenir:
+  // tests/vergi-kaldirildi.test.ts); 29 Eki 2026'da Fiyatlar ve Nakit planı kendi satırlarında;
   // Şubeler 4 Kas 2026'da Ayarlar altına (docs/SUBE.md); Siparişler 6 Kas 2026'da Kafe altına (docs/SITE-SIPARIS.md)
   // Vardiya 22 Kas 2026'da üst düzeye (docs/VARDIYA.md); Mutabakat 26 Kas 2026'da Kâr & ödemeler altına (docs/MUTABAKAT.md)
   const ADMIN_PAGES = [
     "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/siparisler", "/panel/karaoke", "/panel/ozel-gunler", "/panel/vardiya",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
-    "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/vergi", "/panel/hatirlaticilar", "/panel/sayim",
+    "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/hatirlaticilar", "/panel/sayim",
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/subeler", "/panel/parasut", "/panel/yardim",
-    "/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar",
+    "/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit",
     "/panel/mutabakat",
     // Raporlar 26 Kas 2026'da (docs/RAPORLAR.md)
     "/panel/raporlar", "/panel/raporlar/iscilik", "/panel/raporlar/kacak", "/panel/raporlar/kayip",
@@ -316,8 +316,7 @@ test("etkin sayfanın grubu kendiliğinden açık: alt ekran ve sekme de kendi b
   assert.equal(groupOf("/panel/karaoke/doluluk"), "Kafe");
   assert.equal(groupOf("/panel/kontrol/gecmis"), "Kafe");
   assert.equal(groupOf("/panel/hatirlaticilar/nakit"), "Kâr & ödemeler");
-  // Vergi'nin dört ekranı (Özet, Vergi kârı, Demirbaş, Muhasebeci) kendi grubunu açar
-  for (const p of ["/panel/vergi", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) assert.equal(groupOf(p), "Vergi, KDV, SGK", p);
+  assert.equal(groupOf("/panel/raporlar/kacak"), "Raporlar");
   assert.equal(groupOf("/panel/harcamalar"), "Alış & gider");
   assert.equal(groupOf("/panel/personel"), "Alış & gider");
   assert.equal(groupOf("/panel/tedarikciler/12"), "Alış & gider");
@@ -427,8 +426,8 @@ test("grupta tek alt öğe yanar: adresle eşleşenlerden en uzun adres (Nakit p
   assert.equal(activeChildOf(children("finans"), "/panel/hatirlaticilar"), "hatirlaticilar");
   assert.equal(activeChildOf(children("menu"), "/panel/urunler/fiyatlar"), "fiyatlar");
   assert.equal(activeChildOf(children("menu"), "/panel/urunler/12"), "urunler");
-  assert.equal(activeChildOf(children("vergi"), "/panel/vergi/kurallar"), "muhasebeci");
-  assert.equal(activeChildOf(children("vergi"), "/panel/vergi"), "vergi-ozet");
+  assert.equal(activeChildOf(children("raporlar"), "/panel/raporlar/kacak"), "rapor-kacak");
+  assert.equal(activeChildOf(children("raporlar"), "/panel/raporlar"), "rapor-subeler");
   // Sekmesi aynı satırda olan ekran (match) o satırı yakar
   assert.equal(activeChildOf(children("alis"), "/panel/personel"), "giderler");
   assert.equal(activeChildOf(children("alis"), "/panel/bugun"), undefined);
@@ -436,11 +435,15 @@ test("grupta tek alt öğe yanar: adresle eşleşenlerden en uzun adres (Nakit p
   assert.match(src("sidebar-nav.tsx"), /const active = child\.id === activeChild;/);
 });
 
-test("KDV adıyla bulunur: kapalı kenar çubuğunda grup adında, palette başlığıyla", () => {
+test("KDV adıyla bulunur: palette Ayarlar'ın KDV oranları; kenar çubuğunda vergi grubu yok (27 Kas 2026)", () => {
   const closed = navTreeFor("admin").map((n) => n.label);
-  assert.ok(closed.some((l) => /\bKDV\b/.test(l)), closed.join(" · "));
+  assert.ok(!closed.some((l) => /\bKDV\b|Vergi/.test(l)), closed.join(" · "));
   const palette = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER].filter((i) => i.roles.includes("admin"));
-  assert.ok(palette.some((i) => i.label.startsWith("KDV")), "palette KDV ile başlayan kayıt");
+  assert.deepEqual(
+    palette.filter((i) => i.label.startsWith("KDV")).map((i) => i.href),
+    ["/panel/ayarlar#oranlar"],
+    "palette KDV ile başlayan kayıt: oranlar",
+  );
   // Kare adresli kayıtlar yalnız yöneticinin; personelin paleti aynı kalır
   for (const i of palette) if (i.href.includes("#")) assert.deepEqual(i.roles, ["admin"], i.href);
 });
@@ -468,16 +471,14 @@ test("palet sıralaması: aksanlı arama aksanlı başlığı öne alır ('kâr'
   assert.equal(first("kâr")[0], "Kâr / zarar");
   assert.ok(first("kâr").indexOf("Kâr / zarar") < first("kâr").indexOf("Karaoke"));
   assert.equal(first("kar")[0], "Karaoke");
-  assert.equal(first("kdv")[0], "KDV");
-  assert.match(first("sgk")[0], /^SGK /);
-  assert.ok(first("sgk").slice(0, 2).includes("SGK oranı") && first("sgk").slice(0, 2).includes("SGK primi"), first("sgk").join(", "));
+  assert.equal(first("kdv")[0], "KDV ve komisyon oranları");
+  assert.equal(first("sgk")[0], "SGK oranı");
   assert.equal(first("maaş")[0], "Maaşlar");
   assert.equal(first("geçmiş")[0], "İşlem geçmişi");
   assert.equal(first("yedek")[0], "Yedek");
-  assert.equal(first("muhtasar")[0], "Maaş vergileri (muhtasar)");
+  assert.deepEqual(first("muhtasar"), [], "vergi ekranları kaldırıldı");
   assert.equal(first("tutarlılık")[0], "Tutarlılık");
   // Eski adlar alışkanlıkla yazılınca da bulunur
-  assert.ok(first("vergiye göre").includes("Vergi kârı"));
   assert.ok(first("hatırlatıcılar").includes("Ödemeler"));
   assert.ok(first("personel").includes("Maaşlar"));
 });
@@ -488,34 +489,34 @@ test("bağlam satırı ağaçtan: grubun adı; üst düzey ekranda ve personelin
   assert.equal(groupLabelOf("/panel/zayi", "staff"), "Stok");
   assert.equal(groupLabelOf("/panel/kasa", "admin"), undefined);
   assert.equal(groupLabelOf("/panel/kasa", "staff"), undefined);
-  assert.equal(groupLabelOf("/panel/vergi/demirbas", "admin"), "Vergi, KDV, SGK");
+  assert.equal(groupLabelOf("/panel/raporlar/kacak", "admin"), "Raporlar");
+  assert.equal(groupLabelOf("/panel/vergi/demirbas", "admin"), undefined, "Vergi grubu kaldırıldı");
   assert.equal(groupLabelOf("/panel/hatirlaticilar/nakit", "admin"), "Kâr & ödemeler");
   assert.equal(groupLabelOf("/panel/personel", "admin"), "Alış & gider");
   // Menüde olmayan ekran (Hesabım) bağlam satırı almaz; yöneticinin grubu personele sızmaz
   assert.equal(groupLabelOf("/panel/hesap", "admin"), undefined);
-  assert.equal(groupLabelOf("/panel/vergi", "staff"), undefined);
+  assert.equal(groupLabelOf("/panel/raporlar", "staff"), undefined);
   // Grubun adını taşıyan giriş ekranında bağlam satırı başlığı tekrarlamaz
-  assert.equal(contextLineOf("/panel/vergi", "admin", "Vergi, KDV, SGK"), undefined);
   assert.equal(contextLineOf("/panel/ayarlar", "admin", "Ayarlar"), undefined);
-  assert.equal(contextLineOf("/panel/vergi/demirbas", "admin", "Demirbaş"), "Vergi, KDV, SGK");
+  assert.equal(contextLineOf("/panel/raporlar/kacak", "admin", "Kaçak raporu"), "Raporlar");
   assert.equal(contextLineOf("/panel/personel", "admin", "Maaşlar"), "Alış & gider");
 });
 
-test("bölüm sekmeleri: Vergi grubundan türer; Ödemeler ↔ Nakit planı yalnız yöneticide", () => {
+test("bölüm sekmeleri: Raporlar grubundan türer (Vergi'nin sekmeleri kalktı); Ödemeler ↔ Nakit planı yalnız yöneticide", () => {
   assert.deepEqual(
-    sectionTabsFor("vergi", "admin").map((t) => t.label),
-    ["Özet", "Vergi kârı", "Demirbaş", "Muhasebeci"],
+    sectionTabsFor("raporlar", "admin").map((t) => t.label),
+    ["Şubeler", "İşçilik", "Kaçak", "Kayıp önleme"],
   );
   assert.deepEqual(
-    SECTION_TABS.vergi.map((t) => t.href),
-    NAV_TREE.find((n) => n.id === "vergi")!.children!.map((c) => c.href),
+    SECTION_TABS.raporlar.map((t) => t.href),
+    NAV_TREE.find((n) => n.id === "raporlar")!.children!.map((c) => c.href),
   );
+  assert.ok(!("vergi" in SECTION_TABS));
   assert.deepEqual(
     sectionTabsFor("odeme", "admin").map((t) => t.label),
     ["Ödemeler", "Nakit planı"],
   );
   assert.deepEqual(sectionTabsFor("odeme", "staff"), []);
-  assert.deepEqual(sectionTabsFor("vergi", "staff"), []);
   assert.deepEqual(
     sectionTabsFor("giderler", "admin").map((t) => t.label),
     ["Sabit giderler", "Aylık harcamalar", "Maaşlar", "Belgeler", "Avanslar"],

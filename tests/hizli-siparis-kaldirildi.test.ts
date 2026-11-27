@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { BOTTOM_NAV, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, NAV_TREE, navTreeFor, SECTION_TABS } from "../src/components/panel/nav";
 import { countStep, STEP_LABELS, stepTexts } from "../src/lib/job-health";
 import { refreshesScreen } from "../src/lib/live-poll";
-import { canOpen, RETIRED_PATHS, RETIRED_TARGET, retiredRedirect, ROLE_PERMISSIONS, STAFF_PATHS, STAFF_ROLE_HINT } from "../src/lib/roles";
+import { canOpen, RETIRED_PATHS, retiredRedirect, ROLE_PERMISSIONS, STAFF_PATHS, STAFF_ROLE_HINT } from "../src/lib/roles";
 import { RETIRED_REQUEST_KINDS, STAFF_APPROVAL_KINDS, STAFF_REQUEST_KINDS } from "../src/lib/staff-requests";
 import * as schema from "../src/server/db/schema";
 
@@ -24,8 +24,12 @@ const walk = (dir: string): string[] =>
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 test("eski adresler 404 yerine Stok sayımı'na: alt sayfalar dahil, yol parçası sınırında", () => {
-  assert.deepEqual([...RETIRED_PATHS], ["/panel/hizli-sayim", "/panel/mal-siparisi"]);
-  assert.equal(RETIRED_TARGET, "/panel/sayim");
+  // Yönlendirme listesinin ilk iki satırı (Vergi 27 Kasım 2026'da eklendi: tests/vergi-kaldirildi.test.ts)
+  assert.deepEqual(
+    RETIRED_PATHS.filter((r) => r.target === "/panel/sayim").map((r) => r.path),
+    ["/panel/hizli-sayim", "/panel/mal-siparisi"],
+  );
+  const RETIRED_TARGET = "/panel/sayim";
   for (const p of [
     "/panel/hizli-sayim",
     "/panel/hizli-sayim/",
@@ -43,7 +47,7 @@ test("eski adresler 404 yerine Stok sayımı'na: alt sayfalar dahil, yol parças
 
 test("proxy eski adresi oturumdan önce, sorgusuz ve geçici olarak yönlendirir; eşleştirici /panel'i kapsar", () => {
   const proxy = read("src/proxy.ts");
-  assert.match(proxy, /import \{ canOpen, homeFor, retiredRedirect \} from "@\/lib\/roles";/);
+  assert.match(proxy, /import \{ canOpen, homeFor, REMOVED_PARAM, retiredRedirect \} from "@\/lib\/roles";/);
   const body = proxy.slice(proxy.indexOf("export async function proxy"));
   const at = body.indexOf("retiredRedirect(pathname)");
   assert.ok(at > 0 && at < body.indexOf("verifySession("), "oturum okunmadan önce");

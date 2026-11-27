@@ -21,8 +21,8 @@ import { staffWarnings } from "../src/lib/calc/personnel";
 import { linkConflict, linkedDeleteText, type LinkRow } from "../src/lib/staff-link";
 import type { Dataset, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
-import { taxPayrollFromModel } from "../src/lib/tax/payroll";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
+import { payrollFromModel } from "../src/lib/bordro/payroll";
+import { DEFAULT_PAYROLL_SETTINGS } from "../src/lib/bordro/settings";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -182,8 +182,8 @@ test("süren ay kasa raporu yokken: maaş satırının gün oranıyla aynı kayn
   assert.equal(none.pnlMonth("2026-12").cells.get("personnel:parttime")!.value, 2_000, "yalnız ek ödeme");
   const manual = createModel(ds([AYSE], { currentMonth: "2026-12", months: [...excel.months, nov, { ...dec, openDays: 3 }] }));
   assert.equal(manual.personnelFor("2026-12").rows[0].calledDays, 3, "elle 3 açık gün: 1, 2, 3 Aralık");
-  // Vergi bordrosu ve nakit planı ayın bütün planını sayar
-  close(taxPayrollFromModel(none, 2026, DEFAULT_TAX_SETTINGS).get("2026-12")!.people[0].cost, 20_300, "bordro bütün plan");
+  // Yasal bordro (nakit planı) ayın bütün planını sayar
+  close(payrollFromModel(none, 2026, DEFAULT_PAYROLL_SETTINGS).get("2026-12")!.people[0].cost, 20_300, "bordro bütün plan");
   // Tümü: Marina'nın raporları 3 Aralık'ta, Tuzla'nınki 10 Aralık'ta; Ayşe'nin Marina satırı Marina'nın son gününe kadar
   const till = (to: string, n: number) => ({ month: "2026-12", from: "2026-12-01", to, reported: n, openDays: n, posRevenue: 10_000 * n, discounts: null, discountDays: 0, offRevenue: null, offDays: 0, cardShare: null, missing: [] });
   const kasa = (to: string, n: number) =>
@@ -205,7 +205,7 @@ test("aynı hesap iki şubede: her şubenin satırı kendi şubesindeki günleri
   assert.equal(rows.get("Ayşe")!.calledDays, 10);
   assert.equal(rows.get("Ayşe (Tuzla)")!.calledDays, 2, "Tuzla'daki 2 gün Tuzla satırında");
   close(m.pnlMonth("2026-12").cells.get("personnel:parttime")!.value!, 15_000 + 2_000 + 3_000, "Tümü iki şubenin günlerini sayar");
-  close(taxPayrollFromModel(m, 2026, DEFAULT_TAX_SETTINGS).get("2026-12")!.people.reduce((a, p) => a + p.cost, 0), 20_300 + 3_000, "bordro");
+  close(payrollFromModel(m, 2026, DEFAULT_PAYROLL_SETTINGS).get("2026-12")!.people.reduce((a, p) => a + p.cost, 0), 20_300 + 3_000, "bordro");
   assert.equal(staffWarnings(m, "2026-12").some((x) => x.kind === "parttime-other-branch"), false, "Tuzla satırı var: uyarı yok");
   // Tuzla satırı yok: Tuzla'daki 2 gün hiçbir satıra girmiyor, uyarılır (tutar değişmez)
   const w = staffWarnings(createModel(ds([AYSE])), "2026-12").find((x) => x.kind === "parttime-other-branch")!;
@@ -215,9 +215,9 @@ test("aynı hesap iki şubede: her şubenin satırı kendi şubesindeki günleri
   assert.ok(alerts(createModel(ds([AYSE])), "2026-12").some((a) => a.title === w.title), "Genel bakış");
 });
 
-test("vergi bordrosu ve nakit planı: part-time brütleştirilmez (net 0, ek = bütün maliyet), planlanan bütün vardiyalar", () => {
+test("yasal bordro ve nakit planı: part-time brütleştirilmez (net 0, ek = bütün maliyet), planlanan bütün vardiyalar", () => {
   const m = createModel(ds([AYSE]));
-  const p = taxPayrollFromModel(m, 2026, DEFAULT_TAX_SETTINGS).get("2026-12")!;
+  const p = payrollFromModel(m, 2026, DEFAULT_PAYROLL_SETTINGS).get("2026-12")!;
   const ayse = p.people.find((x) => x.staffId === AYSE.id)!;
   assert.deepEqual([ayse.gross, ayse.isverenSgk], [0, 0]);
   close(ayse.cost, 20_300, "bütün maliyet");

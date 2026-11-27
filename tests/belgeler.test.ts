@@ -1,5 +1,5 @@
 // Belgeler kodla aynı kalsın: README'nin uç tablosu src/app/api altındaki her ucu sayar; site satış sözleşmesinin
-// belgesi (docs/SITE-SATIS.md) sözleşmeyi okuyan her yeri, Nakit planının KDV tahmini dahil, listeler. KALAN-ISLER
+// belgesi (docs/SITE-SATIS.md) sözleşmeyi okuyan her yeri listeler. KALAN-ISLER
 // git geçmişindeki her birleşmiş dalgayı anar, andığı dosyalar vardır ve 26 Ekim denetiminin partileriyle aynıdır.
 // Çalıştırma: npx tsx --test tests/belgeler.test.ts
 
@@ -25,13 +25,14 @@ test("README: src/app/api altındaki her uç tabloda yazılı", () => {
   for (const r of list) assert.ok(readme.includes(`\`${r}\``), `README'de yok: ${r}`);
 });
 
-test("SITE-SATIS.md: sözleşmeyi okuyan yerler, Nakit planının KDV tahmini dahil", () => {
+test("SITE-SATIS.md: sözleşmeyi okuyan yerler (Gelir-gider'in online geliri ve KDV'si; nakit planının KDV tahmini kalktı)", () => {
   const doc = read("docs/SITE-SATIS.md");
   assert.match(doc, /\*\*Kullananlar\*\*/);
-  assert.match(doc, /Nakit planı › KDV\s+tahmini/);
   assert.match(doc, /`siteVat`/);
-  // Belgenin söylediği yer gerçekten okuyor
-  assert.match(read("src/lib/kdv.ts"), /siteVat\(rec, st\.kdv, st\.kdvHizmet\)/);
+  assert.doesNotMatch(doc, /\*\*Nakit planı › KDV\s+tahmini\*\*/);
+  // Belgenin söylediği yer gerçekten okuyor: KDV hariç online gelir sitenin KDV'sini düşer
+  assert.match(read("src/lib/site-sales/calc.ts"), /vat: siteVat\(s, kdvRate, serviceRate\),/);
+  assert.match(read("src/lib/calc/engine.ts"), /siteRevenue\(r, st\.kdv, st\.kdvHizmet\)/);
 });
 
 // ── docs/planlar: KALAN-ISLER (yeni oturumun başladığı yer) ve 26 Ekim denetimi ─────────────────────────────────────

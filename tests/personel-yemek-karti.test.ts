@@ -1,7 +1,7 @@
 // Personel yemek kartı (Faz 5, sahibin kararı 11, 23 Kasım 2026): kişi başına işaret (varsayılan kapalı), günlük tutar ve
 // gün Ayarlar'da (330 ₺ × 26 gün). İşaretli kişinin işveren maliyetine günlük × gün eklenir, brütleştirilmez; Gelir-gider'de
 // kendi alt satırı ("PERSONEL YEMEK KARTI"), Maaşlar'da kendi sütunu. İşletme geneli "Personel yemeği" sabit gideriyle ve
-// ekte yazılmış yemek kartıyla çift sayım uyarısı. Vergi bordrosu ve nakit planı: ek ödeme gibi (brütleştirilmeden).
+// ekte yazılmış yemek kartıyla çift sayım uyarısı. Yasal bordro (nakit planı): ek ödeme gibi (brütleştirilmeden).
 // Çalıştırma: npx tsx --test tests/personel-yemek-karti.test.ts
 
 import assert from "node:assert/strict";
@@ -15,8 +15,8 @@ import { createModel, mealCardCarry, staffCost } from "../src/lib/calc/engine";
 import { MEAL_CARD_LABEL, staffWarnings } from "../src/lib/calc/personnel";
 import type { Dataset, Settings, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS, settingsFromRows } from "../src/lib/constants";
-import { taxPayrollFromModel } from "../src/lib/tax/payroll";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
+import { payrollFromModel } from "../src/lib/bordro/payroll";
+import { DEFAULT_PAYROLL_SETTINGS } from "../src/lib/bordro/settings";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -117,11 +117,11 @@ test("çift sayım uyarısı: işaretli kişi + aynı ayda etkin işletme geneli
   assert.equal(staffWarnings(createModel(ds([{ ...ARDA, extras: 1_250 }], { fixedExpenses: excel.fixedExpenses.filter((f) => f.id !== yemek.id) })), "2026-11").length, 0);
 });
 
-test("vergi bordrosu ve nakit planı: yemek kartı ek ödeme gibi, brütleştirilmeden (yasal bordronun brütü değişmez)", () => {
+test("yasal bordro ve nakit planı: yemek kartı ek ödeme gibi, brütleştirilmeden (yasal bordronun brütü değişmez)", () => {
   const with_ = createModel(ds([ARDA]));
   const without = createModel(ds([{ ...ARDA, mealCard: false }]));
-  const p = taxPayrollFromModel(with_, 2026, DEFAULT_TAX_SETTINGS).get("2026-11")!;
-  const q = taxPayrollFromModel(without, 2026, DEFAULT_TAX_SETTINGS).get("2026-11")!;
+  const p = payrollFromModel(with_, 2026, DEFAULT_PAYROLL_SETTINGS).get("2026-11")!;
+  const q = payrollFromModel(without, 2026, DEFAULT_PAYROLL_SETTINGS).get("2026-11")!;
   close(p.totals.extras, 8_580, "ek ödeme olarak");
   assert.equal(p.totals.gross, q.totals.gross, "brüt değişmez");
   assert.equal(p.totals.sgkTotal, q.totals.sgkTotal, "SGK değişmez");

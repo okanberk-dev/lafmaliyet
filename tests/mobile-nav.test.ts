@@ -173,11 +173,9 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/karaoke"), "Karaoke");
   assert.equal(mobileTitleFor("/panel/giderler"), "Sabit giderler");
   assert.equal(mobileTitleFor("/panel/gelir-gider"), "Gelir-gider");
-  // Vergi (dalga 12): dört ekranın başlıkları, kenar çubuğu ve sayfa başlığıyla aynı (docs/planlar/ux-sade.md §3.6)
-  assert.equal(mobileTitleFor("/panel/vergi"), "Vergi, KDV, SGK");
-  assert.equal(mobileTitleFor("/panel/vergi/gelir-gider"), "Vergi kârı");
-  assert.equal(mobileTitleFor("/panel/vergi/demirbas"), "Demirbaş");
-  assert.equal(mobileTitleFor("/panel/vergi/kurallar"), "Muhasebeci");
+  // Vergi bölümü 27 Kasım 2026'da kaldırıldı: eski adresin özel başlığı yok (yönlendirme Genel bakış'ı açar)
+  assert.equal(mobileTitleFor("/panel/vergi"), "L'Affogato");
+  assert.equal(mobileTitleFor("/panel/vergi/kurallar"), "L'Affogato");
   assert.equal(mobileTitleFor("/panel/personel"), "Maaşlar");
   assert.equal(mobileTitleFor("/panel/harcamalar"), "Harcamalar");
   assert.equal(mobileTitleFor("/panel/hatirlaticilar/nakit"), "Nakit planı");

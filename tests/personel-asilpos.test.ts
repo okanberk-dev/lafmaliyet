@@ -22,8 +22,8 @@ import { signedHeaders } from "../src/lib/karaoke/signature";
 import { parsePosDay, sentWorkedStaffRefs } from "../src/lib/asilpos/day";
 import { classifyWorkedStaff, asilposWorkedDays, asilposWorkedUnseen, posStaffItems, type AsilposWorked, type PosStaffRow } from "../src/lib/asilpos/personel";
 import { checkPosStaffRequest } from "../src/lib/asilpos/personel-istek";
-import { taxPayrollFromModel } from "../src/lib/tax/payroll";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
+import { payrollFromModel } from "../src/lib/bordro/payroll";
+import { DEFAULT_PAYROLL_SETTINGS } from "../src/lib/bordro/settings";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -335,9 +335,9 @@ test("süren ay: aylık / standart rakamlar bugüne kadar gelen AsilPOS günüyl
   assert.equal(withDays.asilposMealDaysOf(ARDA, "2026-12"), null);
 });
 
-test("vergi bordrosu: biten ayın yemek kartı Gelir-gider'le aynı AsilPOS günüyle; geçiş ayı ve süren ay 330 × 26", () => {
+test("yasal bordro: biten ayın yemek kartı Gelir-gider'le aynı AsilPOS günüyle; geçiş ayı ve süren ay 330 × 26", () => {
   const m = createModel(ds([ARDA], { asilposWorked: decWorked() }));
-  const pay = taxPayrollFromModel(m, 2026, DEFAULT_TAX_SETTINGS);
+  const pay = payrollFromModel(m, 2026, DEFAULT_PAYROLL_SETTINGS);
   const alperIn = (month: string) => pay.get(month)!.people.find((p) => p.staffId === 7)!;
   close(alperIn("2026-12").extras, 330 * 20, "Aralık 20 gün");
   close(alperIn("2026-11").extras, 8_580, "Kasım 330 × 26");

@@ -27,10 +27,8 @@ import { INVOICE_CATEGORIES } from "../src/lib/constants";
 import { invoiceInScope } from "../src/lib/invoice-branch";
 import { stockOnlyCategory } from "../src/lib/invoice-linking";
 import { lineTarget, splitLinesFor, SUPPLIES_CATEGORY } from "../src/lib/invoice-split";
-import { monthNumbers, numberChanges, oldRuleDataset, taxNumbers } from "../src/lib/invoice-split-compare";
+import { monthNumbers, numberChanges, oldRuleDataset } from "../src/lib/invoice-split-compare";
 import { notIngredientOf, type IgnoredProduct, type IgnoredSupplier } from "../src/lib/product-ignore";
-import { bridge, taxMonths, taxPnlInputFromModel } from "../src/lib/tax/pnl";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -151,23 +149,6 @@ test("Tümü · Gelir-gider: değişen her rakam (bilinçli); kalemsiz aylar ayn
   assert.deepEqual(deltas(createModel(oldRuleDataset(plain, { all: plain.invoices, scope: "hepsi" })), createModel(plain)), {});
 });
 
-test("Tümü · Vergi: SMM ile fatura giderleri arasında yer değiştirir; gider toplamı ve sonuç aynı", () => {
-  const labels = new Map<string, string>();
-  const tb = taxNumbers(createModel({ ...oldRuleDataset(whole, { all, scope: "hepsi" }), currentMonth: "2026-12" }), [2026], "2026-12-10", undefined, labels);
-  const ta = taxNumbers(createModel({ ...whole, currentMonth: "2026-12" }), [2026], "2026-12-10", undefined, labels);
-  const out: Record<string, Record<string, number>> = {};
-  for (const m of MONTHS) {
-    const ch = numberChanges("hepsi", m, tb.get(m)!, ta.get(m)!, labels);
-    if (ch.length) out[m] = Object.fromEntries(ch.map((c) => [c.key, c.delta]));
-  }
-  // Isıtıcı (Demirbaş) vergide gider kalır: Vergi › Demirbaş'ta öneri, listeye eklenince amortismana geçer
-  assert.deepEqual(out, {
-    "2026-08": { "vergi:alis": 200, "vergi:faturalar": -200 },
-    "2026-09": { "vergi:alis": -10_140, "vergi:faturalar": 10_140 },
-    "2026-10": { "vergi:alis": 500, "vergi:faturalar": -500 },
-  });
-});
-
 test("Marina seçili: şubesi seçilmemiş faturalar görünmez, Marina'nın sarf payı Marina'nın kârında", () => {
   const view = (invoices: Invoice[]): Dataset => ({
     ...whole,
@@ -215,23 +196,6 @@ test("Ayarlar önizlemesi: başabaşın harcama payı tam modelle aynı (karış
   const full = createModel({ ...whole, expenseCategories: cats, currentMonth: "2026-10" });
   const slim = impactModel(impactData(full));
   for (const m of ["2026-10", "2026-11"]) assert.ok(Math.abs(slim.breakEvenFixedFor(m) - full.breakEvenFixedFor(m)) < 0.01, `${m}: önizleme ${slim.breakEvenFixedFor(m)} ≠ ${full.breakEvenFixedFor(m)}`);
-});
-
-test("Vergi köprüsü: hesap döneminden önceki karışık fatura da Gelir-gider'deki payıyla düşülür (köprü tutar)", () => {
-  // Hesap dönemi 15 Eylül'de başlıyor: Avansas (12 Eylül) dönemden önce, Metro (20 Eylül) içinde
-  const model = createModel({ ...whole, currentMonth: "2026-12" });
-  const settings = { ...DEFAULT_TAX_SETTINGS, periodStart: "2026-09-15" };
-  const input = taxPnlInputFromModel(model, { settings, today: "2026-12-10", adjustments: [], assets: [], filings: [] });
-  const sep = taxMonths(input, 2026).find((x) => x.month === "2026-09")!;
-  const rows = bridge(sep).rows;
-  const start = rows.find((r) => r.key === "start")!.amount;
-  const end = rows.find((r) => r.key === "end")!.amount;
-  const middle = rows.filter((r) => r.key !== "start" && r.key !== "end").reduce((a, r) => a + r.amount, 0);
-  assert.ok(Math.abs(start + middle - end) < 0.01, `köprü tutmalı: ${start} + ${middle} ≠ ${end}`);
-  // Dönem öncesi satırı Avansas'ın mal payını (360) taşır; sarf payı (315) "Gelir-gider'e girmeyen faturalar"da
-  const pre = rows.find((r) => r.key === "prePeriod")?.amount ?? 0;
-  const prePlain = excel.invoices.filter((i) => i.date >= "2026-09-01" && i.date < "2026-09-15" && ["Hammadde & İçecek", "Tatlı & Hazır Ürün", "Ambalaj", "Komisyon"].includes(i.category)).reduce((a, i) => a + i.amount - i.discount, 0);
-  assert.ok(Math.abs(-pre - prePlain - 360) < 0.01, `dönem öncesi: ${-pre} ≠ ${prePlain} + 360`);
 });
 
 test("'Mal alışı sayılmıyor' uyarısı ekranda da sunucudaki kuralla: yalnız bölünmeyen komisyon faturası", () => {

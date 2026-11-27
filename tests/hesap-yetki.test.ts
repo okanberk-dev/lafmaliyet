@@ -15,7 +15,7 @@ import { test } from "node:test";
 
 import { CLAUDE_NOTE, sessionsNote } from "../src/app/panel/hesap/session-note";
 import { passwordProblem } from "../src/lib/password-rules";
-import { ADMIN_ONLY_PATHS, STAFF_PATHS } from "../src/lib/roles";
+import { ADMIN_ONLY_PATHS, retiredRedirect, STAFF_PATHS } from "../src/lib/roles";
 import { isSetupEnded, openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_MINUTES, SETUP_STOPPED } from "../src/lib/two-factor-setup";
 import { WRONG_APP_CODE, WRONG_RECOVERY_CODE, wrongLoginCodeMessage } from "../src/server/auth/totp";
 import { adminPages, linkFor, liveLeaks, panelRoutes, scanStaffLeaks, staffPages, streamRedirect } from "../scripts/personel-sizinti";
@@ -171,6 +171,9 @@ function fakePanel(o: { leak: boolean }) {
     const rsc = req.headers.rsc === "1";
     seen.push(`${rsc ? "RSC " : ""}${url.pathname}${url.search.replace(/[?&]_rsc=[^&]*/, "")}`);
     const redirect = (to: string) => res.writeHead(307, { location: to }).end();
+    // Kaldırılan ekranlar (proxy gibi oturumdan önce); sızıntılı panelde Vergi'nin yönlendirmesi unutulmuş
+    const retired = retiredRedirect(url.pathname);
+    if (retired && !(o.leak && url.pathname.startsWith("/panel/vergi"))) return redirect(retired);
     if (req.headers.cookie !== "laf_session=personel") return res.writeHead(401).end();
     if (url.pathname === "/api/canli") {
       const amount = o.leak ? 45000 : null;
@@ -212,6 +215,9 @@ test("sızıntı betiği, sahte panele karşı: Stok sayımı'nın yönlendirme 
   assert.ok(dirty.seen.includes("/panel/kontrol/7"), "kontrol listesinin bağlantısı");
   assert.ok(!dirty.seen.includes("/panel/tahmin"));
   assert.ok(dirty.seen.includes("/panel/karaoke/doluluk") && dirty.seen.includes("RSC /panel/karaoke/doluluk"));
+  // Kaldırılan Vergi'nin eski adresi Genel bakış'a notla yönlenmeli (27 Kasım 2026); Bugün'e düşmesi hatadır
+  assert.ok(dirty.seen.includes("/panel/vergi") && dirty.seen.includes("/panel/vergi/eski-alt-sayfa"));
+  assert.ok(dirty.failures.includes("/panel/vergi: kaldırılan ekran /panel?kaldirildi=vergi adresine yönlenmedi (307 /panel/bugun)"), dirty.failures.join("\n"));
 
   const clean = await withPanel({ leak: false }, (base) => scanStaffLeaks({ base, cookie: "laf_session=personel", today: "2026-11-14", log: () => {} }));
   assert.deepEqual(clean.failures, []);

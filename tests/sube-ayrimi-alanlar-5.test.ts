@@ -33,19 +33,8 @@ const excel: Dataset = datasetFromSeed(data);
 
 // ---------------------------------------------------------------- Vergi: şubeye bölünmez
 
-test("Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): şubenin payı, matraha katkı ve şube kipinin süzgeçleri yok", () => {
-  assert.equal(existsSync(join(root, "src/lib/tax/branch-share.ts")), false, "şubenin payı kuralları kalktı");
-  assert.equal(existsSync(join(root, "src/app/panel/vergi/branch-share.tsx")), false, "şubenin payı ve matraha katkı kartları kalktı");
-  assert.doesNotMatch(read("src/server/data/tax.ts"), /loadBranchTaxView|branchTaxShare|branchContribution/);
-  assert.doesNotMatch(read("src/app/panel/vergi/gelir-gider/data.ts"), /scopeClassify/);
-  assert.doesNotMatch(read("src/app/panel/vergi/gelir-gider/classify-list.tsx"), /scopeNote/);
-  for (const file of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx"]) {
-    const src = read(file);
-    // Bütün şubelerle okur (tek vergi numarası), şube seçiliyken "bu ekran firma geneli" notu; çip ve alan yok
-    assert.match(src, /\/\/ şube-ayrımı: vergi\.beyan\n {2}const \{ model, view, inputs(, reminders)? \} = await withBranchScope\(ALL_BRANCHES/, file);
-    assert.match(src, /<CompanyWideNotice screen="vergi" \/>/, file);
-    assert.doesNotMatch(src, /areaScope|BranchViewChip|alan\.vergi|BranchShareCard|BranchContributionCard|scopeAssets|scopeClassify|firma geneli"/, file);
-  }
+test("Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026); aynı gün Vergi bölümü tümden kaldırıldı: şube payı da ekran da yok", () => {
+  for (const p of ["src/lib/tax", "src/app/panel/vergi", "src/server/data/tax.ts"]) assert.equal(existsSync(join(root, p)), false, `${p} kalktı`);
 });
 
 // ---------------------------------------------------------------- Mutabakat
@@ -197,15 +186,15 @@ test("kaynak: üç alan areaScope ile okur, ekranlar çipini çizer, firma genel
 
 test("kaynak: kayıt parça 5'in alanlarını taşır, parça 5'in bekleyenleri kapandı; tek şube açıkken alan firmanın", () => {
   const ids = new Map(COMPANY_WIDE_READS.map((r) => [r.id, r]));
-  // Vergi şubeye bölünmez: alanın kaydı yok, okumaları hep firmanın (vergi.beyan)
+  // Vergi şubeye bölünmez: alanın kaydı yok; Vergi bölümü kaldırılınca okuma kaydı (vergi.beyan) da kalktı
   assert.equal(ids.has("alan.vergi"), false);
+  assert.equal(ids.has("vergi.beyan"), false);
   for (const area of ["tutarlilik", "mutabakat", "stok_degeri"] as const) {
     const r = ids.get(`alan.${area}`);
     assert.ok(r, `alan.${area}`);
     assert.equal(r.kind, "alan");
     assert.equal(r.area, area);
   }
-  assert.equal(ids.get("vergi.beyan")?.kind, "yalniz-firma");
   // Bekleyen kayıt kalmadı (parça 6 sonuncuyu kapattı; tests/sube-ayrimi.test.ts kaydın türlerini denetler)
   assert.equal(
     COMPANY_WIDE_READS.some((r) => (r.kind as string) === "bekliyor"),

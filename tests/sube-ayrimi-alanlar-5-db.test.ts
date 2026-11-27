@@ -195,27 +195,6 @@ describe("şube ayrımı parça 5: alanlar veritabanında", { skip: !SERVER_URL 
     for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", `müdür ${a}`);
   });
 
-  test("Vergi şubeye bölünmez: Marina seçiliyken de Vergi'nin okuması Tümü'yle aynı (Tuzla'nın faturası, personeli, demirbaşı dahil)", async () => {
-    const { loadTaxView } = await import("../src/server/data/tax");
-    const { loadModel } = await import("../src/server/data/dataset");
-    // Vergi sayfalarının okuması (src/app/panel/vergi/page.tsx › TaxContent): seçimden ve şube görünümünden bağımsız
-    const taxRead = () =>
-      scope.withBranchScope(ALL_BRANCHES, async () => {
-        const model = await loadModel();
-        const { view, inputs } = await loadTaxView(model, { today });
-        return JSON.stringify({ view, assets: inputs.assets }, (_k, x) => (x instanceof Map ? [...x] : x));
-      });
-    await signIn(ids.ali, ALL_BRANCHES);
-    const all = await taxRead();
-    assert.equal(leaks(all), true, "Tümü'de Tuzla'nın demirbaşı ve faturası");
-    // Yönetici Marina'da (varsayılan: her alan "Yalnız şube"), eski sürümün yazdığı Vergi tercihi de okunmaz
-    for (const prefs of [{}, FIRMA, { vergi: "sube" } as unknown as BranchViewPrefs]) {
-      await signIn(ids.ali, "marina", prefs);
-      assert.equal(await taxRead(), all, `Marina seçili ${JSON.stringify(prefs)}: vergi firmanın`);
-    }
-    assert.equal(await import("../src/server/data/tax").then((m) => "loadBranchTaxView" in m), false, "şubenin payı kalktı");
-  });
-
   test("Tutarlılık: şube kipinde alınan yalnız şubeye seçilmiş faturalardan; şubesiz fatura ve elle alım sayı olarak", async () => {
     const { queryBranchPurchases } = await import("../src/server/data/purchase-lots-query");
     const own = await queryBranchPurchases(db, "marina");
