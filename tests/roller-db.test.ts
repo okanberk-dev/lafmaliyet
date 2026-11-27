@@ -522,6 +522,163 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
+    test("Onaylar: isteğin tuttuğu fotoğrafı (geç raporun Z'si, kasadan çıkan isteğinin fişi) müdür şubesininkini açar, öteki şubeninkini açamaz; personel ve muhasebeci açamaz; karardan sonra türün kuralı", async () => {
+      const { businessDate } = await import("../src/lib/cash-report");
+      const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
+      const { canViewPhoto } = await import("../src/server/storage/photo-access");
+      const { getPhoto } = await import("../src/server/storage/photos");
+      const store = await import("../src/server/cash/report-store");
+      const late = await import("../src/server/cash/late");
+      const outRequests = await import("../src/server/cash-outs/requests");
+      const cashReview = await import("../src/server/actions/cash-requests");
+      const outReview = await import("../src/server/actions/cash-out-requests");
+      // Günler bugüne göre: geç rapor penceresi (dünden eski, son 14 gün) ve kasadan çıkan isteğinin penceresi (son 7 gün)
+      const today = businessDate();
+      const FIRST = addDays(today, -12);
+      const LATE = addDays(today, -5);
+      const OUT_DAY = addDays(today, -3);
+      const fields = (date: string, o: Partial<CashReportFields> = {}): CashReportFields & { discounts: number | null } => ({
+        date,
+        zNo: "1204",
+        receipts: null,
+        zTotal: 10_000,
+        cash: 3_000,
+        card: 7_000,
+        mealCard: 0,
+        online: 0,
+        other: 0,
+        // Açılış önceki raporun devriyle (3.500 − 2.400) tutar
+        openingCash: 1_100,
+        cashIn: 0,
+        cashOut: 0,
+        cashOutNote: null,
+        countedCash: 3_500,
+        handedOver: 0,
+        bankPos: null,
+        offRevenue: null,
+        note: null,
+        discounts: null,
+        ...o,
+      });
+      const [logBefore] = await db.select({ max: sql<number>`coalesce(max(${s.activityLog.id}), 0)` }).from(s.activityLog);
+      // Tuzla'nın iki personeli: isteği açan (fotoğrafları o yükler) ve öteki
+      const staff = await db
+        .insert(s.users)
+        .values([
+          { name: "Can", email: "can-onay@ornek.com", role: "staff", branchId: "tuzla", passwordHash: "x" },
+          { name: "Ece", email: "ece-onay@ornek.com", role: "staff", branchId: "tuzla", passwordHash: "x" },
+        ])
+        .returning({ id: s.users.id });
+      const [canId, eceId] = staff.map((u) => u.id);
+      const [cat] = await db.insert(s.expenseCategories).values({ name: "Market (onay fotoğrafı)", section: "mal", panelGroup: "diger" }).returning({ id: s.expenseCategories.id });
+      const photoIds: number[] = [];
+      const requestIds: number[] = [];
+      /** Yeni yüklenmiş (bağlanmamış, süresi dolmamış) fotoğraf */
+      const photo = async (by: { id: number; name: string }, kind: "kasa-z" | "fis") => {
+        const [p] = await db
+          .insert(s.photos)
+          .values({ kind, storageKey: `test/onay/${photoIds.length}-${kind}.jpg`, contentType: "image/jpeg", sizeBytes: 100, createdBy: by.id, createdByName: by.name, expiresAt: new Date(Date.now() + 86_400_000) })
+          .returning({ id: s.photos.id });
+        photoIds.push(p.id);
+        return p.id;
+      };
+      const can = { id: canId, name: "Can", role: "staff" as const };
+      const ayse = { id: ids.ayse, name: "Ayşe", role: "staff" as const };
+      const userOf = async (id: number) => {
+        jar = new Jar();
+        const [u] = await db.select().from(s.users).where(eq(s.users.id, id));
+        await dal.startSession(u);
+        return (await dal.getCurrentUser())!;
+      };
+      const sees = async (viewer: number, photoId: number) => canViewPhoto(await userOf(viewer), (await getPhoto(photoId))!);
+      try {
+        // Personel isteği açar (çekirdek, formun kasasıyla): geç rapor Z fotoğrafıyla, kapanmış güne kasadan çıkan fişiyle
+        await signIn("ali");
+        const open = async (branch: "tuzla" | "marina", who: typeof can) =>
+          scope.withBranchScope(branch, async () => {
+            const first = await store.saveCashReport(db, { id: ids.ali, name: "Ali", role: "admin" }, { ...fields(FIRST, { handedOver: 2_400, note: "deneme" }), countedBy: null, revision: 0, photos: [] });
+            assert.equal(first.kind, "saved", `${branch}: ilk rapor`);
+            const z = await photo(who, "kasa-z");
+            const lateReq = await late.proposeLateReport(db, who, { fields: fields(LATE), reason: "Akşam sistem kapalıydı", requestVersion: 0, photoIds: [z], handedTo: null, clientKey: null });
+            const receipt = async (amount: number) => {
+              const f = await photo(who, "fis");
+              const out = await outRequests.proposeCashOutChange(db, who, {
+                op: "ekle",
+                date: OUT_DAY,
+                cashOutId: null,
+                line: { kind: "harcama", amount, store: "Migros", description: "süt", receiptDate: null, receiptNo: null, vat: null, docType: "fis", categoryId: cat.id, photoId: f },
+                message: null,
+                clientKey: `onay-${branch}-${amount}`,
+              });
+              requestIds.push(out.row.id);
+              return { photo: f, row: out.row };
+            };
+            requestIds.push(lateReq.row.id);
+            return { z, late: lateReq.row, out: await receipt(412.5), out2: await receipt(99) };
+          });
+        const tuzla = await open("tuzla", can);
+        const marina = await open("marina", ayse);
+        for (const id of [tuzla.z, tuzla.out.photo, marina.z, marina.out.photo]) {
+          const p = (await getPhoto(id))!;
+          assert.deepEqual([p.linkedAt, p.expiresAt], [null, null], "istek fotoğrafı tutar: bağlanmamış, süresiz");
+        }
+
+        // Müdürün Onaylar'ı: şubesinin kartlarının gösterdiği her fotoğrafı açar
+        const mehmet = await userOf(ids.mehmet);
+        const cards = await loadCashRequestQueue(undefined, await scope.currentBranchScope(), true, false);
+        const shown = cards.flatMap((c) => (c.kind === "kasa-gec" ? c.photos.map((p) => p.id) : c.kind === "kasa-cikan" && c.photoId !== null ? [c.photoId] : []));
+        assert.deepEqual(shown.sort(), [tuzla.z, tuzla.out.photo, tuzla.out2.photo].sort(), "kartlarda şubesinin istek fotoğrafları");
+        for (const id of shown) assert.equal(await canViewPhoto(mehmet, (await getPhoto(id))!), true, `müdür kartın fotoğrafını açar (${id})`);
+        // Öteki şubenin isteğininkini açamaz (kartı da ona gelmez)
+        assert.equal(await sees(ids.mehmet, marina.z), false, "öteki şubenin geç raporunun Z'si");
+        assert.equal(await sees(ids.mehmet, marina.out.photo), false, "öteki şubenin kasadan çıkan fişi");
+        // Karar vermeyen roller: aynı şubenin öteki personeli ve muhasebeci açamaz; yükleyen ve yönetici açar
+        for (const id of [tuzla.z, tuzla.out.photo]) {
+          assert.equal(await sees(eceId, id), false, "aynı şubenin öteki personeli");
+          assert.equal(await sees(ids.zeynep, id), false, "muhasebeci (onay yok)");
+          assert.equal(await sees(canId, id), true, "yükleyen");
+          assert.equal(await sees(ids.ali, id), true, "yönetici");
+        }
+        // Önerilen kategori sonradan kapatılırsa (yöneticinin kategorisi sayılır) fiş müdüre gitmez: bağlı fişin kuralı
+        await db.update(s.expenseCategories).set({ active: false }).where(eq(s.expenseCategories.id, cat.id));
+        assert.equal(await sees(ids.mehmet, tuzla.out.photo), false, "kapatılmış kategorideki önerinin fişi");
+        assert.equal(await sees(ids.mehmet, tuzla.z), true, "geç raporun Z'si kategoriden bağımsız");
+        await db.update(s.expenseCategories).set({ active: true }).where(eq(s.expenseCategories.id, cat.id));
+
+        // Müdür karar verir: geç raporu ve ilk fişi onaylar (fotoğraflar kayda bağlanır), ikinci fişi reddeder
+        await signIn("mehmet");
+        asAction();
+        const lateOk = await cashReview.reviewCashRequest({ id: tuzla.late.id, seenVersion: tuzla.late.version, seenRevision: null, decision: "approve", note: null, handoverSeen: true });
+        assert.ok(lateOk.ok, lateOk.ok ? "" : lateOk.error);
+        const outOk = await outReview.reviewCashOutRequest({ id: tuzla.out.row.id, seenVersion: tuzla.out.row.version, decision: "approve", note: null, toExpenses: true, categoryId: cat.id });
+        assert.ok(outOk.ok, outOk.ok ? "" : outOk.error);
+        const outNo = await outReview.reviewCashOutRequest({ id: tuzla.out2.row.id, seenVersion: tuzla.out2.row.version, decision: "reject", note: null });
+        assert.ok(outNo.ok, outNo.ok ? "" : outNo.error);
+        assert.notEqual((await getPhoto(tuzla.z))!.linkedAt, null, "Z rapora bağlandı");
+        assert.notEqual((await getPhoto(tuzla.out.photo))!.linkedAt, null, "fiş satıra bağlandı");
+        // Bağlı fotoğraf türün kuralıyla: müdür şubesinin raporunu ve satırını, muhasebeci raporu (rakam) görür;
+        // personel eski günü görmez. Reddedilen isteğin fişi bırakıldı: kimse karar vermiyor, müdür açamaz
+        assert.equal(await sees(ids.mehmet, tuzla.z), true, "onaydan sonra: raporun Z'si");
+        assert.equal(await sees(ids.mehmet, tuzla.out.photo), true, "onaydan sonra: satırın fişi");
+        assert.equal(await sees(ids.zeynep, tuzla.z), true, "muhasebeci bağlı raporun Z'sini görür");
+        assert.equal(await sees(eceId, tuzla.z), false, "personel kapanmış günün Z'sini görmez");
+        assert.equal(await sees(ids.mehmet, tuzla.out2.photo), false, "reddedilen isteğin fişi");
+        assert.equal(await sees(canId, tuzla.out2.photo), true, "yükleyen bırakılan fişini görür");
+      } finally {
+        const outs = await db.select({ id: s.cashOuts.id }).from(s.cashOuts).where(inArray(s.cashOuts.date, [OUT_DAY]));
+        if (outs.length) {
+          await db.delete(s.expenseEntries).where(inArray(s.expenseEntries.cashOutId, outs.map((o) => o.id)));
+          await db.delete(s.cashOuts).where(inArray(s.cashOuts.id, outs.map((o) => o.id)));
+        }
+        await db.delete(s.cashReports).where(inArray(s.cashReports.date, [FIRST, LATE]));
+        if (requestIds.length) await db.delete(s.staffRequests).where(inArray(s.staffRequests.id, requestIds));
+        if (photoIds.length) await db.delete(s.photos).where(inArray(s.photos.id, photoIds));
+        await db.delete(s.activityLog).where(sql`${s.activityLog.id} > ${logBefore.max}`);
+        await db.delete(s.expenseCategories).where(eq(s.expenseCategories.id, cat.id));
+        await db.delete(s.users).where(inArray(s.users.id, [canId, eceId]));
+      }
+    });
+
     test("fiş okuması müdüre yöneticinin kategorisini önermez (yazımda reddedilirdi; bulgu 1)", async () => {
       const read = await import("../src/server/photo-read/read");
       // Kayıtlı yanıt (tests/fixtures/foto/fis-soluk.json) hep aynı kategoriyi seçer: o kategori bu testte yöneticinin

@@ -88,7 +88,8 @@ sabah e-postası ve Son kararlar bunu yazar.
 - **Geri çekme koşulludur:** yalnız bekleyen ve kendi isteği; aynı anda verilen onayla yarışta tek sonuç kalır.
 - **Fotoğraf tutma:** istek beklerken eklenen fotoğraflar (`photo_ids`) bağlanmaz ve silinmez; başka bir istek ya da
   kayıt aynı fotoğrafı alamaz ("Bu fotoğraf onay bekleyen bir istekte"). Geri çekme, ret, kapanma ve süre dolmasında
-  fotoğraf bırakılır (7 gün sonra silinir; geç kasa raporunun reddinde 30 gün).
+  fotoğraf bırakılır (7 gün sonra silinir; geç kasa raporunun reddinde 30 gün). Tutulan fotoğrafı kartta isteğe
+  karar veren açar (yönetici; müdür yalnız şubesinin isteğininkini; [FOTOGRAF.md](FOTOGRAF.md) › Kim görür).
 - **Sınırlar (kişi başına):** açık istek tür grubu başına 10 (kasa), 5 (geç kasa raporu), 20 (zayi), 5 (karaoke);
   iş günü başına 30 istek; konu başına iş günü başına 3 istek (geri çekilen ve reddedilen dahil). İş günü 05:00'te
   döner.

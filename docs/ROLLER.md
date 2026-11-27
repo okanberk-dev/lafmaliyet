@@ -68,7 +68,11 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 - Şubesi pasife alınırsa oturumu yok sayılır, giriş de reddedilir (`managerWithoutBranch`). Personelde kilit kalkar
   ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü.
 - Onaylar'da yalnız şubesinin kasa ve zayi / ikram isteklerini görür ve karara bağlar; şubesi bilinmeyen istek ona
-  kapalı (`reviewBranchRefusal`, `loadCashRequestQueue(…, strict)`).
+  kapalı (`reviewBranchRefusal`, `loadCashRequestQueue(…, strict)`). Kartın gösterdiği, isteğin tuttuğu fotoğrafı
+  (geç kasa raporunun Z'si, kasadan çıkan isteğinin fişi; onaya kadar bağlanmaz, yükleyeni personel) /api/foto ona
+  verir: karar veren görür, yalnız şubesinin isteğininki ve önerilen kategori yöneticinin değilse
+  (`src/server/photo-read/rules.ts` › `heldForReview`). Muhasebeci ve personel isteğe karar vermez, tutulan fotoğrafı
+  görmez (personel yalnız kendi yüklediğini). Karardan sonra türün kuralı: onayda fotoğraf kayda bağlıdır, retde bırakılır.
 - Zayi ve ikramın malzeme maliyeti yöneticinin: müdür zayiyi "admin" düzeyinde yazsa da Zayi & ikram'ın ay özeti
   (malzeme maliyeti, en çok giden kalemler, Tutarlılık bağlantısı) ona çizilmez, sekmelerde Tutarlılık yok; Onaylar'ın
   geç kayıt kartında malzeme maliyeti yok, ikramda menü değeri kalır (müdürün kartında `cost` anahtarı gitmez;
@@ -232,7 +236,9 @@ oturumları kapanır (oturum sürümü).
   `tests/kasa-cikan-istek-db.test.ts`), fiş okumasının kopya denetimi ona öteki şubenin, işletme genelinin ve
   yöneticinin kategorisinin kayıtlarını okumaz, Vardiya planına öteki şubenin personelini, muhasebeciyi ya da olmayan
   hesabı yazamaz (Kaydet ve Yazarak doldur; hata hesabın adını taşımaz, Vardiya ekranında o adlar yok; şubesinin
-  planındaki kişiyi yazar), şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu eylemleri
+  planındaki kişiyi yazar), Onaylar kartının gösterdiği, isteğin tuttuğu fotoğrafı (geç raporun Z'si, kasadan çıkan
+  isteğinin fişi) açar, öteki şubeninkini, kapatılmış kategorideki önerinin fişini açamaz (personel ve muhasebeci de
+  açamaz; karardan sonra türün kuralı), şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu eylemleri
   "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube kurulumu e-postası müdür, muhasebeci, yönetici ya
   da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve kurulum bağlantısı yazılmaz).
 - `tests/iscilik-mudur-db.test.ts` (gerçek Postgres, `ISCILIK_TEST_DATABASE_URL`): müdürün İşçilik raporunda tutar ve

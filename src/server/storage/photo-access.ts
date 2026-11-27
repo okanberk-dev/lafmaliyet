@@ -33,7 +33,8 @@ export const PHOTO_RULES: Record<PhotoKind, PhotoKindRules> = {
 export const FORBIDDEN_TEXT = "Bu fotoğrafı görme yetkiniz yok.";
 
 export async function canViewPhoto(me: CurrentUser, photo: PhotoRow, now = new Date()): Promise<boolean> {
-  // Yöneticinin "her şeyi görür"ü yalnız yöneticide; müdür ve muhasebeci türün kuralına (şube kilidi, kasa rakamı) gider
+  // Yöneticinin "her şeyi görür"ü yalnız yöneticide; müdür ve muhasebeci türün kuralına (şube kilidi, kasa rakamı;
+  // müdür Onaylar'da karara bağladığı isteğin tuttuğu fotoğrafı da: rules.ts › heldForReview) gider
   const first = photoViewDecision({ id: me.id, role: adminLevel(me.role) }, photo, now);
   if (first !== "rules") return first === "yes";
   return PHOTO_RULES[photo.kind].canView(me, photo);

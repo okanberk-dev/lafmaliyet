@@ -1,8 +1,9 @@
 import "server-only";
 
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import { businessDate, staffCanReport, staffDayEditable, staffLateDay } from "@/lib/cash-report";
+import { CashOutRequestPayload } from "@/lib/cash-out-requests";
 import { staffExpenseLocked } from "@/lib/cash-outs";
 import { KEEP_DAYS, uploadRule, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
@@ -11,7 +12,9 @@ import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import { lafposPhotoDayOpen } from "@/server/lafpos/foto";
+import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import type { PhotoKindRules } from "@/server/storage/photo-access";
+import type { PhotoRow } from "@/server/storage/photos";
 
 /*
  * Kasa ve fiş fotoğraflarının personel kuralları. Personel yalnız hâlâ düzenleyebildiği günlerin fotoğraflarını görür
@@ -20,6 +23,7 @@ import type { PhotoKindRules } from "@/server/storage/photo-access";
  * raporu (raporu olmayan, son 14 günden biri) için personel o güne Z ve POS fotoğrafı, kasadan çıkan isteği için son 7
  * güne fiş ekler (bağlanmadan bekler; kendi yüklediğini görür). Şubesine kilitli personel yalnız kendi şubesinin kasa ve
  * fiş fotoğrafını görür (staffBranchRefusal; günün açıklığı başka şubenin fotoğrafını açmaz, 21 Kasım denetimi #14).
+ * Onay bekleyen isteğin tuttuğu fotoğrafı isteğe karar veren görür (heldForReview; müdür yalnız şubesininkini).
  */
 
 type Db = ReturnType<typeof getDb>;
@@ -53,6 +57,8 @@ export const cashPhotoRules: PhotoKindRules = {
       .innerJoin(s.cashReports, eq(s.cashReports.id, s.cashReportPhotos.reportId))
       .where(eq(s.cashReportPhotos.photoId, photo.id))
       .limit(1);
+    // Geç kasa raporunun tuttuğu Z ve POS fotoğrafı (rapor satırı onayda yazılır): karar veren görür
+    if (!row) return heldForReview(me, photo, "kasa-gec");
     // Rakam gören rol (müdür şubesinin, muhasebeci bütün şubelerin) raporun fotoğrafını her gün görür; kilit oturumdan
     if (can(me.role, "kasa.rakam")) return Boolean(row && !(await staffBranchRefusal(me, row.branchId)));
     return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
@@ -85,12 +91,52 @@ export const receiptPhotoRules: PhotoKindRules = {
       .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
       .where(eq(s.cashOuts.photoId, photo.id))
       .limit(1);
+    // Kasadan çıkan ekleme isteğinin tuttuğu fiş (satır onayda yazılır): karar veren görür
+    if (!row) return heldForReview(me, photo, "kasa-cikan");
     const category = row && row.section !== null && row.panelGroup !== null && row.active !== null ? { section: row.section, panelGroup: row.panelGroup, active: row.active } : null;
     if (ownerRowAmountOnly(me.role) && staffExpenseLocked(category)) return false;
     if (can(me.role, "kasa.rakam")) return Boolean(row && !(await staffBranchRefusal(me, row.branchId)));
     return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
   },
 };
+
+/**
+ * Onay bekleyen isteğin tuttuğu fotoğraf (src/server/storage/photos.ts › holdPhoto: bağlanmamış, yükleyeni personel;
+ * raporun ya da kasadan çıkanın satırı onayda yazılır): geç kasa raporunun Z, POS ve yazarkasa Z'si (`kasa-gec`) ve
+ * kasadan çıkan ekleme isteğinin fişi (`kasa-cikan`). Onaylar'ın kartı bu fotoğrafları gösterir, onay onları bağlar:
+ * isteğe karar veren görür. Yönetici buraya gelmeden görür (photoViewDecision); müdür yalnız karar verebildiği isteğin
+ * fotoğrafını (`reviewBranchRefusal`: şubesinin isteği; şubesi bilinmeyen istek kapalı). Önerilen kategori yöneticinin
+ * (personelin seçemediği ya da kapatılmış) ise fiş müdüre gitmez (bağlı fişin kuralı). Muhasebeci ve personel karar
+ * vermez (`onay` yok): personel yalnız kendi yüklediğini görür (photoViewDecision). İstek karara bağlanınca kural
+ * kapanır: onayda fotoğraf kayda bağlanır (türün kuralı), retde bırakılır.
+ */
+async function heldForReview(me: CurrentUser, photo: PhotoRow, kind: "kasa-gec" | "kasa-cikan"): Promise<boolean> {
+  if (!can(me.role, "onay") || photo.linkedAt !== null) return false;
+  const db = getDb();
+  const r = s.staffRequests;
+  const rows = await db
+    .select({ id: r.id, payload: r.payload })
+    .from(r)
+    .where(and(eq(r.kind, kind), eq(r.status, "pending"), sql`${r.photoIds} @> array[${photo.id}]::integer[]`));
+  for (const row of rows) {
+    if (await reviewBranchRefusal(db, me, row.id)) continue;
+    if (kind === "kasa-cikan" && ownerRowAmountOnly(me.role)) {
+      const p = CashOutRequestPayload.safeParse(row.payload);
+      if (!p.success) continue;
+      const categoryId = p.data.line?.categoryId ?? null;
+      if (categoryId !== null) {
+        const [cat] = await db
+          .select({ section: s.expenseCategories.section, panelGroup: s.expenseCategories.panelGroup, active: s.expenseCategories.active })
+          .from(s.expenseCategories)
+          .where(eq(s.expenseCategories.id, categoryId))
+          .limit(1);
+        if (staffExpenseLocked(cat)) continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
 
 /**
  * Personel bu güne geç kasa raporu (yöneticinin onayıyla) girebilir mi: geç rapor penceresinde (dünden eski, son 14

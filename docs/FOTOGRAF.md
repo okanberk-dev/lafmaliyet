@@ -210,7 +210,11 @@ gün, yöneticinin satırı). Kural saf olarak
   satırında küçük resim yerine fiş simgesi); WhatsApp metnindeki "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı
   yazılan" satırları kalır. Kontrol listelerinin fotoğraflarını personel, personelin doldurduğu listelerin bugünkü ve
   dünkü (iş günü) kayıtlarında görür (`src/lib/checklists.ts` › `photoAccess`, [KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)
-  § 4). Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
+  § 4). Onay bekleyen isteğin tuttuğu fotoğrafı (geç kasa raporunun Z'si, kasadan çıkan isteğinin fişi; bağlanmamış,
+  yükleyeni personel) isteğe karar veren görür: yönetici ve müdür yalnız kendi şubesinin isteğininkini
+  (`reviewBranchRefusal`; önerilen kategori yöneticininse fiş müdüre gitmez); karardan sonra fotoğraf kayda bağlıdır
+  ya da bırakılır, türün kuralı geçer (`src/server/photo-read/rules.ts` › `heldForReview`, [ROLLER.md](ROLLER.md)).
+  Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur (hatalı ve zaman aşımına düşen okuma da sayılır); bir
   rapora en çok 6 fotoğraf, Banka POS Z bölümüne en çok 3 ("Banka POS Z bölümüne en çok 3 fotoğraf eklenir"); bir kontrol listesinde
