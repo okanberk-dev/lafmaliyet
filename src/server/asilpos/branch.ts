@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomBytes } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 
 import { ASILPOS_GROUP } from "@/lib/branch-settings/groups";
@@ -7,187 +9,150 @@ import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "@/lib/karao
 import { staffBlindDay } from "@/lib/asilpos/kor-kasa";
 import { posEnvName } from "@/lib/asilpos/env";
 import { envSyncSecret, secretFrom, secretProblem, type SecretProblem } from "@/lib/asilpos/request";
-import { branchSwitchDay, isAsilposDay, asilposBranchOf } from "@/lib/asilpos/switch";
-import { resolveBranchSetting } from "@/server/branch-settings";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
+import { putBranchSetting, resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
+import { forgetPosTills, loadBranchSwitchDay, loadPosTillIds, switchDayOf } from "@/server/pos/tills";
 
 import { getDb, schema as s, type DB } from "../db";
 
 /**
- * AsilPOS'un şubesinin sunucu okuyucusu (şube kapsamı B6; docs/ASILPOS.md › Şubeler): kütükte kasa kaynağı AsilPOS olan
- * etkin fiziksel şube, yoksa geri düşüş `ASILPOS_BRANCH_ID` (saf kural `asilposBranchOf`, src/lib/asilpos/switch.ts).
- * Gün sonunun yazıldığı şube, geçiş gününün kasası, AsilPOS'un fotoğraf, kasadan çıkan ve devir uçları bunu okur.
- *
- * Önbellekli: değer kurulumun tamamı için tektir ve yalnız Şubeler'de kasa kaynağı değişince değişir; kasanın her
- * gönderimi, zil ve gün sonu otomasyonu ayrı sorgu atmasın diye bağlantı (ya da işlem) başına `ASILPOS_BRANCH_CACHE_MS` boyunca
- * saklanır. Şube eylemleri (src/server/actions/branches.ts) yazınca `forgetAsilposBranch` ile hemen düşer; başka bir
- * sunucu örneğinde en geç `CACHE_MS` sonra yenilenir. İşlemin (`tx`) içinden okunan değer o işlemin kendi okumasıdır.
+ * AsilPOS kasalarının anahtarları ve şubeye bağlı küçük okumalar (çok şube; docs/ASILPOS.md › Şubeler). Her AsilPOS kasasının
+ * kendi imza anahtarı vardır (Şube ayarları'nda, şifreli); kasanın şubesini panel anahtardan bulur: imza hangi şubenin
+ * anahtarıyla tutuyorsa istek o şubenindir (kurulu kasa devir, ürün ve gider kategorisi isteklerinde şube göndermez).
+ * Ortamdaki anahtar (ASILPOS_SYNC_SECRET, yoksa eski adı) yalnız eski tek kasalı kurulumun şubesinindir (Marina,
+ * LEGACY_POS_BRANCH_ID) ve yalnız o şubenin saklanan anahtarı yokken. İki şubenin anahtarı aynıysa ikisi de kullanılmaz
+ * (bir şubenin günü öbürüne yazılmasın; Ayarlar kartı söyler).
  */
 
 type Reader = Pick<DB, "select">;
-
-/** Önbelleğin süresi: kasa kaynağı değiştikten sonra başka sunucu örneklerinin en geç bu kadar eski değeri görür */
-export const ASILPOS_BRANCH_CACHE_MS = 60_000;
-
-let cache = new WeakMap<object, { at: number; id: string }>();
-
-/** AsilPOS'un şubesi (türetilmiş; önbellekli). `now` testler için; `fresh`: önbelleğe bakmadan kütükten (anahtarın güncelliği) */
-export async function asilposBranchId(db: Reader = getDb(), now: number = Date.now(), fresh = false): Promise<string> {
-  const hit = fresh ? undefined : cache.get(db);
-  if (hit && now - hit.at < ASILPOS_BRANCH_CACHE_MS) return hit.id;
-  const rows = await db.select({ id: s.branches.id, kind: s.branches.kind, posSource: s.branches.posSource, active: s.branches.active, sortOrder: s.branches.sortOrder, name: s.branches.name }).from(s.branches);
-  // Kütüğün sırası (sortBranches ile aynı: sıra, sonra ad): birden çok AsilPOS şubesinde seçim sabit kalsın
-  rows.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "tr"));
-  const id = asilposBranchOf(rows);
-  cache.set(db, { at: now, id });
-  return id;
-}
-
-/** Önbelleği düşürür (şube eklendi, kasa kaynağı ya da durumu değişti, şube silindi) */
-export function forgetAsilposBranch(): void {
-  cache = new WeakMap();
-  forgetAsilposSecret();
-}
-
-/**
- * AsilPOS'a geçiş günü: AsilPOS'un şubesinin şube ayarı (grup `SUBE_AYAR_GRUBU`; docs/SUBE.md › Şube başına ayarlar). Satırı
- * yokken eski genel kayıt (settings › asilposGecisGunu) yalnız Marina'nındır: kasa kaynağı başka şubeye geçerse o şube
- * kendi gününü alır, Marina'nın günü ona geçmez. Panelin geçiş gününü okuyan her yer bunu çağırır (status.ts
- * loadAsilposSwitchDay ve asilpos-ikram.ts asilposSwitchDayOf da buna iner; tests/sube-ayarlari-2.test.ts kilitler)
- */
-export async function asilposSwitchDay(db: Reader = getDb()): Promise<string | null> {
-  return switchDayOf(await asilposBranchId(db), db);
-}
-
-/**
- * Kör kasa (bulgu 0; src/lib/asilpos/kor-kasa.ts): bu kasanın bu günü personele kör mü (AsilPOS'un şubesi, geçiş gününden
- * itibaren). Geç raporun açılış önerisi ve açılış ↔ devir denetimi önceki halkanın günü için sorar: kör günün devri
- * (sayılan − teslim) personele gitmez. İşlemin içinden de okunur
- */
-export async function staffBlindOn(date: string, branchId: string, db: Reader = getDb()): Promise<boolean> {
-  const [branch, switchDay] = await Promise.all([asilposBranchId(db), asilposSwitchDay(db)]);
-  return staffBlindDay({ admin: false, branchId, asilposDay: isAsilposDay(date, switchDay), asilposBranch: branch });
-}
-
-/**
- * Verilen şubenin AsilPOS geçiş günü (şube ayarı SUBE_AYAR_GRUBU). Gün sonunu yazan ve silen işlem bunu yazdığı şubeyle çağırır:
- * şube bir kez okunur, geçiş günü aynı şubeninki olur (işlemin içinde şube yeniden türetilip başka şubeye düşmez)
- */
-export async function switchDayOf(branchId: string, db: Reader = getDb()): Promise<string | null> {
-  return (await resolveBranchSetting(ASILPOS_GROUP, branchId, db)).value.switchDay;
-}
-
-/**
- * Bir şubenin kasasının geçiş günü (branchSwitchDay, türetilmiş AsilPOS şubesiyle): geçiş günü ve AsilPOS'un şubesi
- * birlikte okunur. Tek kasanın gününe bakan sunucu okumaları bunu çağırır
- */
-export async function loadBranchSwitchDay(branchId: string | null | undefined, db: Reader = getDb()): Promise<string | null> {
-  const [day, asilposBranch] = await Promise.all([asilposSwitchDay(db), asilposBranchId(db)]);
-  return branchSwitchDay(day, branchId, asilposBranch);
-}
-
-/**
- * Şube AsilPOS'u kullanıyor mu: geçiş günü var ya da kayıtlı AsilPOS günü var. Geri düşüşle AsilPOS'un şubesi olan şube
- * (kütükte kaynağı ModPOS) kullanıyorsa kasa kaynağı başka şubede AsilPOS yapılamaz (asilposSourceError; Şubeler eylemleri)
- */
-export async function asilposInUse(branchId: string, db: Reader = getDb()): Promise<boolean> {
-  const [day, [row]] = await Promise.all([
-    switchDayOf(branchId, db),
-    db.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.branchId, branchId)).limit(1),
-  ]);
-  return !!day || !!row;
-}
-
 type Env = Record<string, string | undefined>;
 
+export { forgetPosTills, loadBranchSwitchDay, switchDayOf };
+
+/** Anahtarların önbellek süresi (döndürülen anahtar en geç bu kadar sonra her örnekte geçersiz; imzası tutanda hemen) */
+export const POS_KEYS_CACHE_MS = 60_000;
+
 /**
- * AsilPOS'un kullanılan anahtarı: AsilPOS'un şubesinin Şube ayarları'nda saklanan anahtar (şifreli; açılamıyorsa yok
- * sayılır) ortamdakinin (ASILPOS_SYNC_SECRET, yoksa eski adı; envSyncSecret) önüne geçer. Yoksa ortamdaki (bugünkü kurulum
- * hiçbir şey yapmadan çalışır). `source`: kullanılan anahtar nereden ("panel", "ortam"; anahtar yoksa null); `envName`:
- * ortamda okunan değişkenin adı (durum metinleri; ikisi de yoksa eklenecek yeni ad)
+ * İmzası tutmayan istekte anahtarlar önbellekten en çok bu sıklıkla yeniden okunur (sunucu örneği başına): başka bir
+ * örnekte kaydedilen yeni anahtar en geç bu kadar sonra kabul edilir; imzasız istek yağmuru veritabanını bundan sık okutamaz
  */
-export async function asilposSecretValue(db: Reader = getDb(), env: Env = process.env): Promise<{ secret: string | null; source: "panel" | "ortam" | null; envName: string }> {
-  const branch = await asilposBranchId(db);
-  const stored = (await resolveBranchSetting(ASILPOS_GROUP, branch, db)).value.secret;
-  const envName = posEnvName("SYNC_SECRET", env);
-  if (stored) return { secret: stored, source: "panel", envName };
-  const own = envSyncSecret(env);
-  return { secret: own ?? null, source: own?.trim() ? "ortam" : null, envName };
+export const POS_KEYS_RELOAD_MS = 10_000;
+
+/** Şubenin anahtarının durumu (Ayarlar kartı, Şube ayarları) */
+export interface PosKeyInfo {
+  /** Kullanılan anahtar (yoksa null) */
+  secret: string | null;
+  /** Nereden: şubenin saklanan anahtarı ya da ortamdaki (yalnız eski kurulumun şubesi); yoksa null */
+  source: "panel" | "ortam" | null;
+  /** Sorun (yok, kısa, sitenin anahtarıyla ya da başka şubenin anahtarıyla aynı); null: bağlantı açık */
+  problem: SecretProblem | null;
 }
 
-let secretCache = new WeakMap<object, { at: number; stored: string | null }>();
+/** Anahtarların okunuşu: şube → durum; kullanılabilen (benzersiz, sorunsuz) anahtarlar `keys`'te */
+interface KeyRead {
+  info: Map<string, PosKeyInfo>;
+  keys: Map<string, string>;
+}
 
-/**
- * Anahtarın okunuşu: anahtar (yoksa null), önbelleğe yazıldığı an ve bu çağrıda veritabanından mı okundu (`fresh`).
- * Veritabanından okunurken AsilPOS'un şubesi de kütükten taze okunur (anahtar şubenin ayarı). `force`: önbelleğe
- * bakılmaz. Veritabanı okunamazsa null
- */
-async function secretEntry(db: Reader, env: Env, now: number, force = false): Promise<{ secret: string | null; at: number; fresh: boolean } | null> {
-  const hit = force ? undefined : secretCache.get(db);
-  let entry: { at: number; stored: string | null };
-  let fresh = false;
-  if (hit && now - hit.at < ASILPOS_BRANCH_CACHE_MS) entry = hit;
-  else {
-    try {
-      entry = { at: now, stored: (await resolveBranchSetting(ASILPOS_GROUP, await asilposBranchId(db, now, true), db)).value.secret ?? null };
-    } catch (e) {
-      console.error("[asilpos] anahtar okunamadı", e);
-      return null;
-    }
-    secretCache.set(db, entry);
-    fresh = true;
+/** Veritabanından: her şubenin saklanan anahtarı, eski kurulumun şubesine ortamdaki; aynı olanlar kullanılmaz */
+async function readKeys(db: Reader, env: Env): Promise<KeyRead> {
+  const settings = await resolveForTills(ASILPOS_GROUP, db, { closed: true });
+  const raw = new Map<string, { value: string; source: "panel" | "ortam" }>();
+  for (const [id, r] of settings) {
+    const v = r.value.secret?.trim();
+    if (v) raw.set(id, { value: v, source: "panel" });
   }
-  return { secret: secretFrom(entry.stored ?? envSyncSecret(env), env), at: entry.at, fresh };
+  const env0 = envSyncSecret(env)?.trim();
+  if (!raw.has(LEGACY_POS_BRANCH_ID) && env0) raw.set(LEGACY_POS_BRANCH_ID, { value: env0, source: "ortam" });
+  const count = new Map<string, number>();
+  for (const { value } of raw.values()) count.set(value, (count.get(value) ?? 0) + 1);
+  const info = new Map<string, PosKeyInfo>();
+  const keys = new Map<string, string>();
+  for (const [id, { value, source }] of raw) {
+    const problem = secretProblem(value, env) ?? ((count.get(value) ?? 0) > 1 ? "same_as_other_branch" : null);
+    info.set(id, { secret: problem ? null : value, source, problem });
+    if (!problem) keys.set(id, secretFrom(value, env)!);
+  }
+  if ([...count.values()].some((n) => n > 1)) console.error("[asilpos] iki şubenin anahtarı aynı: o anahtar kullanılmıyor");
+  return { info, keys };
+}
+
+let keyCache = new WeakMap<object, { at: number; read: KeyRead }>();
+
+/** Anahtarlar (önbellekli); `force`: veritabanından. Veritabanı okunamazsa null */
+async function keyEntry(db: Reader, env: Env, now: number, force = false): Promise<{ read: KeyRead; at: number; fresh: boolean } | null> {
+  const hit = force ? undefined : keyCache.get(db);
+  if (hit && now - hit.at < POS_KEYS_CACHE_MS) return { ...hit, fresh: false };
+  try {
+    const entry = { at: now, read: await readKeys(db, env) };
+    keyCache.set(db, entry);
+    return { ...entry, fresh: true };
+  } catch (e) {
+    console.error("[asilpos] anahtarlar okunamadı", e);
+    return null;
+  }
+}
+
+/** Anahtarların önbelleğini düşürür (panelde anahtar kaydedildi ya da silindi; kasa kaynağı değişti) */
+export function forgetPosKeys(): void {
+  keyCache = new WeakMap();
+}
+
+/** Şubeler ve anahtar önbelleği birlikte (Şubeler eylemleri) */
+export function forgetPosBranches(): void {
+  forgetPosTills();
+  forgetPosKeys();
+}
+
+/** En az bir kasanın kullanılabilen anahtarı var mı (gün sonu ucunun ön süzgeci; önbellekli). Okunamazsa false */
+export async function posKeysConfigured(db: Reader = getDb(), env: Env = process.env, now: number = Date.now()): Promise<boolean> {
+  return ((await keyEntry(db, env, now))?.read.keys.size ?? 0) > 0;
 }
 
 /**
- * AsilPOS'un anahtarı (panelde saklanan, yoksa ortamdaki; en az 32 karakter, sitenin anahtarından ayrı); yoksa null (uçlar
- * 503). Önbellekli (`ASILPOS_BRANCH_CACHE_MS`; bu sunucu örneğinde anahtar kaydedilince ya da kasa kaynağı değişince
- * hemen düşer): imzasız istek her seferinde veritabanını okutmaz. Veritabanı okunamazsa null: uç 500 değil 503 döner
- * (anahtar okunamadı, istek kabul edilmez). İmzalı uçlar isteği kabul etmeden önce `asilposRequestSecret` ile okur:
- * önbellek yalnız ön süzgeçtir, döndürülen eski anahtar başka bir sunucu örneğinde de hemen geçmez
+ * İmzalı isteği yapan kasa. `branchId`: imzanın tuttuğu anahtarın şubesi; `secret`: uç isteği bununla yeniden denetler
+ * (checkAsilposRequest). Hiçbir anahtar tutmazsa `branchId` null, `secret` kasalardan birinin anahtarı (uç 401 döner);
+ * hiçbir anahtar yoksa ya da okunamazsa ikisi de null (uç 503).
  */
-export async function asilposSecret(db: Reader = getDb(), env: Env = process.env, now: number = Date.now()): Promise<string | null> {
-  return (await secretEntry(db, env, now))?.secret ?? null;
-}
+export type PosCaller = { branchId: string; secret: string } | { branchId: null; secret: string | null };
 
 /**
- * İmzası tutmayan istekte anahtar önbellekten en çok bu sıklıkla yeniden okunur (sunucu örneği başına): başka bir
- * örnekte kaydedilen yeni anahtar 60 sn değil en geç bu kadar sonra kabul edilir; imzasız istek yağmuru veritabanını
- * bundan sık okutamaz
- */
-export const ASILPOS_SECRET_RELOAD_MS = 10_000;
-
-/**
- * İmzalı AsilPOS isteğinin denetleneceği anahtar (döndürülen anahtar her sunucu örneğinde hemen geçersiz; güvenlik notu
- * 26 Kasım 2026, docs/ASILPOS.md). Önbellekteki anahtar yalnız ön süzgeçtir:
+ * İmzalı AsilPOS isteğinin kasası (döndürülen anahtar her sunucu örneğinde hemen geçersiz; güvenlik notu 26 Kasım 2026).
+ * Önbellekteki anahtarlar yalnız ön süzgeçtir:
  *
- * - İmza önbellekteki anahtarla **tutuyorsa** anahtar kabulden önce veritabanından (AsilPOS'un şubesi dahil, önbelleksiz)
- *   yeniden okunur ve o döner. Anahtar başka bir örnekte döndürüldüyse uç yeni anahtarla denetler: eski anahtarla
- *   imzalanmış istek 401 alır, önbellek de yenilenir. Bu okuma yalnız imzası tutan (AsilPOS'un kendi) isteklerinde
- *   olur; uçların her biri zaten veritabanında iş yapar.
- * - İmza **tutmuyorsa** önbellekteki anahtar döner (uç 401 verir, veritabanı okunmaz); önbellek
- *   `ASILPOS_SECRET_RELOAD_MS`'tan eskiyse bir kez yeniden okunur (yeni anahtarla imzalanmış istek beklemeden geçsin).
- * - Anahtar bu çağrıda zaten veritabanından okunduysa yeniden okunmaz.
+ * - İmza önbellekteki bir anahtarla **tutuyorsa** anahtarlar kabulden önce veritabanından yeniden okunur ve eşleşme o
+ *   okumayla yapılır: anahtar başka bir örnekte döndürüldüyse eski anahtarla imzalanmış istek 401 alır.
+ * - İmza **tutmuyorsa** önbellek `POS_KEYS_RELOAD_MS`'tan eskiyse bir kez yeniden okunur (yeni anahtarla imzalanmış
+ *   istek beklemeden geçsin); değilse veritabanı okunmaz.
+ * - Anahtarlar bu çağrıda zaten veritabanından okunduysa yeniden okunmaz.
  *
- * Uç dönen anahtarla `checkAsilposRequest`'i her zamanki gibi çağırır (imza bir kez daha denetlenir).
+ * Anahtarlar az (şube başına bir); her biri sabit süreli HMAC karşılaştırmasıyla denenir.
  */
-export async function asilposSecretFor(
+export async function resolvePosCaller(
   req: { method: string; url: URL; body: string; timestamp: string | null; signature: string | null },
   db: Reader = getDb(),
   env: Env = process.env,
   now: number = Date.now(),
-): Promise<string | null> {
-  const first = await secretEntry(db, env, now);
-  if (!first) return null;
-  if (first.fresh) return first.secret;
-  const signed = first.secret !== null && verifySignature(first.secret, { ...req, now });
-  if (signed || now - first.at >= ASILPOS_SECRET_RELOAD_MS) return (await secretEntry(db, env, now, true))?.secret ?? null;
-  return first.secret;
+): Promise<PosCaller> {
+  const match = (keys: Map<string, string>): PosCaller => {
+    for (const [branchId, secret] of keys) if (verifySignature(secret, { ...req, now })) return { branchId, secret };
+    return { branchId: null, secret: keys.values().next().value ?? null };
+  };
+  const first = await keyEntry(db, env, now);
+  if (!first) return { branchId: null, secret: null };
+  const got = match(first.read.keys);
+  if (first.fresh) return got;
+  if (got.branchId !== null || now - first.at >= POS_KEYS_RELOAD_MS) {
+    const again = await keyEntry(db, env, now, true);
+    return again ? match(again.read.keys) : { branchId: null, secret: null };
+  }
+  return got;
 }
 
-/** Yol işleyicisinin isteğinden `asilposSecretFor` (GET gövdesiz; POST'ta okunan gövde verilir) */
-export function asilposRequestSecret(request: Request, body = ""): Promise<string | null> {
-  return asilposSecretFor({
+/** Yol işleyicisinin isteğinden `resolvePosCaller` (GET gövdesiz; POST'ta okunan gövde verilir) */
+export function posRequestCaller(request: Request, body = ""): Promise<PosCaller> {
+  return resolvePosCaller({
     method: request.method,
     url: new URL(request.url),
     body,
@@ -196,13 +161,70 @@ export function asilposRequestSecret(request: Request, body = ""): Promise<strin
   });
 }
 
-/** Anahtarın önbelleğini düşürür (panelde anahtar kaydedildi ya da silindi; kasa kaynağı değişti) */
-export function forgetAsilposSecret(): void {
-  secretCache = new WeakMap();
+/**
+ * Şubenin anahtarının durumu (Ayarlar'daki AsilPOS kartı, Şube ayarları; önbelleksiz): kullanılan anahtar, kaynağı, sorunu
+ * ve ortamdaki değişkenin adı (durum metinleri; ikisi de yoksa eklenecek yeni ad)
+ */
+export async function posKeyState(branchId: string, db: Reader = getDb(), env: Env = process.env): Promise<PosKeyInfo & { envName: string }> {
+  const { info } = await readKeys(db, env);
+  const own = info.get(branchId) ?? { secret: null, source: null, problem: "missing" as const };
+  return { ...own, envName: posEnvName("SYNC_SECRET", env) };
 }
 
-/** Anahtarın sorunu (Ayarlar'daki AsilPOS kartı ve Şube ayarları söyler; secretProblem) ve ortamdaki değişkenin adı */
-export async function asilposSecretState(db: Reader = getDb()): Promise<{ problem: SecretProblem | null; source: "panel" | "ortam" | null; envName: string }> {
-  const { secret, source, envName } = await asilposSecretValue(db);
-  return { problem: secretProblem(secret), source, envName };
+/** Şubenin kullanılan anahtarı (kurulum kodu kasaya bunu verir); yoksa null */
+export async function posKeyOf(branchId: string, db: Reader = getDb(), env: Env = process.env): Promise<string | null> {
+  return (await posKeyState(branchId, db, env)).secret;
+}
+
+/**
+ * Anahtar başka bir şubenin anahtarıyla (ya da ortamdaki eski kurulum anahtarıyla) aynı mı: aynı anahtar bir şubenin
+ * günlerini öbürüne yazdırırdı. Şube ayarlarına kayıt ve kurulum kodu bunu sorar
+ */
+export async function posKeyTaken(branchId: string, secret: string, db: Reader = getDb(), env: Env = process.env): Promise<string | null> {
+  const v = secret.trim();
+  const settings = await resolveForTills(ASILPOS_GROUP, db, { closed: true });
+  for (const [id, r] of settings) if (id !== branchId && r.value.secret?.trim() === v) return id;
+  if (branchId !== LEGACY_POS_BRANCH_ID && envSyncSecret(env)?.trim() === v) return LEGACY_POS_BRANCH_ID;
+  return null;
+}
+
+/**
+ * Kör kasa (bulgu 0; src/lib/asilpos/kor-kasa.ts): bu kasanın bu günü personele kör mü (şubenin kendi AsilPOS günü). Geç
+ * raporun açılış önerisi ve açılış ↔ devir denetimi önceki halkanın günü için sorar: kör günün devri (sayılan − teslim)
+ * personele gitmez. İşlemin içinden de okunur
+ */
+export async function staffBlindOn(date: string, branchId: string, db: Reader = getDb()): Promise<boolean> {
+  return staffBlindDay({ admin: false, asilposDay: isAsilposDay(date, await switchDayOf(branchId, db)) });
+}
+
+/**
+ * Şube AsilPOS'u kullanıyor mu: geçiş günü var ya da kayıtlı AsilPOS günü var. Kasa kaynağı AsilPOS'tan ModPOS'a dönerken
+ * onay istenir (Şubeler eylemleri)
+ */
+export async function asilposInUse(branchId: string, db: Reader = getDb()): Promise<boolean> {
+  const [setting, [row]] = await Promise.all([
+    resolveBranchSetting(ASILPOS_GROUP, branchId, db),
+    db.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.branchId, branchId)).limit(1),
+  ]);
+  return !!setting.value.switchDay || !!row;
+}
+
+type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+
+/**
+ * Şubenin kullanılabilen anahtarı yoksa yenisini üretip şubenin ayarına saklar (kurulum kodu; çok şube): kasa kurulumda
+ * yalnız kendi şubesinin anahtarını alır, başka şubenin (ya da ortamdaki eski kurulum) anahtarını hiçbir zaman. Var olan
+ * kullanılabilen anahtar değişmez (kurulu kasa çalışmaya devam eder). Üretildiyse true
+ */
+export async function ensurePosKey(tx: Tx, branchId: string, by: string, env: Env = process.env): Promise<boolean> {
+  const { info } = await readKeys(tx, env);
+  if (info.get(branchId)?.secret) return false;
+  await putBranchSetting(tx, ASILPOS_GROUP, branchId, { secret: randomBytes(32).toString("base64url") }, by);
+  forgetPosKeys();
+  return true;
+}
+
+/** Kasa listesinin önbelleksiz okunuşu (anahtarın güncelliği; testler) */
+export async function freshPosTillIds(db: Reader = getDb()): Promise<string[]> {
+  return (await loadPosTillIds(db, Date.now(), true)).ids;
 }

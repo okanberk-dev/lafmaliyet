@@ -26,6 +26,16 @@ import { dayMonthYearTR, daysUntilText, isAsilposDay } from "./switch";
 export const ASILPOS_STATE_KEY = DURUM_ANAHTARI;
 export const ASILPOS_STATE_KEY_NEW = "asilpos";
 
+/**
+ * Bir kasanın durum satırının anahtarları (çok şube, 27 Kasım 2026): `<ad>:<şube>`, yeni adlı önce okunur, eski adlı
+ * yazılır (`write`). Genel satır (ASILPOS_STATE_KEY) imzası doğrulanamayan isteklerin sayacını taşır (imza tutmayan istek
+ * bir şubeye bağlanamaz) ve eski tek kasalı kurulumun şubesinin (Marina) satırı yokken onun durumu olarak okunur (göç 0099
+ * Marina'nınkini kopyalar)
+ */
+export function stateKeysOf(branchId: string): { read: [string, string]; write: string } {
+  return { read: [`${ASILPOS_STATE_KEY_NEW}:${branchId}`, `${ASILPOS_STATE_KEY}:${branchId}`], write: `${ASILPOS_STATE_KEY}:${branchId}` };
+}
+
 /** Son yazılan gün sonu */
 export interface AsilposOk {
   at: string;
@@ -275,7 +285,7 @@ export function isUnverifiedAfterOk(state: AsilposState): boolean {
 /** Ayarlar kartının okuduğu her şey (src/server/asilpos/status.ts › loadAsilposCard) */
 export interface AsilposCardInput {
   /** Anahtarın sorunu (src/lib/asilpos/request.ts › asilposSecretProblem); null: bağlantı açık */
-  secretProblem: "missing" | "short" | "same_as_site" | null;
+  secretProblem: "missing" | "short" | "same_as_site" | "same_as_other_branch" | null;
   /**
    * Kullanılan anahtar nereden: Şube ayarları'nda saklanan ("panel", şifreli) ya da ortamdaki ASILPOS_SYNC_SECRET
    * ("ortam"); anahtar yoksa null. Eski çağıranlar vermeyebilir
@@ -331,8 +341,14 @@ export interface AsilposCardSummary {
 }
 
 /** Anahtarın sorununun metni; `name`: ortamda okunan değişkenin adı */
-const secretText = (p: "missing" | "short" | "same_as_site", name = "ASILPOS_SYNC_SECRET"): string =>
-  p === "missing" ? `${name} yok` : p === "short" ? `${name} 32 karakterden kısa` : `${name} sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı`;
+const secretText = (p: "missing" | "short" | "same_as_site" | "same_as_other_branch", name = "ASILPOS_SYNC_SECRET"): string =>
+  p === "missing"
+    ? `${name} yok`
+    : p === "short"
+      ? `${name} 32 karakterden kısa`
+      : p === "same_as_other_branch"
+        ? "Anahtar başka bir şubenin AsilPOS anahtarıyla aynı"
+        : `${name} sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı`;
 
 /** Geçiş gününden bu yana: "10 Kasım'dan beri" */
 const sinceText = (d: string) => `${dayLocativeTR(d)}n beri`;

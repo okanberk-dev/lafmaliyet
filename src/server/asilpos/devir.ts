@@ -10,11 +10,11 @@ import { isAsilposDay } from "@/lib/asilpos/switch";
 import { isCalendarDate } from "@/lib/reminders";
 import { schema as s, type DB } from "@/server/db";
 
-import { asilposBranchId, asilposSwitchDay } from "./branch";
+import { switchDayOf } from "./branch";
 import type { EndpointResult } from "./ingest";
 
 /**
- * Kasa zinciri (Faz 3, 23 Kasım 2026; docs/ASILPOS.md › Kasa zinciri): AsilPOS'un şubesinin (Marina) bir gününün devri,
+ * Kasa zinciri (Faz 3, 23 Kasım 2026; docs/ASILPOS.md › Kasa zinciri): bir AsilPOS kasasının (şubenin) bir gününün devri,
  * yani ertesi günün beklenen açılışı. `POST /api/pos/gun`'un 200 yanıtı (status.ts handlePosDay, gün yazıldıktan sonra)
  * ve imzalı `GET /api/panel/pos/devir?date=` aynı nesneyi verir. Kural saf: src/lib/asilpos/devir.ts nextOpeningOf.
  */
@@ -25,11 +25,10 @@ import type { EndpointResult } from "./ingest";
  * gelen gövdedir (aynı işlemde az önce yazıldı): otomatik rapor yanıttan sonra yazıldığı için yeniden sayımın yanıtı
  * önceki gönderimin raporunu yankılamaz
  */
-export async function asilposNextOpening(db: DB, date: string): Promise<NextOpening | null> {
-  // AsilPOS'un şubesi kütükten (asilposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
-  const branchId = await asilposBranchId(db);
+export async function asilposNextOpening(db: DB, date: string, branchId: string): Promise<NextOpening | null> {
+  // Kasanın şubesi (anahtarın şubesi) ve o şubenin geçiş günü (kasası ModPOS olan şubede null: gün sayılmaz)
   const [switchDay, [day], [report], [auto]] = await Promise.all([
-    asilposSwitchDay(db),
+    switchDayOf(branchId, db),
     db
       .select({ z: s.posDayReports.z })
       .from(s.posDayReports)
@@ -57,13 +56,21 @@ export async function asilposNextOpening(db: DB, date: string): Promise<NextOpen
 }
 
 /**
- * `GET /api/panel/pos/devir?date=YYYY-MM-DD`'nin çekirdeği: yalnız AsilPOS'un imzasıyla (sorgu imzaya girer). 200
+ * `GET /api/panel/pos/devir?date=YYYY-MM-DD[&sube=]`'nin çekirdeği: yalnız AsilPOS'un imzasıyla (sorgu imzaya girer).
+ * Şube anahtardan (`branchId`: imzanın tuttuğu anahtarın şubesi; kurulu kasa şube göndermez). İsteğe bağlı `sube` anahtarın
+ * şubesi değilse 409 `{ error: "wrong_branch", sube, expected }` (gün sonunun gövdesiyle aynı). 200
  * `{ version: 1, date, nextOpening }`, gün okunamazsa 400 `{ error: "invalid", field: "date" }`, 401, 503
  */
-export async function servePosDevir(db: DB, input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date }): Promise<EndpointResult> {
+export async function servePosDevir(
+  db: DB,
+  input: { secret: string | null; branchId: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date },
+): Promise<EndpointResult> {
   const check = checkAsilposRequest({ ...input, method: "GET", body: "", maxBytes: 0, now: (input.now ?? new Date()).getTime() });
   if (!check.ok) return { status: check.status, body: { error: check.error } };
+  if (input.branchId === null) return { status: 401, body: { error: "unauthorized" } };
   const date = input.url.searchParams.get("date") ?? "";
   if (!isCalendarDate(date)) return { status: 400, body: { error: "invalid", field: "date" } };
-  return { status: 200, body: { version: ASILPOS_VERSION, date, nextOpening: await asilposNextOpening(db, date) } };
+  const sube = input.url.searchParams.get("sube");
+  if (sube && sube !== input.branchId) return { status: 409, body: { error: "wrong_branch", sube, expected: input.branchId } };
+  return { status: 200, body: { version: ASILPOS_VERSION, date, nextOpening: await asilposNextOpening(db, date, input.branchId) } };
 }

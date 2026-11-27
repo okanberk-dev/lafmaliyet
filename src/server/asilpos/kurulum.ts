@@ -13,7 +13,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { asilposSecret } from "@/server/asilpos/branch";
+import { ensurePosKey, forgetPosKeys, posKeyOf } from "@/server/asilpos/branch";
 
 // Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): kodu üretir, e-postayla gönderir, şube hesabına gösterir ve kasa
 // verince (POST /api/asilpos/kurulum) şubeyi ve bağlantı bilgilerini döner. Kurallar saf dosyada (src/lib/asilpos/kurulum.ts).
@@ -35,7 +35,8 @@ export interface KurulumView {
 
 /**
  * Şubeye yeni kurulum kodu: bekleyen eski kodlar iptal olur (tek geçerli bağlantı). Ham kod döner (e-posta ve ekran);
- * veritabanında özeti ve mühürlü kopyası durur
+ * veritabanında özeti ve mühürlü kopyası durur. Şubenin kullanılabilen AsilPOS anahtarı yoksa aynı işlemde üretilip şubenin
+ * ayarına saklanır (çok şube: her kasanın kendi anahtarı; kasa kodu verince yalnız bunu alır)
  */
 export async function issueInstallCode(db: DB, o: { branchId: string; email: string; by: number | null }, now = new Date()): Promise<{ raw: string; expiresAt: Date; link: string }> {
   const raw = randomBytes(32).toString("base64url");
@@ -46,7 +47,9 @@ export async function issueInstallCode(db: DB, o: { branchId: string; email: str
       .set({ revokedAt: now })
       .where(and(eq(s.asilposInstalls.branchId, o.branchId), isNull(s.asilposInstalls.usedAt), isNull(s.asilposInstalls.revokedAt)));
     await tx.insert(s.asilposInstalls).values({ branchId: o.branchId, email: o.email, tokenHash: hashOf(raw), tokenSealed: seal(raw, KURULUM_SIFRE_AMACI), expiresAt, createdBy: o.by });
+    await ensurePosKey(tx, o.branchId, "kurulum kodu");
   });
+  forgetPosKeys();
   return { raw, expiresAt, link: kurulumLink(appUrl(), raw) };
 }
 
@@ -107,8 +110,9 @@ export type RedeemResult =
 
 /**
  * Kasa kodu verir: kod bir kez geçer (koşullu güncelleme; aynı anda iki kasa veremez). Yanıt: şube (kimlik, ad) ve
- * bağlantılar (lafmaliyet adresi ve anahtarı; ortamda tanımlıysa AsilPOS Uzaktan ve site). 404 kod yok, 410 kullanılmış,
- * iptal ya da süresi dolmuş
+ * bağlantılar (lafmaliyet adresi ve şubenin kendi anahtarı; ortamda tanımlıysa AsilPOS Uzaktan ve site). Başka şubenin
+ * anahtarı hiçbir zaman verilmez (çok şube): şubenin anahtarı yoksa (kod göç öncesi üretildi) burada üretilir. 404 kod
+ * yok, 410 kullanılmış, iptal ya da süresi dolmuş
  */
 export async function redeemInstallCode(raw: string, db: DB = getDb(), now = new Date()): Promise<RedeemResult> {
   const hash = hashOf(raw);
@@ -125,6 +129,7 @@ export async function redeemInstallCode(raw: string, db: DB = getDb(), now = new
   }
   const [branch] = await db.select({ id: s.branches.id, name: s.branches.name }).from(s.branches).where(eq(s.branches.id, row.branchId)).limit(1);
   if (!branch) return { status: 404, body: { ok: false, error: "Şube bulunamadı" } };
-  const baglanti = kurulumBaglantilari({ panelUrl: appUrl(), syncSecret: await asilposSecret(db) });
+  if (await db.transaction((tx) => ensurePosKey(tx, branch.id, "kurulum kodu"))) forgetPosKeys();
+  const baglanti = kurulumBaglantilari({ panelUrl: appUrl(), syncSecret: await posKeyOf(branch.id, db) });
   return { status: 200, body: { ok: true, sube: { id: branch.id, ad: branch.name }, baglanti } };
 }

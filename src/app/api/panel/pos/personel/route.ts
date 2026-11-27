@@ -1,7 +1,7 @@
 import { connection, type NextRequest } from "next/server";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
-import { asilposRequestSecret } from "@/server/asilpos/ingest";
+import { posRequestCaller } from "@/server/asilpos/ingest";
 import { servePosStaff } from "@/server/asilpos/personel";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
   await connection();
   try {
     const r = await servePosStaff({
-      // Önbellekteki anahtar ön süzgeç: imza tutarsa anahtar veritabanından yeniden okunur (döndürülen eski anahtar geçmez)
-      secret: await asilposRequestSecret(request),
+      // Kasanın şubesi ve anahtarı (resolvePosCaller): imza önbellekteki anahtarla tutarsa anahtarlar yeniden okunur
+      ...(await posRequestCaller(request)),
       url: new URL(request.url),
       timestamp: request.headers.get(TIMESTAMP_HEADER),
       signature: request.headers.get(SIGNATURE_HEADER),

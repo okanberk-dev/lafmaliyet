@@ -14,7 +14,11 @@ export { ASILPOS_SECRET_MIN };
 
 type Env = Record<string, string | undefined>;
 
-export type SecretProblem = "missing" | "short" | "same_as_site";
+/**
+ * Anahtarın sorunu: yok, kısa, sitenin anahtarıyla aynı ya da başka bir şubenin AsilPOS anahtarıyla aynı (çok şube: aynı
+ * anahtar bir şubenin günlerini öbürüne yazdırırdı; ikisi de kullanılmaz, src/server/asilpos/branch.ts)
+ */
+export type SecretProblem = "missing" | "short" | "same_as_site" | "same_as_other_branch";
 
 /**
  * Anahtarın neden kullanılmadığı (Ayarlar'daki AsilPOS kartı söyler): yok, 32 karakterden kısa ya da sitenin anahtarıyla
@@ -46,6 +50,16 @@ export function asilposSecretProblem(env: Env): SecretProblem | null {
 /** Ortamdaki AsilPOS anahtarı; yoksa, 32 karakterden kısaysa ya da sitenin anahtarıyla aynıysa null (uçlar 503) */
 export function asilposSecretFrom(env: Env): string | null {
   return secretFrom(envSyncSecret(env), env);
+}
+
+/**
+ * Kasanın bildirdiği şube (isteğe bağlı `?sube=`; çok şube, AsilPOS PR #188) anahtarın şubesi değilse 409'un gövdesi
+ * (`{ error: "wrong_branch", sube, expected }`: gün sonunun ve personel ucunun gövdesiyle aynı; kurulu kasa bunu okur).
+ * Şube gönderilmediyse (eski kasa) ya da aynıysa null
+ */
+export function wrongBranchBody(url: URL, expected: string): { error: "wrong_branch"; sube: string; expected: string } | null {
+  const sube = url.searchParams.get("sube");
+  return sube && sube !== expected ? { error: "wrong_branch", sube, expected } : null;
 }
 
 export type AsilposCheck = { ok: true } | { ok: false; status: 401 | 413 | 503; error: "unauthorized" | "too_large" | "not_configured" };

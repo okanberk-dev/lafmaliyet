@@ -8,9 +8,9 @@ import { checkModposDaysRequest, type ModposDaysCheck } from "./modpos-gunler";
 
 /**
  * İsteğin denetimi (ModPOS dönemi ucuyla aynı kural ve sıra: src/lib/asilpos/modpos-gunler.ts): anahtar (503), imza (401;
- * sorgu imzanın içinde), şube yoksa 400 `{ error: "invalid", field: "sube" }`, AsilPOS'un şubesi (`expected`; sunucu
- * kütükten okur, verilmezse ASILPOS_BRANCH_ID) değilse 409 `{ error: "wrong_branch", sube, expected }`
+ * sorgu imzanın içinde), şube yoksa 400 `{ error: "invalid", field: "sube" }`, anahtarın şubesi (`expected`; çok şube,
+ * imzanın tuttuğu anahtarın şubesi) değilse 409 `{ error: "wrong_branch", sube, expected }`
  */
-export function checkPosStaffRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number; expected?: string }): ModposDaysCheck {
+export function checkPosStaffRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number; expected: string | null }): ModposDaysCheck {
   return checkModposDaysRequest(input);
 }

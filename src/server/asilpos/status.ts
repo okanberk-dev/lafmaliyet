@@ -9,6 +9,7 @@ import {
   ASILPOS_STATE_KEY,
   ASILPOS_STATE_KEY_NEW,
   missingAsilposDays,
+  stateKeysOf,
   parseAsilposState,
   peekPosDay,
   withDayRejection,
@@ -21,40 +22,41 @@ import { sentWorkedStaffRefs } from "@/lib/asilpos/day";
 import type { NextOpening } from "@/lib/asilpos/devir";
 import type { WorkedStaffAnswer } from "@/lib/asilpos/personel";
 import { isAsilposDay } from "@/lib/asilpos/switch";
+import { LEGACY_POS_BRANCH_ID, singleTill } from "@/lib/pos/tills";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadAsilposIkram } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
 
-import { asilposBranchId, asilposSecretState, asilposSwitchDay } from "./branch";
+import { posKeyState, switchDayOf } from "./branch";
 import { asilposNextOpening } from "./devir";
 import { workedStaffAnswer } from "./personel";
 import { receivePosDay, type EndpointResult } from "./ingest";
 
 /**
  * AsilPOS bağlantısının durumu ve onarımı (docs/ASILPOS.md › Durum ve onarım): `POST /api/pos/gun`'un her sonucu burada
- * `integration_state`'in durum satırına (ASILPOS_STATE_KEY, eski adla) yazılır (son başarılı gün, son ret, güne göre açık
- * retler, imzası doğrulanamayan isteklerin sayacı), 200
+ * `integration_state`'in kasanın durum satırına (stateKeysOf: `<ad>:<şube>`, eski adla) yazılır (son başarılı gün, son ret,
+ * güne göre açık retler; imzası doğrulanamayan isteklerin sayacı genel satırda: imza tutmayan istek şubeye bağlanamaz), 200
  * yanıtına geçiş gününe göre `counted` ve `switchDay` eklenir; Ayarlar'daki "AsilPOS (kasa)" kartının verisi de buradan
  * okunur. Gün sonunun denetimi ve yazımı ingest.ts'te (değişmedi). Durum yazımı hiçbir zaman yanıtı bozmaz.
  */
 
 /**
- * Kayıtlı geçiş günü (AsilPOS'un şubesinin şube ayarı, src/server/asilpos/branch.ts asilposSwitchDay; yoksa ya da bozuksa
- * null = kasa ModPOS)
+ * Bir kasanın durumu (çok şube): şubenin satırı (yeni adlı önce); eski tek kasalı kurulumun şubesinde satır yokken genel
+ * satır. İmzası doğrulanamayan isteklerin sayacı (`unverified`) her zaman genel satırdan
  */
-export async function loadAsilposSwitchDay(db: DB = getDb()): Promise<string | null> {
-  return asilposSwitchDay(db);
-}
-
-export async function readAsilposState(db: DB = getDb()): Promise<AsilposState> {
-  // Yeni adlı satır varsa o (ad değişikliği; ASILPOS_STATE_KEY_NEW), yoksa yazılan eski adlı
+export async function readAsilposState(db: DB, branchId: string): Promise<AsilposState> {
+  const keys = stateKeysOf(branchId).read;
+  const global = [ASILPOS_STATE_KEY_NEW, ASILPOS_STATE_KEY];
   const rows = await db
     .select({ key: s.integrationState.key, value: s.integrationState.value })
     .from(s.integrationState)
-    .where(inArray(s.integrationState.key, [ASILPOS_STATE_KEY_NEW, ASILPOS_STATE_KEY]));
-  const row = rows.find((r) => r.key === ASILPOS_STATE_KEY_NEW) ?? rows.find((r) => r.key === ASILPOS_STATE_KEY);
-  return parseAsilposState(row?.value);
+    .where(inArray(s.integrationState.key, [...keys, ...global]));
+  const pick = (ks: readonly string[]) => ks.map((k) => rows.find((r) => r.key === k)).find((r) => r !== undefined);
+  const own = pick(keys) ?? (branchId === LEGACY_POS_BRANCH_ID ? pick(global) : undefined);
+  const state = parseAsilposState(own?.value);
+  const unverified = parseAsilposState(pick(global)?.value).unverified;
+  return { ...state, unverified };
 }
 
 /**
@@ -63,27 +65,30 @@ export async function readAsilposState(db: DB = getDb()): Promise<AsilposState> 
  * `integration_state.value`). Okuma yeni adlıyı önce okur (readAsilposState): yalnız eski adlıya yazılsaydı yeni
  * sonuçlar görünmezdi
  */
-function writeState(db: Pick<DB, "execute">, first: SQL, next: SQL) {
+function writeState(db: Pick<DB, "execute">, branchId: string | null, first: SQL, next: SQL) {
+  // Şubesi bilinmeyen sonuç (imza tutmadı) genel satıra; kasanınki şubenin satırına (stateKeysOf)
+  const [yeniKey, eskiKey] = branchId === null ? [ASILPOS_STATE_KEY_NEW, ASILPOS_STATE_KEY] : [stateKeysOf(branchId).read[0], stateKeysOf(branchId).write];
   return db.execute(sql`
-    with yeni as (update integration_state set value = ${next}, updated_at = now() where key = ${ASILPOS_STATE_KEY_NEW})
-    insert into integration_state (key, value) values (${ASILPOS_STATE_KEY}, ${first})
+    with yeni as (update integration_state set value = ${next}, updated_at = now() where key = ${yeniKey})
+    insert into integration_state (key, value) values (${eskiKey}, ${first})
     on conflict (key) do update set value = ${next}, updated_at = now()`);
 }
 
 /** Üst düzey alanları birleştirerek yazar (aynı anda iki sonuç birbirinin alanını ezmez); hata yanıtı bozmaz */
-async function patchState(db: DB, patch: Partial<Record<keyof AsilposState, unknown>>): Promise<void> {
+async function patchState(db: DB, branchId: string | null, patch: Partial<Record<keyof AsilposState, unknown>>): Promise<void> {
   try {
-    await writeState(db, sql`${JSON.stringify(patch)}::jsonb`, sql`integration_state.value || ${JSON.stringify(patch)}::jsonb`);
+    await writeState(db, branchId, sql`${JSON.stringify(patch)}::jsonb`, sql`integration_state.value || ${JSON.stringify(patch)}::jsonb`);
   } catch (e) {
     console.error("[asilpos] durum yazılamadı:", e instanceof Error ? e.message : e);
   }
 }
 
 /** 200: son başarılı gün; o günün açık reddi (409 / 400) kapanır, gün yeniden yazıldı. Hata yanıtı bozmaz */
-async function noteOk(db: DB, ok: AsilposOk): Promise<void> {
+async function noteOk(db: DB, branchId: string, ok: AsilposOk): Promise<void> {
   try {
     await writeState(
       db,
+      branchId,
       sql`jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb)`,
       sql`(integration_state.value #- array['rejections', ${ok.date}::text]) || jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb)`,
     );
@@ -98,15 +103,16 @@ async function noteOk(db: DB, ok: AsilposOk): Promise<void> {
  * reddini örtmesin. Satır kilitlenir (aynı anda iki ret birbirinin gününü düşürmez); öteki alanlar üst düzey birleştirmeyle
  * korunur. Hata yanıtı bozmaz.
  */
-async function noteDayRejection(db: DB, e: AsilposRejection & { date: string }): Promise<void> {
+async function noteDayRejection(db: DB, branchId: string, e: AsilposRejection & { date: string }): Promise<void> {
+  const keys = stateKeysOf(branchId);
   try {
     await db.transaction(async (tx) => {
-      await tx.execute(sql`insert into integration_state (key, value) values (${ASILPOS_STATE_KEY}, '{}'::jsonb) on conflict (key) do nothing`);
+      await tx.execute(sql`insert into integration_state (key, value) values (${keys.write}, '{}'::jsonb) on conflict (key) do nothing`);
       // Eski adlı satır ve varsa yeni adlısı (writeState): her biri kendi retlerine eklenir
       const rows = await tx
         .select({ key: s.integrationState.key, value: s.integrationState.value })
         .from(s.integrationState)
-        .where(inArray(s.integrationState.key, [ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW]))
+        .where(inArray(s.integrationState.key, keys.read))
         .orderBy(asc(s.integrationState.key))
         .for("update");
       for (const row of rows) {
@@ -139,6 +145,7 @@ export async function noteUnverified(db: DB, status: 401 | 413, now: Date = new 
     const at = now.toISOString();
     await writeState(
       db,
+      null,
       sql`jsonb_build_object('unverified', jsonb_build_object('count', ${n}::int, 'lastAt', ${at}::text, 'lastStatus', ${status}::int))`,
       sql`integration_state.value || jsonb_build_object('unverified', jsonb_build_object(
         'count', coalesce((integration_state.value->'unverified'->>'count')::int, 0) + ${n}::int,
@@ -170,18 +177,20 @@ type PosDayInput = Parameters<typeof receivePosDay>[1];
  */
 export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new Date(), opts: { unverifiedWindowMs?: number } = {}): Promise<EndpointResult> {
   const at = now.toISOString();
+  // Kasanın şubesi: imzanın tuttuğu anahtarın şubesi (resolvePosCaller); durum o şubenin satırına yazılır
+  const branchId = input.branchId;
   let r: EndpointResult;
   try {
     r = await receivePosDay(db, input, now);
   } catch (e) {
     const sent = peekPosDay(input.body);
     console.warn("[asilpos] reddedildi", 500, "server_error", sent.date ?? "-", sent.zNo ?? "-");
-    await patchState(db, { lastError: rejection(at, 500, "server_error", { date: sent.date, sentZNo: sent.zNo }) });
+    await patchState(db, branchId, { lastError: rejection(at, 500, "server_error", { date: sent.date, sentZNo: sent.zNo }) });
     throw e;
   }
   if (r.status === 503) return r;
-  if (r.status === 401 || r.status === 413) {
-    await noteUnverified(db, r.status, now, opts.unverifiedWindowMs);
+  if (r.status === 401 || r.status === 413 || branchId === null) {
+    if (r.status === 401 || r.status === 413) await noteUnverified(db, r.status, now, opts.unverifiedWindowMs);
     return r;
   }
   const sent = peekPosDay(input.body);
@@ -189,19 +198,20 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
     const date = String(r.body.date);
     let switchDay: string | null;
     try {
-      switchDay = await loadAsilposSwitchDay(db);
+      // Kasanın kendi şubesinin geçiş günü (kasası ModPOS olan şubenin günü deneme: null)
+      switchDay = await switchDayOf(branchId, db);
     } catch (e) {
       // Gün yazıldı; geçiş günü okunamadıysa yanıt yine 200, yalnız ek alanlar yok
       console.error("[asilpos] geçiş günü okunamadı:", e instanceof Error ? e.message : e);
       return r;
     }
     const counted = isAsilposDay(date, switchDay);
-    await noteOk(db, { at, date, zNo: sent.zNo, lines: Number(r.body.lines ?? 0), counted });
+    await noteOk(db, branchId, { at, date, zNo: sent.zNo, lines: Number(r.body.lines ?? 0), counted });
     // Kasa zinciri (Faz 3): ertesi günün beklenen açılışı (devir.ts asilposNextOpening; gün az önce yazıldı). Okunamazsa
     // alan yazılmaz (AsilPOS "lafmaliyet söylemedi" sayar, kendi sayımına döner); yanıt yine 200
     let nextOpening: NextOpening | null | undefined;
     try {
-      nextOpening = counted ? await asilposNextOpening(db, date) : null;
+      nextOpening = counted ? await asilposNextOpening(db, date, branchId) : null;
     } catch (e) {
       console.error("[asilpos] devir okunamadı:", e instanceof Error ? e.message : e);
     }
@@ -211,7 +221,7 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
     let staff: WorkedStaffAnswer | undefined;
     if (refs !== undefined) {
       try {
-        staff = await workedStaffAnswer(db, refs, date);
+        staff = await workedStaffAnswer(db, refs, date, branchId);
       } catch (e) {
         console.error("[asilpos] personel kimlikleri okunamadı:", e instanceof Error ? e.message : e);
       }
@@ -225,8 +235,8 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
   const e = rejection(at, r.status, error, { field: typeof r.body.field === "string" ? r.body.field : null, date, zNo, sentZNo: error === "z_conflict" ? sent.zNo : null });
   // Yanlış şube: kasanın şubesi ve beklenen kartta yazılsın (rejectionText)
   if (error === "wrong_branch") Object.assign(e, { sube: typeof r.body.sube === "string" ? r.body.sube : null, expected: typeof r.body.expected === "string" ? r.body.expected : null });
-  if (isDayRejection(e)) await noteDayRejection(db, e);
-  else await patchState(db, { lastError: e });
+  if (isDayRejection(e)) await noteDayRejection(db, branchId, e);
+  else await patchState(db, branchId, { lastError: e });
   return r;
 }
 
@@ -248,7 +258,7 @@ export interface AsilposDayRow {
 }
 
 export interface AsilposCardData extends AsilposCardInput {
-  /** AsilPOS'un şubesi (kütükten türetilir, asilposBranchId): kart yalnız onun kaydını sayar */
+  /** Kasanın şubesi: bölüm yalnız onun kaydını sayar (çok şube: "Tümü"de kasa başına bir bölüm) */
   branchId: string;
   /** En yeni günler (tarihe göre, en çok 14) */
   days: AsilposDayRow[];
@@ -267,20 +277,22 @@ export interface AsilposCardData extends AsilposCardInput {
 
 const DAYS_SHOWN = 14;
 
-/** Ayarlar › AsilPOS (kasa): durum, geçiş günü, gelen ve gelmeyen günler, eşleşmeyen adlar (yalnız yönetici) */
-export async function loadAsilposCard(db: DB = getDb(), now: Date = new Date()): Promise<AsilposCardData> {
+/**
+ * Ayarlar › AsilPOS (kasa), bir kasanın bölümü: durum, geçiş günü, gelen ve gelmeyen günler, eşleşmeyen adlar (yalnız
+ * yönetici). Çok şube: her kasanın kendi bölümü (şube seçiliyken yalnız o şubeninki; src/lib/pos-cards.ts)
+ */
+export async function loadAsilposCard(db: DB = getDb(), branchId: string, now: Date = new Date()): Promise<AsilposCardData> {
   const today = businessDate(now);
-  const [switchDay, branchId, secret] = await Promise.all([loadAsilposSwitchDay(db), asilposBranchId(db), asilposSecretState(db)]);
+  const [switchDay, secret] = await Promise.all([switchDayOf(branchId, db), posKeyState(branchId, db)]);
   const r = s.posDayReports;
   const d = s.posDailySales;
-  // Kart yalnız AsilPOS'un şubesinin (Marina) kaydını sayar: öteki şubenin ModPOS günleri ve satırları karışmaz, panelde
-  // seçili şube de kartı değiştirmez
+  // Bölüm yalnız bu kasanın şubesinin kaydını sayar: öteki şubenin günleri ve satırları karışmaz
   const ofR = eq(r.branchId, branchId);
   const ofD = eq(d.branchId, branchId);
   const unmatchedWhere = and(isNull(d.productId), eq(d.isService, false), ofD);
   const missingFrom = switchDay && switchDay < today ? (switchDay > addDays(today, -60) ? switchDay : addDays(today, -60)) : null;
   const [state, recent, [totals], unmatched, [{ unmatchedCount }], receivedRange, closed, ikram] = await Promise.all([
-    readAsilposState(db),
+    readAsilposState(db, branchId),
     db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).where(ofR).orderBy(desc(r.date)).limit(DAYS_SHOWN),
     db
       .select({ total: count(), trial: switchDay ? sql<number>`count(*) filter (where ${r.date} < ${switchDay})`.mapWith(Number) : count() })
@@ -298,7 +310,7 @@ export async function loadAsilposCard(db: DB = getDb(), now: Date = new Date()):
     // Gün sonu gelmeyen gün AsilPOS'un şubesinin kapalı günüyse eksik değil (öteki şubenin kapalı günü sayılmaz)
     missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db, branchId) : Promise.resolve([]),
     // İkramın adları geçiş gününden itibaren (okuma anındaki bağla çözülür; bağlanınca listeden düşer)
-    switchDay ? loadAsilposIkram(db, switchDay, {}, branchId) : Promise.resolve(null),
+    switchDay ? loadAsilposIkram(db, singleTill(branchId, switchDay), {}, branchId) : Promise.resolve(null),
   ]);
   const ikramNames = ikram ? unmatchedIkramNames(ikram.lines, unmatched.map((u) => u.posName)) : { items: [], count: 0 };
   // Günlü retlerin günlerinin paneldeki kaydı (409'da silinecek olan; retten sonra yeniden yazıldıysa ret çözüldü)
