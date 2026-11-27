@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { ArrowLeft, Layers } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -21,7 +22,9 @@ import { requireAdmin } from "@/server/auth/dal";
 import { branchSettingView } from "@/server/branch-settings-view";
 import { listBranches } from "@/server/branches";
 import { cashSettingsCardData } from "@/server/cash/settings-card";
-import { asilposBranchId, asilposSecretState } from "@/server/asilpos/branch";
+import { posKeyState } from "@/server/asilpos/branch";
+import { getDb, schema as dbs } from "@/server/db";
+import { loadPosTillIds } from "@/server/pos/tills";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { parasutLinkCardData } from "@/server/parasut/link-card";
 
@@ -85,11 +88,17 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
       </>
     );
   }
-  // Kasa bağlantısı: AsilPOS'un şubesinde (türetilmiş; kütükte kaynağı ModPOS görünse de geri düşüşle Marina) AsilPOS kartı,
-  // ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveAsilposSecret) ve Ayarlar › AsilPOS da aynı şubeye bakar
-  const asilposHere = branch.id === (await asilposBranchId());
+  // Kasa bağlantısı (çok şube): kasası AsilPOS olan şubede ya da AsilPOS kurulumu yapılmış şubede (deneme günleri) AsilPOS
+  // kartı (şubenin kendi geçiş günü ve anahtarı), ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveAsilposSecret) aynı
+  // kurala bakar
+  const [{ ids: tillIds }, [installed]] = await Promise.all([
+    loadPosTillIds(),
+    getDb().select({ id: dbs.asilposInstalls.id }).from(dbs.asilposInstalls).where(eq(dbs.asilposInstalls.branchId, branch.id)).limit(1),
+  ]);
+  const tillHere = tillIds.includes(branch.id);
+  const asilposHere = tillHere || Boolean(installed);
   const modposHere = modposBranchIds(branches).includes(branch.id);
-  const [cash, parasut, commission, calendar, device, modpos, asilpos, secret, blindCount, asilposBranch, shiftPresets] = await Promise.all([
+  const [cash, parasut, commission, calendar, device, modpos, asilpos, secret, blindCount, shiftPresets] = await Promise.all([
     cashSettingsCardData(branch.id),
     parasutLinkCardData(branch.id),
     branchSettingView(COMMISSION_GROUP, branch.id),
@@ -98,9 +107,8 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
     branchSettingView(MODPOS_GROUP, branch.id),
     // Öbür şubede yalnız eski anahtarın durumu (kasa kaynağı başka şubeye geçtiyse silinebilsin)
     branchSettingView(ASILPOS_GROUP, branch.id),
-    asilposHere ? asilposSecretState() : Promise.resolve(null),
+    asilposHere ? posKeyState(branch.id) : Promise.resolve(null),
     branchSettingView(BLIND_COUNT_GROUP, branch.id),
-    asilposBranchId(),
     branchSettingView(SHIFT_PRESET_GROUP, branch.id),
   ]);
   // Tek şubelik özelliğin (karaoke) öbür şubedeki sahibi: kartta anahtar kapalı, "Marina şubesinde açık"
@@ -149,13 +157,13 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
             data={{ view: modpos, keyEnv: modposKeyEnv(branch.id), keyProblem: modposHere ? modposKeyProblem(process.env, branch.id, modposBranchIds(branches)) : null, ownTill: modposHere }}
           />
         ) : null}
-        <TillDeviceCard view={device} asilpos={asilposHere} />
+        <TillDeviceCard view={device} asilpos={tillHere} />
         <BlindCountCard
           branchId={branch.id}
           branchName={branch.name}
-          on={blindCountSettingOn(blindCount.value.enabled, branch.id, asilposBranch)}
+          on={blindCountSettingOn(blindCount.value.enabled, tillHere)}
           isDefault={blindCount.value.enabled === null}
-          asilpos={asilposHere}
+          asilpos={tillHere}
         />
         {/* Yemek kartı ve platformlar bu şubede kullanılıyorsa (şube özelliği yemek_karti) ya da başka şube bu şubenin
             sürelerini kullanıyorsa (oradaki "X şubesinde düzenle" buraya gelir) */}

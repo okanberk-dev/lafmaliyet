@@ -34,6 +34,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
 import { KURULUM_DURUM_ETIKET } from "@/lib/asilpos/kurulum";
+import { POS_OFF_CONFIRM_PREFIX } from "@/lib/pos/tills";
 import type { ActionResult } from "@/server/actions/util";
 import type { KurulumView } from "@/server/asilpos/kurulum";
 
@@ -79,6 +80,8 @@ export interface BranchActions {
     openedOn: string | null;
     active: boolean;
     posRate?: number;
+    /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (sunucu posOffConfirmText ile sorar) */
+    confirmPosOff?: boolean;
   }) => Promise<ActionResult<{ id: string }>>;
   deleteAction: (input: { id: string }) => Promise<ActionResult<{ id: string }>>;
 }
@@ -118,6 +121,8 @@ export function BranchesAdmin({
   const [sonuc, setSonuc] = useState<{ name: string; kurulum: KurulumSonuc } | null>(null);
   const [yeni, setYeni] = useState(false);
   const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
+  // AsilPOS'tan ModPOS'a dönüş onayı (çok şube): sunucunun sorduğu metin ve kaydedilecek taslak
+  const [posOff, setPosOff] = useState<{ taslak: Taslak; text: string } | null>(null);
   const [bekliyor, basla] = useActionTransition();
 
   function duzenle(b: BranchRow) {
@@ -130,17 +135,20 @@ export function BranchesAdmin({
     setAcik({ ...BOS });
   }
 
-  function kaydet(t: Taslak) {
+  function kaydet(t: Taslak, confirmPosOff = false) {
     // Online kanalın kasası yok: POS oranı yalnız fiziksel şubede gider
     const gonder = { name: t.name.trim(), kind: t.kind, posSource: t.posSource, openedOn: t.openedOn || null, ...(t.kind === "fiziksel" ? { posRate: oranOf(t.posRate) } : {}) };
     basla(async () => {
       const sonuc = yeni
         ? await createAction({ ...gonder, id: t.id.trim(), ...(t.kind === "fiziksel" && t.email.trim() ? { email: t.email.trim() } : {}) })
-        : await updateAction({ ...gonder, id: t.id, active: t.active });
+        : await updateAction({ ...gonder, id: t.id, active: t.active, ...(confirmPosOff ? { confirmPosOff } : {}) });
       if (!sonuc.ok) {
+        // Kasası AsilPOS olan şube ModPOS'a dönüyor: geçiş günü silinecek, onay sorulur
+        if (!yeni && !confirmPosOff && sonuc.error.startsWith(POS_OFF_CONFIRM_PREFIX)) return void setPosOff({ taslak: t, text: sonuc.error.slice(POS_OFF_CONFIRM_PREFIX.length).trim() });
         toast.error(sonuc.error);
         return;
       }
+      setPosOff(null);
       toast.success(yeni ? "Şube eklendi" : "Şube güncellendi");
       setAcik(null);
       const kurulum = yeni ? (sonuc.data as { kurulum?: KurulumSonuc | null }).kurulum : null;
@@ -236,6 +244,15 @@ export function BranchesAdmin({
       ) : null}
 
       {sonuc ? <KurulumDialog name={sonuc.name} kurulum={sonuc.kurulum} onClose={() => setSonuc(null)} /> : null}
+
+      <ConfirmDialog
+        open={!!posOff}
+        onClose={() => setPosOff(null)}
+        onConfirm={() => posOff && kaydet(posOff.taslak, true)}
+        pending={bekliyor}
+        title="Kasa ModPOS'a dönsün mü?"
+        description={posOff?.text ?? ""}
+      />
 
       <ConfirmDialog
         open={!!silinecek}

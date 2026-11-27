@@ -1,16 +1,20 @@
 import "server-only";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { ASILPOS_GROUP } from "@/lib/branch-settings/groups";
 import { GUN_KILIDI_ONEKI } from "@/lib/asilpos/eski-adlar";
-import { ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW } from "@/lib/asilpos/status";
-import { dayMonthYearTR, isAsilposDay, switchDayProblem } from "@/lib/asilpos/switch";
+import { ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW, stateKeysOf } from "@/lib/asilpos/status";
+import { dayMonthYearTR, isAsilposDay, switchAffectedMonths, switchDayProblem } from "@/lib/asilpos/switch";
+import { lockRefusal } from "@/lib/closed-period";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import { lockGroup, putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
+import { loadClosedPeriods } from "@/server/closed-period";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
-import { asilposBranchId, switchDayOf } from "./branch";
+import { forgetPosBranches, switchDayOf } from "./branch";
+import { loadPosTillIds } from "../pos/tills";
 import { detachAsilposCashOuts } from "./cash-moves";
 
 /**
@@ -26,38 +30,38 @@ export const ADMIN_ONLY = "Bu işlemi yalnız yönetici yapabilir";
 const switchText = (v: string | null) => (v ? dayMonthYearTR(v) : "yok (kasa ModPOS)");
 
 /**
- * Geçiş gününü yazar (null: siler, kasa yeniden ModPOS). Hiçbir veri yazılmaz ya da silinmez, yalnız okuyanlar değişir.
- * Değişiklik yoksa null; varsa işlem geçmişinin metni ("AsilPOS'a geçiş günü: yok → 10 Kasım 2026").
+ * Bir kasanın geçiş gününü yazar (null: siler, kasa yeniden ModPOS gibi sayılır). Çok şube (27 Kasım 2026): her AsilPOS
+ * kasasının kendi günü, yalnız kasası AsilPOS olan şubeye yazılır (şubenin ayarı, grup SUBE_AYAR_GRUBU). Eski genel kayda
+ * (settings) artık yazılmaz. Değişikliğin etkilediği aylardan biri kapalı dönemdeyse (docs/DONEM-KAPANISI.md) yazılmaz:
+ * kapanmış ayların rakamı değişirdi. Hiçbir veri yazılmaz ya da silinmez, yalnız okuyanlar değişir. Değişiklik yoksa null;
+ * varsa işlem geçmişinin metni ("Marina: AsilPOS'a geçiş günü: yok → 10 Kasım 2026").
  */
-export async function writeAsilposSwitchDay(db: DB, me: Actor, day: string | null, today: string): Promise<string | null> {
+export async function writeAsilposSwitchDay(db: DB, me: Actor, branchId: string, day: string | null, today: string): Promise<string | null> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
   if (day !== null) {
     const problem = switchDayProblem(day, today);
     if (problem) throw new UserError(problem);
   }
-  // AsilPOS'un şubesinin şube ayarına yazılır (grup SUBE_AYAR_GRUBU; docs/SUBE.md › Şube başına ayarlar). İlk kayıtta satır
-  // açılır, eski genel kayıt (settings › asilposGecisGunu) bırakılır: satırı olan şube onu bir daha okumaz
-  const branchId = await asilposBranchId(db);
-  return db.transaction(async (tx) => {
+  const [branch] = await db.select({ id: s.branches.id, name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
+  if (!branch) throw new UserError("Şube bulunamadı; sayfayı yenileyin");
+  if (!(await loadPosTillIds(db, Date.now(), true)).ids.includes(branchId)) {
+    throw new UserError(`${branch.name} şubesinin kasası AsilPOS değil; geçiş günü yalnız kasası AsilPOS olan şubeye yazılır (Ayarlar › Şubeler › kasa kaynağı)`);
+  }
+  const result = await db.transaction(async (tx) => {
     await lockGroup(tx, ASILPOS_GROUP.id);
     const prev = (await resolveBranchSetting(ASILPOS_GROUP, branchId, tx)).value.switchDay;
     if (prev === day) return null;
-    const [known] = await tx.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
-    if (known) await putBranchSetting(tx, ASILPOS_GROUP, branchId, { switchDay: day }, me.name);
-    // Kütükte AsilPOS'un şubesi yok (tek şubeli eski kurulum; geri düşüş Marina): eski genel kayda (grubun legacySettings'i,
-    // settings › GECIS_GUNU_AYARI), okuyan da satırsız sahibi şubede oradan okur (resolveBranchSetting). Ad değişikliği:
-    // eski anahtar yazılır; yeni anahtarlı satır varsa (önce o okunur) o da aynı değeri alır, silmede ikisi de silinir
-    else {
-      const key = ASILPOS_GROUP.legacySettings!.switchDay;
-      const yeni = ASILPOS_GROUP.legacySettingsNew!.switchDay;
-      if (day === null) await tx.delete(s.settings).where(inArray(s.settings.key, [key, yeni]));
-      else {
-        await tx.insert(s.settings).values({ key, value: day }).onConflictDoUpdate({ target: s.settings.key, set: { value: day, updatedAt: new Date() } });
-        await tx.update(s.settings).set({ value: day, updatedAt: new Date() }).where(eq(s.settings.key, yeni));
-      }
-    }
-    return `AsilPOS'a geçiş günü: ${switchText(prev)} → ${switchText(day)}`;
+    // Kapalı dönem (R7): kaynağı değişen günlerin ayları (switchAffectedMonths) kapalı olmamalı
+    const refusal = lockRefusal(
+      switchAffectedMonths(prev, day, today).map((m) => `${m}-01`),
+      await loadClosedPeriods(tx),
+    );
+    if (refusal) throw new UserError(refusal);
+    await putBranchSetting(tx, ASILPOS_GROUP, branchId, { switchDay: day }, me.name);
+    return `${branch.name}: AsilPOS'a geçiş günü: ${switchText(prev)} → ${switchText(day)}`;
   });
+  if (result) forgetPosBranches();
+  return result;
 }
 
 /**
@@ -73,26 +77,26 @@ export async function writeAsilposSwitchDay(db: DB, me: Actor, day: string | nul
  * sayılmıyorsa (deneme günü) AsilPOS'un açtığı satırlar kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır
  * kalır; sayılan günde (409'un çözümü) satırların hepsi kalır, yeni Z gelince yeniden sahiplenilir.
  */
-export async function removeAsilposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
+export async function removeAsilposDay(db: DB, me: Actor, branchId: string, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
-  // AsilPOS'un şubesi (türetilmiş, branch.ts): gün sonunu yazanla aynı kilit ve aynı şube
-  const branchId = await asilposBranchId(db);
+  // Kasanın şubesi (bölümün şubesi): gün sonunu yazanla aynı kilit ve aynı şube
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${GUN_KILIDI_ONEKI}${branchId}:${date}`}))`);
-    // Yalnız AsilPOS'un şubesinin günü (başka şubenin aynı günkü kaydına dokunulmaz)
+    // Yalnız bu şubenin günü (başka şubenin aynı günkü kaydına dokunulmaz)
     const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId))).limit(1);
     if (!rep) throw new UserError("Bu günün AsilPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin");
     if (rep.z.zNo !== zNo) throw new UserError(`Bu gün bu arada Z ${rep.z.zNo} ile yeniden gönderildi; sayfayı yenileyip yeniden bakın`);
     const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, branchId))).returning({ id: s.posDailySales.id });
     await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)));
-    // Geçiş günü AsilPOS'un şubesinin kasasınındır (branchSwitchDay): bu gün o şubenin günü
+    // Şubenin kendi kasasının geçiş günü (kasası AsilPOS değilse gün deneme)
     const counted = isAsilposDay(date, await switchDayOf(branchId, tx));
     await detachAsilposCashOuts(tx, date, counted ? "release" : "drop", { by: { id: me.id, name: me.name }, branchId });
-    // Durum satırı eski adla; yeni adlı satır varsa (temizlik PR'ından geri dönüş, önce o okunur) o da
+    // Kasanın durum satırı (stateKeysOf; eski adla, yeni adlı satır varsa o da); eski kurulumun şubesinde genel satır da
+    const keys = [...stateKeysOf(branchId).read, ...(branchId === LEGACY_POS_BRANCH_ID ? [ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW] : [])];
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()
-       where key in (${ASILPOS_STATE_KEY}, ${ASILPOS_STATE_KEY_NEW})
+       where key in (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})
          and value->'rejections'->${date}::text->>'error' = 'z_conflict'
          and (value->'rejections'->${date}::text->>'zNo')::int = ${rep.z.zNo}::int`);
     return { zNo: rep.z.zNo, lines: lines.length };

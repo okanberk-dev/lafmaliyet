@@ -31,7 +31,7 @@ export interface AsilposBranchData {
   /** Kullanılan anahtar nereden ("panel", "ortam"); yoksa null */
   source: "panel" | "ortam" | null;
   /** Kullanılan anahtarın sorunu (yok, kısa, sitenin anahtarıyla aynı); null: bağlantı açık */
-  problem: "missing" | "short" | "same_as_site" | null;
+  problem: "missing" | "short" | "same_as_site" | "same_as_other_branch" | null;
   /** Ortamda anahtarın okunduğu değişkenin adı (sahip yeni adı eklemediyse eski adı; src/lib/asilpos/env.ts posEnvName) */
   envName: string;
   /** Kütükte kasa kaynağı hâlâ ModPOS (AsilPOS'un şubesi geri düşüşle bu şube; föyün yedek çekimi sürüyor) */
@@ -42,6 +42,7 @@ const PROBLEM_TEXT = {
   missing: "Anahtar yok: AsilPOS'un gönderdiği gün sonları reddedilir",
   short: "Sunucudaki anahtar 32 karakterden kısa: bağlantı kapalı",
   same_as_site: "Sunucudaki anahtar sitenin anahtarıyla aynı: bağlantı kapalı",
+  same_as_other_branch: "Anahtar başka bir şubenin AsilPOS anahtarıyla aynı: bağlantı kapalı, yeni anahtar kaydedin",
 } as const;
 
 // Teknik adlar yalnız `tech`'te (ekran gövdesinde geliştirici sözcüğü yok; tests/uyari-goc.test.ts)
