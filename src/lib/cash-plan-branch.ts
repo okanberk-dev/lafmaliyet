@@ -101,7 +101,7 @@ export function isSharedPlanLine(l: Pick<PlanLine, "key" | "kind" | "direction">
 export interface SharedWeek {
   index: number;
   amount: number;
-  /** En büyük üç kalem ("KDV (Ekim) 42.000 ₺"); ekran kısa yazar */
+  /** En büyük üç kalem ("Muhasebe 12.000 ₺"); ekran kısa yazar */
   top: { title: string; amount: number }[];
   count: number;
 }
@@ -158,6 +158,17 @@ const TAX_ESTIMATES: ReadonlySet<string> = new Set(BRANCH_PLAN_EXCLUDED);
 export function branchPlanWithoutTax(plan: CashPlan): CashPlan {
   return { ...plan, vat: null, estimates: plan.estimates.filter((r) => !TAX_ESTIMATES.has(r.key)), taxFirmWide: true };
 }
+
+/**
+ * Şube kipinde KDV tahmini kartının yerindeki not (`taxFirmWide`; ekranda `#kdv` çapası bunda): Vergi takviminin,
+ * Yardım'ın ve asistanın rehberinin "KDV tahmini" bağlantısı boşa inmesin. Düğmesi Nakit planı'nı Firma geneli görünüme
+ * geçirir (ekranın çipiyle aynı eylem)
+ */
+export const BRANCH_VAT_NOTE = {
+  title: "KDV tahmini, devreden KDV ve Ödendi kayıtları firma geneli",
+  text: "Tümü'de ya da Firma geneli görünümde; vergi şubeye bölünmez.",
+  action: "Firma geneline geç",
+} as const;
 
 /** Şubenin akışının açıklaması (ekranın notu) */
 export function branchFlowNote(name: string): { title: string; text: string } {

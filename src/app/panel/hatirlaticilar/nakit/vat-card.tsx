@@ -9,13 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Notice } from "@/components/ui/notice";
 import type { CashPlanState, CashPlanVat, Vat2Row, VatRow } from "@/lib/cash-plan";
+import { BRANCH_VAT_NOTE } from "@/lib/cash-plan-branch";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, money, num, tl } from "@/lib/format";
 import { monthKasa } from "@/lib/asilpos/kasa";
 import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatForgetText, vatKeptCarryText, vatPeriodTitle, vatProgressText, vatSourceText, vatSubText, type VatEstimate } from "@/lib/kdv";
 import { daysBetween, monthGenitiveTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { saveBranchView } from "@/server/actions/branch-view";
 import { forgetVatPayment } from "@/server/actions/cash-plan";
 
 import { DateTile } from "../payment-ui";
@@ -103,6 +106,35 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
       </CardContent>
       {carryOpen ? <VatCarryDialog carry={carry} today={today} onClose={() => setCarryOpen(false)} /> : null}
     </Card>
+  );
+}
+
+/**
+ * Şube kipinde KDV tahmini kartının yeri (plan.taxFirmWide; vergi şubeye bölünmez, sahibin kararı 27 Kasım 2026): Vergi
+ * takviminin, Yardım'ın ve asistanın "KDV tahmini" bağlantısı (#kdv) buraya iner. Düğme Nakit planı'nı Firma geneli
+ * görünüme geçirir (ekranın çipiyle aynı eylem: saveBranchView); sayfa yeniden çizilir, kart görünür
+ */
+export function FirmVatNotice() {
+  const [pending, run] = useActionTransition();
+  const toFirm = () =>
+    run(async () => {
+      const res = await saveBranchView({ area: "nakit", mode: "firma" });
+      if (!res.ok) toast.error(res.error);
+    });
+  return (
+    <Notice
+      id="kdv"
+      tone="neutral"
+      size="sm"
+      className="scroll-mt-20"
+      title={BRANCH_VAT_NOTE.title}
+      text={BRANCH_VAT_NOTE.text}
+      action={
+        <Button size="xs" variant="secondary" onClick={toFirm} disabled={pending} aria-busy={pending || undefined}>
+          {BRANCH_VAT_NOTE.action}
+        </Button>
+      }
+    />
   );
 }
 

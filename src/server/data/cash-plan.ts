@@ -7,6 +7,7 @@ import { buildCashPlan, goodsRows, parseCashPlanState, planCashReports, planInpu
 import { BRANCH_PLAN_EXCLUDED, branchCashFlow, branchPlanWithoutTax, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf, type BranchCashFlow } from "@/lib/cash-plan-branch";
 import { addDays, type UpcomingItem } from "@/lib/reminders";
 import type { TaxInputs } from "@/lib/tax/inputs";
+import type { TaxSettings } from "@/lib/tax/settings";
 import type { TaxPlanFeed } from "@/lib/tax/view";
 import { unreachable } from "@/lib/unreachable";
 import { loadExpectedDebtsByCard } from "@/server/data/cari";
@@ -18,7 +19,7 @@ import { cashReportsBetween, previousCarryOverByBranch } from "@/server/data/cas
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadVatPaid } from "@/server/data/vat-paid";
 import { loadPaidOnDelivery, loadTermDays } from "@/server/data/suppliers";
-import { loadTaxInputs, loadTaxPlanFeed } from "@/server/data/tax";
+import { loadTaxInputs, loadTaxPlanFeed, loadTaxSettings } from "@/server/data/tax";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming } from "@/server/notify/digest";
 
@@ -89,6 +90,16 @@ async function taxInputsForPlan(): Promise<TaxInputs | null> {
   }
 }
 
+/** Şubenin akışının vergi ayarları (yalnız bordro için); okunamazsa null: varsayılanlar */
+async function branchTaxSettingsForPlan(): Promise<TaxSettings | null> {
+  try {
+    return await loadTaxSettings();
+  } catch (e) {
+    console.error("[vergi] nakit planı: vergi ayarları okunamadı (şubenin akışı)", e);
+    return null;
+  }
+}
+
 /**
  * İşletmenin kasalarındaki nakit: açık her fiziksel şubenin (tillBranches) son raporunun ertesi güne devri toplanır.
  * Devir zinciri şube başınadır (previousCarryOver tek kasayı okur, "Tümü"de Tuzla'yı): yalnız birini yazmak Marina'nın
@@ -132,7 +143,7 @@ export async function loadCashPlan(
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
   const branchesP = listBranches();
-  const [state, reports, termDays, paidOnDelivery, carry, recentPaid, taxInputs, expectedDebts, branches] = await Promise.all([
+  const [state, reports, termDays, paidOnDelivery, carry, recentPaid, taxInputs, expectedDebts, branches, branchTaxSettings] = await Promise.all([
     loadCashPlanState(),
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
@@ -144,6 +155,9 @@ export async function loadCashPlan(
     // şubenin akışında yok
     branch ? [] : loadExpectedDebtsByCard(),
     branchesP,
+    // Şubenin akışında vergi girdisi okunmaz; bordronun neti yine Vergi › Kurallar'daki ayarlarla (hesap dönemi, asgari
+    // ücret desteği, kural düzeltmeleri), firmanın planındaki gibi. Okunamazsa varsayılanlar
+    branch ? branchTaxSettingsForPlan() : null,
   ]);
   // Vergi girdileri okunamadıysa Ödendi kaydı ayrıca (KDV'nin ödenmiş dönemleri vergiden bağımsız)
   const vatPaid = taxInputs?.vatPaid ?? (await loadVatPaid());
@@ -158,7 +172,7 @@ export async function loadCashPlan(
   const termOf = (supplier: string) => (paidOnDelivery(supplier) ? 0 : (termDays(supplier) ?? up.settings.invoiceTermDays));
   const goods = goodsRows(model.ds.invoices, today, termOf);
   // Şubenin akışında stopaj ve KDV-2 firmanın vergisidir (muhtasar, 2 No.lu KDV): kalem beslemedeki gibi net
-  const fromModel = planInputFromModel(model, today, taxInputs?.settings, { feed: branch ? true : tax !== null });
+  const fromModel = planInputFromModel(model, today, taxInputs?.settings ?? branchTaxSettings ?? undefined, { feed: branch ? true : tax !== null });
   const built = buildCashPlan({
     // Besleme yoksa stopajlı sabit gider brüt ödenir: muhtasar ve KDV-2 satırı da yok, stopaj kaybolmasın (§13)
     ...fromModel,

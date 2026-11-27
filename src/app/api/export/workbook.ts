@@ -56,6 +56,8 @@ const TOTAL_BORDER: Partial<ExcelJS.Borders> = { top: { style: "thin", color: { 
 const SECTION_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: "FF64412A" } };
 const TITLE_FONT: Partial<ExcelJS.Font> = { bold: true, size: 16, color: { argb: HEADER_ARGB } };
 const MUTED_FONT: Partial<ExcelJS.Font> = { color: { argb: "FF71717A" } };
+/** Şube dosyasının Faturalar sekmesinde TOPLAM'ın altındaki satır (KDV toplamı yok; vergi şubeye bölünmez) */
+export const BRANCH_INVOICE_VAT_NOTE = "Şube dosyası: KDV toplamı yok, vergi şubeye bölünmez; beyan için Tümü dosyası";
 /** Ham kayıt (yedek) sekmelerinin rengi: asıl sekmelerden ayrılsın */
 const RAW_TAB: Partial<ExcelJS.Color> = { argb: "FFA1A1AA" };
 const BRAND_TAB: Partial<ExcelJS.Color> = { argb: "FF64412A" };
@@ -609,7 +611,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   }
   filterRows(hm, 1, hm.rowCount);
 
-  addInvoices(wb, model, extras.outstanding, extras.branchNames);
+  addInvoices(wb, model, extras.outstanding, extras.branchNames, extras.scope?.branch === true);
   if (extras.cari?.length) addCari(wb, extras.cari, extras.scope?.branch ? (extras.scope.areas?.tedarikciler === "sube" ? `${extras.scope.label} şubesi` : "Firma geneli") : null);
   addPeople(wb, model, month, extras.investments, extras.scope?.branch === true);
   // Vergi (dalga 12): tahmin, beyanname değil; Personel ve Sabit Giderler'den sonra
@@ -1616,7 +1618,12 @@ export function invoiceCategories(invoices: { category: string }[]): string[] {
   return out;
 }
 
-function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<number, number | null>, branchNames?: ReadonlyMap<string, string>) {
+/**
+ * "Faturalar" ve "Aylık Alımlar" sekmeleri. `branchFile`: şube dosyası (`?sube=`): TOPLAM satırında KDV, tevkifat (KDV-2) ve
+ * tedarikçiye ödenen KDV toplamı yok, altında tek gri satır (vergi şubeye bölünmez, sahibin kararı 27 Kasım 2026; beyan
+ * Tümü dosyasında). Sütunlar ve satır satır tutarlar durur (Aylık Alımlar'ın SUMIFS'i H, E, K sütunlarını harfle okur)
+ */
+function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<number, number | null>, branchNames?: ReadonlyMap<string, string>, branchFile = false) {
   const invoices = model.ds.invoices;
   const ws = addSheet(
     wb,
@@ -1709,7 +1716,8 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       a: cell("a", sum(invoices.map((i) => i.amount))),
       i: cell("i", sum(invoices.map((i) => i.discount))),
       n: cell("n", sum(nets)),
-      v: cell("v", sum(invoices.map((i) => round2(purchaseVat(i))))),
+      // Şube dosyasında KDV toplamı yok (vergi şubeye bölünmez): v, w, pv boş
+      ...(branchFile ? {} : { v: cell("v", sum(invoices.map((i) => round2(purchaseVat(i))))) }),
       p: cell("p", sum(invoices.map((i) => i.payable))),
       ob: cell(
         "ob",
@@ -1720,11 +1728,16 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
         ),
       ),
       pp: cell("pp", sum(invoices.map((i) => (i.allocated && i.allocated > 0.005 ? round2(i.allocated) : 0)))),
-      w: cell("w", sum(invoices.map((i) => (purchaseWithheld(i) > 0 ? round2(purchaseWithheld(i)) : 0)))),
-      pv: cell("pv", sum(invoices.map((i) => round2(i.payable - (i.amount - i.discount))))),
+      ...(branchFile
+        ? {}
+        : {
+            w: cell("w", sum(invoices.map((i) => (purchaseWithheld(i) > 0 ? round2(purchaseWithheld(i)) : 0)))),
+            pv: cell("pv", sum(invoices.map((i) => round2(i.payable - (i.amount - i.discount))))),
+          }),
     });
     tot.getCell("d").note = "Süzgeçte görünen faturaların toplamı. Aylık Alımlar bu satırı saymaz.";
     totalRow(ws, tot);
+    if (branchFile) ws.addRow({ d: BRANCH_INVOICE_VAT_NOTE }).font = MUTED_FONT;
   }
 
   // "Aylara göre net alımlar": ayrı sekmede, süzgeç satırları gizlemesin diye

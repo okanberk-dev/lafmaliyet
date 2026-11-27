@@ -10,7 +10,7 @@ import { test } from "node:test";
 
 import type ExcelJS from "exceljs";
 
-import { buildWorkbook, exportScopeText, GUIDE_SHEET, TAX_SHEET, type CariExportRow, type ExportExtras } from "../src/app/api/export/workbook";
+import { BRANCH_INVOICE_VAT_NOTE, buildWorkbook, exportScopeText, GUIDE_SHEET, TAX_SHEET, type CariExportRow, type ExportExtras } from "../src/app/api/export/workbook";
 import { packageHref } from "../src/app/panel/muhasebe/package-download";
 import {
   ALWAYS_COMPANY_WIDE,
@@ -258,6 +258,39 @@ test("dışa aktarım: Vergi sekmesi şube dosyasında da firmanın (Firma genel
   assert.doesNotMatch(all, /ŞUBENİN PAYI/);
   // Şube dosyasının Vergi sekmesi Tümü dosyasınınkinden yalnız "Firma geneli · beyan" satırıyla ayrılır
   assert.equal(text.replace(/\nFirma geneli · beyan:[^\n]*/, ""), all);
+});
+
+test("dışa aktarım: şube dosyasının Faturalar TOPLAM'ında KDV, KDV-2 ve ödenen KDV toplamı yok, altında tek gri satır; Tümü dosyasında var", () => {
+  const invoices = (wb: ExcelJS.Workbook) => wb.getWorksheet("Faturalar")!;
+  const totalOf = (ws: ExcelJS.Worksheet) => {
+    let row: ExcelJS.Row | undefined;
+    ws.eachRow((r) => {
+      if (r.getCell("d").value === "TOPLAM") row = r;
+    });
+    assert.ok(row, "TOPLAM satırı");
+    return row;
+  };
+  assert.ok(model.ds.invoices.length > 0, "fixture'da fatura var");
+  const all = invoices(buildWorkbook(model, "2026-09", extras()));
+  const branch = invoices(buildWorkbook(model, "2026-09", extras({ scope: { label: "Marina", branch: true } })));
+  const ta = totalOf(all);
+  const tb = totalOf(branch);
+  for (const k of ["v", "w", "pv"]) {
+    assert.match(String((ta.getCell(k).value as { formula?: string } | null)?.formula ?? ""), /^SUBTOTAL\(109,/, `Tümü dosyasında ${k} toplamı`);
+    assert.equal(tb.getCell(k).value, null, `şube dosyasında ${k} toplamı yok`);
+  }
+  // Öbür toplamlar ve sütunlar aynı (Aylık Alımlar'ın SUMIFS'i H, E, K'yı harfle okur)
+  for (const k of ["a", "i", "n", "p", "ob", "pp"]) assert.deepEqual(tb.getCell(k).value, ta.getCell(k).value, k);
+  assert.deepEqual(branch.getRow(1).values, all.getRow(1).values);
+  assert.equal(tb.number, ta.number);
+  // Tek gri satır TOPLAM'ın altında; Tümü dosyasında yok
+  const note = branch.getRow(tb.number + 1);
+  assert.equal(note.getCell("d").value, BRANCH_INVOICE_VAT_NOTE);
+  assert.equal(BRANCH_INVOICE_VAT_NOTE, "Şube dosyası: KDV toplamı yok, vergi şubeye bölünmez; beyan için Tümü dosyası");
+  assert.equal(note.getCell("d").font?.color?.argb, "FF71717A");
+  assert.equal(branch.rowCount, tb.number + 1);
+  assert.equal(all.rowCount, ta.number);
+  assert.equal(cellsOf(all).includes(BRANCH_INVOICE_VAT_NOTE), false);
 });
 
 // ---------------------------------------------------------------- Kaynak

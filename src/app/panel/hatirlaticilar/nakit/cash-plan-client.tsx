@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { DateTile } from "../payment-ui";
 import { BalanceDialog } from "./balance-dialog";
 import { EstimatesSheet } from "./estimates-sheet";
-import { VatCard } from "./vat-card";
+import { FirmVatNotice, VatCard } from "./vat-card";
 
 /** Haftanın kesin ödemelerinden ilk bu kadarı listelenir (kalanı "ve N ödeme daha") */
 const MAX_KNOWN = 8;
@@ -214,7 +214,8 @@ export function CashPlanClient({
           <div className="grid gap-4 xl:grid-cols-12 xl:items-start">
             <Weeks plan={plan} shared={flow?.shared ?? null} className="xl:col-span-8" />
             <div className="space-y-4 xl:col-span-4">
-              {plan.vat ? <VatCard vat={plan.vat} carry={state.vatCarry} today={plan.today} /> : null}
+              {/* Şube kipinde KDV kartı yok (vergi şubeye bölünmez); #kdv bağlantısı boşa inmesin diye yerinde not */}
+              {plan.vat ? <VatCard vat={plan.vat} carry={state.vatCarry} today={plan.today} /> : plan.taxFirmWide ? <FirmVatNotice /> : null}
               <Card>
                 <CardHeader icon={<Layers />} title="Nasıl hesaplandı" description="Her varsayım rakamlarıyla. Tahminler gerçek ödemeyle kesinleşir." />
                 <CardContent>

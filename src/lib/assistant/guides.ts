@@ -183,7 +183,7 @@ export const OP_GUIDES: readonly OpGuide[] = [
     keywords: ["kdv ödendi", "kdv kaydını kaldır"],
     why: "Ödeme kaydını siler, geri alınamaz.",
     path: "/panel/hatirlaticilar/nakit#kdv",
-    steps: ["Nakit planı › KDV kartı.", "Dönemi bulun › “Ödendi kaydını kaldır”."],
+    steps: ["Nakit planı › KDV kartı (şube seçiliyken: Tümü ya da Firma geneli).", "Dönemi bulun › “Ödendi kaydını kaldır”."],
     actions: ["forgetVatPayment"],
   },
   // ---------------------------------------------------------------- Kasa

@@ -798,6 +798,25 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         await db.delete(s.reminders).where(inArray(s.reminders.id, rems.map((r) => r.id)));
       }
     });
+
+    test("nakit planı şube kipinde: bordro Vergi › Kurallar'daki ayarlarla (hesap dönemi), varsayılanla değil", async () => {
+      const { loadAreaCashPlan } = await import("../src/server/data/cash-plan");
+      const { TAX_SETTINGS_KEY } = await import("../src/lib/tax/settings");
+      const salary = async () => (await loadAreaCashPlan(await area("nakit"))).view.plan.estimates.find((e) => e.key === "salary")?.monthly ?? null;
+      await signIn(seed.users.admin, "marina");
+      const before = await salary();
+      assert.ok(before !== null && before > 0, `Marina'nın personeli varsayılan hesap döneminde maaş tahmini taşır (${before})`);
+      const [old] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, TAX_SETTINGS_KEY));
+      const value = { periodStart: "2099-01-01" };
+      await db.insert(s.integrationState).values({ key: TAX_SETTINGS_KEY, value }).onConflictDoUpdate({ target: s.integrationState.key, set: { value } });
+      try {
+        assert.equal(await salary(), null, "hesap dönemi başlamadan bordro yok: şubenin akışı Kurallar'daki ayarı okur");
+      } finally {
+        if (old) await db.update(s.integrationState).set({ value: old.value }).where(eq(s.integrationState.key, TAX_SETTINGS_KEY));
+        else await db.delete(s.integrationState).where(eq(s.integrationState.key, TAX_SETTINGS_KEY));
+      }
+      assert.equal(await salary(), before);
+    });
   });
 
   describe("4. fark: Tuzla'nın satırları silinince Marina'nın görünümü değişmez", () => {

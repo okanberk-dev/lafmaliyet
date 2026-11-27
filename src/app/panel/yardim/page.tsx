@@ -615,7 +615,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
           <>
-            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Döküm Nakit planındaki KDV tahmini kartında:
+            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Döküm Nakit planındaki KDV tahmini kartında (şube seçiliyken: Tümü ya da Firma geneli):
             önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV düşülür; sonuç ayın 28&apos;inde plana girer.
             Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin beyannamesindedir. Muhasebeciniz tutarı
             söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın, plan onu kullanır.

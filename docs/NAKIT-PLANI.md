@@ -401,9 +401,12 @@ toplamını yazar ("· vergi ve SGK Tümü'de").
 bölünmez](SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)): şube kipinde KDV, KDV-2, muhtasar, geçici ve
 kurumlar vergisi, damga ve SGK ne şubenin akışında ne İşletme geneli satırında. Ödemeler'deki vergi ve SGK hatırlatıcıları
 (türü "Vergi / SGK" ya da başlığı KDV, muhtasar, stopaj, geçici vergi, damga, ÇTV, SGK, Bağkur; `isTaxPlanReminder`)
-şubenin de olsa şubesiz de olsa girmez. KDV tahmini kartı yok; "Tahmine katılanlar"da KDV, vergi ve SGK satırı yok;
-"Nasıl hesaplandı" bunların yerine tek not yazar: **"Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür."**
-(`branchPlanWithoutTax`, `FIRM_TAX_NOTE`). Stopajlı sabit gider şubenin akışında net ödenir (stopaj muhtasarla
+şubenin de olsa şubesiz de olsa girmez. KDV tahmini kartı yok; yerinde kısa not durur: **"KDV tahmini, devreden KDV ve
+Ödendi kayıtları firma geneli"** · "Tümü'de ya da Firma geneli görünümde; vergi şubeye bölünmez.", "Firma geneline geç"
+düğmesiyle (çipin eylemi; `BRANCH_VAT_NOTE`, `FirmVatNotice`). Vergi takviminin, Yardım'ın ve asistanın `#kdv`
+bağlantısı bu nota iner. "Tahmine katılanlar"da KDV, vergi ve SGK satırı yok; "Nasıl hesaplandı" bunların yerine tek
+not yazar: **"Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür."** (`branchPlanWithoutTax`, `FIRM_TAX_NOTE`).
+Bordronun neti Vergi › Kurallar'daki ayarlarla (hesap dönemi, asgari ücret desteği), firmanın planındaki gibi. Stopajlı sabit gider şubenin akışında net ödenir (stopaj muhtasarla
 firmanın). Bağlantının `odemeler` aracının nakit planı da aynı notu taşır. Tümü ve Firma geneli kipi değişmedi.
 
 ## Kod
