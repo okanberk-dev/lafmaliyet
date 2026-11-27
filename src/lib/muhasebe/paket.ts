@@ -8,72 +8,22 @@ import { cellWidth, excelDate, HEADER_ARGB, TOTAL_ARGB } from "../../app/api/exp
 import { monthTitle, prevMonth } from "../closed-period";
 import { dateTimeTR, dateTR, tl } from "../format";
 
-/** integration_state anahtarı */
-export const PACKAGE_SETTINGS_KEY = "muhasebe.paket";
-/** Ayarlar'daki bölüm */
-export const PACKAGE_HREF = "/panel/ayarlar#muhasebe";
-/** Alıcı sınırı (yanlışlıkla bir liste yapıştırılmasın) */
-export const PACKAGE_MAX_RECIPIENTS = 5;
+import type { PackageSettings } from "./paket-ayar";
+
+// Ayarlar hafif dosyada (bildirim alıcılarının kapıları da okur); buradan da dışa verilir
+export {
+  DEFAULT_PACKAGE_SETTINGS,
+  PACKAGE_HREF,
+  PACKAGE_MAX_RECIPIENTS,
+  PACKAGE_SETTINGS_KEY,
+  parsePackageSettings,
+  readRecipients,
+  type PackageSent,
+  type PackageSettings,
+} from "./paket-ayar";
+
 /** Ay kapanış e-postasının kendiliğinden gittiği günler: ayın 1'i, gidemezse 2'si ve 3'ü (sabah işi kaçarsa) */
 export const PACKAGE_SEND_DAYS = [1, 2, 3] as const;
-
-export interface PackageSent {
-  month: string;
-  /** ISO an */
-  at: string;
-  to: string[];
-  /** "Günlük iş" ya da gönderen yöneticinin adı */
-  by: string;
-}
-
-export interface PackageSettings {
-  /** Muhasebeci alıcıları; boşsa e-posta gitmez */
-  recipients: string[];
-  /** Ay kapanınca (ayın 1'i) kendiliğinden gönderilsin */
-  auto: boolean;
-  /** Son gönderim (kendiliğinden ya da elle) */
-  last: PackageSent | null;
-  /** Kendiliğinden gönderilen son ay: aynı ay ikinci kez kendiliğinden gitmez */
-  autoMonth: string | null;
-}
-
-export const DEFAULT_PACKAGE_SETTINGS: PackageSettings = { recipients: [], auto: true, last: null, autoMonth: null };
-
-const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Kayıtlı ayar; bozuk alan varsayılana döner, geçersiz adres atlanır */
-export function parsePackageSettings(v: unknown): PackageSettings {
-  const x = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-  const recipients = Array.isArray(x.recipients) ? [...new Set(x.recipients.filter((e): e is string => typeof e === "string" && EMAIL.test(e.trim())).map((e) => e.trim().toLowerCase()))] : [];
-  const l = x.last as Partial<PackageSent> | null | undefined;
-  const last =
-    l && typeof l === "object" && typeof l.month === "string" && MONTH.test(l.month) && typeof l.at === "string" && Array.isArray(l.to)
-      ? { month: l.month, at: l.at, to: l.to.filter((e): e is string => typeof e === "string"), by: typeof l.by === "string" ? l.by : "" }
-      : null;
-  return {
-    recipients: recipients.slice(0, PACKAGE_MAX_RECIPIENTS),
-    auto: typeof x.auto === "boolean" ? x.auto : DEFAULT_PACKAGE_SETTINGS.auto,
-    last,
-    autoMonth: typeof x.autoMonth === "string" && MONTH.test(x.autoMonth) ? x.autoMonth : null,
-  };
-}
-
-/**
- * Formdaki alıcı metni (virgül, noktalı virgül, boşluk ya da satır sonuyla ayrılmış) → adresler ya da ilk hata.
- * Boş metin geçerlidir (alıcı yok: e-posta gitmez)
- */
-export function readRecipients(text: string): { ok: true; emails: string[] } | { ok: false; error: string } {
-  const parts = text
-    .split(/[\s,;]+/)
-    .map((p) => p.trim().toLowerCase())
-    .filter(Boolean);
-  const bad = parts.find((p) => !EMAIL.test(p) || p.length > 200);
-  if (bad) return { ok: false, error: `"${bad}" geçerli bir e-posta adresi değil` };
-  const emails = [...new Set(parts)];
-  if (emails.length > PACKAGE_MAX_RECIPIENTS) return { ok: false, error: `En çok ${PACKAGE_MAX_RECIPIENTS} adres yazın` };
-  return { ok: true, emails };
-}
 
 /**
  * Bugün (iş günü, YYYY-MM-DD) ay kapanış e-postası kendiliğinden gidecek mi; gidecekse hangi ayın paketi. Ayın 1'inde

@@ -184,7 +184,8 @@ export type PackageSendResult =
 /**
  * Paketi muhasebeci alıcılarına ekli e-postayla gönderir. `trigger` "cron": yalnız gönderim günüyse (autoSendMonth) ve
  * o ay kendiliğinden gönderilmediyse; aynı ayın anahtarıyla (Resend ikinci gönderimi yutar). "manual": istenen ay, her
- * basışta yeniden. Personel ya da pasif hesabın adresi düşer (sabah e-postasıyla aynı kural). Son gönderim ayara yazılır.
+ * basışta yeniden. Personel, müdür ya da pasif hesabın adresi düşer (sabah e-postasıyla aynı kural). Son gönderim ayara
+ * yazılır.
  */
 export async function sendAccountingPackage(
   o: { trigger: "cron"; today: string; opts?: SendOptions } | { trigger: "manual"; month: string; by: { id?: number; name: string }; opts?: SendOptions },

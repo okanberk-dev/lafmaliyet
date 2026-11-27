@@ -15,7 +15,7 @@ import { CLOSED_PERIOD_HREF, heldSummary } from "@/lib/closed-period";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
-import { blockedBell } from "@/lib/notify-recipients";
+import { blockedBell, RECIPIENT_LISTS } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -87,14 +87,14 @@ async function systemNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
- * Bildirim alıcıları (E-52, E-53): kasa raporu alıcılarında ya da sabah e-postasının etkin bildirim adreslerinde duran
- * ama personel ya da pasif hesabın olduğu için gönderimde düşen adresler. Durumdan türer (ayar ve hesaplar; iki küçük
- * sorgu): adres listeden çıkınca ya da hesap yeniden yönetici olunca satır kalkar. Kimlik adreslerden: yeni bir adres
- * düşünce yeniden okunmamış olur.
+ * Bildirim alıcıları (E-52, E-53): kasa raporu alıcılarında, sabah e-postasının etkin bildirim adreslerinde ya da
+ * muhasebeci paketinin alıcılarında duran ama personel, müdür ya da pasif hesabın olduğu için gönderimde düşen adresler.
+ * Durumdan türer (ayar ve hesaplar; birkaç küçük sorgu): adres listeden çıkınca ya da hesap yeniden yönetici olunca
+ * satır kalkar. Kimlik adreslerden: yeni bir adres düşünce yeniden okunmamış olur.
  */
 async function recipientNotifications(): Promise<PanelNotification[]> {
   const now = await blockedRecipientsNow();
-  return (["cash", "digest"] as const).flatMap((list) => {
+  return RECIPIENT_LISTS.flatMap((list) => {
     if (!now[list].length) return [];
     const b = blockedBell(list, now[list]);
     return [{ id: b.id, kind: "warning" as const, title: b.title, body: b.body, timeLabel: "", unread: true, href: b.href, group: "sistem" as const }];

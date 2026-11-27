@@ -195,10 +195,15 @@ oturumları kapanır (oturum sürümü).
   sırayla girer; onda her zaman isteğe bağlı. Yeni cihaz uyarısı bu üç rolde, zorunluluktan bağımsız: işlem geçmişi,
   kişinin kendi adresine e-posta ve zilinin Sistem başlığı, her birinde yalnız kendi hesabının girişleri
   (`src/server/actions/notifications.ts` › `loadPanelNotifications`).
-- **E-posta alıcıları** ([BILDIRIMLER.md](BILDIRIMLER.md) › Alıcılar ve hesaplar): kasa raporu ve sabah e-postası
-  personel ve **müdür** hesabının adresine gitmez (listeler şubeler arasında ortak olabilir; kasa e-postası karaoke ön
-  ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini taşır); **muhasebeci** hesabı alır (hesabı olmayan
-  muhasebeci adresi gibi).
+- **E-posta alıcıları** ([BILDIRIMLER.md](BILDIRIMLER.md) › Alıcılar ve hesaplar): kasa raporu, sabah e-postası ve
+  muhasebeci paketi personel ve **müdür** hesabının adresine gitmez (listeler şubeler arasında ortak olabilir; kasa
+  e-postası karaoke ön ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini, paket bütün şubelerin
+  faturalarını, alış fiyatlarını, maaş ve kira harcamalarını taşır); **muhasebeci** hesabı alır (hesabı olmayan
+  muhasebeci adresi gibi). Üç listenin üçü de aynı kapılardan geçer (`src/lib/notify-recipients.ts` ›
+  `RECIPIENT_LISTS`): kaydederken müdürün adresi reddedilir, gönderimde düşer, yönetici zilde ve kartta görür; adresi
+  bir listede kalan müdür (kayıttan sonra müdüre indirilen yönetici) Hesabım'da giriş e-postasını değiştiremez. Yoksa
+  eski kutusu hiçbir hesabın olmaz, gönderim onu hesabı olmayan muhasebeci adresi sayıp yeniden gönderirdi
+  (`src/server/notify/recipients.ts` › `listsWithEmail`; `src/server/actions/auth.ts` › `updateProfile`).
 - **Şube kurulumu e-postası** müdür ya da muhasebeci hesabının adresi olamaz (yöneticininki ve öteki şubenin
   personelininki de; `src/lib/branches.ts` › `branchEmailTaken`, `createBranch` ve `sendBranchInstall`): kurulum
   bağlantısı o adrese gider ve kasanın eşitleme anahtarını verir. Yalnız şubesiz ya da aynı şubedeki personel hesabı
@@ -241,6 +246,10 @@ oturumları kapanır (oturum sürümü).
   açamaz; karardan sonra türün kuralı), şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu eylemleri
   "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube kurulumu e-postası müdür, muhasebeci, yönetici ya
   da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve kurulum bağlantısı yazılmaz).
+- `tests/bildirim-alicilari-db.test.ts` (gerçek Postgres, `BILDIRIM_TEST_DATABASE_URL`): muhasebeci paketinin
+  alıcılarına müdür, personel ya da pasif hesabın adresi kaydedilmez; alıcıyken müdüre indirilen hesap için Kullanıcılar
+  uyarır, zil söyler, müdür giriş e-postasını değiştiremez, personel giriş e-postasını paketteki adrese çeviremez,
+  "Şimdi gönder" yalnız muhasebeciye gider.
 - `tests/iscilik-mudur-db.test.ts` (gerçek Postgres, `ISCILIK_TEST_DATABASE_URL`): müdürün İşçilik raporunda tutar ve
   günlük satır yok; dün için Vardiya'ya yazdığı ve sildiği part-time hücresinden önce ve sonra raporu birebir aynı
   (yöneticininkinde aynı hücre tam günlük ücret).

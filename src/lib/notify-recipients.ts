@@ -1,17 +1,20 @@
 /**
  * Bildirim alıcıları ve hesaplar (denetim E-52, E-53; docs/BILDIRIMLER.md › Alıcılar ve hesaplar): kasa raporu
- * e-postasının alıcıları ve sabah e-postasının (bekçi uyarısı ve deneme de) bildirim adresleri tutar, ödeme ve maliyet
- * taşır. Bir adres paneldeki bir hesaba aitse e-postayı yalnız etkin bir yöneticinin ya da muhasebecinin hesabıysa alır:
- * personel ve müdür hesabının ya da pasif hesabın adresi gönderim anında düşer, hesabı olmayan adres (muhasebeci, sahibin
- * kişisel adresi) kalır. Müdür (docs/ROLLER.md): kasa raporunu panelde şubesinin rakamlarıyla görür; ama listeler şubeler
- * arasında ortak olabilir ("Tuzla ile aynı"), kasa e-postası karaoke ön ödemesini, sabah e-postası işletmenin ödemelerini
- * ve maliyetini taşır: tutucu seçenek, müdür hesabına e-posta gitmez. Muhasebeci hesabı bugün hesabı olmayan muhasebeci
- * adresi gibi alır (salt okunur rolü kasa raporlarını rakamlarıyla, faturaları ve ödemeleri zaten görür).
- * Kaydederken de denetlenir (adres eklemek, kasa alıcıları); ama gönderim ona güvenmez: kayıttan sonra personele
- * indirilen ya da pasif yapılan hesap da düşer, yönetici zilde ve listede görür. Saf: sunucu, ekranlar ve testler paylaşır.
+ * e-postasının alıcıları, sabah e-postasının (bekçi uyarısı ve deneme de) bildirim adresleri ve muhasebeci paketinin
+ * alıcıları (docs/MUHASEBE-PAKETI.md) tutar, ödeme ve maliyet taşır. Bir adres paneldeki bir hesaba aitse e-postayı
+ * yalnız etkin bir yöneticinin ya da muhasebecinin hesabıysa alır: personel ve müdür hesabının ya da pasif hesabın
+ * adresi gönderim anında düşer, hesabı olmayan adres (muhasebeci, sahibin kişisel adresi) kalır. Müdür
+ * (docs/ROLLER.md): kasa raporunu panelde şubesinin rakamlarıyla görür; ama listeler şubeler arasında ortak olabilir
+ * ("Tuzla ile aynı"), kasa e-postası karaoke ön ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini, paket
+ * bütün şubelerin faturalarını, alış fiyatlarını, maaş ve kira harcamalarını taşır: tutucu seçenek, müdür hesabına
+ * e-posta gitmez. Muhasebeci hesabı bugün hesabı olmayan muhasebeci adresi gibi alır (salt okunur rolü kasa raporlarını
+ * rakamlarıyla, faturaları ve ödemeleri zaten görür). Kaydederken de denetlenir (adres eklemek, kasa ve paket
+ * alıcıları); ama gönderim ona güvenmez: kayıttan sonra personele indirilen ya da pasif yapılan hesap da düşer, yönetici
+ * zilde ve listede görür. Saf: sunucu, ekranlar ve testler paylaşır.
  */
 
 import type { Role } from "./constants";
+import { PACKAGE_HREF } from "./muhasebe/paket-ayar";
 
 /** Adres neden e-posta almaz: personel ya da müdür hesabının ya da pasif bir hesabın adresi */
 export type BlockReason = "staff" | "manager" | "inactive";
@@ -21,12 +24,15 @@ export interface DroppedRecipient {
   reason: BlockReason;
 }
 
-/** Ödeme ve maliyet taşıyan listeler: kasa raporu alıcıları, sabah e-postasının bildirim adresleri */
-export type RecipientList = "cash" | "digest";
+/** Ödeme ve maliyet taşıyan listeler: kasa raporu alıcıları, sabah e-postasının bildirim adresleri, paketin alıcıları */
+export type RecipientList = "cash" | "digest" | "package";
+
+export const RECIPIENT_LISTS: readonly RecipientList[] = ["cash", "digest", "package"];
 
 export const RECIPIENT_LIST_LABEL: Record<RecipientList, string> = {
   cash: "kasa raporu alıcıları",
   digest: "sabah e-postasının bildirim adresleri",
+  package: "muhasebeci paketinin alıcıları",
 };
 
 /** Hesabın e-posta alması engelleniyor mu; engelliyse nedeni (hesap yoksa null: adres e-postayı alır) */
@@ -77,39 +83,49 @@ export function droppedLogSuffix(dropped: readonly unknown[]): string {
 const WHY: Record<RecipientList, string> = {
   cash: "kasa e-postasında karaoke ön ödemesi var",
   digest: "sabah e-postasında ödemeler, fatura tutarları ve maliyet rakamları var",
+  package: "muhasebeci paketinde bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları ve sabit giderleri var",
+};
+
+/** Müdürün adresinde ret metninin sonu: kasa raporunu panelde şubesinin rakamlarıyla görür; paketi hiç görmez */
+const MANAGER_NOTE: Record<RecipientList, string> = {
+  cash: "Müdür kasa raporunu panelde görür; yöneticinin ya da muhasebecinin adresini girin.",
+  digest: "Müdür kasa raporunu panelde görür; yöneticinin ya da muhasebecinin adresini girin.",
+  package: "Yöneticinin ya da muhasebecinin adresini girin.",
 };
 
 /**
  * Yöneticinin listeye yazdığı adres bir hesabın ve o hesap e-postayı almıyor (Kasa › Rapor alıcıları; Hatırlatıcılar ›
- * Bildirim adresleri)
+ * Bildirim adresleri; Ayarlar › Muhasebeci paketi)
  */
 export function recipientRefusal(list: RecipientList, d: DroppedRecipient): string {
   if (d.reason === "staff") return `${d.email} bir personel hesabının adresi; ${WHY[list]}. Yöneticinin ya da muhasebecinin adresini girin.`;
-  if (d.reason === "manager") return `${d.email} bir müdür hesabının adresi; ${WHY[list]}. Müdür kasa raporunu panelde görür; yöneticinin ya da muhasebecinin adresini girin.`;
+  if (d.reason === "manager") return `${d.email} bir müdür hesabının adresi; ${WHY[list]}. ${MANAGER_NOTE[list]}`;
   return `${d.email} pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı Kullanıcılar'dan silerseniz adres alıcı olabilir.`;
 }
 
 /**
- * Personel Hesabım'da giriş e-postasını bir bildirim listesindeki adrese çeviremez (E-52): o adres gönderimde düşerdi,
- * kasa ya da sabah e-postası sahibine uyarısız gitmezdi. Başka bir hesabın adresine de aynı metinle: personel adres
- * deneyerek kimin listede olduğunu öğrenemesin (yöneticiye nedeni ayrı yazılır)
+ * Personel ve müdür Hesabım'da giriş e-postasını bir bildirim listesindeki adrese çeviremez (E-52): o adres gönderimde
+ * düşerdi, kasa ya da sabah e-postası ya da muhasebeci paketi sahibine uyarısız gitmezdi. Başka bir hesabın adresine
+ * de aynı metinle: personel adres deneyerek kimin listede olduğunu öğrenemesin (yöneticiye nedeni ayrı yazılır)
  */
 export const PROFILE_LIST_REFUSAL = "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun.";
 
 /**
- * Personel, adresi bir bildirim listesindeyken giriş e-postasını değiştiremez: gönderim adresi hesaba bakarak düşürür,
- * hesabı kalmayan eski adres muhasebecininki gibi yeniden e-posta alırdı (kasa farkı, ödemeler, kâr) ve zil susardı
+ * Personel ve müdür, adresi bir bildirim listesindeyken (muhasebeci paketinin alıcıları da) giriş e-postasını
+ * değiştiremez: gönderim adresi hesaba bakarak düşürür, hesabı kalmayan eski adres muhasebecininki gibi yeniden e-posta
+ * alırdı (kasa farkı, ödemeler, kâr; paket: bütün şubelerin faturaları, maaş ve kira) ve zil susardı
  */
 export const PROFILE_OWN_LIST_REFUSAL = "Giriş e-postanız bildirim listesinde; değiştirmek için yöneticiye yazın.";
 
-/** "kasa raporu alıcıları" / "… ve sabah e-postasının bildirim adresleri" */
+/** "kasa raporu alıcıları" / "… ve sabah e-postasının bildirim adresleri" / "…, … ve muhasebeci paketinin alıcıları" */
 export function listsText(lists: readonly RecipientList[]): string {
-  return lists.map((l) => RECIPIENT_LIST_LABEL[l]).join(" ve ");
+  const labels = lists.map((l) => RECIPIENT_LIST_LABEL[l]);
+  return labels.length > 2 ? `${labels.slice(0, -1).join(", ")} ve ${labels[labels.length - 1]}` : labels.join(" ve ");
 }
 
 /**
- * Kullanıcılar: kaydedilen hesap e-posta almıyor (personel ya da pasif) ve adresi bir listede. Gönderim onu zaten düşürür;
- * yönetici listeyi temizlesin diye söylenir
+ * Kullanıcılar: kaydedilen hesap e-posta almıyor (personel, müdür ya da pasif) ve adresi bir listede. Gönderim onu
+ * zaten düşürür; yönetici listeyi temizlesin diye söylenir
  */
 export function userListNotice(user: { name: string; email: string }, reason: BlockReason, lists: readonly RecipientList[]): string {
   const who = reason === "staff" ? "personel hesabına" : reason === "manager" ? "müdür hesabına" : "pasif hesaba";
@@ -117,8 +133,8 @@ export function userListNotice(user: { name: string; email: string }, reason: Bl
 }
 
 /**
- * Kullanıcılar: e-posta almayan (personel ya da pasif) hesabın eski adresi bir listede ve artık hiçbir hesaba ait değil
- * (giriş e-postası değişti ya da hesap silindi). Gönderim onu hesabı olmayan adres sayar, e-posta gider; yönetici
+ * Kullanıcılar: e-posta almayan (personel, müdür ya da pasif) hesabın eski adresi bir listede ve artık hiçbir hesaba ait
+ * değil (giriş e-postası değişti ya da hesap silindi). Gönderim onu hesabı olmayan adres sayar, e-posta gider; yönetici
  * istemiyorsa listeden kaldırsın diye söylenir
  */
 export function oldAddressNotice(user: { name: string; email: string }, lists: readonly RecipientList[], why: "rename" | "delete"): string {
@@ -132,16 +148,22 @@ export function allDroppedSentence(subject: "Alıcıların" | "Etkin bildirim ad
   return `${subject} hepsi personel, müdür ya da pasif hesaba ait: ${droppedListText(dropped)}.`;
 }
 
+/** Zilin satırı: listenin adı, ayarın yeri ve bağlantısı */
+const BELL: Record<RecipientList, { what: string; where: string; href: string }> = {
+  cash: { what: "Kasa raporu e-postası", where: "Kasa › Rapor alıcıları'ndan", href: "/panel/kasa#rapor-alicilari" },
+  digest: { what: "Sabah e-postası", where: "Hatırlatıcılar › E-posta bildirimleri'nden", href: "/panel/hatirlaticilar#e-posta-bildirimleri" },
+  package: { what: "Muhasebeci paketi", where: "Ayarlar › Muhasebeci paketi'nden", href: PACKAGE_HREF },
+};
+
 /** Zilin satırı: listedeki adreslerden gönderilmeyenler (yalnız yönetici) */
 export function blockedBell(list: RecipientList, dropped: readonly DroppedRecipient[]): { id: string; title: string; body: string; href: string } {
   const n = dropped.length;
-  const what = list === "cash" ? "Kasa raporu e-postası" : "Sabah e-postası";
-  const where = list === "cash" ? "Kasa › Rapor alıcıları'ndan" : "Hatırlatıcılar › E-posta bildirimleri'nden";
+  const { what, where, href } = BELL[list];
   return {
     id: `alici-${list}-${dropped.map((d) => `${emailKey(d.email)}:${d.reason}`).join(",")}`,
     title: `${what} ${n === 1 ? "bir adrese" : `${n} adrese`} gitmiyor`,
     body: `${droppedListText(dropped)}: bu hesaplara ödeme ve maliyet e-postası gitmez. Adresi ${where} kaldırın ya da doğru adresi yazın.`,
-    href: list === "cash" ? "/panel/kasa#rapor-alicilari" : "/panel/hatirlaticilar#e-posta-bildirimleri",
+    href,
   };
 }
 

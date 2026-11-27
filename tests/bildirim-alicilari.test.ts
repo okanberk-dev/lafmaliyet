@@ -85,6 +85,12 @@ test("kaydederken ret metni: adresi adıyla söyler; personelde nedeni listeye g
     "eski@laffogato.net pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı Kullanıcılar'dan silerseniz adres alıcı olabilir.",
   );
   assert.equal(PROFILE_LIST_REFUSAL, "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun.");
+  // Muhasebeci paketi: müdür paketi panelde de görmez, "kasa raporunu görür" demez
+  assert.equal(
+    recipientRefusal("package", { email: "mudur@laffogato.net", reason: "manager" }),
+    "mudur@laffogato.net bir müdür hesabının adresi; muhasebeci paketinde bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları ve sabit giderleri var. Yöneticinin ya da muhasebecinin adresini girin.",
+  );
+  assert.match(recipientRefusal("cash", { email: "mudur@laffogato.net", reason: "manager" }), /Müdür kasa raporunu panelde görür; yöneticinin ya da muhasebecinin adresini girin\.$/);
 });
 
 test("Kullanıcılar uyarısı: personele indirilen ya da pasif yapılan hesabın adresi listede", () => {
@@ -93,6 +99,10 @@ test("Kullanıcılar uyarısı: personele indirilen ya da pasif yapılan hesabı
     "Mehmet (mehmet@laffogato.net) kasa raporu alıcıları ve sabah e-postasının bildirim adresleri arasında; pasif hesaba bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.",
   );
   assert.match(userListNotice({ name: "Ayşe", email: "a@b.co" }, "staff", ["digest"]), /^Ayşe \(a@b\.co\) sabah e-postasının bildirim adresleri arasında; personel hesabına bu e-posta gitmez\./);
+  assert.equal(
+    userListNotice({ name: "Veli", email: "v@b.co" }, "manager", ["cash", "digest", "package"]),
+    "Veli (v@b.co) kasa raporu alıcıları, sabah e-postasının bildirim adresleri ve muhasebeci paketinin alıcıları arasında; müdür hesabına bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.",
+  );
 });
 
 test("eski adres listede kaldı (yeni giriş e-postası, silinen hesap): artık hesabı yok, e-posta gider; personelin ret metni", () => {
@@ -129,6 +139,9 @@ test("zil satırı: listeye göre başlık, adresler ve nedenleri, ayarın adres
   assert.equal(two.title, "Sabah e-postası 2 adrese gitmiyor");
   assert.equal(two.href, "/panel/hatirlaticilar#e-posta-bildirimleri");
   assert.match(two.body, /Hatırlatıcılar › E-posta bildirimleri'nden kaldırın/);
+  const pkg = blockedBell("package", [{ email: "v@b.co", reason: "manager" }]);
+  assert.deepEqual([pkg.title, pkg.href, pkg.id], ["Muhasebeci paketi bir adrese gitmiyor", "/panel/ayarlar#muhasebe", "alici-package-v@b.co:manager"]);
+  assert.match(pkg.body, /^v@b\.co \(müdür hesabı\): .* Adresi Ayarlar › Muhasebeci paketi'nden kaldırın/);
   // Neden değişince (personel → pasif) yeniden okunmamış olur
   assert.notEqual(blockedBell("cash", [{ email: "a@b.co", reason: "inactive" }]).id, blockedBell("cash", [{ email: "a@b.co", reason: "staff" }]).id);
 });

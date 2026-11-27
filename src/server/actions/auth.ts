@@ -380,10 +380,11 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
       .where(and(eq(s.users.email, data.email), ne(s.users.id, me.id)));
     // Personele "listede" ile "başka hesapta" aynı metin (PROFILE_LIST_REFUSAL): adres deneyerek liste öğrenilmesin
     if (n > 0) throw new UserError(me.role === "admin" ? "Bu e-posta başka bir kullanıcıda kayıtlı" : PROFILE_LIST_REFUSAL);
-    // Personel giriş e-postasını kasa raporu alıcılarındaki ya da sabah e-postasının bildirim adreslerindeki bir adrese
-    // çeviremez (E-52): gönderim personel hesabının adresini düşürür, kasa ve sabah e-postası sahibine uyarısız gitmezdi.
-    // Kendi adresi bir listedeyken de değiştiremez (E-53): gönderim adresi hesaba bakarak düşürür, hesabı kalmayan eski
-    // adres yeniden kasa ve sabah e-postası alır, zil susardı. Yönetici listeyi düzeltir
+    // Personel ve müdür giriş e-postasını kasa raporu alıcılarındaki, sabah e-postasının bildirim adreslerindeki ya da
+    // muhasebeci paketinin alıcılarındaki bir adrese çeviremez (E-52): gönderim bu hesabın adresini düşürür, e-posta
+    // sahibine uyarısız gitmezdi. Kendi adresi bir listedeyken de değiştiremez (E-53): gönderim adresi hesaba bakarak
+    // düşürür, hesabı kalmayan eski adres yeniden kasa ve sabah e-postasını ya da bütün şubelerin paketini alır, zil
+    // susardı. Yönetici listeyi düzeltir
     if (me.role !== "admin" && data.email !== u.email) {
       if ((await listsWithEmail(u.email)).length) throw new UserError(PROFILE_OWN_LIST_REFUSAL);
       if ((await listsWithEmail(data.email)).length) throw new UserError(PROFILE_LIST_REFUSAL);

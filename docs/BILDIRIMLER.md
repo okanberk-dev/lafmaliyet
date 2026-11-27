@@ -277,9 +277,11 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
 
 ### Alıcılar ve hesaplar
 
-Kasa raporu e-postası (Kasa › Rapor alıcıları), sabah e-postası, bekçi uyarısı ve iki deneme e-postası ödemeler,
-fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve karaoke ön ödemesi taşır. Bu yüzden (denetim E-52,
-E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
+Kasa raporu e-postası (Kasa › Rapor alıcıları), sabah e-postası, bekçi uyarısı, iki deneme e-postası ve muhasebeci
+paketi (Ayarlar › Muhasebeci paketi; bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları;
+[MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)) ödemeler, fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve
+karaoke ön ödemesi taşır. Bu yüzden (denetim E-52, E-53; `src/lib/notify-recipients.ts`,
+`src/server/notify/recipients.ts`; üç liste: `RECIPIENT_LISTS`):
 
 - **Gönderim anında süzülür.** Listedeki bir adres paneldeki bir hesaba aitse e-postayı yalnız **etkin bir
   yöneticinin ya da muhasebecinin** hesabıysa alır: personel, **müdür** ve pasif hesabın adresi düşer. Hesabı olmayan
@@ -290,25 +292,26 @@ E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
   alır. Büyük-küçük harf fark etmez. Kayıttan sonra personele indirilen, pasif yapılan ya da
   personel hesabı açılan adres de düşer: kural kaydı beklemez. Sıra korunur. Kural adresin hesabına bakar: adres
   hiçbir hesaba ait değilse (giriş e-postası değişti, hesap silindi) yeniden alır; bu yüzden aşağıdaki iki kapı var.
-- **Kaydederken reddedilir.** Kasa alıcılarına ve bildirim adreslerine personel, müdür ya da pasif hesabın adresi
-  yazılmaz ("ayse@… bir personel hesabının adresi; …", "mehmet@… bir müdür hesabının adresi; … Müdür kasa raporunu
+- **Kaydederken reddedilir.** Kasa alıcılarına, bildirim adreslerine ve muhasebeci paketinin alıcılarına personel,
+  müdür ya da pasif hesabın adresi yazılmaz ("ayse@… bir personel hesabının adresi; …", "mehmet@… bir müdür hesabının adresi; … Müdür kasa raporunu
   panelde görür; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
   Kullanıcılar'dan silerseniz adres alıcı olabilir."). Duraklatılmış bir adres böyle bir hesaba aitse yeniden açılmaz.
-- **Personel Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim adresleri,
-  duraklatılmış da) çeviremez: "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun."
+- **Personel ve müdür Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim
+  adresleri, duraklatılmış da; muhasebeci paketinin alıcıları, "Ay kapanınca gönder" kapalıyken de) çeviremez: "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun."
   Başka bir hesabın adresinde de aynı metin: personel adres deneyerek kimin listede olduğunu öğrenemez. Parola önce
   sorulur. Kendi adresi bir listedeyken giriş e-postasını hiç değiştiremez: "Giriş e-postanız bildirim listesinde;
   değiştirmek için yöneticiye yazın." (personele indirilen vardiya sorumlusu adresini değiştirince eski kutusu hesapsız
-  kalır, kasa ve sabah e-postası ona yeniden giderdi, zil susardı). Yönetici kendi adresini çevirebilir (alıcı olmaya
+  kalır, kasa ve sabah e-postası ona yeniden giderdi, zil susardı; paketin alıcısıyken müdüre indirilen yönetici de
+  böyle bütün şubelerin paketini eski kutusuna yeniden aldırırdı). Yönetici kendi adresini çevirebilir (alıcı olmaya
   devam eder).
-- **Kullanıcılar'da eski adres.** Yönetici personel ya da pasif hesabın (ya da personele indirdiği hesabın) giriş
+- **Kullanıcılar'da eski adres.** Yönetici personel, müdür ya da pasif hesabın (ya da personele indirdiği hesabın) giriş
   e-postasını değiştirince ya da böyle bir hesabı silince eski adres listede kaldıysa uyarı verir ("Mehmet hesabının
   eski adresi … kasa raporu alıcıları arasında; adres artık hiçbir hesaba ait değil, bu adrese e-posta gider.
   Gerekmiyorsa listeden kaldırın."). Engellemez: pasif hesabı silmek muhasebecinin adresini alıcı yapmanın yolu.
 - **Yönetici görür.** Zilde, Sistem başlığında: "Kasa raporu e-postası bir adrese gitmiyor" / "Sabah e-postası 2 adrese
-  gitmiyor" (adresler ve nedenleri; Rapor alıcıları kartına ya da bu kutuya götürür). Durumdan türer: adres listeden
-  çıkınca ya da hesap yeniden yönetici olunca kalkar. Rapor alıcıları kartında ve bildirim adresinin satırında aynı
-  not. Kullanıcılar'da bir hesabı personele indirmek, pasif yapmak ya da listedeki bir adresle personel hesabı açmak
+  gitmiyor" / "Muhasebeci paketi bir adrese gitmiyor" (adresler ve nedenleri; Rapor alıcıları kartına, bu kutuya ya da
+  Ayarlar › Muhasebeci paketi'ne götürür). Durumdan türer: adres listeden çıkınca ya da hesap yeniden yönetici olunca
+  kalkar. Rapor alıcıları kartında, Muhasebeci paketi kartında ve bildirim adresinin satırında aynı not. Kullanıcılar'da bir hesabı personele indirmek, pasif yapmak ya da listedeki bir adresle personel hesabı açmak
   uyarı verir ("Mehmet (…) kasa raporu alıcıları arasında; personel hesabına bu e-posta gitmez. Gerekmiyorsa listeden
   kaldırın."). İşlem geçmişindeki "Sabah e-postası" ve "Sistem uyarısı e-postası" satırı atlananları sayar ("→ 2 adres
   · 1 adres atlandı (personel ya da pasif hesap)").

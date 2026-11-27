@@ -1,6 +1,6 @@
 # Muhasebeci paketi ve ay kapanış e-postası
 
-Son güncelleme: 26 Kasım 2026. Yapılacaklar › Dalga 3: "Muhasebeciye aylık tek paket ve ay kapanış e-postası."
+Son güncelleme: 27 Kasım 2026. Yapılacaklar › Dalga 3: "Muhasebeciye aylık tek paket ve ay kapanış e-postası."
 
 ## 1. Paket
 
@@ -32,8 +32,10 @@ Kod: `src/lib/muhasebe/paket.ts` (saf: ayarlar, gönderim günü, özet, çalı�
 - **Muhasebe** (`/panel/muhasebe`): **Muhasebeci** rolündeki hesabın ana ekranı ([ROLLER.md](ROLLER.md)); ay seçip
   **Paketi indir (.xlsx)** (`/api/muhasebe/paket`, yetenek `muhasebe.oku`). Salt okunur: gönderim ve ayarlar yok.
 - **Ayarlar › Muhasebeci paketi** (`/panel/ayarlar#muhasebe`, yalnız yönetici): muhasebeci e-posta adresleri (en çok 5;
-  boşsa e-posta gitmez), "Ay kapanınca gönder" (varsayılan açık), ay seçimi, **Paketi indir (.xlsx)**, **Şimdi gönder**
-  (onaylı; kaydedilmiş adreslere), son gönderim (ay, an, kim, kime).
+  boşsa e-posta gitmez; personel, müdür ya da pasif hesabın adresi kaydedilmez), "Ay kapanınca gönder" (varsayılan
+  açık), ay seçimi, **Paketi indir (.xlsx)**, **Şimdi gönder** (onaylı; kaydedilmiş adreslere), son gönderim (ay, an,
+  kim, kime). Listede kalıp gönderimde düşen adres (kayıttan sonra müdüre indirilen hesap) kartta "Bu adreslere paket
+  gitmez" notuyla ve zilde görünür.
 - İndirme ucu: `/api/muhasebe/paket?ay=YYYY-MM` (yalnız yönetici; ay verilmezse geçen ay).
 
 ## 3. Ay kapanış e-postası
@@ -41,8 +43,12 @@ Kod: `src/lib/muhasebe/paket.ts` (saf: ayarlar, gönderim günü, özet, çalı�
 - **Ne zaman:** günlük işte (`/api/cron/gunluk`), ayın **1'inde** geçen ayın paketi. Sabah işi o gün çalışmadıysa ya da
   e-posta gidemediyse **2'si ve 3'ünde** yeniden denenir; bir ay kendiliğinden bir kez gider (`autoMonth`; aynı ayın
   Resend anahtarı `muhasebe-paket-YYYY-MM` ikinci gönderimi de yutar).
-- **Kime:** Ayarlar'daki muhasebeci adresleri. Adres yoksa ya da ayar kapalıysa **gönderilmez** (adım yazılmaz). Personel
-  ya da pasif bir panel hesabının adresi düşer (sabah e-postasıyla aynı kural); hepsi düşerse hata.
+- **Kime:** Ayarlar'daki muhasebeci adresleri. Adres yoksa ya da ayar kapalıysa **gönderilmez** (adım yazılmaz). Personel,
+  **müdür** ya da pasif bir panel hesabının adresi düşer (kasa ve sabah e-postasıyla aynı kural; paket bütün şubelerin
+  faturalarını, alış fiyatlarını, maaş ve kira harcamalarını taşır, müdür bunları görmez: [ROLLER.md](ROLLER.md)); hepsi
+  düşerse hata. Kaydederken de reddedilir. Adresi listede olan personel ya da müdür Hesabım'da giriş e-postasını
+  değiştiremez: eski kutusu hiçbir hesabın olmaz, gönderim onu hesabı olmayan muhasebeci adresi sayıp paketi yeniden
+  gönderirdi ([BILDIRIMLER.md](BILDIRIMLER.md) › Alıcılar ve hesaplar).
 - **Ne:** konu "Muhasebe paketi · Ekim 2026"; ayın özeti satır satır (fatura, bekleyen, harcama, kasa, oran oran
   yazarkasa KDV'si, sabit gider, dönemin kapalı olup olmadığı) ve paket **ekte**. Panel bağlantısı yok (muhasebecinin
   panel hesabı yok; her şey ekte).

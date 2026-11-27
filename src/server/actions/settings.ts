@@ -28,8 +28,9 @@ import { attempt, UserError, zText } from "./util";
 const numKey = z.number().finite();
 
 /**
- * Kaydedilen hesap e-posta almıyorsa (personel ya da pasif) ve adresi kasa raporu alıcılarında ya da sabah e-postasının
- * bildirim adreslerindeyse yöneticiye uyarı (E-53): gönderim o adresi zaten düşürür, liste temizlensin diye söylenir.
+ * Kaydedilen hesap e-posta almıyorsa (personel, müdür ya da pasif) ve adresi kasa raporu alıcılarında, sabah
+ * e-postasının bildirim adreslerinde ya da muhasebeci paketinin alıcılarındaysa yöneticiye uyarı (E-53): gönderim o
+ * adresi zaten düşürür, liste temizlensin diye söylenir.
  * Dışa açılmaz ("use server" dosyasının her dışa verdiği bir uçtur).
  */
 async function listNotice(user: { name: string; email: string; role: Role; active: boolean }): Promise<string | null> {
@@ -41,8 +42,9 @@ async function listNotice(user: { name: string; email: string; role: Role; activ
 
 /**
  * E-posta almayan hesabın eski adresi bir listede kaldı ve artık hiçbir hesaba ait değil (E-53): giriş e-postası
- * değişti (hesap önce ya da sonra personel / pasif) ya da hesap silindi. Gönderim o adresi hesabı olmayan adres
- * (muhasebeci gibi) sayar, kasa ve sabah e-postası ona gider; yönetici istemiyorsa listeden kaldırsın diye söylenir.
+ * değişti (hesap önce ya da sonra personel / müdür / pasif) ya da hesap silindi. Gönderim o adresi hesabı olmayan adres
+ * (muhasebeci gibi) sayar, kasa ve sabah e-postası ve muhasebeci paketi ona gider; yönetici istemiyorsa listeden
+ * kaldırsın diye söylenir.
  * Dışa açılmaz.
  */
 async function oldAddressListNotice(user: { name: string; email: string }, blocked: boolean, why: "rename" | "delete"): Promise<string | null> {

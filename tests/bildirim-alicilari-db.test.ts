@@ -11,6 +11,9 @@
 //   adres hesapsız kalıp yeniden e-posta alırdı); yönetici çevirebilir.
 // - Kullanıcılar: personel ya da pasif hesabın eski adresi listede kalırsa (yeni adres, silme) uyarı.
 // - Kullanıcılar: personele indirilen ya da pasif yapılan hesabın adresi listedeyse uyarı; zil satırı.
+// - Muhasebeci paketi (docs/ROLLER.md › E-posta alıcıları): müdür, personel ve pasif hesabın adresi alıcı yazılmaz;
+//   listedeyken müdüre indirilen hesap giriş e-postasını değiştiremez (eski kutusu bütün şubelerin paketini yeniden
+//   alırdı), Kullanıcılar uyarır, zil söyler, "Şimdi gönder" yalnız muhasebeciye gider.
 //
 // BILDIRIM_TEST_DATABASE_URL (yoksa LAFPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu (geçici
 // veritabanı onun üstünde açılır).
@@ -35,7 +38,7 @@ const SERVER_URL = process.env.BILDIRIM_TEST_DATABASE_URL ?? process.env.LAFPOS_
 const DB_NAME = `laffogato_bildirim_${process.pid}`;
 const PASSWORD = "Bildirim-Deneme-2026";
 
-type Who = { id: number; name: string; email: string; role: "admin" | "staff" };
+type Who = { id: number; name: string; email: string; role: "admin" | "staff" | "manager" };
 
 describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_URL && "BILDIRIM_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
@@ -50,6 +53,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
   let settingsActions: typeof import("../src/server/actions/settings");
   let authActions: typeof import("../src/server/actions/auth");
   let bell: typeof import("../src/server/actions/notifications");
+  let packageActions: typeof import("../src/server/actions/muhasebe");
   const realFetch = globalThis.fetch;
   /** Resend'e giden iletilerin alıcıları */
   const sent: { to: string[]; subject: string }[] = [];
@@ -145,6 +149,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     settingsActions = await import("../src/server/actions/settings");
     authActions = await import("../src/server/actions/auth");
     bell = await import("../src/server/actions/notifications");
+    packageActions = await import("../src/server/actions/muhasebe");
     // Resend: alıcılar kaydedilir, ağa çıkılmaz; başka her istek düşer (sabah e-postasının ek kutuları beklemesin)
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       if (!String(input).startsWith("https://api.resend.com/")) throw new TypeError("testte ağ yok");
@@ -167,7 +172,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     await db.update(s.users).set({ role: "admin", active: true }).where(inArray(s.users.id, [users.ali.id, users.veli.id]));
     await db.update(s.users).set({ role: "admin", active: false }).where(eq(s.users.id, users.eski.id));
     await db.update(s.users).set({ role: "staff", active: true }).where(inArray(s.users.id, [users.ayse.id, users.mehmet.id]));
-    for (const u of Object.values(users)) await db.update(s.users).set({ email: u.email, name: u.name }).where(eq(s.users.id, u.id));
+    for (const u of Object.values(users)) await db.update(s.users).set({ email: u.email, name: u.name, branchId: null }).where(eq(s.users.id, u.id));
     process.env.RESEND_API_KEY = "re_test_bildirim";
     sent.length = 0;
     me = users.ali;
@@ -194,10 +199,10 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     // Zil ve ayar: yalnız gönderimde gerçekten düşenler (kapalı kasa e-postası ve duraklatılan adres sayılmaz)
     await setCash([users.ayse.email], false);
     await addRow(users.mehmet.email, false);
-    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [], digest: [] });
+    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [], digest: [], package: [] });
     await setCash([users.ayse.email, ACCOUNTANT], true);
     await addRow(users.eski.email, true);
-    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [{ email: users.ayse.email, reason: "staff" }], digest: [{ email: users.eski.email, reason: "inactive" }] });
+    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [{ email: users.ayse.email, reason: "staff" }], digest: [{ email: users.eski.email, reason: "inactive" }], package: [] });
   });
 
   test("kasa e-postası: sonradan personele indirilen adres düşer; hepsi düşerse gitmedi, nedeni yalnız yöneticiye", async () => {
@@ -373,7 +378,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     assert.deepEqual(r, { ok: false, error: PROFILE_OWN_LIST_REFUSAL });
     assert.equal((await db.select().from(s.users).where(eq(s.users.id, users.veli.id)))[0].email, users.veli.email);
     assert.deepEqual(await recipients.sendableRecipients(db, [users.veli.email, ACCOUNTANT]), { to: [ACCOUNTANT], dropped: [{ email: users.veli.email, reason: "staff" }] });
-    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [{ email: users.veli.email, reason: "staff" }], digest: [{ email: users.veli.email, reason: "staff" }] });
+    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [{ email: users.veli.email, reason: "staff" }], digest: [{ email: users.veli.email, reason: "staff" }], package: [] });
     // Yalnız adını değiştirebilir (e-posta aynı)
     assert.equal((await authActions.updateProfile({ name: "Veli K.", email: users.veli.email, password: PASSWORD })).ok, true);
     // Kasa listesi kapalıyken de: açılınca giderdi
@@ -395,7 +400,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
       renamed.ok && renamed.data.notice,
       "Mehmet hesabının eski adresi mehmet@laffogato.net kasa raporu alıcıları ve sabah e-postasının bildirim adresleri arasında; adres artık hiçbir hesaba ait değil, bu adrese e-posta gider. Gerekmiyorsa listeden kaldırın.",
     );
-    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [], digest: [] });
+    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [], digest: [], package: [] });
     // Etkin yöneticinin adresi değişince uyarı yok (eski adres zaten e-posta alıyordu, alan kişi hâlâ yönetici)
     await setCash([users.veli.email]);
     const admin = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: "veli.yeni@laffogato.net", role: "admin", active: true, seen: await seen(users.veli.id) }, { password: PASSWORD });
@@ -455,5 +460,70 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     me = users.ayse;
     await db.update(s.users).set({ active: true }).where(eq(s.users.id, users.ayse.id));
     assert.equal((await bell.loadPanelNotifications()).filter((i) => i.id.startsWith("alici-")).length, 0);
+  });
+
+  test("muhasebeci paketi: müdür, personel ve pasif hesabın adresi alıcı olamaz; listedeki müdür giriş e-postasını değiştiremez, paket yalnız muhasebeciye", async () => {
+    const save = (list: string) => packageActions.savePackageOptions({ recipients: list, auto: true });
+    // Kaydederken: müdür, personel ve pasif hesabın adresi reddedilir (büyük-küçük harf fark etmez); hiçbiri yazılmaz
+    await db.update(s.users).set({ role: "manager", branchId: "tuzla" }).where(eq(s.users.id, users.veli.id));
+    assert.deepEqual(await save(`${ACCOUNTANT}\nVELI@laffogato.net`), {
+      ok: false,
+      error:
+        "veli@laffogato.net bir müdür hesabının adresi; muhasebeci paketinde bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları ve sabit giderleri var. Yöneticinin ya da muhasebecinin adresini girin.",
+    });
+    const staff = await save(users.ayse.email);
+    assert.match(staff.ok ? "" : staff.error, /^ayse@laffogato\.net bir personel hesabının adresi; muhasebeci paketinde/);
+    const inactive = await save(users.eski.email);
+    assert.match(inactive.ok ? "" : inactive.error, /^eski@laffogato\.net pasif bir hesabın adresi;/);
+    assert.deepEqual(await recipients.packageRecipients(), [], "hiçbiri yazılmadı");
+
+    // Veli yöneticiyken listeye yazıldı, sonra müdür yapıldı (yönetici yanlış yazmasa da olur): Kullanıcılar uyarır
+    await db.update(s.users).set({ role: "admin", branchId: null }).where(eq(s.users.id, users.veli.id));
+    const saved = await save(`${ACCOUNTANT}\n${users.veli.email}`);
+    assert.ok(saved.ok, saved.ok ? "" : saved.error);
+    const demoted = await settingsActions.saveUser(
+      { id: users.veli.id, name: users.veli.name, email: users.veli.email, role: "manager", branchId: "tuzla", active: true, seen: await seen(users.veli.id) },
+      { password: PASSWORD },
+    );
+    assert.ok(demoted.ok, demoted.ok ? "" : demoted.error);
+    assert.equal(demoted.ok && demoted.data.notice, "Veli (veli@laffogato.net) muhasebeci paketinin alıcıları arasında; müdür hesabına bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.");
+    assert.deepEqual(await recipients.listsWithEmail("VELI@laffogato.net"), ["package"]);
+    // Yöneticinin zili ve ayarı düşen adresi söyler
+    assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [], digest: [], package: [{ email: users.veli.email, reason: "manager" }] });
+    const row = (await bell.loadPanelNotifications()).find((i) => i.id.startsWith("alici-package-"));
+    assert.deepEqual(row && [row.title, row.href, row.group], ["Muhasebeci paketi bir adrese gitmiyor", "/panel/ayarlar#muhasebe", "sistem"]);
+    // Kaydetmek de (yalnız "Ay kapanınca gönder"i değiştirmek) müdürün adresiyle reddedilir: önce listeden çıkarılır
+    assert.equal((await packageActions.savePackageOptions({ recipients: `${ACCOUNTANT}\n${users.veli.email}`, auto: false })).ok, false);
+
+    // Müdür Hesabım'da giriş e-postasını değiştiremez: eski kutusu hiçbir hesabın olmaz, paket ona yeniden giderdi
+    me = { ...users.veli, role: "manager" };
+    assert.deepEqual(await authActions.updateProfile({ name: users.veli.name, email: "veli.baska@laffogato.net", password: PASSWORD }), { ok: false, error: PROFILE_OWN_LIST_REFUSAL });
+    assert.equal((await db.select().from(s.users).where(eq(s.users.id, users.veli.id)))[0].email, users.veli.email);
+    // Personel (ve müdür) giriş e-postasını paketteki adrese çeviremez
+    me = users.ayse;
+    assert.deepEqual(await authActions.updateProfile({ name: users.ayse.name, email: ACCOUNTANT.toUpperCase(), password: PASSWORD }), { ok: false, error: PROFILE_LIST_REFUSAL });
+
+    // "Şimdi gönder": müdürün adresi düşer, paket yalnız muhasebeciye
+    me = users.ali;
+    const now = await packageActions.sendPackageNow("2026-10");
+    assert.ok(now.ok, now.ok ? "" : now.error);
+    assert.deepEqual(now.ok && [now.data.to, now.data.dropped], [[ACCOUNTANT], [users.veli.email]]);
+    assert.deepEqual(sent.map((m) => m.to), [[ACCOUNTANT]]);
+
+    // Yönetici müdürün giriş e-postasını değiştirince eski adres listede kaldıysa uyarı (artık paketi alır)
+    const renamed = await settingsActions.saveUser(
+      { id: users.veli.id, name: users.veli.name, email: "veli.yeni@laffogato.net", role: "manager", branchId: "tuzla", active: true, seen: await seen(users.veli.id) },
+      { password: PASSWORD },
+    );
+    assert.ok(renamed.ok, renamed.ok ? "" : renamed.error);
+    assert.equal(
+      renamed.ok && renamed.data.notice,
+      "Veli hesabının eski adresi veli@laffogato.net muhasebeci paketinin alıcıları arasında; adres artık hiçbir hesaba ait değil, bu adrese e-posta gider. Gerekmiyorsa listeden kaldırın.",
+    );
+    // Listeden çıkınca müdür kendi adresini değiştirebilir
+    assert.ok((await save(ACCOUNTANT)).ok, "liste kaydedilmeli");
+    me = { ...users.veli, email: "veli.yeni@laffogato.net", role: "manager" };
+    const own = await authActions.updateProfile({ name: users.veli.name, email: "veli.ucuncu@laffogato.net", password: PASSWORD });
+    assert.ok(own.ok, own.ok ? "" : own.error);
   });
 });
