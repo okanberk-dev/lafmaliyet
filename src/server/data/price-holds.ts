@@ -135,7 +135,7 @@ export async function loadPriceHolds(scope: BranchScope = ALL_BRANCHES): Promise
  */
 export async function pendingHoldSummary(
   scope: BranchScope = ALL_BRANCHES,
-): Promise<{ count: number; latestId: number | null; items: { name: string; pct: number | null; createdAt: string }[]; elsewhere: number }> {
+): Promise<{ count: number; latestId: number | null; items: { name: string; pct: number | null; createdAt: string; branch: string | null }[]; elsewhere: number }> {
   const all = await getDb()
     .select({
       id: h.id,
@@ -162,6 +162,8 @@ export async function pendingHoldSummary(
       name: r.name,
       pct: livePct(r.packagePrice / r.packageSize, r.currentSize > 0 ? r.currentPrice / r.currentSize : 0),
       createdAt: r.createdAt.toISOString(),
+      // Önerinin faturasının şubesi (sabah e-postasının şube grubu süzer: groupDigestInvoices)
+      branch: r.invoiceBranch ?? null,
     })),
   };
 }

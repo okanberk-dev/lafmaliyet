@@ -1,8 +1,10 @@
 import "server-only";
 
-import { asc, desc, eq, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, like, or, sql } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import type { StaffLinkOptions } from "@/lib/staff-link";
+import { branchWhere, currentBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
@@ -11,18 +13,25 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
  * Maaşlar'ın Vardiya / hesap seçicisinin seçenekleri (Faz 5; src/lib/staff-link.ts): panel hesapları (ad, e-posta, şube)
  * ve Vardiya'da hesabı olmadan adıyla yazılmış kişiler (şube başına, en son yazılan adıyla). Yalnız yönetici ekranı okur;
  * hiçbiri kendiliğinden seçilmez.
+ *
+ * Tek şube seçiliyken (şube ayrımı doğrulaması, 27 Kasım 2026) o şubenin ve şubesiz hesaplar (yönetici, muhasebeci,
+ * şubesi seçilmemiş personel: her şubede çalışabilir) ve yalnız o şubenin vardiyasındaki adlar; Maaşlar'ın listesi de
+ * o şubenin. Önceden Marina seçiliyken seçici Tuzla'nın hesaplarını ve Tuzla'nın vardiyasındaki adları da listeliyordu.
+ * `scope` verilmezse isteğin seçimi
  */
-export async function loadStaffLinkOptions(): Promise<StaffLinkOptions> {
+export async function loadStaffLinkOptions(scope?: BranchScope): Promise<StaffLinkOptions> {
   const db = getDb();
+  const sc = scope ?? (await currentBranchScope());
   const [users, shiftNames] = await Promise.all([
     db
       .select({ id: s.users.id, name: s.users.name, email: s.users.email, branchId: s.users.branchId, active: s.users.active })
       .from(s.users)
+      .where(sc === ALL_BRANCHES ? undefined : or(isNull(s.users.branchId), eq(s.users.branchId, sc)))
       .orderBy(asc(s.users.name)),
     db
       .selectDistinctOn([s.shifts.branchId, s.shifts.personRef], { ref: s.shifts.personRef, name: s.shifts.personName, branchId: s.shifts.branchId })
       .from(s.shifts)
-      .where(like(s.shifts.personRef, "n:%"))
+      .where(and(like(s.shifts.personRef, "n:%"), branchWhere(s.shifts.branchId, sc)))
       .orderBy(asc(s.shifts.branchId), asc(s.shifts.personRef), desc(s.shifts.date)),
   ]);
   return { users, names: shiftNames.sort((a, b) => a.name.localeCompare(b.name, "tr")) };

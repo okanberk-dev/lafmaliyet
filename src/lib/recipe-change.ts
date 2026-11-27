@@ -230,13 +230,15 @@ export function takenIssue(name: string, size: ProductSize, existing: { name: st
 export function pendingProposalIssue(
   name: string,
   sizes: readonly ProductSize[],
-  pending: readonly { name: string; size: ProductSize; by: string }[],
+  pending: readonly { name: string; size: ProductSize; by: string | null }[],
   then: string,
 ): string | null {
   const key = nameKey(name);
   if (!key) return null;
   const hit = pending.find((p) => sizes.includes(p.size) && nameKey(p.name) === key);
   if (!hit) return null;
+  // Öbür şubenin önerisi (`by: null`, şube ayrımı): önereni yazılmaz, Onaylar'da o şube ya da Tümü seçiliyken görünür
+  if (hit.by === null) return `“${productSizeLabel(hit.name, hit.size)}” için öbür şubede bekleyen yeni ürün önerisi var (Tümü'de görünür): ${then}`;
   return `“${productSizeLabel(hit.name, hit.size)}” için ${genitive(hit.by)} bekleyen yeni ürün önerisi var: ${then}`;
 }
 

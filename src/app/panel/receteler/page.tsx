@@ -82,7 +82,9 @@ async function RecipeBookContent() {
     // Bekleyen öneriler önerenin şubesine göre (şube ayrımı; Onaylar'ın listesiyle aynı sayı)
     isAdmin ? currentBranchScope().then((scope) => countPendingByKind(scope)) : Promise.resolve({ change: 0, new: 0 }),
     isAdmin ? currentBranchScope().then((scope) => pendingByProduct(scope)) : Promise.resolve(new Map<number, number>()),
-    isAdmin ? Promise.resolve([]) : pendingNewProposals(),
+    // Personel ve müdür: önerenin şubesine göre (kilitli hesapta kendi şubesi; şube ayrımı doğrulaması: önceden müdür
+    // öbür şubenin personelinin önerisinin adını da görüyordu). Aynı ad + boy öbür şubede bekliyorsa eylem reddeder
+    isAdmin ? Promise.resolve([]) : currentBranchScope().then((scope) => pendingNewProposals(scope)),
   ]);
   // Kartın "Önerin onayda" rozeti yalnız reçete değişikliğinden (yeni ürün önerisinin ürünü henüz yok)
   const myPending = new Map(mine.flatMap((r) => (r.status === "pending" && r.kind === "change" && r.productId !== null ? [[r.productId, r] as const] : [])));

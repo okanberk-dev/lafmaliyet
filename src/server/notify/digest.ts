@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, gt, inArray, isNull, like, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, like, or } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
@@ -16,7 +16,7 @@ import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
-import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
+import { stockOnlyIds } from "@/server/data/stock-only-invoices";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { branchWhereWithShared, withBranchScope } from "@/server/branch-scope";
@@ -26,7 +26,18 @@ import { latestParasutRun } from "@/server/jobs/runs";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
 import { loadDigestExtras } from "./digest-extras";
-import { invoiceNewsOf, renderDigest, type DigestBox, type DigestExtras, type DigestExtrasResult, type DigestInvoices, type DigestPrices } from "./digest-template";
+import {
+  digestHoldsPart,
+  groupInvoiceSection,
+  invoiceNewsOf,
+  renderDigest,
+  type DigestBox,
+  type DigestExtras,
+  type DigestExtrasResult,
+  type DigestInvoiceRefs,
+  type DigestInvoices,
+  type DigestPrices,
+} from "./digest-template";
 import { activeDigestEmails, activeDigestRecipients, sendableRecipients } from "./recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, sendFailureText } from "./resend";
 import { loadNotifySettings } from "./settings";
@@ -158,13 +169,23 @@ const INVOICE_LOG_PREFIX = "invoices:";
 /** İlk kez (hiç gönderim yokken) geriye bakılan süre */
 const FIRST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
+/** Sabah e-postasının fatura bölümü ve onu şube grubuna süzmenin bilgisi */
+export interface DigestInvoiceLoad {
+  invoices: DigestInvoices;
+  failedRunKey: string | null;
+  sinceKey: string;
+  cashOutState: CashOutState;
+  refs: DigestInvoiceRefs;
+}
+
 /**
  * Sabah e-postasının Paraşüt bölümü: son Paraşüt bölümlü e-postadan bu yana eşitlemenin açtığı faturalar,
  * kontrol bekleyenlerin sayısı, (henüz bildirilmediyse) başarısız son eşitleme ve onay bekleyen hammadde fiyatları
  * (`fresh`: aynı andan bu yana onaya düşenler). `sinceKey` son Paraşüt bölümlü gönderimin anıdır (hiç yoksa ""):
- * aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir.
+ * aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir. Okuma bütün şubelerin (firmaya giden e-posta);
+ * şubeye bağlı alıcı grubunun bölümü `refs` ile süzülür (`groupDigestInvoices`).
  */
-export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; failedRunKey: string | null; sinceKey: string; cashOutState: CashOutState }> {
+export async function loadDigestInvoices(): Promise<DigestInvoiceLoad> {
   const db = getDb();
   const [lastSent] = await db
     .select({ at: s.notificationLog.sentAt })
@@ -173,7 +194,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
     .orderBy(desc(s.notificationLog.sentAt))
     .limit(1);
   const since = lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS);
-  const [rows, [{ n }], [lastRun], holds, stockOnly, cashOuts] = await Promise.all([
+  const [rows, review, [lastRun], holds, cashOuts] = await Promise.all([
     db
       .select({
         supplier: s.invoices.supplier,
@@ -183,21 +204,19 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
         needsReview: s.invoices.needsReview,
         unpaid: s.invoices.unpaid,
         dueDate: s.invoices.dueDate,
+        branchId: s.invoices.branchId,
+        companyWide: s.invoices.companyWide,
       })
       .from(s.invoices)
       .where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, since)))
       .orderBy(desc(s.invoices.date), desc(s.invoices.id)),
-    db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
+    // Kontrol bekleyenler: şubesiyle (şubeye bağlı alıcı grubu yalnız kendi faturalarını sayar)
+    db.select({ id: s.invoices.id, branchId: s.invoices.branchId, companyWide: s.invoices.companyWide }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
     latestParasutRun(db).then((r) => (r ? [r] : [])),
     pendingHoldSummary().catch((e) => {
       console.error("Sabah e-postası fiyat onayları", e);
       return null;
-    }),
-    // Kontrol bekleyenlerin kategorisi tahmin olmayanı: kalemi hammaddeye bağlı, mal alışı sayılmıyor (E-07)
-    countStockOnlyReview(db).catch((e) => {
-      console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
-      return 0;
     }),
     // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar
     loadCashOutInvoiceState(db).catch((e) => {
@@ -205,10 +224,19 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       return { pending: [], duplicates: [] };
     }),
   ]);
+  // Kontrol bekleyenlerin kategorisi tahmin olmayanı: kalemi hammaddeye bağlı, mal alışı sayılmıyor (E-07)
+  const stockOnly = new Set(
+    await stockOnlyIds(
+      db,
+      review.map((r) => r.id),
+    ).catch((e) => {
+      console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
+      return [] as number[];
+    }),
+  );
   const sinceIso = since.toISOString();
-  const priceHolds = holds?.count
-    ? { count: holds.count, fresh: holds.items.filter((i) => i.createdAt > sinceIso).length, items: holds.items.map(({ name, pct }) => ({ name, pct })) }
-    : null;
+  const holdRefs = (holds?.items ?? []).map((i) => ({ name: i.name, pct: i.pct, branch: i.branch, fresh: i.createdAt > sinceIso }));
+  const priceHolds = digestHoldsPart(holdRefs);
   let syncError: string | null = null;
   let failedRunKey: string | null = null;
   if (lastRun?.status === "error" && Date.now() - lastRun.startedAt.getTime() < 36 * 60 * 60 * 1000) {
@@ -221,25 +249,36 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   }
   // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
   // (sabah işi + elle) aynı anahtarı paylaşmazdı
+  const reviewRefs = review.map((r) => ({ branchId: r.branchId, companyWide: r.companyWide, stockOnly: stockOnly.has(r.id) }));
   return {
-    invoices: { items: rows, reviewCount: n, stockOnlyCount: Math.min(stockOnly, n), cashOuts: cashOutPartOf(cashOuts), syncError, priceHolds },
+    invoices: {
+      items: rows.map((r) => ({ supplier: r.supplier, date: r.date, payable: r.payable, category: r.category, needsReview: r.needsReview, unpaid: r.unpaid, dueDate: r.dueDate })),
+      reviewCount: reviewRefs.length,
+      stockOnlyCount: reviewRefs.filter((r) => r.stockOnly).length,
+      cashOuts: cashOutPartOf(cashOuts),
+      syncError,
+      priceHolds,
+    },
     failedRunKey,
     sinceKey: lastSent?.at?.toISOString() ?? "",
     cashOutState: cashOuts,
+    refs: { items: rows.map((r) => ({ branchId: r.branchId, companyWide: r.companyWide })), review: reviewRefs, holds: holdRefs },
   };
 }
 
 type CashOutState = Awaited<ReturnType<typeof loadCashOutInvoiceState>>;
 
-/** Fatura bölümünün "kasadan faturalı alımlar" satırı (yoksa null) */
 /**
- * Şubeye bağlı alıcı grubunun fatura bölümü: kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle
- * yapıldı; yalnız gösterim süzülür). Bütün şubelerin grubunda (boş) olduğu gibi. Sabah e-postası ve önizlemesi
+ * Şubeye bağlı alıcı grubunun fatura bölümü (şube ayrımı; sahibin isteği 27 Kasım 2026): yeni faturalar, kontrol
+ * bekleyenler ve onay bekleyen fiyatlar grubun şubelerinin (`groupInvoiceSection`, saf kural digest-template.ts'te),
+ * kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle yapıldı; yalnız gösterim süzülür). Bütün
+ * şubelerin grubunda (boş) olduğu gibi. Sabah e-postası ve önizlemesi
  */
-export function groupDigestInvoices(invoices: DigestInvoices, cashOutState: CashOutState, branchIds: readonly string[]): DigestInvoices {
+export function groupDigestInvoices(load: Pick<DigestInvoiceLoad, "invoices" | "cashOutState" | "refs">, branchIds: readonly string[]): DigestInvoices {
+  const { invoices, cashOutState, refs } = load;
   if (!branchIds.length) return invoices;
   return {
-    ...invoices,
+    ...groupInvoiceSection(invoices, refs, branchIds),
     cashOuts: cashOutPartOf({ pending: cashOutState.pending.filter((r) => branchIds.includes(r.branchId)), duplicates: cashOutState.duplicates.filter((r) => branchIds.includes(r.branchId)) }),
   };
 }
@@ -334,7 +373,8 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   const sent = due.length ? await db.select({ key: s.notificationLog.key }).from(s.notificationLog).where(inArray(s.notificationLog.key, due.map((d) => d.key))) : [];
   const sentKeys = new Set(sent.map((r) => r.key));
   const fresh = due.filter((d) => !sentKeys.has(d.key));
-  const { invoices, failedRunKey, sinceKey, cashOutState } = await loadDigestInvoices();
+  const invoiceLoad = await loadDigestInvoices();
+  const { invoices, failedRunKey, sinceKey } = invoiceLoad;
   const prices = await loadDigestPrices().catch((e) => {
     console.error("Sabah e-postası zam bölümü", e);
     return null;
@@ -367,10 +407,13 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
       const branch = g.branchIds.length ? g.branchIds.map((id) => tills.find((b) => b.id === id)?.name ?? id).join(", ") : null;
       const groupExtras = g.branchIds.length ? await branchGroupExtras(today, g.branchIds) : extras;
       const groupFresh = g.branchIds.length ? fresh.filter((f) => digestItemInGroup(itemBranch(f.item), g.branchIds)) : fresh;
-      // Kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle yapıldı; yalnız gösterim süzülür)
-      const groupInvoices = groupDigestInvoices(invoices, cashOutState, g.branchIds);
-      const news = groupFresh.length > 0 || invoiceNews || !!prices || system.length > 0 || groupExtras.news;
-      return { ...g, branch, extras: groupExtras, fresh: groupFresh, invoices: groupInvoices, news };
+      // Fatura bölümü grubun şubelerinin ve işletme genelinin; kasadan faturalı alımlar kasanın şubesinin (eşleştirme
+      // bütün şubelerle yapıldı; yalnız gösterim süzülür). Grubun fatura haberi kendi bölümünden: öbür şubenin yeni
+      // faturası bu grubun e-postasını göndermez
+      const groupInvoices = groupDigestInvoices(invoiceLoad, g.branchIds);
+      const groupInvoiceNews = g.branchIds.length ? invoiceNewsOf(groupInvoices) : invoiceNews;
+      const news = groupFresh.length > 0 || groupInvoiceNews || !!prices || system.length > 0 || groupExtras.news;
+      return { ...g, branch, extras: groupExtras, fresh: groupFresh, invoices: groupInvoices, invoiceNews: groupInvoiceNews, news };
     }),
   );
   // Adres yokken de "gönderilecek bir şey var mı" bütün şubelerin içeriğiyle (bugünkü sıra: önce içerik, sonra adres)
@@ -404,7 +447,7 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
     const { subject, html, text } = renderDigest(
       g.fresh,
       today,
-      invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
+      g.invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
       prices,
       system.length ? { items: system } : null,
       g.extras.extras,
@@ -425,7 +468,7 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
     ].join("|");
     const keys: [string, string][] = [
       ...g.fresh.map((f): [string, string] => [f.key, f.key]),
-      ...(invoiceNews ? [["inv", `${INVOICE_LOG_PREFIX}${today}:${Date.now()}`] as [string, string]] : []),
+      ...(g.invoiceNews ? [["inv", `${INVOICE_LOG_PREFIX}${today}:${Date.now()}`] as [string, string]] : []),
       ...(failedRunKey ? [[failedRunKey, failedRunKey] as [string, string]] : []),
       ...(prices ? [["zam", `${PRICE_LOG_PREFIX}${today}:${Date.now()}`] as [string, string]] : []),
       ...system.map((p): [string, string] => [p.key, p.key]),

@@ -15,7 +15,10 @@
 //    verisinden etkileniyordur (tutar toplamı, sayı, liste); tasarımın bilerek firmanın bıraktığı yerler (ortak veri,
 //    "öbür şubelerde N" sayıları) `ORTAK` listesinde gerekçesiyle.
 //
-// Bilinen sızıntılar `todo` ile işaretli (düzelince işaret kalkar): koşu düşmez, TODO olarak listelenir.
+// Bilinen sızıntılar `todo` ile işaretlenir (düzelince işaret kalkar): koşu düşmez, TODO olarak listelenir. İlk koşunun
+// sekiz sızıntısı (Faturalar'ın cari bağları, sabah e-postasının fatura bölümü, Mutabakat POS'un şube karoları, Maaşlar'ın
+// hesap seçicisi, Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri, ekstre yükleme
+// penceresinin tedarikçileri) 27 Kasım 2026'da kapandı ("Şube ayrımı: doğrulama düzeltmeleri"); bugün işaretli yok.
 //
 // SUBE_AYRIMI_TEST_DATABASE_URL verilmezse atlanır (npm run test:db onu TEST_DATABASE_URL'e bağlar). Bir Postgres
 // sunucusunun adresi: test kendi geçici veritabanını açar, migration'ları ve başlangıç verisini uygular, sonunda siler.
@@ -413,15 +416,13 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     { name: "Kontrol listeleri › düzenle (loadChecklistTemplates scoped)", run: async () => (await import("../src/server/data/checklists")).loadChecklistTemplates({ scoped: true }) },
     // Mutabakat
     {
-      // Şube kipinde ekran (BranchPos): şubenin satırları ve firmanın "Bankaya gelen", "Fark", "Geciken" karoları
+      // Şube kipinde ekran (BranchPos): şubenin satırları ve karoları (beklenen, geciken, bekleyen), bankaya gelen para
+      // (firmanın, öbür şubenin satışına bağlı değil). Firmanın toplamları (fark, geciken) şube kipinde dönmez
       name: "Mutabakat › POS hakedişi (loadPosView, alan.mutabakat)",
       run: async () => {
         const v = await (await import("../src/server/mutabakat/load")).loadPosView(today, await area("mutabakat"));
-        const t = v.result.totals;
-        return v.branch ? { branch: v.branch, firm: { diff: t.diff, lateCount: t.lateCount, lateAmount: t.lateAmount } } : v;
+        return v.branch ? { branch: v.branch, result: v.result } : v;
       },
-      diffLeak:
-        "src/app/panel/mutabakat/page.tsx:626,633 (BranchPos) ← src/server/mutabakat/load.ts:470: şube kipindeki 'Fark' ve 'Geciken … gelmedi' karoları firmanın toplamı (gelen − bütün şubelerin beklenen neti): Tuzla'nın kart satışı Marina'nın ekranındaki farka girer",
     },
     {
       name: "Mutabakat › ekstre (loadRecon, alan.mutabakat)",
@@ -434,9 +435,9 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       shared: [ORTAK.recon],
     },
     {
-      name: "Mutabakat › ekstre yükleme penceresinin tedarikçileri (loadSupplierOptions)",
-      run: async () => (await import("../src/server/mutabakat/load")).loadSupplierOptions(),
-      leak: "src/app/panel/mutabakat/page.tsx:99 → src/server/mutabakat/load.ts:83 (loadSupplierOptions kapsamsız): yükleme penceresi bütün şubelerin fatura sayısıyla tedarikçileri listeler (yalnız Tuzla'nın tedarikçisi 'TZMARK Gıda · 1 fatura')",
+      // Sayfa alanın kapsamıyla çağırır (src/app/panel/mutabakat/page.tsx)
+      name: "Mutabakat › ekstre yükleme penceresinin tedarikçileri (loadSupplierOptions, alan.mutabakat)",
+      run: async () => (await import("../src/server/mutabakat/load")).loadSupplierOptions(await area("mutabakat")),
     },
     // Raporlar
     { name: "Raporlar › Şube karşılaştırma (loadBranchCompare)", run: async () => (await import("../src/server/data/sube-karsilastirma")).loadBranchCompare(month(), 3) },
@@ -446,15 +447,14 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     // Reçeteler
     { name: "Reçete defteri › bekleyen (countPendingByKind)", run: async () => (await import("../src/server/data/recipe-requests")).countPendingByKind(await sel()) },
     {
+      // Sayfa seçimle çağırır (src/app/panel/urunler/site/page.tsx)
       name: "Site menüsü › bekleyen yeni ürün önerileri (pendingNewProposalRows)",
-      run: async () => (await import("../src/server/data/recipe-requests")).pendingNewProposalRows(),
-      leak: "src/app/panel/urunler/site/page.tsx:97 → src/server/data/recipe-requests.ts:172 (pendingNewProposalRows kapsamsız): Site menüsü Marina seçiliyken Tuzla personelinin bekleyen yeni ürün önerisini önerenin adıyla gösterir (Onaylar ve Reçete defteri önerenin şubesiyle süzer: proposerScopeWhere)",
+      run: async () => (await import("../src/server/data/recipe-requests")).pendingNewProposalRows(db, await sel()),
     },
     {
-      // Personel ve müdür görünümü (yönetici boş liste alır): müdürün kilidini de aşar
+      // Personel ve müdür görünümü (yönetici boş liste alır; src/app/panel/receteler/page.tsx): müdürde kilitli şube
       name: "Reçete defteri › bekleyen yeni ürün adları (pendingNewProposals, personel ve müdür)",
-      run: async () => (await import("../src/server/data/recipe-requests")).pendingNewProposals(),
-      leak: "src/app/panel/receteler/page.tsx:85 → src/server/data/recipe-requests.ts:167 (pendingNewProposals → :172 kapsamsız): Marina'ya kilitli müdür ve personel Reçete defterinde Tuzla personelinin bekleyen yeni ürün önerisinin adını görür",
+      run: async () => (await import("../src/server/data/recipe-requests")).pendingNewProposals(await sel()),
     },
     // Sayım, tahmini stok
     { name: "Tahmini stok (loadStockEstimate)", run: async () => (await import("../src/server/data/stock-estimate")).loadStockEstimate() },
@@ -497,10 +497,16 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       },
     },
     // Maaşlar (Personel)
+    { name: "Maaşlar › Vardiya / hesap seçicisi (loadStaffLinkOptions)", run: async () => (await import("../src/server/data/staff-links")).loadStaffLinkOptions() },
+    // Kullanıcılar & roller (src/app/panel/kullanicilar/page.tsx): parola özeti karşılaştırmadan düşer (her okumada aynı)
     {
-      name: "Maaşlar › Vardiya / hesap seçicisi (loadStaffLinkOptions)",
-      run: async () => (await import("../src/server/data/staff-links")).loadStaffLinkOptions(),
-      leak: "src/app/panel/personel/page.tsx:63 → src/server/data/staff-links.ts:15 (loadStaffLinkOptions kapsamsız): Marina seçiliyken seçicide Tuzla'nın hesapları ve Tuzla'nın vardiyasına adıyla yazılmış kişiler",
+      name: "Kullanıcılar & roller (loadUserRows)",
+      run: async () => {
+        const r = await (await import("../src/server/data/users")).loadUserRows(await sel());
+        return { rows: r.rows.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.branchId, active: u.active })), elsewhere: r.elsewhere };
+      },
+      // "Öbür şubelerin N hesabı" sayısı (Tümü'de görünürler)
+      shared: [ORTAK.elsewhere],
     },
     // Vardiya
     {
@@ -535,11 +541,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       },
     },
     // Faturalar
-    {
-      name: "Faturalar › faturaların cari bağları (loadInvoiceCariLinks)",
-      run: async () => (await import("../src/server/data/cari")).loadInvoiceCariLinks(),
-      leak: "src/app/panel/faturalar/page.tsx:107 → src/server/data/cari.ts:593 (loadInvoiceCariLinks kapsamsız) ve :289 cariLinks bütünüyle istemciye gider: Marina seçiliyken sayfanın verisinde Tuzla'nın faturalarına sayılan ödemeler (tedarikçi adı, gün, tutar)",
-    },
+    { name: "Faturalar › faturaların cari bağları (loadInvoiceCariLinks)", run: async () => (await import("../src/server/data/cari")).loadInvoiceCariLinks() },
     { name: "Faturalar › şubesi seçilmemiş kutusu (loadUnassignedBox)", run: async () => (await import("../src/server/data/invoice-branch")).loadUnassignedBox() },
     // Panel asistanı (okuma araçları) ve bağlantı (MCP)
     { name: "Asistan › bugun_ozeti", run: () => assistant("bugun_ozeti", {}) },
@@ -573,8 +575,6 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         const r = await (await import("../src/server/actions/reminders")).previewDigest();
         return r.ok ? { group: r.data.group, html: r.data.html } : r;
       },
-      leak:
-        "src/server/notify/digest.ts:239 (groupDigestInvoices) yalnız kasadan faturalı alımları süzer; loadDigestInvoices (:167) yeni Paraşüt faturalarını (:176–188), kontrol bekleyen sayısını (:190) ve onay bekleyen fiyatları (:193, pendingHoldSummary() kapsamsız) bütün şubelerden okur: Marina'ya bağlı alıcıların e-postası ve önizlemesi Tuzla'nın faturasını adıyla ve tutarıyla listeler, sayılara katar",
     },
   ];
 
@@ -614,6 +614,20 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         assert.equal(hit, null, `Tuzla'nın verisi görünüyor: …${hit}…`);
       });
     }
+  });
+
+  test("yeni ürünün aynı ad + boy denetimi bütün şubelere bakar, öbür şubenin önereni adsız (Ürünler, Site menüsü)", async () => {
+    await signIn(seed.users.admin, "marina");
+    const { pendingNewProposalRows } = await import("../src/server/data/recipe-requests");
+    const { pendingProposalIssue } = await import("../src/lib/recipe-change");
+    const rows = await pendingNewProposalRows(db, await sel(), "adsiz");
+    const issue = pendingProposalIssue("TZMARK Can Latte", ["M"], rows, "önce karar verin");
+    assert.ok(issue?.includes("öbür şubede bekleyen"), `öbür şubenin önerisi de engeller: ${issue}`);
+    assert.equal(issue?.includes("Can'ın"), false, "önerenin adı yok");
+    assert.ok(pendingProposalIssue("Ayşe Marina Latte", ["M"], rows, "x")?.includes("Ayşe Marina'nın"), "şubenin önerisi önereniyle");
+    await signIn(seed.users.admin, ALL_BRANCHES);
+    const all = await pendingNewProposalRows(db, await sel(), "adsiz");
+    assert.ok(pendingProposalIssue("TZMARK Can Latte", ["M"], all, "x")?.includes("TZMARK Can'ın"), "Tümü'de önereniyle");
   });
 
   describe("2. firma kipi: alanların ekranı Tümü'nün toplamını gösterir", () => {

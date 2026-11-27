@@ -93,7 +93,7 @@ export function SiteMenuMatching({
   drafts?: NewFromSiteDraft[];
   categories?: { id: number; name: string }[];
   /** Bekleyen yeni ürün önerileri (aynı ad + boyda öneri varken pencere ürün açmaz) */
-  pendingNew?: { name: string; size: "M" | "L" | "Tek"; by: string }[];
+  pendingNew?: { name: string; size: "M" | "L" | "Tek"; by: string | null }[];
   /** Bugünün kasası (src/lib/asilpos/kasa.ts): AsilPOS fiyatı siteden kendisi alır */
   kasa?: KasaName;
 }) {

@@ -696,7 +696,8 @@ async function digestPreview(group: { id: string; name: string } | null) {
           .from(s.notificationLog)
           .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
       : [],
-    loadDigestInvoices().then((r) => ({ invoices: groupDigestInvoices(r.invoices, r.cashOutState, group ? [group.id] : []) })),
+    // Şubenin grubunun fatura bölümü: şubenin ve işletme genelinin faturaları, onay bekleyen fiyatları ve kasadan alımları
+    loadDigestInvoices().then((r) => ({ invoices: groupDigestInvoices(r, group ? [group.id] : []) })),
     loadDigestPrices().catch(() => null),
     isProductionRuntime() ? loadEmailProblems("digest").catch(() => []) : [],
     loadDigestExtras(today, group ? { preview: true, scope: group.id } : { preview: true }),

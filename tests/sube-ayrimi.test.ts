@@ -221,7 +221,7 @@ const BEKLEYEN_B: Record<string, number> = {
   "src/server/data/karaoke-requests.ts": 3,
   "src/server/data/pos-staff.ts": 1,
   "src/server/data/product-history.ts": 4,
-  "src/server/data/staff-links.ts": 2,
+  "src/server/data/staff-links.ts": 1,
   "src/server/data/stock-only-invoices.ts": 1,
   "src/server/data/suppliers.ts": 2,
   "src/server/data/waste-requests.ts": 7,

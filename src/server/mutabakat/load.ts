@@ -5,6 +5,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or } from
 import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { cardFor, cardIndex, groupSuppliers, methodLabel, supplierHref, type SupplierCard, type SupplierGroup } from "@/app/panel/tedarikciler/logic";
 import { invoiceLabel } from "@/lib/cari/account";
+import { invoiceInScope } from "@/lib/invoice-branch";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
 import { BANK_MATCH, isPosLine, SUPPLIER_MATCH, type Candidate, type Decision, type MatchLine, type RecordKind } from "@/lib/mutabakat/match";
 import { type BranchPos, branchPos, branchRecon, type BranchRecon } from "@/lib/mutabakat/branch";
@@ -79,11 +80,20 @@ async function supplierGroups(): Promise<Group[]> {
   return groupSuppliers(invoices, cards, { today: todayTR(), termDays: 30 });
 }
 
-/** Yükleme penceresinin tedarikçi listesi (ada göre) */
-export async function loadSupplierOptions(): Promise<{ slug: string; name: string; invoices: number }[]> {
+/**
+ * Yükleme penceresinin tedarikçi listesi (ada göre). `scope`: Mutabakat alanının kapsamı (şube ayrımı doğrulaması, 27 Kasım
+ * 2026). Şube kipinde yalnız şubenin ya da işletme genelinin faturası olan tedarikçiler, o faturaların sayısıyla
+ * (`invoiceInScope`; Tedarikçiler'in şube kipi gibi: kapsamda faturası olmayan tedarikçi listede yok). Önceden Marina
+ * seçiliyken yalnız Tuzla'nın tedarikçisi bütün şubelerin fatura sayısıyla listeleniyordu. Ekstrenin kendisi ve eşleşmesi
+ * firmanın: firma kipinde ve "Tümü"de bütün tedarikçiler (faturası olmayan kart da); pencere bunu söyler
+ */
+export async function loadSupplierOptions(scope: BranchScope = ALL_BRANCHES): Promise<{ slug: string; name: string; invoices: number }[]> {
   const groups = await supplierGroups();
   return groups
-    .map((g) => ({ slug: g.slug, name: g.name, invoices: g.invoices.length }))
+    .flatMap((g) => {
+      const invoices = scope === ALL_BRANCHES ? g.invoices.length : g.invoices.filter((i) => invoiceInScope(i, scope)).length;
+      return invoices || scope === ALL_BRANCHES ? [{ slug: g.slug, name: g.name, invoices }] : [];
+    })
     .sort((a, b) => a.name.localeCompare(b.name, "tr"));
 }
 
@@ -412,6 +422,9 @@ export function candidateFor(pool: Pool, lineId: number, kind: RecordKind, id: n
 
 // ---------------------------------------------------------------- POS hakediş
 
+/** Şube kipinde firmanın toplamlarının yerine (ekran şubenin karolarını `branch`'tan çizer) */
+const NO_POS_TOTALS: PosView["result"]["totals"] = { gross: 0, expected: 0, received: 0, diff: 0, lateAmount: 0, lateCount: 0, waitingAmount: 0, effectiveRate: null };
+
 export interface PosView {
   blockDays: number;
   branches: { id: string; name: string; rate: number }[];
@@ -420,8 +433,11 @@ export interface PosView {
   inflowCount: number;
   bankStatements: number;
   result: ReturnType<typeof posReconciliation>;
-  /** Mutabakat alanının şube kipi: şubenin kart satışı ve beklenen neti (gelen para firmanın); firma kipinde null */
-  branch: (BranchPos & { name: string }) | null;
+  /**
+   * Mutabakat alanının şube kipi: şubenin kart satışı, beklenen neti, geciken ve bekleyen valör günleri; `received`
+   * bankaya gelen POS parası (firmanın: terminal → şube eşlemesi yok). Firma kipinde null
+   */
+  branch: (BranchPos & { name: string; received: number }) | null;
 }
 
 /**
@@ -459,14 +475,17 @@ export async function loadPosView(today = todayTR(), scope: BranchScope = ALL_BR
   const result = posReconciliation({ days, inflows, settings, coverage, today });
   const branchRow = scope === ALL_BRANCHES ? null : branchRows.find((b) => b.id === scope);
   const shownBranches = (tills.length ? tills : all).filter((b) => !branchRow || b.id === branchRow.id);
+  // Bankaya gelen POS parası: ekstrelerin bütün hakediş satırları (şubeye bölünmez; öbür şubenin satışına bağlı değil)
+  const received = Math.round(inflows.reduce((a, i) => a + i.amount, 0) * 100) / 100;
   return {
-    branch: branchRow ? { name: branchRow.name, ...branchPos({ branch: branchRow.id, days, settings, coverage, today, firmRows: result.rows }) } : null,
+    branch: branchRow ? { name: branchRow.name, received, ...branchPos({ branch: branchRow.id, days, settings, coverage, today, firmRows: result.rows }) } : null,
     blockDays,
     branches: shownBranches.map((b) => ({ id: b.id, name: b.name, rate: b.posRate ?? 0.02 })),
     coverage,
     inflowCount: inflows.length,
     bankStatements: bankStatements.length,
-    // Şube kipinde firmanın valör satırları (öbür şubenin satışıyla) dönmez: yalnız toplamlar (bankaya gelen firmanın)
-    result: branchRow ? { rows: [], totals: result.totals } : result,
+    // Şube kipinde firmanın valör satırları ve toplamları (öbür şubenin satışıyla: fark, geciken) dönmez; bankaya gelen
+    // `branch.received`'da (şube ayrımı doğrulaması: önceden şube kipinde firmanın farkı ve geciken tutarı yazıyordu)
+    result: branchRow ? { rows: [], totals: NO_POS_TOTALS } : result,
   };
 }

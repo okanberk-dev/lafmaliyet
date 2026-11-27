@@ -152,8 +152,14 @@ geneli kipinde bugünkü gibi. **Yalnız şube** kipinde eşleşme aynıdır, g�
   Öbür şubenin kaydı adı, bağlantısı ve belge numarası olmadan "Öbür şubenin kaydı" yazar.
 - "Panelde var, ekstrede yok": yalnız şubenin kayıtları; işletme geneli ve öbür şubelerinki sayı olarak.
 - POS hakediş: şubenin kart satışı ve beklenen neti valör gününe göre, "Günün durumu (firma geneli)" firmanın
-  karşılaştırmasından; bankaya gelen, fark ve geciken firmanın (terminal → şube eşlemesi yok). Öbür şubenin satışı ve
-  oranı görünmez.
+  karşılaştırmasından. Karolar: şubenin beklenen neti, **Bankaya gelen** (firmanın, terminal → şube eşlemesi yok),
+  **Geciken** (günün durumu "Gecikti" olan şubenin valör günleri ve şubenin o günlerdeki beklenen neti) ve **Ekstre
+  bekleniyor** (ekstrenin kapsamadığı şubenin beklenen neti). **Fark** (gelen − beklenen) şubeye bölünemez: yalnız firma
+  kipinde ve "Tümü"de (şube ayrımı doğrulaması, 27 Kasım 2026: önceden şube kipinde firmanın farkı ve geciken tutarı
+  yazıyordu, Tuzla'nın kart satışı Marina'nın ekranındaki farka giriyordu). Öbür şubenin satışı ve oranı görünmez.
+- Ekstre yükleme penceresinin tedarikçileri: şube kipinde yalnız şubenin ya da işletme genelinin faturası olan
+  tedarikçiler, o faturaların sayısıyla (`loadSupplierOptions(kapsam)`); öbürleri firma geneli kipinde. Pencere bunu
+  yazar.
 - Elle eşleştirme penceresi firmanın havuzuyla çalışır (eylem `loadRecon()`'u kapsamsız çağırır).
 
 Şube ayrımı parça 6 ile bitti (27 Kasım 2026): ekstrenin kendisi ve bankaya gelen POS parası Hesabım'daki **Her zaman

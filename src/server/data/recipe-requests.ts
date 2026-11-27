@@ -163,18 +163,42 @@ export async function pendingByProduct(scope: BranchScope = ALL_BRANCHES): Promi
   return new Map(rows.flatMap((r) => (r.productId === null ? [] : [[r.productId, r.n] as const])));
 }
 
-/** Bekleyen yeni ürün önerilerinin ad ve boyu (öneri penceresi aynı ad + boyu göndermeden uyarır) */
-export async function pendingNewProposals(): Promise<{ name: string; size: ProductSize }[]> {
-  return (await pendingNewProposalRows()).map(({ name, size }) => ({ name, size }));
+/**
+ * Bekleyen yeni ürün önerilerinin ad ve boyu (öneri penceresi aynı ad + boyu göndermeden uyarır): önerenin şubesine göre
+ * (`pendingNewProposalRows`). Reçete defteri personelin ve müdürün kilitli şubesiyle çağırır
+ */
+export async function pendingNewProposals(scope: BranchScope = ALL_BRANCHES): Promise<{ name: string; size: ProductSize }[]> {
+  return (await pendingNewProposalRows(getDb(), scope)).map(({ name, size }) => ({ name, size }));
 }
 
-/** Bekleyen yeni ürün önerilerinin ad, boy ve önereni; işlem içinde (kilit altında) da okunur */
-export async function pendingNewProposalRows(db: Pick<DB, "select"> = getDb()): Promise<{ name: string; size: ProductSize; by: string }[]> {
+/**
+ * Bekleyen yeni ürün önerilerinin ad, boy ve önereni; işlem içinde (kilit altında) da okunur.
+ *
+ * Şube ayrımı (doğrulama, 27 Kasım 2026): önerinin şubesi önerenin hesabının şubesidir (`proposerScopeWhere`'in kuralı).
+ * - `others: "gizle"` (ekranın listesi; varsayılan): tek şube seçiliyken yalnız o şubenin personelinin ve şubesi
+ *   bilinmeyenlerin önerileri. Önceden Site menüsü ve Reçete defteri (müdürün kilidini de aşarak) Tuzla personelinin
+ *   önerisini adıyla gösteriyordu.
+ * - `others: "adsiz"` (aynı ad + boy denetimi, eylemin kilidi altında): menü ortak olduğu için bütün şubelerin önerisine
+ *   bakılır; öbür şubenin önerisinde önereni yazılmaz (`by: null`, ileti "öbür şubede bekleyen").
+ * "Tümü"de ikisi de bütün öneriler, önerenin adıyla.
+ */
+export async function pendingNewProposalRows(
+  db: Pick<DB, "select"> = getDb(),
+  scope: BranchScope = ALL_BRANCHES,
+  others: "gizle" | "adsiz" = "gizle",
+): Promise<{ name: string; size: ProductSize; by: string | null }[]> {
   const rows = await db
-    .select({ proposed: s.recipeChangeRequests.proposed, by: s.recipeChangeRequests.requestedByName })
+    .select({ proposed: s.recipeChangeRequests.proposed, by: s.recipeChangeRequests.requestedByName, requestedBy: s.recipeChangeRequests.requestedBy, branchId: s.users.branchId })
     .from(s.recipeChangeRequests)
+    .leftJoin(s.users, eq(s.users.id, s.recipeChangeRequests.requestedBy))
     .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "new")));
-  return rows.flatMap((r) => (r.proposed ? [{ name: r.proposed.name, size: r.proposed.size, by: r.by }] : []));
+  // proposerScopeWhere'in kuralı: öneren silinmiş (boş) ya da şubesiz hesap her şubede; öbür şubenin hesabı yalnız orada
+  const mine = (r: (typeof rows)[number]) => scope === ALL_BRANCHES || r.requestedBy === null || !r.branchId || r.branchId === scope;
+  return rows.flatMap((r): { name: string; size: ProductSize; by: string | null }[] => {
+    if (!r.proposed) return [];
+    if (mine(r)) return [{ name: r.proposed.name, size: r.proposed.size, by: r.by }];
+    return others === "adsiz" ? [{ name: r.proposed.name, size: r.proposed.size, by: null }] : [];
+  });
 }
 
 /**

@@ -11,6 +11,27 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
 
+- **Şube ayrımı** (bu PR, 27 Kasım; #167'nin üstünde; docs/SUBE.md › Şube ayrımı): soldan bir şube seçilince panelin
+  her ekranında yalnız o şubenin bilgisi görünür: kasa, satış, faturalar, ödemeler, onaylar, zil, Bugün, raporlar,
+  kişi seçicileri, Maaşlar, Kullanıcılar & roller, sabah e-postasının önizlemesi, panel asistanı, bağlantı (MCP), dışa
+  aktarım ve muhasebeci paketi. "Tümü"de her şey bugünkü gibi; işletme geneli fatura ve gider her şubede görünür ama
+  şubenin kârına girmez. Bugüne dek bilerek firma geneli olan ekranlar (Ödemeler, Nakit planı, Vergi, Tutarlılık,
+  Mutabakat, Tedarikçi bakiyeleri, Stok değeri, Komisyon, Şubeleri yan yana, İşletme geneli giderler) kişinin kendi
+  ayarıyla: **Hesabım › Şube görünümü**'nde ekran ekran **Yalnız şube | Firma geneli** (düğmeler: Hepsi yalnız şube,
+  Hepsi firma geneli, Varsayılanlara dön; seçim hemen kaydedilir, yalnız o hesabındır). Ekranın üstündeki çip
+  (**Firma geneline geç** / **Yalnız Marina'yı göster**) aynı ayarı o ekran için yazar. Yöneticinin varsayılanı her
+  yerde "Yalnız şube", muhasebecininki ekranına göre (Vergi ve İşletme geneli giderler firma geneli); müdür ve şubesine
+  kilitli personel hep kendi şubesinde (ayar yok). Hep firma geneli kalanlar (tam yedek, vergi beyanı ve takvimi, banka
+  ekstresi ve açılış bakiyesi, Paraşüt eşitlemesi, menü, reçete, hammadde fiyatı, tedarikçi kütüğü, site siparişleri)
+  Hesabım'da gerekçesiyle listeli. Göçler 0100 (şube görünümü), 0101 (kontrol listesi kaydı, işlem geçmişi, gönderim
+  günlüğü ve yatırıma şube). Bağımsız doğrulama (iki şubenin işaretli kayıtlarıyla 259 sınama, Tuzla silinince
+  Marina'nın görünümü aynı mı) sekiz sızıntı buldu, hepsi kapandı: Faturalar'ın cari bağları, sabah e-postasının şube
+  grubunun Paraşüt bölümü, Mutabakat POS'un şube karoları ve ekstre yükleme penceresi, Maaşlar'ın hesap seçicisi,
+  Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri (müdürün kilidini aşıyordu).
+  Sahibin kararına kalan: nakit planının şube kipindeki "İşletme geneli" satırı firmanın vergisini ve SGK'sını taşır
+  (şubenin altı haftalık toplamına girer); Vergi beyanının muhtasar dökümü öbür şubelerin personelini adıyla ve ücretiyle
+  yazar (tek vergi numarası); İşletme geneli giderler için "Ciroya göre pay et" kipi.
+
 - **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (#167, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
   şubenin kendi AsilPOS kasası olabilir ("yalnız bir şube" sınırı kalktı); her kasanın kendi anahtarı, geçiş günü, gün
   sonu, kasa e-postası, komisyonu ve durumu var, panel şubeyi anahtardan tanır (başka şube bildiren kasa 409). Bir günün
@@ -89,8 +110,6 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Devam eden (26 Kasım akşamı)
 
-- [ ] [Ladmin] Şube seçiliyken her ekranda yalnız o şubenin bilgisi ("Tümü"de şube şube); firma geneli ekranlar için sahibin kararı.
-
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
 - P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
   rol × ekran duman testi).
@@ -100,7 +119,6 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 
 - AsilPOS: kasa programının adı her yerde AsilPOS (26 Kasım 2026'ya kadar adı LafPOS; panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
   (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
-- Şube ayrımı: şube seçiliyken her ekranda yalnız o şube; firma geneli ekranlar kullanıcının kendi ayarıyla.
 - P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).
 ## Sahibin tarafında (kod değil)
 

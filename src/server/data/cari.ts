@@ -28,7 +28,9 @@ import { candidateOf, KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type Kasa
 import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs, supplierSlugOf } from "@/server/data/suppliers";
 import type { Tx } from "@/server/cari/settle";
+import { currentBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 
 import { loadCardEntries, toDebt, type CardDebt, type CardPayment } from "./cari-entries";
 
@@ -589,22 +591,30 @@ export const OTHER_BRANCH_INVOICE = "öbür şubenin faturası";
 /**
  * Faturalar'ın cari bilgisi (§6.4): faturaya sayılan ödemeler (gün, şekil, tutar) ve faturaya bağlanmış faturasız
  * alımlar (fotoğrafıyla). Yalnız bağı olan faturalar; kayıt yokken boş.
+ *
+ * Yalnız ekrandaki faturaların bağları (şube ayrımı doğrulaması, 27 Kasım 2026): tek şube seçiliyken o şubenin ve
+ * işletme genelinin faturaları (`invoiceScopeWhere`, Faturalar'ın listesiyle aynı kural). Önceden Marina seçiliyken
+ * sayfanın istemciye giden verisinde Tuzla'nın faturalarına sayılan ödemeler (tedarikçi, gün, tutar) da vardı.
+ * `scope` verilmezse isteğin seçimi
  */
-export async function loadInvoiceCariLinks(): Promise<Record<number, InvoiceCariLinks>> {
+export async function loadInvoiceCariLinks(scope?: BranchScope): Promise<Record<number, InvoiceCariLinks>> {
   const db = getDb();
+  const shown = invoiceScopeWhere(scope ?? (await currentBranchScope()));
   const [allocs, debts] = await Promise.all([
     db
       .select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount, date: s.supplierEntries.date, method: s.supplierEntries.method, card: s.suppliers.name })
       .from(s.supplierAllocations)
       .innerJoin(s.supplierEntries, eq(s.supplierAllocations.paymentId, s.supplierEntries.id))
       .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
-      .where(isNotNull(s.supplierAllocations.invoiceId))
+      .innerJoin(s.invoices, eq(s.invoices.id, s.supplierAllocations.invoiceId))
+      .where(and(isNotNull(s.supplierAllocations.invoiceId), shown))
       .orderBy(asc(s.supplierEntries.date), asc(s.supplierAllocations.id)),
     db
       .select({ id: s.supplierEntries.id, invoiceId: s.supplierEntries.invoiceId, date: s.supplierEntries.date, description: s.supplierEntries.description, amount: s.supplierEntries.amount, photoId: s.supplierEntries.photoId, card: s.suppliers.name })
       .from(s.supplierEntries)
       .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
-      .where(and(eq(s.supplierEntries.kind, "borc"), isNotNull(s.supplierEntries.invoiceId)))
+      .innerJoin(s.invoices, eq(s.invoices.id, s.supplierEntries.invoiceId))
+      .where(and(eq(s.supplierEntries.kind, "borc"), isNotNull(s.supplierEntries.invoiceId), shown))
       .orderBy(asc(s.supplierEntries.date), asc(s.supplierEntries.id)),
   ]);
   const out: Record<number, InvoiceCariLinks> = {};

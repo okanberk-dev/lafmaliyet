@@ -671,7 +671,9 @@ test("sabah e-postası: ek kutular ötekilerle aynı anda yüklenir; haber, teki
   assert.ok(run.indexOf("const extrasP = loadDigestExtras(today);") > run.indexOf('off: "nokey"'));
   assert.ok(run.indexOf("const extrasP = loadDigestExtras(today);") < run.indexOf("await loadDigestInvoices()"));
   // Alıcı grupları (şube kapsamı C P1-11): grubun haberi bütün şubelerinkiyle aynı kural; grubun kutuları
-  assert.match(run, /const news = groupFresh\.length > 0 \|\| invoiceNews \|\| !!prices \|\| system\.length > 0 \|\| groupExtras\.news;/);
+  assert.match(run, /const news = groupFresh\.length > 0 \|\| groupInvoiceNews \|\| !!prices \|\| system\.length > 0 \|\| groupExtras\.news;/);
+  // Grubun fatura haberi kendi bölümünden (şube ayrımı doğrulaması): öbür şubenin yeni faturası bu grubu göndermez
+  assert.match(run, /const groupInvoiceNews = g\.branchIds\.length \? invoiceNewsOf\(groupInvoices\) : invoiceNews;/);
   assert.match(run, /system\.length \? \{ items: system \} : null,\s*g\.extras\.extras,\s*g\.branch,\s*\);/);
   // Tekil anahtarın tohumu kutusuzken ve bütün şubelerin grubunda eskisiyle aynı (boş dizi yayılır, ayraç eklenmez)
   assert.match(run, /system\.length \? `sys:\$\{system\.map\(\(p\) => p\.key\)\.join\(","\)\}` : "",\s*\/\/[^\n]*\n\s*\.\.\.\(g\.extras\.logKeys\.length \? \[`ek:\$\{g\.extras\.logKeys\.join\(","\)\}`\] : \[\]\),/);

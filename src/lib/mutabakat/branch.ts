@@ -7,7 +7,10 @@
  *   kaydıyla eşleşenler **İşletme geneli** grubunda. Öbür şubenin kaydı adıyla görünmez ("Öbür şubenin kaydı").
  * - "Panelde var, ekstrede yok": yalnız şubenin kayıtları; öbürü sayı olarak.
  * - POS hakediş: şubenin kart satışı ve beklenen neti (kart × şubenin oranı); bankaya gelen para firmanın (terminal →
- *   şube eşlemesi yok), günün durumu firmanın karşılaştırmasından.
+ *   şube eşlemesi yok), günün durumu firmanın karşılaştırmasından. Karolar şubenin: geciken ve bekleyen şubenin valör
+ *   günleri, şubenin beklenen netiyle (`BranchPos.totals`). "Fark" (gelen − beklenen) şubeye bölünemez: yalnız firma
+ *   kipinde (şube ayrımı doğrulaması, 27 Kasım 2026: önceden şube kipinde firmanın farkı ve geciken tutarı yazıyordu,
+ *   Tuzla'nın kart satışı Marina'nın ekranındaki farka giriyordu).
  *
  * Saf modül; okuma src/server/mutabakat/load.ts, testleri tests/sube-ayrimi-alanlar-5.test.ts.
  */
@@ -68,7 +71,11 @@ export interface BranchPosRow {
 export interface BranchPos {
   branch: string;
   rows: BranchPosRow[];
-  totals: { gross: number; expected: number };
+  /**
+   * Şubenin toplamları: kart satışı ve beklenen net; günün durumu (firmanın) "Gecikti" olan valör günlerinin sayısı ve
+   * şubenin o günlerdeki beklenen neti; ekstrenin henüz kapsamadığı günlerdeki beklenen net
+   */
+  totals: { gross: number; expected: number; lateCount: number; lateAmount: number; waitingAmount: number };
 }
 
 /**
@@ -88,9 +95,18 @@ export function branchPos(input: {
   const firm = new Map(input.firmRows.filter((r) => r.status !== "beklenmeyen").map((r) => [r.due, r.status]));
   const shown = rows.filter((r) => !input.coverage || r.due >= input.coverage.from);
   const r2 = (n: number) => Math.round(n * 100) / 100;
+  const out = shown.map((r) => ({ due: r.due, sales: r.sales, gross: r.gross, expected: r.expected, firmStatus: firm.get(r.due) ?? "bekleniyor" }));
+  const sum = (xs: readonly BranchPosRow[]) => r2(xs.reduce((a, r) => a + r.expected, 0));
+  const late = out.filter((r) => r.firmStatus === "gecikti");
   return {
     branch: input.branch,
-    rows: shown.map((r) => ({ due: r.due, sales: r.sales, gross: r.gross, expected: r.expected, firmStatus: firm.get(r.due) ?? "bekleniyor" })),
-    totals: { gross: r2(shown.reduce((a, r) => a + r.gross, 0)), expected: r2(shown.reduce((a, r) => a + r.expected, 0)) },
+    rows: out,
+    totals: {
+      gross: r2(shown.reduce((a, r) => a + r.gross, 0)),
+      expected: sum(out),
+      lateCount: late.length,
+      lateAmount: sum(late),
+      waitingAmount: sum(out.filter((r) => r.firmStatus === "bekleniyor")),
+    },
   };
 }

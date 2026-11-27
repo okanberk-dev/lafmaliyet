@@ -274,7 +274,10 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
   denetim 21 Kasım #18): önceden Marina seçiliyken zammın "ayda ≈ X ₺"ı Marina'nın satışından hesaplanıp gidiyor ve
   sabah işi o zamları işletme geneli rakamla bir daha bildirmiyordu. Birden çok kasa açıkken soldan bir şube seçiliyse
   önizleme **o şubeye bağlı alıcıların e-postasıdır** (şube ayrımı parça 6; sabah işinin şube grubu: şubenin ve işletme
-  genelinin ödemeleri, şubenin kutuları ve kasadan faturalı alımları, başlıkta şubenin adı); pencerenin açıklaması hangi
+  genelinin ödemeleri, şubenin kutuları ve kasadan faturalı alımları, başlıkta şubenin adı; doğrulama düzeltmelerinden
+  beri Paraşüt bölümü de: grubun şubelerinin ve işletme genelinin yeni faturaları ve kontrol bekleyenleri, önerinin
+  faturası şubeninki ya da şubesiz olan fiyat onayları; şubesi seçilmemiş fatura her gruba; grubun fatura haberi kendi
+  bölümünden, öbür şubenin yeni faturası bu grubun e-postasını göndermez); pencerenin açıklaması hangi
   grubun e-postası olduğunu yazar ("Marina şubesine bağlı alıcıların e-postası" / "Firmaya giden e-posta"). Okuma yine
   "Tümü"yle, süzme gönderimin kuralıyla (`digestPreviewGroup`, `groupDigestInvoices`);
 - **Deneme gönder** (kayıtlı gönderenle, etkin adreslere; düşen adres bildirimin alt satırında "Gönderilmedi: …");

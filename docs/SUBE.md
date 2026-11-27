@@ -770,7 +770,8 @@ ya da `areaScope` yok), bu yüzden kayıtta değil; Hesabım'daki **Her zaman fi
 - (b) Şubesi olan tabloların (`cashReports`, `invoices`, `reminders` …) `src/server/{data,bell,notify,ai,mcp,assistant-reads}`
   ve panel sayfalarındaki her `.from(s.X)` ifadesi kapsamla okur (`branchWhere`, `invoiceScopeWhere`, `requestInScope` …)
   ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; parça 1'de 104 ifade, parça 2'den sonra 97,
-  parça 3'ten sonra 93, parça 4'ten sonra 91, parça 6'dan sonra 89): sayı yalnız azalır. Kalanların çoğu kaydın
+  parça 3'ten sonra 93, parça 4'ten sonra 91, parça 6'dan sonra 89, doğrulama düzeltmelerinden sonra 88): sayı yalnız
+  azalır. Kalanların çoğu kaydın
   kimliğiyle açılan ya da şubesi zaten satırda olan okumalardır (kasa raporu, istek, karaoke); ekranın listesi değil.
   Parça 3'ten beri dört tablonun da şube sütunu var (`BEKLEYEN_KOLON` boş).
 - (c) Alanın ekranı çipini çizer (`<BranchViewChip area="…">`); "bu ekran firma geneli" notu yalnız hep firma geneli
@@ -904,7 +905,7 @@ açılan ekran (stok sayımı) şubesi seçilmemiş faturayı da görmeye devam 
 | Yer | Şube seçiliyken |
 |---|---|
 | Tahmini stok › Marina'ya gelen faturalar | Marina'nın ve şubesi seçilmemiş faturalar; öbür şubenin ve işletme genelinin faturası "N fatura başka şubede, M fatura işletme geneli" (`receiptsInScope`) |
-| Hammaddeler › Onay bekleyen fiyatlar, zil, Bugün, Genel bakış | Önerinin şubesi faturasının şubesi (`holdInScope`): şubenin ve şubesi boş faturanın önerisi; öbür şubenin önerisi "Öbür şubelerde N öneri daha". Onay ve red hammaddenin ortak fiyatını değiştirir. Sabah e-postası firmanın |
+| Hammaddeler › Onay bekleyen fiyatlar, zil, Bugün, Genel bakış | Önerinin şubesi faturasının şubesi (`holdInScope`): şubenin ve şubesi boş faturanın önerisi; öbür şubenin önerisi "Öbür şubelerde N öneri daha". Onay ve red hammaddenin ortak fiyatını değiştirir. Firmaya giden sabah e-postası bütün öneriler; şubeye bağlı alıcıların e-postası aynı kuralla ([Doğrulama düzeltmeleri](#doğrulama-düzeltmeleri-27-kasım-2026)) |
 | Hammadde penceresi › Tedarikçilere göre fiyat | Şubenin ve işletme genelinin faturaları; öbürü sayı olarak. Reçetedeki fiyat ortak |
 | Hammaddeler › Su + buz birim maliyeti | Litre fiyatı firmanın (tek fatura ÷ bütün şubelerin litresi); döküm şubenin litresi malzeme malzeme ve "Öbür şubeler ve online" tek satır |
 | Ürünler, ürün kartı | Siteye bağlı ürünün şubede geçerli kendi fiyatı varsa birim kâr, maliyet oranı ve durum o fiyatla; kutudaki fiyat **Taban fiyat** (bütün şubelerin menüsü, düzenlenen) (src/lib/prices/branch-view.ts) |
@@ -974,6 +975,43 @@ görünmez), `tests/isletme-geneli-db.test.ts` (iki kipte kâr aynı).
 
 **Sahibin kararı bekleyen** (değişmedi): İşletme geneli giderler için "Ciroya göre pay et" kipi.
 
+### Doğrulama düzeltmeleri (27 Kasım 2026)
+
+Altı parçadan sonra bağımsız bir doğrulama (`tests/sube-ayrimi-db.test.ts`) şube sütunu olan her tabloya Marina'nın ve
+Tuzla'nın ayrı kaydını yazdı ("TZMARK" işaretli, tutarları 91.9xx) ve Marina seçiliyken yaklaşık 80 ekran yükleyicisini,
+zili, panel asistanını, bağlantıyı (MCP), dışa aktarımı, muhasebeci paketini ve sabah e-postasının önizlemesini okudu;
+sonra Tuzla'nın satırlarını silip Marina'nın görünümünü yeniden okudu (fark varsa Tuzla'nın verisi Marina'nın ekranını
+etkiliyor). Bulduğu sekiz sızıntı kapandı ("Tümü"de değişen bir şey yok):
+
+| Yer | Şube seçiliyken (önce → şimdi) |
+|---|---|
+| **Faturalar** › pencerenin ve silme onayının cari bilgisi | Sayfanın istemciye giden verisinde bütün faturaların cari bağları (öbür şubenin faturasına sayılan ödeme: tedarikçi, gün, tutar) → yalnız listedeki faturaların (`loadInvoiceCariLinks`, `invoiceScopeWhere`) |
+| **Sabah e-postası** (şubeye bağlı alıcılar) ve önizlemesi | Paraşüt bölümü bütün şubelerin yeni faturaları, kontrol bekleyen sayısı ve fiyat onaylarıyla → grubun şubelerinin ve işletme genelinin (şubesi seçilmemiş fatura her gruba, ödemelerin kuralı); fiyat onayı önerinin faturasının şubesiyle; grubun fatura haberi kendi bölümünden (`groupInvoiceSection`, src/server/notify/digest-template.ts). Firmaya giden e-posta değişmedi. Parça 5'teki "sabah e-postası firmanın" bu grubu kapsamıyordu |
+| **Mutabakat** › POS hakediş, şube kipi | "Fark" ve "Geciken … gelmedi" karoları firmanın toplamıydı (Tuzla'nın kart satışı Marina'nın farkına giriyordu) → karolar şubenin: beklenen net, bankaya gelen (firmanın, bilgi), geciken (şubenin "Gecikti" günleri ve o günlerdeki beklenen neti), ekstre bekleniyor. Fark yalnız firma kipinde; yükleyici şube kipinde firmanın toplamlarını hiç döndürmez |
+| **Mutabakat** › ekstre yükleme penceresi | Bütün tedarikçiler bütün şubelerin fatura sayısıyla → alanın kapsamıyla: şube kipinde şubenin ya da işletme genelinin faturası olan tedarikçiler ve o faturaların sayısı; pencere öbürlerinin firma geneli kipinde olduğunu yazar |
+| **Maaşlar** › Vardiya / hesap seçicisi | Bütün hesaplar ve bütün şubelerin vardiyasındaki adlar → şubenin ve şubesiz hesaplar, şubenin vardiyasındaki adlar (`loadStaffLinkOptions`) |
+| **Kullanıcılar & roller** | Bütün hesaplar → şubenin hesapları ve şubesiz hesaplar (yönetici, muhasebeci, şubesi seçilmemiş personel); "Öbür şubelerin N hesabı burada yok; Tümü'de hepsi." notu ve **Bütün hesaplar** bağlantısı (`loadUserRows`, src/server/data/users.ts). Hesabın yazımı seçimden bağımsız |
+| **Site menüsü** › bekleyen yeni ürün önerileri | Bütün şubelerin önerisi önerenin adıyla → önerenin şubesine göre (`pendingNewProposalRows(db, kapsam)`, `proposerScopeWhere`'in kuralı) |
+| **Reçete defteri** (personel ve müdür) › bekleyen yeni ürün adları | Bütün şubelerin önerisi: **müdürün kilidini de aşıyordu** (Marina'nın müdürü Tuzla personelinin önerisinin adını görüyordu) → önerenin şubesine göre, kilitli hesapta kendi şubesi |
+
+Aynı ad + boy denetimi (Ürünler › Yeni ürün, Site menüsü › "Panelde aç ve bağla", personelin önerisi) menü ortak olduğu
+için bütün şubelerin önerisine bakmaya devam eder (bütünlük); öbür şubenin önerisinde önereni yazılmaz: "“Fıstıklı Latte ·
+Medium” için öbür şubede bekleyen yeni ürün önerisi var (Tümü'de görünür): …" (`pendingNewProposalRows(tx, kapsam,
+"adsiz")`).
+
+**Bilinen ve bilerek bırakılanlar** (doğrulama raporu; tasarımın firmanın bıraktığı, sahibin kararına açık):
+
+- **Nakit planı** şube kipinde: haftanın **İşletme geneli** satırı firmanın KDV'si, vergisi ve SGK'sı (parça 4); şubenin
+  altı haftalık toplamı bu satırla firmanın vergisini taşır (doğrulamada Marina'nın toplamı 216.821 ₺, Tuzla'sız 34.277 ₺).
+- **Vergi** beyanı (`vergi.beyan`): muhtasarın dökümü bütün şubelerin personelini adıyla ve ücretiyle, "stopajı
+  bilinmiyor" notu öbür şubenin kalemini adıyla yazar; dışa aktarımın Vergi sekmesi de öyle (tek vergi numarası).
+- Sayı ipuçları ve ortak listeler: "öbür şubelerde N" sayıları, tahmini stoğun "N fatura başka şubede" sayısı, ekstrede
+  "Öbür şubenin kaydı" (adsız), arama paletinin tedarikçi listesi (ortak kütük).
+- Ekrana çıkmayan sunucu okumaları: `dataset.companyMonths`, `ds.pendingPriceHolds`, `loadFixedForReminders().all`.
+
+Testler: `tests/sube-ayrimi-db.test.ts` (doğrulamanın kendisi; bugün `todo` yok), `tests/sube-ayrimi-dogrulama.test.ts`
+(saf kurallar ve kaynağın biçimi). Kapsamsız okuma 89 → 88 (Maaşlar'ın vardiya adları).
+
 ### Sıra
 
 | Parça | Ne | Durum |
@@ -984,6 +1022,7 @@ görünmez), `tests/isletme-geneli-db.test.ts` (iki kipte kâr aynı).
 | 4 | Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon | Kuruldu (27 Kasım 2026) |
 | 5 | Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri; seçimle: tahmini stoğun faturaları, öneriler, tedarikçi fiyatları, su dökümü, ürünün şube fiyatı | Kuruldu (27 Kasım 2026) |
 | 6 | Şubeleri yan yana, İşletme geneli giderler, dışa aktarım, muhasebeci paketi, e-posta önizlemeleri, Siparişler'in rozeti, kapanış | Kuruldu (27 Kasım 2026) |
+| Doğrulama | Bağımsız doğrulamanın sekiz sızıntısı: Faturalar'ın cari bağları, sabah e-postasının Paraşüt bölümü, Mutabakat POS'un şube karoları ve yükleme penceresi, Maaşlar'ın seçicisi, Kullanıcılar & roller, Site menüsü ve Reçete defterinin önerileri | Kapandı (27 Kasım 2026) |
 
 Kalan bilinen sınırlar (şube ayrımının dışında, sebebiyle): cari kayıtların şubesi yok (`supplier_entries.branch_id`:
 Gelir-gider'in "Faturası beklenen alımlar" satırı şube kipinde çizilmez, faturasız borç İşletme geneli); Tutarlılık

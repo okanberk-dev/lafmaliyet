@@ -195,11 +195,11 @@ test("bekleyen öneri: Ürünler › Yeni ürün ve Panelde aç ve bağla yeni �
   assert.doesNotMatch(requestActions, /pg_advisory_xact_lock/);
   const products = read("src/server/actions/products.ts");
   const create = products.slice(products.indexOf("export async function createProduct"), products.indexOf("const recipeSchema"));
-  const order = ["await lockNewProducts(tx);", "pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx),", "return insertProduct(tx, data,"];
+  const order = ["await lockNewProducts(tx);", "pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx, scope, \"adsiz\"),", "return insertProduct(tx, data,"];
   for (let i = 1; i < order.length; i++) assert.ok(create.indexOf(order[i - 1]) >= 0 && create.indexOf(order[i - 1]) < create.indexOf(order[i]), `${order[i - 1]} → ${order[i]}`);
   const link = read("src/server/site-menu/link.ts");
   const fromSite = link.slice(link.indexOf("export async function createLinkedProducts"));
-  const siteOrder = ["await lockMenu(tx);", "await lockNewProducts(tx);", "pendingProposalIssue(name, sizes, await pendingNewProposalRows(tx), NEW_FROM_SITE_PENDING_THEN)", "insertProduct(tx,"];
+  const siteOrder = ["await lockMenu(tx);", "await lockNewProducts(tx);", "pendingProposalIssue(name, sizes, await pendingNewProposalRows(tx, scope, \"adsiz\"), NEW_FROM_SITE_PENDING_THEN)", "insertProduct(tx,"];
   for (let i = 1; i < siteOrder.length; i++)
     assert.ok(fromSite.indexOf(siteOrder[i - 1]) >= 0 && fromSite.indexOf(siteOrder[i - 1]) < fromSite.indexOf(siteOrder[i]), `${siteOrder[i - 1]} → ${siteOrder[i]}`);
   // Öneri ve onay menü kilidini almaz (kilit sırası tek yönlü: menü → öneri)
@@ -208,7 +208,8 @@ test("bekleyen öneri: Ürünler › Yeni ürün ve Panelde aç ve bağla yeni �
   const dialog = read("src/app/panel/urunler/site/site-new-product.tsx");
   assert.match(dialog, /const proposal = taken \? null : pendingProposalIssue\(clean, sizes, pendingNew, NEW_FROM_SITE_PENDING_THEN\);/);
   assert.match(dialog, /&& !taken && !proposal;/);
-  assert.match(read("src/app/panel/urunler/site/page.tsx"), /pendingNewProposalRows\(\),/);
+  // Sayfanın listesi önerenin şubesine göre (şube ayrımı doğrulaması); eylemin denetimi bütün şubelere, öbürü adsız
+  assert.match(read("src/app/panel/urunler/site/page.tsx"), /currentBranchScope\(\)\.then\(\(scope\) => pendingNewProposalRows\(getDb\(\), scope\)\),/);
   const list = read("src/app/panel/onaylar/review-list.tsx");
   assert.match(list, /href=\{`\/panel\/urunler\/\$\{clash\.id\}`\}/);
   assert.match(list, /item\.pair \? "öneriyi reddedin, reçeteyi o ürünün kartına girin"/);

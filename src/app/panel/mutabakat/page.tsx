@@ -12,7 +12,7 @@ import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import type { BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { dateTR, money, num, pct } from "@/lib/format";
 import type { BranchPosRow } from "@/lib/mutabakat/branch";
 import { genitive } from "@/lib/recipe-change";
@@ -96,9 +96,17 @@ async function ReconContent({ searchParams }: { searchParams: PageProps<"/panel/
     const filter: RowFilter = ROW_FILTERS.includes(raw as RowFilter) ? (raw as RowFilter) : "hepsi";
     return <StatementDetail st={st} filter={filter} />;
   }
-  const suppliers = await loadSupplierOptions();
+  // Tedarikçi listesi alanın kapsamıyla: şube kipinde şubenin faturası olan tedarikçiler (şube ayrımı doğrulaması)
+  const suppliers = await loadSupplierOptions(scope);
   const accounts = [...new Set(statements.filter((x) => x.kind === "banka").map((x) => x.account))];
-  const upload = <UploadButton suppliers={suppliers} accounts={accounts} />;
+  const branchName = scope === ALL_BRANCHES ? null : ((await listBranches()).find((b) => b.id === scope)?.name ?? null);
+  const upload = (
+    <UploadButton
+      suppliers={suppliers}
+      accounts={accounts}
+      supplierNote={branchName ? `Listede ${genitive(branchName)} ya da işletme genelinin faturası olan tedarikçiler; öbürleri Firma geneli görünümde.` : null}
+    />
+  );
   return (
     <>
       <Header tab="ekstre" actions={upload} />
@@ -512,7 +520,7 @@ async function PosSection({ scope }: { scope: BranchScope }) {
         </Notice>
       ) : null}
       {view.branch ? (
-        <BranchPos branch={view.branch} firm={totals} />
+        <BranchPos branch={view.branch} />
       ) : (
         <>
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -614,30 +622,33 @@ async function PosSection({ scope }: { scope: BranchScope }) {
 
 /**
  * POS hakedişinin şube kipi (şube ayrımı parça 5): şubenin kart satışı ve beklenen neti valör gününe göre; bankaya gelen
- * para firmanın (terminal → şube eşlemesi yok), günün durumu firmanın karşılaştırmasından. Öbür şubenin satışı yok
+ * para firmanın (terminal → şube eşlemesi yok), günün durumu firmanın karşılaştırmasından. Öbür şubenin satışı yok.
+ * Geciken ve bekleyen karoları şubenin valör günleri ve beklenen netiyle; "Fark" (gelen − beklenen) şubeye bölünemez,
+ * yalnız firma kipinde (şube ayrımı doğrulaması, 27 Kasım 2026: önceden burada firmanın farkı ve geciken tutarı vardı)
  */
-function BranchPos({ branch, firm }: { branch: NonNullable<PosView["branch"]>; firm: PosView["result"]["totals"] }) {
+function BranchPos({ branch }: { branch: NonNullable<PosView["branch"]> }) {
   const shown = [...branch.rows].reverse();
+  const t = branch.totals;
   return (
     <>
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat compact icon={<CreditCard />} label={`${branch.name} · beklenen net`} value={money(branch.totals.expected)} sub={`Kart satışı ${money(branch.totals.gross)}`} />
-        <Stat compact icon={<CircleCheck />} label="Bankaya gelen" value={money(firm.received)} sub="Firma geneli · hesap şubeye bölünmez" />
-        <Stat compact icon={<Scale />} label="Fark" value={money(firm.diff)} tone={Math.abs(firm.diff) >= 1 ? (firm.diff < 0 ? "bad" : "warn") : "good"} sub="Firma geneli · gelen − beklenen" />
+        <Stat compact icon={<CreditCard />} label={`${branch.name} · beklenen net`} value={money(t.expected)} sub={`Kart satışı ${money(t.gross)}`} />
+        <Stat compact icon={<CircleCheck />} label="Bankaya gelen" value={money(branch.received)} sub="Firma geneli · hesap şubeye bölünmez" />
         <Stat
           compact
           icon={<CircleDashed />}
           label="Geciken"
-          value={num(firm.lateCount)}
-          tone={firm.lateCount ? "bad" : "default"}
-          sub={firm.lateCount ? `Firma geneli · ${money(firm.lateAmount)} gelmedi` : "Firma geneli"}
+          value={num(t.lateCount)}
+          tone={t.lateCount ? "bad" : "default"}
+          sub={t.lateCount ? `${genitive(branch.name)} ${money(t.lateAmount)} beklenen neti gelmedi` : "Gecikmiş valör günü yok"}
         />
+        <Stat compact icon={<Scale />} label="Ekstre bekleniyor" value={money(t.waitingAmount)} sub="Ekstrenin kapsamadığı valör günleri" />
       </div>
       <Card className="mb-4">
         <CardHeader
           icon={<CreditCard />}
           title={`${genitive(branch.name)} valör günleri`}
-          description="Beklenen net = şubenin kart satışı × (1 − şubenin POS oranı). Günün durumu firmanın: o gün bankaya gelen para bütün şubelerin satışıyla karşılaştırılır."
+          description="Beklenen net = şubenin kart satışı × (1 − şubenin POS oranı). Günün durumu firmanın: o gün bankaya gelen para bütün şubelerin satışıyla karşılaştırılır. Fark (gelen − beklenen) şubeye bölünmez: Firma geneli görünümde."
         />
         {shown.length ? (
           <TableWrap>
