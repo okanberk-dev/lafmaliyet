@@ -186,9 +186,7 @@ function unscopedReads(): Map<string, string[]> {
  * işaret koyar ve sayıyı düşürür. Yeni dosya eklenmez, sayı artmaz
  */
 const BEKLEYEN_B: Record<string, number> = {
-  "src/app/panel/ayarlar/page.tsx": 1,
   "src/app/panel/faturalar/page.tsx": 2,
-  "src/app/panel/giderler/page.tsx": 1,
   "src/app/panel/hammaddeler/page.tsx": 1,
   "src/app/panel/hatirlaticilar/page.tsx": 2,
   "src/server/data/asilpos-day-end.ts": 1,
@@ -204,7 +202,6 @@ const BEKLEYEN_B: Record<string, number> = {
   "src/server/data/cash-requests.ts": 6,
   "src/server/data/checklists.ts": 1,
   "src/server/data/commission.ts": 2,
-  "src/server/data/count-alerts.ts": 1,
   "src/server/data/expense-extras.ts": 1,
   "src/server/data/fixed-follow.ts": 1,
   "src/server/data/fixed-reminders.ts": 1,
@@ -218,14 +215,14 @@ const BEKLEYEN_B: Record<string, number> = {
   "src/server/data/waste-requests.ts": 7,
   "src/server/data/waste.ts": 1,
   "src/server/notify/checklist-alerts.ts": 1,
-  "src/server/notify/digest.ts": 8,
+  "src/server/notify/digest.ts": 7,
   "src/server/notify/recipients.ts": 2,
 };
 
 /** Şubesi sütundan değil kayıttan okunan tablo: personel isteği (konu, yük ya da kayıt; `requestBranches`) */
 const BRANCH_DERIVED = ["staffRequests"];
-/** Şube sütunu parça 3'te gelecek tablolar (drizzle/0101_sube_ayrimi_kolonlar.sql) */
-const BEKLEYEN_KOLON = ["checklistRuns", "activityLog", "notificationLog", "investments"];
+/** Şube sütunu sırada olan tablolar (parça 3 dördünü getirdi: drizzle/0101_sube_ayrimi_kolonlar.sql; boş) */
+const BEKLEYEN_KOLON: string[] = [];
 
 test("(b) tablo listesi şemayla aynı: tablonun şube sütunu var (ya da şubesi kayıttan, ya da sütunu sırada)", () => {
   for (const t of BRANCH_TABLES) {

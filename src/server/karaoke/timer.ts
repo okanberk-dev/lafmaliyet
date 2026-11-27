@@ -23,6 +23,7 @@ import { UserError } from "@/server/user-error";
 
 import { bumpKaraokeVersion } from "./board";
 import { currentVia } from "@/server/activity-via";
+import { karaokeBranchId } from "@/server/branches";
 
 /*
  * Karaoke oturumunun bitirilmesi, geri açılması ve sayacın silinmesi (denetim E-15, E-65; docs/KARAOKE.md › Sayacı
@@ -45,9 +46,9 @@ export interface KaraokeActor {
 
 export type KaraokeSessionRow = typeof s.karaokeSessions.$inferSelect;
 
-/** İşlem geçmişine, yazımla aynı işlemde (kişinin adı ve hesabı) */
+/** İşlem geçmişine, yazımla aynı işlemde (kişinin adı ve hesabı; şubesi karaokenin şubesi, şube ayrımı) */
 async function logIn(tx: Tx, me: KaraokeActor, action: string, detail: string): Promise<void> {
-  await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action, detail: detail.slice(0, 500), via: currentVia() });
+  await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action, detail: detail.slice(0, 500), via: currentVia(), branchId: await karaokeBranchId(tx) });
 }
 
 /** Oturum satırı kilitli (FOR UPDATE); yoksa null */

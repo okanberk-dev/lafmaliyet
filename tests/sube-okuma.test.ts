@@ -43,8 +43,17 @@ test("kapalı gün: şubenin işlem geçmişi kırmızı, şubesiz personel uyar
   ];
   assert.deepEqual(branchStaffWrites(logs, "tuzla"), { own: 2, shared: 1 });
   assert.deepEqual(branchStaffWrites(logs, "marina"), { own: 1, shared: 1 });
-  assert.deepEqual(branchChecklistRuns([{ templateBranchId: "tuzla" }, { templateBranchId: null }, { templateBranchId: null }], "marina"), { own: 0, shared: 2 });
-  assert.deepEqual(branchChecklistRuns([{ templateBranchId: "tuzla" }, { templateBranchId: null }], "tuzla"), { own: 1, shared: 1 });
+  // Kaydın şubesi (şube ayrımı, 0101): bütün şubelerin listesinin de her şubede kendi kaydı var
+  assert.deepEqual(branchChecklistRuns([{ branchId: "tuzla" }, { branchId: null }, { branchId: null }], "marina"), { own: 0, shared: 2 });
+  assert.deepEqual(branchChecklistRuns([{ branchId: "tuzla" }, { branchId: "marina" }], "tuzla"), { own: 1, shared: 0 });
+  // İşlem geçmişinin kendi şubesi kişinin hesabından önce gelir: şubesiz personelin Marina'da yaptığı sayım Marina'nın
+  const withBranch = [
+    { action: "Sayım kaydı", userBranchId: null, branchId: "marina" },
+    { action: "Sayım kaydı", userBranchId: "tuzla", branchId: "marina" },
+    { action: "Sayım kaydı", userBranchId: null, branchId: null },
+  ];
+  assert.deepEqual(branchStaffWrites(withBranch, "marina"), { own: 2, shared: 1 });
+  assert.deepEqual(branchStaffWrites(withBranch, "tuzla"), { own: 0, shared: 1 });
 });
 
 test("kapalı gün: şubesi belli olmayan iz uyarıdır, onayı ve personelin bildirimini kapatmaz", () => {
@@ -59,8 +68,8 @@ test("kapalı gün: şubesi belli olmayan iz uyarıdır, onayı ve personelin bi
   const src = read("src/server/closed-days.ts");
   assert.match(src, /const split = branchId \? await manyTills\(db\) : false;/);
   assert.match(src, /const karaokeHere = !split \|\| branchId === \(await karaokeBranchId\(db\)\);/);
-  assert.match(src, /innerJoin\(s\.checklistTemplates, eq\(s\.checklistTemplates\.id, s\.checklistRuns\.templateId\)\)/);
-  assert.match(src, /select\(\{ action: s\.activityLog\.action, userBranchId: s\.users\.branchId \}\)/);
+  assert.match(src, /select\(\{ branchId: s\.checklistRuns\.branchId \}\)\.from\(s\.checklistRuns\)/);
+  assert.match(src, /select\(\{ action: s\.activityLog\.action, userBranchId: s\.users\.branchId, branchId: s\.activityLog\.branchId \}\)/);
 });
 
 test("kapalı gün: site sayıları bildirilen şubenin (&branch=); Onaylar kartı ve onay eylemi şubeyi verir", () => {

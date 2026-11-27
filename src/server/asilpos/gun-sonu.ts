@@ -321,7 +321,7 @@ export async function writeAutoReport(db: DB, date: string, branchId: string, no
       await onReportSaved(tx, date, now, branchId);
       await onNextReport(tx, row, now);
       await supersede(tx, { kinds: ["kasa-gec"], subject: cashDaySubject(date, branchId) }, "AsilPOS gün sonundan rapor yazıldı", now, DELETED_REPORT_DAYS);
-      await tx.insert(s.activityLog).values({ userName: ASILPOS_AUTO_BY, userId: null, action: "Kasa raporu (AsilPOS otomatik)", detail: `${longDateTR(date)}: Z ${day.z.zNo}` });
+      await tx.insert(s.activityLog).values({ userName: ASILPOS_AUTO_BY, userId: null, action: "Kasa raporu (AsilPOS otomatik)", detail: `${longDateTR(date)}: Z ${day.z.zNo}`, branchId });
       // Rapor yokken (sayım yok) eklenen gün sonu fotoğrafları şimdi bağlanır; yazarkasa alanları geldiyse sunucu sütunları
       row = (await linkPendingPhotos(tx, row, state.pendingPhotos, now)).row;
       if (row.okcZNo && row.okcTotal !== null) row = await serverColumns(tx, row);
@@ -375,6 +375,7 @@ export async function writeAutoReport(db: DB, date: string, branchId: string, no
       userId: null,
       action: "Kasa raporu güncellendi (AsilPOS otomatik)",
       detail: `${longDateTR(date)}: ${changesText(changes)}${merged.kept.length ? ` · elle düzeltilen korundu: ${merged.kept.length} alan` : ""}`,
+      branchId: row.branchId,
     });
     const check = await photoCheckOf(tx, row, { ...device, z: day.z }, now);
     await setState({ autoValues: merged.auto, photoCheck: check, missing: missingFor(attached, check) });
@@ -420,6 +421,7 @@ async function fillHumanDevice(tx: CashTx, prev: typeof s.cashReports.$inferSele
     userId: null,
     action: "Kasa raporu güncellendi (AsilPOS otomatik)",
     detail: `${longDateTR(prev.date)}: elle girilen rapora cihaz alanları yazıldı · ${changesText(changes)}`,
+    branchId: prev.branchId,
   });
 }
 
@@ -561,7 +563,7 @@ export async function sendStaffDayEnd(db: DB, date: string, branchId: string, no
   const res = await sendEmail({ from: resolveFrom((await loadNotifySettings()).from), to, ...msg, idempotencyKey: key.replace(/:/g, "-") }, opts);
   await db
     .insert(s.notificationLog)
-    .values({ key, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+    .values({ key, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error, branchId })
     .onConflictDoUpdate({
       target: s.notificationLog.key,
       set: { subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() },
@@ -682,7 +684,7 @@ export async function sendDayEndEmail(db: DB, date: string, branchId: string, re
     const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, ...(parts?.attachments.length ? { attachments: parts.attachments } : {}), idempotencyKey: `${RESEND_ONEKI.gun}${branchId}-${date}-${day.hash}` }, opts);
     await db
       .insert(s.notificationLog)
-      .values({ key: `${BILDIRIM_ONEKI.gun}${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .values({ key: `${BILDIRIM_ONEKI.gun}${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error, branchId })
       // Düşen gönderim konuyu değiştirmez: konu son giden e-postanınkidir (sonraki "kasa sayıldı" kararı ona bakar)
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { ...(res.ok ? { subject: msg.subject, recipients: to.join(", ") } : {}), ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
     if (!res.ok) {
@@ -752,7 +754,7 @@ export async function sendPavoEmail(db: DB, date: string, branchId: string, now 
     const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: `${RESEND_ONEKI.pavo}${branchId}-${date}-${hash}` }, opts);
     await db
       .insert(s.notificationLog)
-      .values({ key: `${BILDIRIM_ONEKI.pavo}${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .values({ key: `${BILDIRIM_ONEKI.pavo}${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error, branchId })
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
     if (!res.ok) {
       await finish({});
@@ -811,7 +813,7 @@ export async function sendPhotoEmail(db: DB, date: string, branchId: string, now
   // Kendi kaydıyla üstlenir (gün sonu / Pavo e-postasının sending_at kilidini tutmaz, onlar da bunu bekletmez): kayıt
   // yoksa açılır; düşmüş ya da yarıda kalmış (SENDING_STALE_MS) kayıt devralınır, sürmekte olan gönderim "busy"
   const stale = new Date(now.getTime() - SENDING_STALE_MS);
-  const opened = await db.insert(s.notificationLog).values({ key, channel: "email", ok: false, error: PHOTO_SENDING, sentAt: now }).onConflictDoNothing().returning({ id: s.notificationLog.id });
+  const opened = await db.insert(s.notificationLog).values({ key, channel: "email", ok: false, error: PHOTO_SENDING, sentAt: now, branchId }).onConflictDoNothing().returning({ id: s.notificationLog.id });
   if (!opened.length) {
     const taken = await db
       .update(s.notificationLog)

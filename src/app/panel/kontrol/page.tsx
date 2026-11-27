@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
-import { absentReason, checklistBoundaries, checklistDay, listTitle } from "@/lib/checklists";
+import { absentReason, checklistBoundaries, checklistDay, checklistKey, listTitle } from "@/lib/checklists";
 import { addDays, clockSuffixTR } from "@/lib/reminders";
 import { adminActor } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
@@ -65,7 +65,7 @@ async function ChecklistsContent() {
       {lists.length ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {lists.map((l, i) => (
-            <ListCard key={l.templateId} list={l} state={states[i]} next={i === nextIndex} />
+            <ListCard key={checklistKey(l)} list={l} state={states[i]} next={i === nextIndex} />
           ))}
         </div>
       ) : (

@@ -740,15 +740,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Şube seçimi: Tuzla, Marina, Tümü",
         a: (
           <>
-            Şube seçiliyken ekranlar, zil, Bugün ve Claude yalnız o şubenin verisini gösterir; Vergi, Nakit planı, Ödemeler ve cari firma geneli kalır,
-            ekran bunu söyler. Sayılar da şubenin: kontrol bekleyen fatura ve bağlanacak ürün, onay bekleyen istekler ve reçete önerileri (önerenin
-            şubesi), hatırlatıcı kurulacak kişiler, teslim defteri, Kayıp önleme. Online kanal (laffogato.net) seçiliyken Bugün &quot;Bu kanalın kasası ve
-            stoğu yok&quot; der; kasa, sayım ve vardiya şubelerdedir. Kaçak raporu yalnız Marina&apos;nın (başka şubede &quot;Bu şube için tahmini stok
-            yok&quot;). Tümü seçiliyken şubeye ait bir kayıt (kasa raporu, sayım, zayi, ay bilgisi, satış listesi) yazacaksanız ekran önce şubeyi
-            sorar; sessizce Tuzla&apos;ya yazılmaz. Şubeye kilitli personel yalnız kendi şubesini görür ve yazar.{" "}
-            <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong>: Vergi, Nakit planı, Ödemeler, Tutarlılık gibi firma geneli ekranların
-            şube seçiliyken yalnız şubeyi mi, firmanın tamamını mı göstereceğini ekran ekran siz seçersiniz; ekrandaki “Firma geneline geç” düğmesi aynı
-            ayardır. Vergi beyanı, banka ekstresi ve tam yedek hep firmanındır.
+            Şube seçiliyken ekranlar, zil, Bugün ve panel asistanı yalnız o şubenin kayıtlarını gösterir: kasa, sayım, onaylar, kontrol listeleri,
+            işlem geçmişi, yatırımlar. İşletme geneli kayıtlar (kira, muhasebe) her şubede &quot;İşletme geneli&quot; yazar, şubenin toplamına
+            girmez. Bütün şubelerin kontrol listesini her şube kendi doldurur; Tümü&apos;de liste şube şube görünür. Online kanalın kasası ve
+            stoğu yoktur. Tümü seçiliyken şubeye ait bir kayıt yazacaksanız ekran önce şubeyi sorar; sessizce Tuzla&apos;ya yazılmaz. Şubeye
+            kilitli personel yalnız kendi şubesini görür.{" "}
+            <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong>: Vergi, Nakit planı, Ödemeler gibi ekranların şube
+            seçiliyken yalnız şubeyi mi, firmanın tamamını mı göstereceğini siz seçersiniz. Vergi beyanı, banka ekstresi ve tam yedek hep firmanındır.
           </>
         ),
         icon: Globe,

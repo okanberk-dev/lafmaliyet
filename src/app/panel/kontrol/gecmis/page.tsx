@@ -9,7 +9,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { ALL_BRANCHES } from "@/lib/branches";
-import { checklistDay, historyRange, isStarted, lateFinish, listState, nowBusinessMinute, STAFF_HISTORY_DAYS, timeTR, type ChecklistLite, type HistoryRange } from "@/lib/checklists";
+import { checklistDay, checklistHref, checklistKey, historyRange, isStarted, lateFinish, listState, nowBusinessMinute, STAFF_HISTORY_DAYS, timeTR, type ChecklistLite, type HistoryRange } from "@/lib/checklists";
 import { monthTitle, prevMonth } from "@/lib/closed-period";
 import { num } from "@/lib/format";
 import { keepUntil } from "@/lib/photo-rules";
@@ -159,7 +159,7 @@ function DayRow({ day, lists, today, now }: { day: string; lists: HistoryList[];
             lists.map((l) => {
               const c = chip(l.lite, day, today, now);
               return (
-                <Badge key={l.template.id} tone={c.tone} dot>
+                <Badge key={checklistKey(l.lite)} tone={c.tone} dot>
                   {c.text}
                 </Badge>
               );
@@ -190,7 +190,7 @@ async function DayDetail({ range, today, now, role }: { range: Extract<HistoryRa
   const openHref = (l: HistoryList) => {
     if (day !== today || !l.template.active) return null;
     const state = listState(l.lite, nowBm, false);
-    return isStarted(l.lite) || state === "open" || state === "overdue" ? `/panel/kontrol/${l.template.id}` : null;
+    return isStarted(l.lite) || state === "open" || state === "overdue" ? checklistHref(l.lite) : null;
   };
   return (
     <div className="space-y-4">
@@ -215,7 +215,7 @@ async function DayDetail({ range, today, now, role }: { range: Extract<HistoryRa
       {lists.length ? (
         lists.map((l) => (
           <RunView
-            key={l.template.id}
+            key={checklistKey(l.lite)}
             name={l.lite.name}
             day={day}
             today={day === today}

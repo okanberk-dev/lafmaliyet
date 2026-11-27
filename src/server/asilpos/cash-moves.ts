@@ -167,7 +167,7 @@ export async function syncAsilposCashOuts(tx: CashOutTx, date: string, allMoves:
     }
   }
 
-  await logCashOuts(tx, date, [
+  await logCashOuts(tx, date, branchId, [
     out.inserted && `${out.inserted} yeni`,
     out.adopted && `${out.adopted} elle girilmiş satır eşleşti`,
     out.updated && `${out.updated} güncellendi`,
@@ -184,10 +184,17 @@ export async function syncAsilposCashOuts(tx: CashOutTx, date: string, allMoves:
  * İşlem geçmişine "Kasadan çıkanlar (AsilPOS)" satırı (yalnız değişiklik varsa): "24 Kasım Salı: <neden>; 1 yeni, …". Yazan
  * verilmezse AsilPOS (sistem)
  */
-async function logCashOuts(tx: CashOutTx, date: string, parts: (string | false | 0)[], by: { id: number | null; name: string } = { id: null, name: ASILPOS_CASH_OUT_BY }, why?: string) {
+async function logCashOuts(
+  tx: CashOutTx,
+  date: string,
+  branchId: string,
+  parts: (string | false | 0)[],
+  by: { id: number | null; name: string } = { id: null, name: ASILPOS_CASH_OUT_BY },
+  why?: string,
+) {
   const text = parts.filter(Boolean);
   if (!text.length) return;
-  await tx.insert(s.activityLog).values({ userName: by.name, userId: by.id, action: "Kasadan çıkanlar (AsilPOS)", detail: `${longDateTR(date)}: ${why ? `${why}; ` : ""}${text.join(", ")}` });
+  await tx.insert(s.activityLog).values({ userName: by.name, userId: by.id, action: "Kasadan çıkanlar (AsilPOS)", detail: `${longDateTR(date)}: ${why ? `${why}; ` : ""}${text.join(", ")}`, branchId });
 }
 
 /**
@@ -227,6 +234,7 @@ export async function detachAsilposCashOuts(
   await logCashOuts(
     tx,
     date,
+    branchId,
     [plan.remove.length && `${plan.remove.length} AsilPOS satırı kaldırıldı`, plan.release.length && `${plan.release.length} satır elle girilmiş gibi kaldı (AsilPOS bağı çözüldü)`],
     by,
     why,

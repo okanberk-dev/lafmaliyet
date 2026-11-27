@@ -21,7 +21,7 @@ import { missedPingShown } from "@/lib/site-orders/follow";
 import { activityActionLabel } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
-import { currentBranchScope } from "@/server/branch-scope";
+import { branchWhereWithShared, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadAutoBackupInfo, type AutoBackupInfo } from "@/server/backup/auto";
 import { loadBackupInfo } from "@/server/backup/state";
@@ -437,15 +437,23 @@ function fifoMonthOptions(counted: string[], start: string | null, current: stri
 async function SettingsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, log, accounts, scope, branches] = await Promise.all([
+  // İşlem geçmişi şube seçiliyken o şubenin ve şubesiz (işletme geneli, 0101'den önceki) kayıtları (şube ayrımı)
+  const scope = await currentBranchScope();
+  const [model, log, accounts, branches] = await Promise.all([
     loadModel(),
-    db.select().from(s.activityLog).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
+    db.select().from(s.activityLog).where(branchWhereWithShared(s.activityLog.branchId, scope)).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
     // Kaydın hesabı: ad tek başına yanıltabiliyorsa (sonradan değişti ya da başka hesap aynı adı taşıyor) e-postası da
     db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
-    // Kasa kartları seçili şubeye göre (AsilPOS, ModPOS; src/lib/pos-cards.ts)
-    currentBranchScope(),
     listBranches(),
   ]);
+  // Birden çok şube açıkken kaydın şubesi satırda ("Tümü"de şube adı; şube seçiliyken yalnız işletme geneli kayıtlarda)
+  const branchNames = new Map(branches.map((b) => [b.id, b.name]));
+  const manyBranches = branches.filter((b) => b.active).length > 1;
+  const logBranch = (id: string | null): string | null => {
+    if (!manyBranches) return null;
+    if (scope === ALL_BRANCHES) return id ? (branchNames.get(id) ?? id) : null;
+    return id ? null : "İşletme geneli";
+  };
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
@@ -486,6 +494,7 @@ async function SettingsContent() {
             viaAssistant: l.via === "asistan",
             action: activityActionLabel(l.action),
             detail: l.detail,
+            branch: logBranch(l.branchId),
           }))}
         />
       </div>

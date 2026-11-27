@@ -6,7 +6,7 @@ import { countLogBranch, loggedItems, type StaffLateEdit, type UnpricedExtras } 
 import { ALL_BRANCHES, type BranchScope, namedTill } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { monthLabel } from "@/lib/format";
-import { currentBranchScope } from "@/server/branch-scope";
+import { branchWhereWithShared, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
@@ -81,6 +81,8 @@ export async function loadStaffLateEdits(month: string, scope?: BranchScope): Pr
         inArray(s.activityLog.action, COUNT_ACTIONS),
         like(s.activityLog.detail, `${monthLabel(month)}:%`),
         gte(s.activityLog.at, since),
+        // Kaydın şubesi (şube ayrımı, migration 0101): şubesiz eski kayıt ayrıntısındaki şubeyle aşağıda süzülür
+        branchWhereWithShared(s.activityLog.branchId, sc),
       ),
     )
     .orderBy(desc(s.activityLog.id))

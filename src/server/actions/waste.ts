@@ -52,7 +52,7 @@ export async function addWasteEntry(input: z.input<typeof entrySchema>) {
     // Yazım formun şubesinin kapsamında: kilit, kapalı gün ve AsilPOS okumaları da o şubenin
     const target = await withBranchScope(sube, () => addWaste(getDb(), asActor(me, opsLevel(me.role)), data, undefined, sube));
     // Aynı anahtarın tekrarı: kayıt zaten yazılmış ve işlem geçmişinde; ikinci satır yazılmaz
-    if (!target.repeated) await logActivity(me, `${WASTE_KIND_LABEL[data.kind]} kaydı`, `${target.name} ${qtyText(data.qty, target.unit)}${data.reason ? ` · ${data.reason}` : ""}`);
+    if (!target.repeated) await logActivity(me, `${WASTE_KIND_LABEL[data.kind]} kaydı`, `${target.name} ${qtyText(data.qty, target.unit)}${data.reason ? ` · ${data.reason}` : ""}`, { branchId: sube });
     refresh();
     return { id: target.id, name: target.name, unit: target.unit, qty: target.qty, repeated: target.repeated };
   });
@@ -62,7 +62,7 @@ export async function deleteWasteEntry(id: number) {
   return attempt(async () => {
     const me = await requireCan("kayit.yaz");
     const row = await removeWaste(getDb(), asActor(me, opsLevel(me.role)), z.number().int().positive().parse(id));
-    await logActivity(me, `${WASTE_KIND_LABEL[row.kind as "zayi" | "ikram"]} kaydı silindi`, `${row.name} ${qtyText(row.qty, row.unit)} (${row.date})`);
+    await logActivity(me, `${WASTE_KIND_LABEL[row.kind as "zayi" | "ikram"]} kaydı silindi`, `${row.name} ${qtyText(row.qty, row.unit)} (${row.date})`, { branchId: row.branchId });
     refresh();
     return null;
   });

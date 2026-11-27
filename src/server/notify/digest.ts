@@ -18,7 +18,7 @@ import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
-import { withBranchScope } from "@/server/branch-scope";
+import { branchWhereWithShared, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { latestParasutRun } from "@/server/jobs/runs";
@@ -420,7 +420,8 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
       if (res.uncertain) console.error("Sabah e-postası gönderimi belirsiz:", res.error);
       await db
         .insert(s.notificationLog)
-        .values({ key: `error:${today}:${Date.now()}${g.branchIds.length ? `:${g.branchIds.join(",")}` : ""}`, subject, recipients: to.join(", "), ok: false, error: failed })
+        // Tek şubeye bağlı grubun düşen e-postası o şubenin kaydı (Son gönderimler şube seçiliyken; şube ayrımı)
+        .values({ key: `error:${today}:${Date.now()}${g.branchIds.length ? `:${g.branchIds.join(",")}` : ""}`, subject, recipients: to.join(", "), ok: false, error: failed, branchId: g.branchIds.length === 1 ? g.branchIds[0] : null })
         .onConflictDoNothing();
       continue;
     }
@@ -456,9 +457,12 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   };
 }
 
-/** Son gönderimler (ekrandaki günlük) */
-export async function recentNotifications(limit = 12) {
-  return getDb().select().from(s.notificationLog).orderBy(desc(s.notificationLog.sentAt)).limit(limit);
+/**
+ * Son gönderimler (ekrandaki günlük). `scope`: tek şube seçiliyken o şubenin (gün sonu, AsilPOS, vardiya, şubeye bağlı
+ * alıcının e-postası) ve şubesiz (işletme geneli e-postalar, 0101'den önceki) kayıtlar (şube ayrımı)
+ */
+export async function recentNotifications(limit = 12, scope: BranchScope = ALL_BRANCHES) {
+  return getDb().select().from(s.notificationLog).where(branchWhereWithShared(s.notificationLog.branchId, scope)).orderBy(desc(s.notificationLog.sentAt)).limit(limit);
 }
 
 /** Deneme e-postası: kayıtlı gönderenle, etkin adreslere (personel ya da pasif hesabın adresi düşer; `skipped` onlar) */

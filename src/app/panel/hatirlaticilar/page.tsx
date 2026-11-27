@@ -52,7 +52,8 @@ async function RemindersContent() {
   const [{ today, settings, reminders, items, laterInvoices, covered }, recipients, log, fixedData, unpaid, recentPaid, weekly] = await Promise.all([
     loadUpcoming(undefined, { branch: scope.scope }),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
-    recentNotifications(10),
+    // Son gönderimler: şubenin ve işletme genelinin (şube ayrımı, notification_log.branch_id)
+    recentNotifications(10, scope.scope),
     // Bitiş ayına göre (saklı `active` bayatlayabilir; E-62): biten kalem "Sabit giderlerden ekle"de önerilmez
     // Şube seçiliyken adaylar o şubenin ve işletme genelinin kalemleri (şube kapsamı C P1-3)
     loadFixedForReminders(db, currentMonthTR(now), scope.scope),

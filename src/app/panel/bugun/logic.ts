@@ -19,7 +19,7 @@ import {
   type CarryCheck,
   type CashRevisionRow,
 } from "@/lib/cash-report";
-import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
+import { checklistHref, checklistKey, isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
@@ -42,7 +42,8 @@ import type { OpsDayFacts } from "./rows-ops";
 
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
- * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
+ * `liste-dun`, `liste-{templateId}` (bütün şubelerin listesinin şube satırı `liste-{templateId}-{şube}`, şube ayrımı;
+ * checklistKey) ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
  * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı. "Tümü"de birden çok
  * kasa açıkken yöneticinin kasa satırları şube başına: `kasa-dun:{şube}`, `kasa:{şube}`.
  */
@@ -53,6 +54,7 @@ export type DayTaskKey =
   | `kasa:${string}`
   | "liste-dun"
   | `liste-${number}`
+  | `liste-${number}-${string}`
   | "liste"
   | "odeme"
   | "komisyon"
@@ -680,7 +682,8 @@ const countMonthEnd: Row = (f, c) => {
 function listRow(f: DayFacts, day: string, l: ChecklistLite, nowBm: number): DayTask {
   const admin = f.role === "admin";
   const run = l.run;
-  const base = { key: `liste-${l.templateId}` as const, title: listTitle(l.name), href: `/panel/kontrol/${l.templateId}` };
+  // Bütün şubelerin listesinin şube satırı: anahtar ve bağlantı şubeyi taşır (şube ayrımı; "Tümü"de iki şubenin satırı)
+  const base = { key: `liste-${checklistKey(l)}` as DayTaskKey, title: listTitle(l.name), href: checklistHref(l) };
   const state = listState(l, nowBm, false);
   const started = isStarted(l);
   const progress = run ? `${num(run.done)} / ${num(run.required)}` : `0 / ${num(l.required)}`;

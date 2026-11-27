@@ -138,7 +138,8 @@ describe("Dalga 2 bildirimleri: veritabanında", { skip: !SERVER_URL && "BILDIRI
     );
     assert.deepEqual(await bell.vardiyaBell("tuzla", FRIDAY), [], "Tuzla seçiliyken Tuzla'nın planı yazılı");
     assert.equal((await bell.vardiyaBell("marina", FRIDAY)).length, 1);
-    assert.equal((await bell.vardiyaBell("online", FRIDAY)).length, 1, "online kanal seçiliyken (vardiyası yok) hepsi");
+    // Şube ayrımı (parça 2): online kanalın vardiyası yok, kanal seçiliyken öbür şubelerin hatırlatması da görünmez
+    assert.equal((await bell.vardiyaBell("online", FRIDAY)).length, 0, "online kanal seçiliyken (vardiyası yok) hiçbiri");
   });
 
   test("günlük işin hatırlatması: şube ve gün başına bir kez; cihaz yoksa sorun değil; plan yazılınca susar", async () => {

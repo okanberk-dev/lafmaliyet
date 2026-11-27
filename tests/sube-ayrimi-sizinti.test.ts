@@ -104,7 +104,8 @@ test("kaynak: onaylar, kişi seçicileri, Paraşüt, asistan ve raporlar seçiml
   assert.doesNotMatch(loss, /scope: ALL_BRANCHES/);
   assert.doesNotMatch(read("src/app/panel/raporlar/kayip/page.tsx"), /CompanyWideNotice/);
   assert.match(read("src/server/data/kacak.ts"), /state: "baska-sube"/);
-  // Gelir-gider: şube seçiliyken faturası beklenen cari alım satırı yok; Giderler: yatırımlar "Firma geneli"
+  // Gelir-gider: şube seçiliyken faturası beklenen cari alım satırı yok; Giderler: yatırımlar parça 3'ten beri şubenin ve
+  // işletme genelinin (investments.branch_id; tests/sube-ayrimi-kolonlar.test.ts)
   assert.match(read("src/app/panel/gelir-gider/page.tsx"), /const expected = model\.ds\.branchView\s*\? \{\}/);
-  assert.match(read("src/app/panel/giderler/page.tsx"), /companyWide=\{model\.ds\.branchView\?\.name \?\? null\}/);
+  assert.match(read("src/app/panel/giderler/page.tsx"), /loadInvestments\(scope\)/);
 });

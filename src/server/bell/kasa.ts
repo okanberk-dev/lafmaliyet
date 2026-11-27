@@ -420,7 +420,8 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
       pendingCashBellRows(scope),
       cashOutBellRow(now, scope),
       pendingClosedRows(scope),
-      closedInfoRows(new Date(now.getTime() - 3 * 86_400_000)).catch(() => []),
+      // Kapalı gün olayları ve personelin özel günleri: şubenin ve işletme geneli (şube ayrımı, kaydın şubesi)
+      closedInfoRows(new Date(now.getTime() - 3 * 86_400_000), scope).catch(() => []),
     ]);
     const out: PanelNotification[] = rows.map((r) => ({
       id: `istek-${r.id}-${r.bumpedAt.getTime()}`,

@@ -287,9 +287,11 @@ function lockError(raw: string, name: string, known: readonly BranchRow[], lock:
  * - `till`, `count`, `waste`: kasa, stok sayımı, zayi ve ikram. Etkin fiziksel şube (kanalın kasası, stoğu, zayisi olmaz);
  * - `sales`: Satışlar ve Gelir-gider'in ay bilgisi (ciro, açık gün, not) ve satış listesi. Etkin fiziksel şube: online
  *   kanalın kasa satışı yoktur, kanal seçiliyken yazılan ay "online" şubesine inmesin;
- * - `expense`: aylık harcama ve cari giderleri. Etkin herhangi bir şube ya da açıkça işletme geneli (`EXPENSE_SHARED`).
+ * - `expense`: aylık harcama ve cari giderleri. Etkin herhangi bir şube ya da açıkça işletme geneli (`EXPENSE_SHARED`);
+ * - `checklist`: bütün şubelerin kontrol listesinin günlük kaydı (şube ayrımı, 27 Kasım 2026). Etkin fiziksel şube: her
+ *   şube listeyi kendi kaydına doldurur; şubeli listenin kaydı hep listenin şubesindedir (bu kapıdan geçmez).
  */
-export type FormBranchKind = "till" | "count" | "waste" | "sales" | "expense";
+export type FormBranchKind = "till" | "count" | "waste" | "sales" | "expense" | "checklist";
 
 /** Gider formunun "İşletme geneli" seçimi: şubesiz gider (sahibin kararı 4 Kasım 2026) */
 export const EXPENSE_SHARED = "isletme";
@@ -314,6 +316,7 @@ export function formBranchError(raw: string, kind: FormBranchKind, known: readon
   if (kind === "till") return formTillError(raw, known, lock);
   if (kind === "count") return formCountError(raw, known, lock);
   if (kind === "waste") return formPhysicalError(raw, known, lock, { has: "zayisi", to: "zayisine" });
+  if (kind === "checklist") return formPhysicalError(raw, known, lock, { has: "kontrol listesi", to: "kontrol listesine" });
   if (kind === "expense" && raw === EXPENSE_SHARED) {
     return lock === null ? null : `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; işletme geneline yazamazsınız`;
   }

@@ -1,4 +1,3 @@
-import { asc } from "drizzle-orm";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -9,11 +8,13 @@ import { fixedMonthly, shiftMonth } from "@/lib/calc/engine";
 import { breakEvenOf } from "@/lib/calc/insights";
 import { FIXED_SECTIONS } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
+import { investmentBranchLabel, investmentTotals } from "@/lib/investments";
 import { fixedExpenseDeleteBlockers } from "@/server/actions/costs";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
-import { getDb, schema as s } from "@/server/db";
+import { loadInvestments } from "@/server/data/investments";
 
 import { FixedExpensesClient, FixedSummary, InvestmentsClient, type FixedBranches, type FixedRow, type SectionTotal } from "./expenses-client";
 import { choiceMonths, closedDataMonths } from "./history-text";
@@ -54,7 +55,9 @@ export default function ExpensesPage() {
 
 async function ExpensesContent() {
   await requireAdmin();
-  const [model, investments, all] = await Promise.all([loadModel(), getDb().select().from(s.investments).orderBy(asc(s.investments.id)), listBranches()]);
+  // Yatırımlar şube seçiliyken o şubenin ve işletme genelinin (şube ayrımı, migration 0101)
+  const scope = await currentBranchScope();
+  const [model, investments, all] = await Promise.all([loadModel(), loadInvestments(scope), listBranches()]);
   // Şube seçimi (docs/SUBE.md): şube seçiliyken o şubenin ve işletme genelinin kalemleri listelenir; yeni kalem seçili
   // şubeye, "Tümü"nde işletme geneline
   const open = all.filter((b) => b.active);
@@ -73,7 +76,7 @@ async function ExpensesContent() {
   // Başabaş Genel bakış ve Analiz'le aynı kuraldan (breakEvenOf, denetim E-59): her ay girilen harcamalar dahil, son
   // kapanmış online ayın brüt kârı düşülmüş
   const be = breakEvenOf(model, cur);
-  const totalInvestment = investments.reduce((a, i) => a + i.amount, 0);
+  const investTotals = investmentTotals(investments, scope);
   const total = model.fixedStandardTotal;
   const nextMonth = shiftMonth(cur, 1);
   const nextTotal = model.fixedStandardTotalFor(nextMonth);
@@ -135,10 +138,19 @@ async function ExpensesContent() {
       />
       <div className="mt-6">
         <InvestmentsClient
-          rows={investments.map((i) => ({ id: i.id, name: i.name, amount: i.amount, date: i.date, note: i.note }))}
-          total={totalInvestment}
-          // Şube seçiliyken "Firma geneli" (yatırımın şube sütunu parça 3'te; şube ayrımı)
-          companyWide={model.ds.branchView?.name ?? null}
+          rows={investments.map((i) => ({
+            id: i.id,
+            name: i.name,
+            amount: i.amount,
+            date: i.date,
+            note: i.note,
+            branchId: i.branchId,
+            branchName: investmentBranchLabel(i.branchId, scope, nameOf, open.length > 1),
+          }))}
+          total={investTotals.total}
+          // Şube seçiliyken işletme geneli yatırımlar listede, toplamda değil (bilgi; şube ayrımı)
+          shared={model.ds.branchView && investTotals.sharedCount ? { branch: model.ds.branchView.name, amount: investTotals.shared, count: investTotals.sharedCount } : null}
+          branches={branches}
         />
       </div>
     </>

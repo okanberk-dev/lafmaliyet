@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/misc";
-import { isStarted, itemsText, listTitle, timeTR, whoText, type ChecklistLite, type ListState } from "@/lib/checklists";
+import { checklistHref, isStarted, itemsText, listTitle, timeTR, whoText, type ChecklistLite, type ListState } from "@/lib/checklists";
 import { num } from "@/lib/format";
 
 import { listBadge } from "./status";
@@ -51,7 +51,7 @@ export function ListCard({ list: l, state, next }: { list: ChecklistLite; state:
             ) : null}
           </p>
         </div>
-        <ButtonLink href={`/panel/kontrol/${l.templateId}`} variant={next ? "primary" : "secondary"} className="max-sm:h-12 max-sm:w-full">
+        <ButtonLink href={checklistHref(l)} variant={next ? "primary" : "secondary"} className="max-sm:h-12 max-sm:w-full">
           {action}
         </ButtonLink>
       </div>

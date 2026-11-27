@@ -214,6 +214,8 @@ sayımı (Tuzla)"); sayım toplamı ve elle yazılmamış açılış şubenin ke
 | Sabit gider | Pencerede seçilen şube ya da "İşletme geneli" (yeni kalemde seçili şube, "Tümü"nde işletme geneli) |
 | Ödeme hatırlatıcısı | Formda seçilen şube ya da "İşletme geneli" (yenide seçili fiziksel şube, "Tümü"nde işletme geneli) |
 | Kontrol listesi | Listede seçilen şube ya da "Bütün şubeler" (yeni liste seçili şubeyle başlar, "Tümü"de bütün şubeler) |
+| Kontrol listesinin günlük kaydı (şube ayrımı, 27 Kasım 2026) | Şubeli listede listenin şubesi. Bütün şubelerin listesinde doldurma ekranının şubesi (`formBranch(…, "checklist")`: seçili fiziksel şube, Bugün'ün şube satırının `?sube=`'si, kilitli personelde kendi şubesi); "Tümü"de birden çok şube açıkken ekran "Hangi şubenin listesi?" diye sorar, şubesiz yanıt reddedilir |
+| Tek seferlik yatırım (şube ayrımı, 27 Kasım 2026) | Pencerede seçilen şube ya da "İşletme geneli" (yenide seçili şube, "Tümü"nde işletme geneli; tek şube açıkken sorulmaz) |
 | Özel gün (maç, AVM, kampanya, kapalı, diğer) | Formda seçilen şube ya da "Bütün şubeler" (her tür; yeni gün seçili şubeyle başlar). Personelin eklediği gün şubesine kilitliyse o şubenin, değilse bütün şubelerin. Tek şube seçiliyken liste o şubenin ve bütün şubelerin günleri |
 | Personel hesabı (Kullanıcılar) | Formda seçilen şube ya da "Bütün şubeler"; şubesi olan personel o şubede kilitli |
 | Vardiya planı | Izgaranın şubesi: seçili fiziksel şube. "Tümü" ya da online kanal seçiliyken birden çok şube açıksa ızgara çizilmez, önce **"Hangi şubenin vardiyası?"** sorulur (26 Kasım 2026; önceden sessizce Tuzla'nın planı açılıp Kaydet Tuzla'ya yazıyordu); tek şubede o şube. Kaydet ve Yazarak doldur ızgaranın şubesini gönderir (zorunlu alan; çerez okunmaz). Asistanın vardiya kartı "Tümü"de şubeyi sorar ([VARDIYA.md](VARDIYA.md) › Ekran) |
@@ -738,8 +740,8 @@ hedefi), `bekliyor` (sonraki parça kapatır). `tests/sube-ayrimi.test.ts`:
   her kimlik en az bir yerde kullanılır ve `where` dosyasında işareti durur (eskimiş kayıt kalmaz).
 - (b) Şubesi olan tabloların (`cashReports`, `invoices`, `reminders` …) `src/server/{data,bell,notify,ai,mcp,assistant-reads}`
   ve panel sayfalarındaki her `.from(s.X)` ifadesi kapsamla okur (`branchWhere`, `invoiceScopeWhere`, `requestInScope` …)
-  ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; parça 1'de 104 ifade, parça 2'den sonra 97):
-  sayı yalnız azalır.
+  ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; parça 1'de 104 ifade, parça 2'den sonra 97,
+  parça 3'ten sonra 93): sayı yalnız azalır. Parça 3'ten beri dört tablonun da şube sütunu var (`BEKLEYEN_KOLON` boş).
 - (c) Alanın ekranı çipini çizer (`<BranchViewChip area="…">`); "bu ekran firma geneli" notu yalnız hep firma geneli
   ekranlarda ve çipi henüz gelmemiş alanların ekranlarında (`BEKLEYEN_ALANLAR`).
 - (d) Saf kurallar: yöneticinin varsayılanı her alanda şube, kilitli hesap her alanda şube, tanınmayan tercih düşer.
@@ -774,7 +776,7 @@ seçimle okur ("Tümü"de değişen bir şey yok). Kural: şubesi bilinen kayıt
 | **Kayıp önleme** | Soldaki seçimden bağımsız, firmanın modeliyle → seçili şubenin kasa raporu, kör sayım, zayi, AsilPOS günü, vardiya ve personeli, görünümün modeli; online kanalda "Bu kanalın kasası ve stoğu yok". "Bu ekran firma geneli" notu kalktı |
 | **Kaçak raporu** | Hep Marina'nın → Marina ya da "Tümü" seçiliyken; öbür şubede "Bu şube için tahmini stok yok" |
 | **Gelir-gider**: "Faturası beklenen alımlar" bilgi satırı | Firmanın cari kayıtları → şube seçiliyken satır yok (cari kaydının şubesi yok; `supplier_entries.branch_id` gelene kadar) |
-| **Sabit giderler** › Tek seferlik yatırımlar | Not yoktu → "Firma geneli" rozeti ve açıklaması (yatırımın şube sütunu parça 3'te) |
+| **Sabit giderler** › Tek seferlik yatırımlar | Not yoktu → "Firma geneli" rozeti ve açıklaması; parça 3'ten beri yatırımın şubesi var ([aşağıda](#şube-sütunu-gelen-tablolar-parça-3)) |
 
 **Online kanal** (laffogato.net) seçiliyken kanalın kasası, stoğu ve vardiyası yok (`selectedChannel`, metin
 `CHANNEL_NO_TILL`): Bugün kasa, sayım ve zayi satırları yerine tek satır "Bu kanalın kasası ve stoğu yok" (iki rolde,
@@ -787,13 +789,49 @@ seçimle. Testler: `tests/sube-ayrimi-sizinti.test.ts` (saf kurallar ve kaynağ�
 `tests/sube-ayrimi-sizinti-db.test.ts` (gerçek Postgres: Tuzla'nın "IZ-TUZLA" işaretli kayıtları Marina seçiliyken
 Bugün, zil, Onaylar, Paraşüt listesi, kişi seçicisi, teslim defteri ve raporlarda görünmez; "Tümü"de görünür).
 
+### Şube sütunu gelen tablolar (parça 3)
+
+Dört tablonun şubesi yoktu; şube seçiliyken öbür şubenin kaydını gösteriyor ya da kaydı hiçbir şubeye bağlayamıyordu.
+Migration `0101_sube_ayrimi_kolonlar` sütunları ekler (production'da `npm run build` sırasında, eski sürüm hizmet verirken
+çalışır; eski sürümün yazdığı satır da doğru kalır).
+
+| Tablo | Şube | Eski kayıtlar | Okuyanlar (şube seçiliyken) |
+|---|---|---|---|
+| `checklist_runs` (kontrol listesinin günlük kaydı) | Şubeli listede listenin şubesi; **bütün şubelerin listesinde dolduranın şubesi**: her şube listeyi kendi kaydına doldurur (tekil anahtar şablon, gün, şube, sıra). Zorunlu | Listenin şubesi; yoksa listeyi tamamlayanın, o da yoksa ilk yanıtlayanın (fiziksel) şubesi; o da yoksa Tuzla | Bugün, zil, Kontrol listeleri, Geçmiş, aylık PDF, personel e-postası, sabah e-postasının kutusu, kapalı gün kanıtı: yalnız o şubenin kaydı |
+| `activity_log` (işlem geçmişi) | Yazımın şubesi: formun ya da kaydın şubesi (kasa raporu, zayi, özel gün, şube ayarı, AsilPOS, kör sayım, karaoke), yoksa seçili şube; "Tümü"de, sistemde ve işletme geneli kayıtta boş | Boş (hangi şubede yapıldığı bilinmiyor) | Ayarlar › İşlem geçmişi, zilin kapalı gün ve özel gün satırları, sayımın geç kayıt uyarısı: şubenin ve şubesiz kayıtlar |
+| `notification_log` (gönderim günlüğü) | Gün sonu e-postası, AsilPOS gün sonu (çalışan, Pavo, fotoğraf), vardiya hatırlatması ve tek şubeye bağlı alıcının düşen sabah e-postası şubesiyle; işletme geneli e-postalar boş | Boş | Ödemeler › Son gönderimler: şubenin ve şubesiz kayıtlar |
+| `investments` (tek seferlik yatırım) | Formda seçilen şube ya da **İşletme geneli** (boş; yeni yatırım seçili şubeyle, "Tümü"de işletme geneliyle başlar) | Boş = işletme geneli | Sabit giderler › Tek seferlik yatırımlar ve dışa aktarımın Sabit Giderler sekmesi: şubenin ve işletme genelinin; **toplam yalnız şubenin**, işletme geneli bilgi olarak ayrıca (sahibin kararı 4) |
+
+**Kontrol listesi şube başına** (docs/KONTROL-LISTELERI.md › Şubeler): bütün şubelerin listesi (şablonun şubesi boş)
+tek şube seçiliyken o şubenin satırıdır ve yalnız o şubenin kaydını okur; "Tümü"de her açık fiziksel şubenin ayrı satırı
+olur, birden çok şube açıkken ad şubeyle başlar ("Marina · Kapanış"); online kanal seçiliyken yoktur. Satırın anahtarı
+ve bağlantısı şubeyi taşır (`checklistKey` → `liste-9-marina`, `checklistHref` → `/panel/kontrol/9?sube=marina`; seçici
+`?sube=`'yi çereze benimsetir). Doldurma ekranı kaydın şubesini her yanıtla ve fotoğrafla gönderir; sunucu onu
+`formBranch(…, "checklist")` kuralıyla doğrular (etkin fiziksel şube, kilitli personelde kendi şubesi). "Tümü"de birden
+çok şube açıkken şube gelmezse ekran **"Hangi şubenin listesi?"** diye sorar, yazım reddedilir: sessizce Tuzla'ya inmez.
+Şubeli listenin kaydı hep listenin şubesindedir (veritabanında da: `checklist_runs_branch_fill` tetikleyicisi şubeyi
+yazmayan eski sürümün kaydını listenin şubesine, şubesiz listede Tuzla'ya indirir). Fotoğrafı kim görür, kapalı gün
+kanıtı ve personel e-postasının alıcısı kaydın şubesinden: Marina'da doldurulan ortak liste Marina'nın kanıtıdır
+(önceden "şubesi belli olmayan iz" uyarısıydı), e-postası Marina'nın vardiyasına gider (anahtar `kontrol-eposta:9@marina:…`).
+Bilinen sınır: liste sonradan başka şubeye bağlanırsa eski kayıtları doldurulduğu şubede kalır; Geçmiş ve aylık PDF
+listeyi yalnız yeni şubesinin kayıtlarıyla gösterir (eski kayıt silinmez, kapalı gün kanıtında kendi şubesinde sayılır).
+
+**Şube silme**: kontrol listesi kaydı ve yatırım şubeyi silmeye engeldir (`branchUsageCount`); işlem geçmişi ve gönderim
+günlüğü değildir: şube silinince şubeleri boşalır.
+
+Kayıttan `BEKLEYEN_KOLON` boşaldı; kapsamsız okuma 97 → 93 (Ayarlar, Sabit giderler, sayım uyarısı, Son gönderimler).
+Testler: `tests/sube-ayrimi-kolonlar.test.ts` (saf kurallar, kaynağın biçimi, migration),
+`tests/sube-ayrimi-kolonlar-db.test.ts` (gerçek Postgres: iki şubenin ayrı kaydı, Tümü'de yan yana satırlar, şubesiz yazımın
+reddi, tetikleyici, geri doldurma, işlem geçmişi ve gönderim günlüğünün şubesi, yatırımlar; Tuzla'nın "IZ-TUZLA"
+işaretli kayıtları Marina seçiliyken görünmez).
+
 ### Sıra
 
 | Parça | Ne | Durum |
 |---|---|---|
 | 1 | Altyapı: ayar, migration 0100, `areaScope`, eylem, çip, Hesabım kartı, kayıt ve tarama | Kuruldu (27 Kasım 2026) |
 | 2 | Ayarsız sızıntılar: Bugün ve zil sayıları, onaylar, kişi seçicileri, Paraşüt, asistan, kayıp önleme | Kuruldu (27 Kasım 2026) |
-| 3 | Şube sütunu olmayan tablolar: `checklist_runs`, `activity_log`, `notification_log`, `investments` (migration 0101) | Sırada |
+| 3 | Şube sütunu olmayan tablolar: `checklist_runs`, `activity_log`, `notification_log`, `investments` (migration 0101) | Kuruldu (27 Kasım 2026) |
 | 4 | Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon | Sırada |
 | 5 | Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri | Sırada |
 | 6 | Şubeleri yan yana, İşletme geneli giderler, dışa aktarım, e-posta önizlemeleri, kapanış | Sırada |
@@ -828,8 +866,9 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   "Tümü"de iki kasanın son günleri farklıysa süren ayın satış dönemi en geç gelen günle biter (ModPOS listelerinin
   ortak dönemi gibi en kısasıyla kesilmez). **Şube kapsamı D** ("şube seçiliyken her ekranda yalnız o şubenin bilgisi")
   başladı: [Şube ayrımı](#şube-ayrımı-27-kasım-2026).
-- **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
-  şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.
+- **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu) kuruldu (27 Kasım 2026, şube ayrımı parça
+  3): bütün şubelerin listesini her şube kendi kaydına doldurur; kapalı gün kanıtında kaydın şubesi sayılır
+  ([Şube sütunu gelen tablolar](#şube-sütunu-gelen-tablolar-parça-3)).
 - **Faturanın şubesi** kuruldu (25 Kasım 2026, aşağıda): şubenin faturası Gelir-gider'de şubenin harcama hücresinde.
   Mal maliyeti tek şubede yine reçeteden (mal faturası bilgi satırında); faturayı şubenin mal maliyetine katmak sayım ve
   devrin şube başına olmasını ister.

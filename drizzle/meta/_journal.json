@@ -708,6 +708,13 @@
       "when": 1795759648741,
       "tag": "0100_sube_gorunumu",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795762380788,
+      "tag": "0101_sube_ayrimi_kolonlar",
+      "breakpoints": true
     }
   ]
 }

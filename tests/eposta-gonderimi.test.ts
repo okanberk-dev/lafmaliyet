@@ -150,7 +150,7 @@ test("belirsiz gönderimin metni Türkçe ve 'gitmiş olabilir' der (ham hata ye
   // bir grup düşüp öbürü gittiyse sonuç "gitti" ama hata taşır (partialError)
   assert.match(fail, /const failed = sendFailureText\(res\);\s+error = g\.branch \? `\$\{g\.branch\}: \$\{failed\}` : failed;/);
   assert.match(fail, /if \(res\.uncertain\) console\.error\(/);
-  assert.match(fail, /ok: false, error: failed \}\)/);
+  assert.match(fail, /ok: false, error: failed(, branchId: [^}]+)? \}\)/);
   assert.match(digest, /\.\.\.\(error \? \{ partialError: error \} : \{\}\),/);
   assert.match(digest, /if \(!recipients\) \{\s+if \(error\) return \{ status: "error", error \};/);
   assert.doesNotMatch(fail, /error: res\.error/);

@@ -1,4 +1,4 @@
-import { asc, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { ALL_BRANCHES, BRANCH_PARAM, branchScopeLabel, parseBranchScope, type BranchScope } from "@/lib/branches";
@@ -7,6 +7,7 @@ import { withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadCariExport } from "@/server/data/cari";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadInvestments } from "@/server/data/investments";
 import { loadTaxView } from "@/server/data/tax";
 import { getDb, schema as s } from "@/server/db";
 
@@ -40,7 +41,8 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
     const whole = scope === ALL_BRANCHES;
     const [model, investments, findings, cari] = await Promise.all([
       loadModel(),
-      db.select().from(s.investments).orderBy(asc(s.investments.id)),
+      // Yatırımlar dosyanın şubesinin ve işletme genelinin (şube ayrımı; toplam şubeninki, işletme geneli bilgi)
+      loadInvestments(scope),
       db.select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
       // Tedarikçilere elle girilen borç ve ödemeler ("Cari hareketleri" sekmesi; kayıt yokken sekme yok). Firma geneli
       // şube-ayrımı: tedarikciler.disa-aktar

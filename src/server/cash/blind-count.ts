@@ -125,6 +125,7 @@ export async function lockCashCountCore(db: DB, me: CountActor, input: LockInput
       action: last || report ? "Kasa sayımı değişti" : "Kasa sayımı kilitlendi",
       detail: detail.slice(0, 500),
       via: currentVia(),
+      branchId,
     });
     return lockOf([...rows, { amount, reason, userName: me.name, at: now.toISOString() }])!;
   });

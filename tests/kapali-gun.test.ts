@@ -221,8 +221,8 @@ test("kaynak: zil, sabah e-postası ve AsilPOS kanıtı şubesiz okumaz", () => 
   assert.doesNotMatch(data, /isClosedDay\(/);
   assert.match(data, /closedMarksOn\(day\)/);
   assert.match(data, /closedDayDigestLists\(lists, marks, new Set\(reports\.map\(\(r\) => r\.branchId\)\)\)/);
-  // Listenin şubesi günün listesiyle gelir
-  assert.match(read("src/server/checklists/store.ts"), /run: summary,\n {4}branchId: t\.branchId,/);
+  // Kaydın şubesi günün listesiyle gelir (şubeli listede listenin, bütün şubelerin listesinde satırın şubesi; şube ayrımı)
+  assert.match(read("src/server/checklists/store.ts"), /run: summary,\n {4}branchId: copy\.branchId,/);
   // AsilPOS'un gün sonu kanıtı: şube verilmezse AsilPOS'un şubesininki (günün herhangi bir satırı değil)
   const closed = read("src/server/closed-days.ts");
   const ev = closed.slice(closed.indexOf("async function asilposEvidence"), closed.indexOf("/** İş gününün penceresi"));

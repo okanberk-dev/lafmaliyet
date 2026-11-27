@@ -86,8 +86,11 @@ const STATUS_LABEL = { active: "Devam ediyor", ended: "Bitti", upcoming: "Başla
 // ---------------------------------------------------------------------------- Girdi
 
 export interface ExportExtras {
-  /** Tek seferlik yatırımlar (Sabit Giderler altında, aylık gidere dahil değil) */
-  investments: { name: string; amount: number; date: string | null; note: string | null }[];
+  /**
+   * Tek seferlik yatırımlar (Sabit Giderler altında, aylık gidere dahil değil). Şube dosyasında o şubenin ve işletme
+   * genelinin (boş şube) yatırımları; "Tümü"de hepsi (şube ayrımı)
+   */
+  investments: { name: string; amount: number; date: string | null; note: string | null; branchId?: string | null }[];
   /** Tutarlılık bulguları (reçetede olmayan alımlar, fiyat ve fatura kontrolü) */
   findings: { section: string; title: string; detail: string | null; resolved: boolean; createdAt?: Date | null }[];
   /** Kısmen ödenmiş Paraşüt faturasının kalan borcu (fatura kimliği → TL, KDV dahil); verilmezse faturanın kendi alanı */
@@ -572,7 +575,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
 
   addInvoices(wb, model, extras.outstanding, extras.branchNames);
   if (extras.cari?.length) addCari(wb, extras.cari);
-  addPeople(wb, model, month, extras.investments);
+  addPeople(wb, model, month, extras.investments, extras.scope?.branch === true);
   // Vergi (dalga 12): tahmin, beyanname değil; Personel ve Sabit Giderler'den sonra
   if (extras.tax) addTax(wb, extras.tax);
 
@@ -1757,7 +1760,11 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
 
 // ---------------------------------------------------------------------------- Personel + Sabit Giderler
 
-function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investments: ExportExtras["investments"]) {
+/**
+ * `branchFile`: şube dosyası (`?sube=`): yatırım toplamı yalnız şubenin, işletme geneli yatırım notunda "İşletme geneli
+ * (bilgi)" ve ayrı satırda toplanır (şube ayrımı)
+ */
+function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investments: ExportExtras["investments"], branchFile = false) {
   const st = model.settings;
   const label = monthLabel(month);
 
@@ -1875,10 +1882,15 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
   sg.addRow({});
   sectionRow(sg, "n", "Tek seferlik yatırımlar (bilgi amaçlı, aylık gidere dahil değil)");
   subHeaderRow(sg, { n: "Yatırım", s: "Tarih / dönem", a: "Tutar (KDV hariç)", note: "Not" });
-  for (const i of investments) sg.addRow({ n: i.name, s: investmentDate(i.date), a: i.amount, note: i.note });
+  // Şube dosyasında işletme geneli yatırım listede bilgi olarak, toplamda değil (Sabit giderler ekranıyla aynı)
+  const sharedInv = branchFile ? investments.filter((i) => !i.branchId) : [];
+  const ownInv = branchFile ? investments.filter((i) => i.branchId) : investments;
+  for (const i of ownInv) sg.addRow({ n: i.name, s: investmentDate(i.date), a: i.amount, note: i.note });
+  for (const i of sharedInv) sg.addRow({ n: i.name, s: investmentDate(i.date), a: i.amount, note: ["İşletme geneli (bilgi; toplama girmez)", i.note].filter(Boolean).join(" · ") });
   if (!investments.length) sg.addRow({ n: "Kayıtlı yatırım yok." });
-  const it = sg.addRow({ n: "YATIRIM TOPLAMI", a: sum(investments.map((i) => i.amount)) });
+  const it = sg.addRow({ n: "YATIRIM TOPLAMI", a: sum(ownInv.map((i) => i.amount)) });
   totalRow(sg, it);
+  if (sharedInv.length) sg.addRow({ n: "İşletme geneli yatırımlar (bilgi)", a: sum(sharedInv.map((i) => i.amount)), note: "Şubenin toplamına girmez; Tümü dosyasında bir kez sayılır." });
 
   // Yalnızca bu ayın listesinde görünmeyen bilgi varsa: bitmiş / başlamamış kalem, aralık ya da tutar değişikliği
   const fixedMore = model.fixedList.filter((f) => f.history.length > 1 || f.startMonth || f.endMonth || !inRange(f, month));

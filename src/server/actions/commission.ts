@@ -131,7 +131,7 @@ export async function saveCommissionSettings(input: z.input<typeof settingsInput
       const changed = CHANNELS.filter((c) => before[c.key].payDays !== next[c.key].payDays);
       if (changed.length) {
         await putBranchSetting(tx, COMMISSION_GROUP, branchId, { channels: Object.fromEntries(CHANNELS.map((c) => [c.key, { payDays: next[c.key].payDays }])) }, me.name);
-        await logSetting(tx, me, ACTION, `Kanallar${where}: ${changed.map((c) => `${c.label} ödeme süresi ${before[c.key].payDays} → ${next[c.key].payDays} gün`).join(" · ")}`);
+        await logSetting(tx, me, ACTION, `Kanallar${where}: ${changed.map((c) => `${c.label} ödeme süresi ${before[c.key].payDays} → ${next[c.key].payDays} gün`).join(" · ")}`, branchId);
       }
       return changed;
     });

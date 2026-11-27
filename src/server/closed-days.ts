@@ -51,9 +51,9 @@ import { currentVia } from "@/server/activity-via";
  * işletme genelinin satırlarına, kanıt o şubenin kayıtlarına bakar: Marina'nın raporu Tuzla'nın işaretini kaldırmaz,
  * Tuzla'nın bildirimini engellemez. Şube verilmezse (işletme geneli okuma) bütün satırlar. Bir şubenin kanıtı işletme
  * geneli tek günlük satırı yalnız o şube için kaldırır: satır öteki açık fiziksel şubelere şubeli kalır (clearClosedMark).
- * Birden çok kasa açıkken kontrol listesi ve işlem geçmişi şubeyi kayıttan değil şablondan ve kişiden alır: şubenin listesi
- * ve şubenin personeli kanıttır, bütün şubelerin listesi ve şubesiz personel yalnız uyarıdır (`sharedTraces`), öbür
- * şubeninki sayılmaz; karaoke yalnız karaokenin şubesinde (şube özelliği, src/lib/branch-features.ts) sayılır. Tek kasada
+ * Birden çok kasa açıkken kontrol listesi şubeyi kaydından (şube ayrımı, migration 0101: bütün şubelerin listesinin de her
+ * şubede kendi kaydı var), işlem geçmişi kaydından, kayıtta yoksa kişinin hesabından alır: şubenin kaydı ve şubenin
+ * personeli kanıttır, şubesi belli olmayan yazım yalnız uyarıdır (`sharedTraces`), öbür şubeninki sayılmaz; karaoke yalnız karaokenin şubesinde (şube özelliği, src/lib/branch-features.ts) sayılır. Tek kasada
  * hepsi o kasanındır.
  */
 
@@ -183,8 +183,8 @@ async function branchContinuity(
  * işlem geçmişi yazımları (aynı pencerede; hesap ve hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve
  * açılış sürekliliği. Site ayrı (fetchSiteDayCounts, şubenin siparişleri). `branchId` verilirse (kapalı gün şubenindir;
  * denetim 13 Kasım KP-05; 24 Kasım şube kapsamı) rapor, AsilPOS, kasadan çıkan, zayi, Z no ve açılış o şubenin
- * kayıtlarından: Marina'nın raporu Tuzla'nın kapalı günü için kanıt değil. Birden çok kasa açıkken kontrol listesi şablonun
- * şubesinden, işlem geçmişi personelin şubesinden: şubenin kendisi kırmızı, şubesiz olan uyarı (`sharedTraces`), öbür
+ * kayıtlarından: Marina'nın raporu Tuzla'nın kapalı günü için kanıt değil. Birden çok kasa açıkken kontrol listesi kaydın
+ * şubesinden, işlem geçmişi kaydın (yoksa personelin) şubesinden: şubenin kendisi kırmızı, şubesiz olan uyarı (`sharedTraces`), öbür
  * şubeninki yok; kendi tablosunda sayılan işlemler (kasa raporu, kasadan çıkan, zayi) işlem geçmişinden ikinci kez
  * sayılmaz; karaoke yalnız karaokenin şubesinde. Tek kasada liste, işlem geçmişi ve karaoke bugünkü gibi o kasanın
  * kanıtıdır. Şube verilmezse günün
@@ -203,12 +203,8 @@ export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: st
     db.select({ id: s.cashReports.id }).from(s.cashReports).where(and(eq(s.cashReports.date, date), own(s.cashReports.branchId))).limit(1),
     db.select({ n: count() }).from(s.cashOuts).where(and(eq(s.cashOuts.date, date), own(s.cashOuts.branchId))),
     db.select({ n: count() }).from(s.wasteEntries).where(and(eq(s.wasteEntries.date, date), own(s.wasteEntries.branchId))),
-    // Koşunun şubesi şablonundan (bütün şubelerin listesinde boş)
-    db
-      .select({ templateBranchId: s.checklistTemplates.branchId })
-      .from(s.checklistRuns)
-      .innerJoin(s.checklistTemplates, eq(s.checklistTemplates.id, s.checklistRuns.templateId))
-      .where(eq(s.checklistRuns.date, date)),
+    // Kaydın şubesi (şube ayrımı, migration 0101): bütün şubelerin listesinin de her şubede kendi kaydı var
+    db.select({ branchId: s.checklistRuns.branchId }).from(s.checklistRuns).where(eq(s.checklistRuns.date, date)),
     karaokeHere
       ? db
           .select({ n: count() })
@@ -224,7 +220,7 @@ export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: st
           )
       : Promise.resolve([{ n: 0 }]),
     db
-      .select({ action: s.activityLog.action, userBranchId: s.users.branchId })
+      .select({ action: s.activityLog.action, userBranchId: s.users.branchId, branchId: s.activityLog.branchId })
       .from(s.activityLog)
       .innerJoin(s.users, eq(s.users.id, s.activityLog.userId))
       .where(and(gte(s.activityLog.at, w.from), lt(s.activityLog.at, w.to), eq(s.users.role, "staff"))),
@@ -274,9 +270,12 @@ async function manyTills(db: Db | Tx): Promise<boolean> {
   return (row?.n ?? 0) > 1;
 }
 
-/** İşlem geçmişine (işlemin içinde; sistemin ya da yazanın adıyla) */
-async function logIn(tx: Tx, who: { id: number | null; name: string } | null, action: string, detail: string) {
-  await tx.insert(s.activityLog).values({ userName: who?.name ?? "Sistem", userId: who?.id ?? null, action, detail: detail.slice(0, 500), via: currentVia() });
+/**
+ * İşlem geçmişine (işlemin içinde; sistemin ya da yazanın adıyla). `branchId`: olayın şubesi (kanıtın geldiği şube; şube
+ * ayrımı: zilin bilgi satırları ve İşlem geçmişi şube seçiliyken yalnız o şubenin ve şubesiz kayıtları gösterir)
+ */
+async function logIn(tx: Tx, who: { id: number | null; name: string } | null, action: string, detail: string, branchId: string | null) {
+  await tx.insert(s.activityLog).values({ userName: who?.name ?? "Sistem", userId: who?.id ?? null, action, detail: detail.slice(0, 500), via: currentVia(), branchId });
 }
 
 /** Satırı onaylayan isteği kaldırıldı yapar (`revoked`, not personele görünür) */
@@ -338,10 +337,10 @@ export async function writeClosedDay(tx: Tx, admin: { id: number; name: string }
 }
 
 /** Kapalı işaret kanıtla kalktı: tek günlük satır silinir, onu onaylayan istek `revoked` olur, işlem geçmişine yazılır */
-async function dropClosedMark(tx: Tx, row: { id: number; dateFrom: string; dateTo: string }, why: string, now: Date) {
+async function dropClosedMark(tx: Tx, row: { id: number; dateFrom: string; dateTo: string }, why: string, now: Date, branchId: string) {
   await tx.delete(s.specialDays).where(eq(s.specialDays.id, row.id));
   await revokeFor(tx, row.id, why, now);
-  await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", `${longDateTR(row.dateFrom)} · ${why}`);
+  await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", `${longDateTR(row.dateFrom)} · ${why}`, branchId);
 }
 
 /**
@@ -352,7 +351,7 @@ async function dropClosedMark(tx: Tx, row: { id: number; dateFrom: string; dateT
  * satır silinir.
  */
 async function clearClosedMark(tx: Tx, row: typeof s.specialDays.$inferSelect, branchId: string, why: string, now: Date) {
-  if (row.branchId !== null) return dropClosedMark(tx, row, why, now);
+  if (row.branchId !== null) return dropClosedMark(tx, row, why, now, branchId);
   const day = row.dateFrom;
   const [branches, reported, marks] = await Promise.all([
     tx.select({ id: s.branches.id, name: s.branches.name, active: s.branches.active, kind: s.branches.kind, sortOrder: s.branches.sortOrder }).from(s.branches),
@@ -360,7 +359,7 @@ async function clearClosedMark(tx: Tx, row: typeof s.specialDays.$inferSelect, b
     coveringRows(tx, day),
   ]);
   const others = branches.filter((b) => b.active && b.kind === "fiziksel" && b.id !== branchId).sort((a, b) => a.sortOrder - b.sortOrder);
-  if (!others.length) return dropClosedMark(tx, row, why, now);
+  if (!others.length) return dropClosedMark(tx, row, why, now, branchId);
   // Şubenin kendi işareti varsa yenisi yazılmaz (onaylı bildirimi oraya geçer); o gün raporu olan şube açıktı
   const target = new Map<string, number>();
   for (const m of marks) if (m.branchId && !target.has(m.branchId)) target.set(m.branchId, m.id);
@@ -390,7 +389,7 @@ async function clearClosedMark(tx: Tx, row: typeof s.specialDays.$inferSelect, b
   }
   await revokeFor(tx, row.id, why, now);
   const name = branches.find((b) => b.id === branchId)?.name ?? branchId;
-  await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", [longDateTR(day), `${name}: ${why}`, kept.length ? `${kept.join(", ")} kapalı kalıyor` : null].filter(Boolean).join(" · "));
+  await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", [longDateTR(day), `${name}: ${why}`, kept.length ? `${kept.join(", ")} kapalı kalıyor` : null].filter(Boolean).join(" · "), branchId);
 }
 
 /** Şubenin bu günkü bekleyen kapalı gün bildirimleri kapanır (öteki şubeninkiler bekler) */
@@ -417,7 +416,7 @@ export async function onReportSaved(
   await supersedeClosedRequests(tx, date, branchId, "Kasa raporu girildi", now);
   for (const row of await coveringRows(tx, date, branchId)) {
     if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, branchId, "kasa raporu girildi", now);
-    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Kafe › Özel günler'den aralığı düzeltin`);
+    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Kafe › Özel günler'den aralığı düzeltin`, branchId);
   }
 }
 
@@ -449,7 +448,7 @@ export async function onAsilposDaySaved(
   for (const row of await coveringRows(tx, date, branchId)) {
     if (soldSince && row.createdAt >= soldSince) continue;
     if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, branchId, why, now);
-    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Kafe › Özel günler'den aralığı düzeltin`);
+    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Kafe › Özel günler'den aralığı düzeltin`, branchId);
   }
 }
 
@@ -479,12 +478,12 @@ export async function onNextReport(tx: Tx, report: { date: string; branchId: str
   if (gap?.level === "red") {
     for (const row of rows) {
       if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, report.branchId, `Z no boşluğu: ${gap.text}`, now);
-      else await logIn(tx, null, "Kapalı aralığa rapor girildi", `${longDateTR(day)} kapalı işaretli ama ${gap.text}; Kafe › Özel günler'den aralığı düzeltin`);
+      else await logIn(tx, null, "Kapalı aralığa rapor girildi", `${longDateTR(day)} kapalı işaretli ama ${gap.text}; Kafe › Özel günler'den aralığı düzeltin`, report.branchId);
     }
     return;
   }
   const opening = openingText({ date: prev.date, carry: Math.round((prev.counted - prev.handed) * 100) / 100 }, { date: report.date, opening: report.openingCash });
-  if (opening && !opening.ok) await logIn(tx, null, "Kapalı gün: açılış devirle tutmuyor", `${longDateTR(day)} kapalı işaretli; ${opening.text}`);
+  if (opening && !opening.ok) await logIn(tx, null, "Kapalı gün: açılış devirle tutmuyor", `${longDateTR(day)} kapalı işaretli; ${opening.text}`, report.branchId);
 }
 
 // ---------------------------------------------------------------- Okuyucular
@@ -688,14 +687,21 @@ export const CLOSED_BELL_ACTIONS = ["Kapalı gün işareti kaldırıldı (kanıt
 
 /**
  * Yöneticinin bilgi zili: son günlerin kapalı gün olayları ve personelin özel gün eklemeleri, düzeltmeleri ve silmeleri
- * ("Ahmet özel gün ekledi: 25 Eki · Derbi · +%15")
+ * ("Ahmet özel gün ekledi: 25 Eki · Derbi · +%15"). `scope`: tek şube seçiliyken o şubenin ve şubesiz (işletme geneli,
+ * 0101'den önceki) kayıtlar (şube ayrımı; kaydın şubesi `activity_log.branch_id`)
  */
-export async function closedInfoRows(since: Date): Promise<{ id: number; at: Date; userName: string | null; action: string; detail: string | null; staff: boolean }[]> {
+export async function closedInfoRows(since: Date, scope: BranchScope = ALL_BRANCHES): Promise<{ id: number; at: Date; userName: string | null; action: string; detail: string | null; staff: boolean }[]> {
   const rows = await getDb()
     .select({ id: s.activityLog.id, at: s.activityLog.at, userName: s.activityLog.userName, action: s.activityLog.action, detail: s.activityLog.detail, role: s.users.role })
     .from(s.activityLog)
     .leftJoin(s.users, eq(s.users.id, s.activityLog.userId))
-    .where(and(gte(s.activityLog.at, since), sql`(${s.activityLog.action} in (${sql.join(CLOSED_BELL_ACTIONS.map((a) => sql`${a}`), sql`, `)}) or (${s.activityLog.action} like 'Özel gün%' and ${s.users.role} = 'staff'))`))
+    .where(
+      and(
+        gte(s.activityLog.at, since),
+        sql`(${s.activityLog.action} in (${sql.join(CLOSED_BELL_ACTIONS.map((a) => sql`${a}`), sql`, `)}) or (${s.activityLog.action} like 'Özel gün%' and ${s.users.role} = 'staff'))`,
+        scope === ALL_BRANCHES ? undefined : or(eq(s.activityLog.branchId, scope), isNull(s.activityLog.branchId)),
+      ),
+    )
     .orderBy(desc(s.activityLog.at))
     .limit(10);
   return rows.map((r) => ({ id: r.id, at: r.at, userName: r.userName, action: r.action, detail: r.detail, staff: r.role === "staff" }));

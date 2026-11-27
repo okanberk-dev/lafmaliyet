@@ -201,9 +201,12 @@ async function writeRow(tx: Tx, group: Pick<BranchSettingGroup, "id" | "readIds"
   }
 }
 
-/** İşlem geçmişi, yazımla aynı işlemde (yalnız ayarın adı ve ne olduğu; değer yazılmaz) */
-export async function logSetting(tx: Tx, me: { id?: number; name: string }, action: string, detail: string) {
-  await tx.insert(s.activityLog).values({ userName: me.name, userId: typeof me.id === "number" ? me.id : null, action, detail: detail.slice(0, 500), via: currentVia() });
+/**
+ * İşlem geçmişi, yazımla aynı işlemde (yalnız ayarın adı ve ne olduğu; değer yazılmaz). `branchId`: ayarın şubesi (şube
+ * ayrımı: İşlem geçmişi şube seçiliyken o şubenin kayıtlarını gösterir); null = işletme geneli ayar
+ */
+export async function logSetting(tx: Tx, me: { id?: number; name: string }, action: string, detail: string, branchId: string | null) {
+  await tx.insert(s.activityLog).values({ userName: me.name, userId: typeof me.id === "number" ? me.id : null, action, detail: detail.slice(0, 500), via: currentVia(), branchId });
 }
 
 /**

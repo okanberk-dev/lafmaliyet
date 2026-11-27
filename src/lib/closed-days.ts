@@ -88,30 +88,34 @@ export function isBranchCountedAction(action: string): boolean {
 }
 
 /**
- * Şubenin kapalı günü için personelin işlem geçmişi (saf; closedDayEvidence okur, docs/SUBE.md › Kapalı gün):
- * - `own`: o şubenin personelinin (hesabı o şubeye bağlı) kanıt sayılan yazımları: kırmızı;
- * - `shared`: şubesiz personelin yazımları: hangi şubede çalıştığı belli değil, uyarı;
- * - başka şubenin personeli sayılmaz; kendi tablosunda şube şube sayılan işlemler (`isBranchCountedAction`) hiç sayılmaz.
+ * Şubenin kapalı günü için personelin işlem geçmişi (saf; closedDayEvidence okur, docs/SUBE.md › Kapalı gün). Yazımın
+ * şubesi kaydın kendi şubesidir (`branchId`, şube ayrımı migration 0101: formun ya da seçili şube); kayıtta yoksa (eski
+ * kayıt, "Tümü"de yazılan) kişinin hesabının şubesi (`userBranchId`):
+ * - `own`: o şubede yapılmış kanıt sayılan yazımlar: kırmızı;
+ * - `shared`: şubesi belli olmayan yazımlar (kayıtta da hesapta da şube yok): uyarı;
+ * - başka şubenin yazımı sayılmaz; kendi tablosunda şube şube sayılan işlemler (`isBranchCountedAction`) hiç sayılmaz.
  */
-export function branchStaffWrites(logs: readonly { action: string; userBranchId: string | null }[], branchId: string): { own: number; shared: number } {
+export function branchStaffWrites(logs: readonly { action: string; userBranchId: string | null; branchId?: string | null }[], branchId: string): { own: number; shared: number } {
   let own = 0;
   let shared = 0;
   for (const l of logs) {
     if (!isEvidenceAction(l.action) || isBranchCountedAction(l.action)) continue;
-    if (l.userBranchId === branchId) own++;
-    else if (l.userBranchId === null) shared++;
+    const where = l.branchId ?? l.userBranchId;
+    if (where === branchId) own++;
+    else if (where === null) shared++;
   }
   return { own, shared };
 }
 
 /**
- * Şubenin kapalı günü için açılan kontrol listeleri (saf; docs/SUBE.md › Kapalı gün): şablonu o şubenin listesi kırmızı
- * (`own`), bütün şubelerin listesi (şablonun şubesi boş) uyarı (`shared`), başka şubenin listesi sayılmaz
+ * Şubenin kapalı günü için açılan kontrol listeleri (saf; docs/SUBE.md › Kapalı gün): kaydın şubesi o şubeyse kırmızı
+ * (`own`), başka şubenin kaydı sayılmaz. Kaydın şubesi şube ayrımından beri hep bilinir (migration 0101: bütün
+ * şubelerin listesinin her şubede kendi kaydı var); şubesiz kayıt (`branchId` boş) gelirse uyarıdır (`shared`)
  */
-export function branchChecklistRuns(runs: readonly { templateBranchId: string | null }[], branchId: string): { own: number; shared: number } {
+export function branchChecklistRuns(runs: readonly { branchId: string | null }[], branchId: string): { own: number; shared: number } {
   return {
-    own: runs.filter((r) => r.templateBranchId === branchId).length,
-    shared: runs.filter((r) => r.templateBranchId === null).length,
+    own: runs.filter((r) => r.branchId === branchId).length,
+    shared: runs.filter((r) => r.branchId === null).length,
   };
 }
 

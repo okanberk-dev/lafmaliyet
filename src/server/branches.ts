@@ -120,6 +120,10 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.posMarks,
     // Faturanın şubesi (docs/SUBE.md › Faturanın şubesi) ve tedarikçinin varsayılan şubesi
     s.invoices,
+    // Kontrol listesinin şubedeki günlük kaydı ve şubenin yatırımı (şube ayrımı, migration 0101). İşlem geçmişi ve
+    // gönderim günlüğü sayılmaz: şube silinince şubeleri boşalır (ON DELETE SET NULL)
+    s.checklistRuns,
+    s.investments,
   ];
   const counts = await Promise.all(
     tables.map(async (table) => {

@@ -67,12 +67,12 @@ export async function setBranchSettingLink(input: z.input<typeof linkInput>) {
       if (d.sameAs) {
         if (group.id === PARASUT_GROUP.id) await beforeParasutLink(tx, d.branchId);
         await linkBranchSetting(tx, group, d.branchId, d.sameAs, me.name);
-        await logSetting(tx, me, "Şube ayarı", `${name(d.branchId)} · ${group.label}: ${name(d.sameAs)} ile aynı`);
+        await logSetting(tx, me, "Şube ayarı", `${name(d.branchId)} · ${group.label}: ${name(d.sameAs)} ile aynı`, d.branchId);
         return { secretsLeft: [] as string[] };
       }
       const r = await unlinkBranchSetting(tx, group, d.branchId, me.name);
       const what = group.id === PARASUT_GROUP.id ? "ayrı hesap (boş; Paraşüt ekranından bağlanacak)" : "kendi ayarı (değerler kopyalandı)";
-      await logSetting(tx, me, "Şube ayarı", `${name(d.branchId)} · ${group.label}: ${what}`);
+      await logSetting(tx, me, "Şube ayarı", `${name(d.branchId)} · ${group.label}: ${what}`, d.branchId);
       return r;
     });
     refresh();
@@ -132,7 +132,7 @@ export async function saveBranchCalendar(input: z.input<typeof calendarInput>) {
       ].filter((x): x is string => x !== null);
       if (!parts.length) return 0;
       await putBranchSetting(tx, CALENDAR_GROUP, d.branchId, { openDays: d.openDays, eveningHour: d.eveningHour }, me.name);
-      await logSetting(tx, me, "Şube ayarı", `${name} · ${CALENDAR_GROUP.label}: ${parts.join(", ")}`);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${CALENDAR_GROUP.label}: ${parts.join(", ")}`, d.branchId);
       return parts.length;
     });
     if (changed) refresh();
@@ -166,7 +166,7 @@ export async function saveTillDevice(input: z.input<typeof deviceInput>) {
         me.name,
       );
       const what = [v.device ? tillDeviceLabel(v.device) : "cihaz belirtilmedi", v.registerNo ? `sicil ${v.registerNo}` : null, v.bank].filter(Boolean).join(" · ");
-      await logSetting(tx, me, "Şube ayarı", `${name} · ${TILL_DEVICE_GROUP.label}: ${what}`);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${TILL_DEVICE_GROUP.label}: ${what}`, d.branchId);
       return v;
     });
     refresh();
@@ -188,7 +188,7 @@ export async function saveBlindCount(input: z.input<typeof blindInput>) {
     const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
     const value = await getDb().transaction(async (tx) => {
       const v = await putBranchSetting(tx, BLIND_COUNT_GROUP, d.branchId, { enabled: d.enabled }, me.name);
-      await logSetting(tx, me, "Şube ayarı", `${name} · ${BLIND_COUNT_GROUP.label}: ${d.enabled ? "açık" : "kapalı"}`);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${BLIND_COUNT_GROUP.label}: ${d.enabled ? "açık" : "kapalı"}`, d.branchId);
       return v;
     });
     refresh();
@@ -232,7 +232,7 @@ export async function saveShiftPresets(input: z.input<typeof presetInput>) {
       // Varsayılan saatlerle aynısı da bir kez yazılır (seçim kaydedilir); kayıtlı değerle aynıysa yazılmaz
       if (prev !== null && before === after) return false;
       await putBranchSetting(tx, SHIFT_PRESET_GROUP, d.branchId, { presets: list }, me.name);
-      await logSetting(tx, me, "Şube ayarı", `${name} · ${SHIFT_PRESET_GROUP.label}: ${before === after ? after : `${before} → ${after}`}`);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${SHIFT_PRESET_GROUP.label}: ${before === after ? after : `${before} → ${after}`}`, d.branchId);
       return true;
     });
     if (changed) refresh();
@@ -285,7 +285,7 @@ export async function saveAsilposSecret(input: z.input<typeof secretInput>, conf
       await putBranchSetting(tx, ASILPOS_GROUP, d.branchId, { secret: d.secret }, me.name);
       // Silinince: ortamdaki anahtar yalnız eski kurulumun şubesine (Marina) hizmet eder; öbür şubenin kasası bağlantısız kalır
       const dropped = d.branchId === LEGACY_POS_BRANCH_ID ? "silindi (ortamdaki anahtar kullanılır)" : "silindi (şubenin kasası bağlantısız kalır)";
-      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : dropped}`);
+      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : dropped}`, d.branchId);
     });
     forgetPosKeys();
     refresh();

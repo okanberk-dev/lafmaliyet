@@ -44,7 +44,13 @@ const DAY = "2026-10-22";
 describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "KONTROL_TEST_DATABASE_URL yok" }, () => {
   let db: DB;
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
-  const users = { admin: { id: 0, name: "Yönetici", role: "admin" as const }, staff: { id: 0, name: "Ayşe", role: "staff" as const }, other: { id: 0, name: "Mehmet", role: "staff" as const } };
+  // Şube ayrımı (0101): bütün şubelerin listesinin kaydı şube başına; bu denemelerin yazımları Tuzla'nın kaydına
+  const T = { id: "tuzla" };
+  const users = {
+    admin: { id: 0, name: "Yönetici", role: "admin" as const, runBranch: T },
+    staff: { id: 0, name: "Ayşe", role: "staff" as const, runBranch: T },
+    other: { id: 0, name: "Mehmet", role: "staff" as const, runBranch: T },
+  };
   let tid = 0;
   let adminOnly = 0;
   const item = { check: 0, fridge: 0, photo: 0, text: 0 };
@@ -132,7 +138,7 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
       runs[0].items.map((i) => i.label),
       ["Tezgâh dezenfekte edildi", "Bar buzdolabı sıcaklığı", "Bar tezgâhı hazır", "Eksik malzeme"],
     );
-    const view = await loadRunView(db, tid, DAY, { today: DAY, photos: true });
+    const view = await loadRunView(db, tid, DAY, { today: DAY, photos: true }, "tuzla");
     assert.equal(view?.answers.length, 2);
     assert.deepEqual(view?.summary.contributors.sort(), ["Ayşe", "Mehmet"]);
     // Aynı yanıt ikinci kez yazılmaz
@@ -183,7 +189,8 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     const noted = await write("staff", { op: "note", itemId: item.photo, note: "sağ köşe ıslak" });
     assert.equal(noted.answer?.note, "sağ köşe ıslak");
     assert.equal(noted.answer?.photoId, second);
-    assert.deepEqual(await photoRun(db, second), { date: DAY, staffAllowed: true, staffSince: null, branchId: null });
+    // Fotoğrafın şubesi kaydın şubesi (bütün şubelerin listesinde fotoğrafın çekildiği şube; şube ayrımı)
+    assert.deepEqual(await photoRun(db, second), { date: DAY, staffAllowed: true, staffSince: null, branchId: "tuzla" });
     assert.equal(await photoRun(db, foreign), null);
     // Tamam geri alınınca liste eksilir, yeniden işaretlenince tamamlanır
     const undo = await write("staff", { op: "clear", itemId: item.check });
@@ -212,35 +219,35 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     await db.update(s.checklistTemplates).set({ active: false, inactiveFrom: tr("2026-10-22T13:00") }).where(eq(s.checklistTemplates.id, tid));
     await refused(write("staff", { op: "ok", itemId: item.check }), /kapalı/);
     // Pasif liste günün listelerinde yok (Bugün, zil, e-posta), kaydı geçmişte kalır
-    assert.ok(!(await loadChecklistDay(db, DAY, "admin", { today: DAY, photos: true })).some((l) => l.templateId === tid));
-    assert.ok((await loadHistory(db, DAY, DAY, "admin", { today: DAY, photos: true }))[0].lists.some((l) => l.template.id === tid && l.run !== null));
+    assert.ok(!(await loadChecklistDay(db, DAY, "admin", { today: DAY, photos: true, branch: "tuzla" })).some((l) => l.templateId === tid));
+    assert.ok((await loadHistory(db, DAY, DAY, "admin", { today: DAY, photos: true, branch: "tuzla" }))[0].lists.some((l) => l.template.id === tid && l.run !== null));
     await db.update(s.checklistTemplates).set({ active: true, inactiveFrom: null }).where(eq(s.checklistTemplates.id, tid));
   });
 
   test("başlamış kayıt şablon değişse de aynı; günün listeleri personelde yalnız kendi doldurabildikleri; geçmiş", async () => {
     await db.insert(s.checklistItems).values({ templateId: tid, label: "Sonradan eklenen", type: "check", sortOrder: 9 });
-    const view = await loadRunView(db, tid, DAY, { today: DAY, photos: true });
+    const view = await loadRunView(db, tid, DAY, { today: DAY, photos: true }, "tuzla");
     assert.ok(!view?.items.some((i) => i.label === "Sonradan eklenen"));
     // Ertesi gün (kayıt yok): şablonun bugünkü maddeleri; depo yoksa fotoğraflı madde çıkar
-    const next = await loadRunView(db, tid, "2026-10-23", { today: "2026-10-23", photos: false });
+    const next = await loadRunView(db, tid, "2026-10-23", { today: "2026-10-23", photos: false }, "tuzla");
     assert.ok(next?.items.some((i) => i.label === "Sonradan eklenen"));
     assert.ok(!next?.items.some((i) => i.type === "photo"));
     assert.equal(next?.run, null);
 
-    const staffDay = await loadChecklistDay(db, DAY, "staff", { today: DAY, photos: true });
+    const staffDay = await loadChecklistDay(db, DAY, "staff", { today: DAY, photos: true, branch: "tuzla" });
     assert.ok(staffDay.some((l) => l.templateId === tid));
     assert.ok(!staffDay.some((l) => l.templateId === adminOnly));
-    const adminDay = await loadChecklistDay(db, DAY, "admin", { today: DAY, photos: true });
+    const adminDay = await loadChecklistDay(db, DAY, "admin", { today: DAY, photos: true, branch: "tuzla" });
     const mine = adminDay.find((l) => l.templateId === tid)!;
     assert.equal(mine.run?.complete, true);
     assert.equal(mine.required, 3);
     assert.ok(adminDay.some((l) => l.templateId === adminOnly && l.run === null));
     // Zil iki günü tek okumada alır: günler tek tek okunanla aynı
-    const both = await loadChecklistDays(db, [DAY, "2026-10-21"], "admin", { today: DAY, photos: true });
+    const both = await loadChecklistDays(db, [DAY, "2026-10-21"], "admin", { today: DAY, photos: true, branch: "tuzla" });
     assert.deepEqual(both.get(DAY), adminDay);
-    assert.deepEqual(both.get("2026-10-21"), await loadChecklistDay(db, "2026-10-21", "admin", { today: DAY, photos: true }));
+    assert.deepEqual(both.get("2026-10-21"), await loadChecklistDay(db, "2026-10-21", "admin", { today: DAY, photos: true, branch: "tuzla" }));
 
-    const history = await loadHistory(db, "2026-10-21", DAY, "admin", { today: DAY, photos: true });
+    const history = await loadHistory(db, "2026-10-21", DAY, "admin", { today: DAY, photos: true, branch: "tuzla" });
     assert.deepEqual(
       history.map((h) => h.day),
       [DAY, "2026-10-21"],
@@ -253,7 +260,7 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     assert.ok((await firstChecklistDay(db))! <= DAY);
   });
   test("personelin geçmişi (dalga 10 §2.5): yalnız personel listeleri; bugün personele açılan listenin eski kaydı görünmez; pasif personel listesinin geçmişi görünür", async () => {
-    const ctx = { today: DAY, photos: true };
+    const ctx = { today: DAY, photos: true, branch: "tuzla" };
     const [adminItem] = await db.select({ id: s.checklistItems.id }).from(s.checklistItems).where(eq(s.checklistItems.templateId, adminOnly)).limit(1);
     // Yönetici listesine dün kayıt
     await writeAnswer(db, users.admin, { templateId: adminOnly, date: "2026-10-21", itemId: adminItem.id, op: "ok" }, tr("2026-10-21T14:00"), deps);
@@ -284,14 +291,19 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
   });
 
   test("e-posta hatırlatmasının listeleri kaydın olup olmadığını taşır (kapalı işaretli günde yalnız açılmış liste, denetim #25)", async () => {
-    const opened = (await loadAlertLists(db, DAY, { today: DAY, photos: true })).find((l) => l.templateId === tid);
+    // İşletmenin tamamı: bütün şubelerin listesi her fiziksel şubenin satırı; kayıt yalnız Tuzla'da açıldı
+    const lists = await loadAlertLists(db, DAY, { today: DAY, photos: true });
+    const opened = lists.find((l) => l.templateId === tid && l.branchId === "tuzla");
     assert.equal(opened?.hasRun, true);
-    const next = (await loadAlertLists(db, "2026-10-23", { today: "2026-10-23", photos: true })).find((l) => l.templateId === tid);
+    assert.equal(opened?.shared, true);
+    const marina = lists.find((l) => l.templateId === tid && l.branchId === "marina");
+    if (marina) assert.equal(marina.hasRun, false, "Marina'nın satırında Tuzla'nın kaydı yok");
+    const next = (await loadAlertLists(db, "2026-10-23", { today: "2026-10-23", photos: true })).find((l) => l.templateId === tid && l.branchId === "tuzla");
     assert.equal(next?.hasRun, false);
   });
 
   test("şube (docs/KONTROL-LISTELERI.md › Şubeler): tek şube seçiliyken o şubenin ve şubesiz listeler; Tümü'nde hepsi", async () => {
-    const ctx = { today: DAY, photos: true };
+    const ctx = { today: DAY, photos: true, branch: "tuzla" };
     // Migration'lar Marina'yı yazmaz (tohum yazar): boş test veritabanında da şube kütükte olsun
     await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing();
     // Deneme listesi Marina'nın, yönetici listesi şubesiz (bütün şubeler)
@@ -319,13 +331,14 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
       await checkPhotoTarget(db, { ...users.staff, lock: "marina" }, target, NOW, true);
       await checkPhotoTarget(db, { ...users.staff, lock: null }, target, NOW, true);
       await checkPhotoTarget(db, { ...users.admin, lock: "tuzla" }, target, NOW, true);
-      // Fotoğrafın kaydı listenin şubesini verir (fotoğraf yolu kilitli personele başka şubenin fotoğrafını göstermez)
+      // Fotoğrafın kaydı kaydın şubesini verir (fotoğraf yolu kilitli personele başka şubenin fotoğrafını göstermez): liste
+      // sonradan Marina'ya geçse de Tuzla'da (bütün şubelerin listesiyken) çekilen fotoğraf Tuzla'nın kaydında
       const [answered] = await db
         .select({ photoId: s.checklistAnswers.photoId })
         .from(s.checklistAnswers)
         .where(eq(s.checklistAnswers.itemId, item.photo));
-      assert.ok(answered?.photoId);
-      assert.equal((await photoRun(db, answered.photoId))?.branchId, "marina");
+      assert.ok(answered?.photoId, "Tuzla'da çekilen fotoğraf");
+      assert.equal((await photoRun(db, answered.photoId))?.branchId, "tuzla");
       // Şubesiz (bütün şubelerin) listeye kilitli personel de yazar
       await db.update(s.checklistTemplates).set({ branchId: null }).where(eq(s.checklistTemplates.id, tid));
       await checkPhotoTarget(db, { ...users.staff, lock: "tuzla" }, target, NOW, true);

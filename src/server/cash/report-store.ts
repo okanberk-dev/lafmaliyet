@@ -549,7 +549,7 @@ export async function clearOkcCumulativeCore(db: DB, me: CashActor, reportId: nu
     ]
       .filter(Boolean)
       .join(" · ");
-    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Yazarkasa kümülatifi temizlendi", detail, via: currentVia() });
+    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Yazarkasa kümülatifi temizlendi", detail, via: currentVia(), branchId: row.branchId });
     return { date: row.date, cumTotal: row.okcCumTotal, cumVat: row.okcCumVat };
   });
 }

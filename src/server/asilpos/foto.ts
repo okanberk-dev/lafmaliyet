@@ -201,7 +201,7 @@ export async function applyPhotoZNo(tx: CashTx, row: CashReportRow, check: Asilp
     .update(s.asilposDayEnds)
     .set({ autoValues: { ...state.autoValues, okcZNo: no }, updatedAt: now })
     .where(and(eq(s.asilposDayEnds.date, row.date), eq(s.asilposDayEnds.branchId, row.branchId)));
-  await tx.insert(s.activityLog).values({ userName: ASILPOS_AUTO_BY, userId: null, action: "Yazarkasa Z no fotoğraftan yazıldı (AsilPOS günü)", detail: `${longDateTR(row.date)}: Z no ${no}` });
+  await tx.insert(s.activityLog).values({ userName: ASILPOS_AUTO_BY, userId: null, action: "Yazarkasa Z no fotoğraftan yazıldı (AsilPOS günü)", detail: `${longDateTR(row.date)}: Z no ${no}`, branchId: row.branchId });
   return refreshServerColumns(tx, updated);
 }
 
@@ -339,6 +339,7 @@ export async function attachAsilposDayPhotoCore(db: DB, me: CashActor, input: { 
         userId: me.id,
         action: "Gün sonu fotoğrafı (AsilPOS günü)",
         detail: `${longDateTR(date)}: ${report ? "rapora bağlandı" : "rapor yazılınca bağlanacak (AsilPOS'ta sayım yok)"}`,
+        branchId,
       });
     }
     return { status: report ? "linked" : "pending", attached, need, line: staffPhotoLine(need, attached, check) };
@@ -457,7 +458,7 @@ export async function setAsilposBankPosCore(db: DB, me: CashActor, input: { date
       .set({ photoCheck: check, missing: autoMissing(device.z, device, { attached, check }), updatedAt: now })
       .where(and(eq(s.asilposDayEnds.date, date), eq(s.asilposDayEnds.branchId, branchId)));
     await applyPhotoZNo(tx, row, check, now);
-    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Banka POS fotoğraftan yazıldı (AsilPOS günü)", detail: `${longDateTR(date)}: ${amount.toLocaleString("tr-TR")} ₺` });
+    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Banka POS fotoğraftan yazıldı (AsilPOS günü)", detail: `${longDateTR(date)}: ${amount.toLocaleString("tr-TR")} ₺`, branchId });
   });
 }
 

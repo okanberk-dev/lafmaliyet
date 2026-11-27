@@ -8,6 +8,7 @@
 
 import type { DigestBox } from "@/server/notify/digest-template";
 
+import { ALL_BRANCHES, type BranchScope } from "./branches";
 import { businessDate, DAY_TURN_HOUR } from "./cash-report";
 import { num } from "./format";
 import { KEEP_DAYS } from "./photo-rules";
@@ -125,11 +126,51 @@ export interface ChecklistLite {
   /** O günün kaydı (ilk yanıtla açılır); yoksa null */
   run: RunLite | null;
   /**
-   * Listenin şubesi (boş: bütün şubelerin listesi). Kapalı gün şubenindir: zil ve sabah e-postası şubesi kapalı
-   * işaretli listeyi düşürür (src/lib/closed-days.ts › closedForBranch). Verilmezse bütün şubelerin listesi sayılır
+   * Kaydın şubesi: şubeli listede listenin şubesi, bütün şubelerin listesinde bu satırın şubesi (`shared`; şube ayrımı,
+   * 27 Kasım 2026: her şube kendi kaydını doldurur). Boş: şubesi bilinmeyen (eski çağıran). Kapalı gün şubenindir: zil ve
+   * sabah e-postası şubesi kapalı işaretli listeyi düşürür (src/lib/closed-days.ts › closedForBranch)
    */
   branchId?: string | null;
+  /** Bütün şubelerin listesinin `branchId` şubesindeki kaydı (anahtar ve bağlantı şubeyi taşır: checklistKey, checklistHref) */
+  shared?: boolean;
 }
+
+// ---------------------------------------------------------------- Şube başına kayıt (şube ayrımı, 27 Kasım 2026)
+
+/**
+ * Bütün şubelerin listesi (şablonun şubesi boş) hangi şubelerin satırı olarak görünür (docs/KONTROL-LISTELERI.md ›
+ * Şubeler): her fiziksel şube listeyi kendi kaydına doldurur. "Tümü"de her açık fiziksel şube (`physical`), tek fiziksel
+ * şube seçiliyken yalnız o şube, online kanal seçiliyken hiçbiri (kanalın kasası ve dükkânı yok). Şubeli liste bu
+ * kurala girmez: kaydı hep listenin şubesindedir.
+ */
+export function sharedRunBranches(scope: BranchScope, physical: readonly string[]): string[] {
+  if (scope === ALL_BRANCHES) return [...physical];
+  return physical.includes(scope) ? [scope] : [];
+}
+
+/**
+ * Listenin satır anahtarı (Bugün `liste-…`, zil, Kontrol listeleri): şablonun kimliği; bütün şubelerin listesinin şube
+ * satırında şube de ("7-marina"): "Tümü"de iki şubenin satırı aynı anahtarı taşımaz
+ */
+export function checklistKey(l: { templateId: number; branchId?: string | null; shared?: boolean }): string {
+  return l.shared && l.branchId ? `${l.templateId}-${l.branchId}` : String(l.templateId);
+}
+
+/**
+ * Doldurma ekranının adresi: bütün şubelerin listesinde `?sube=` (seçici çereze benimsetir; ekran o şubenin kaydını açar).
+ * Şubeli liste şubesiz adres: kaydı zaten listenin şubesinde
+ */
+export function checklistHref(l: { templateId: number; branchId?: string | null; shared?: boolean }): string {
+  return `/panel/kontrol/${l.templateId}${l.shared && l.branchId ? `?sube=${encodeURIComponent(l.branchId)}` : ""}`;
+}
+
+/** "Tümü"de iki şubenin satırı yan yana: ad şubeyle başlar ("Marina · Açılış") */
+export function sharedListName(name: string, branchName: string | null | undefined): string {
+  return branchName ? `${branchName} · ${name}` : name;
+}
+
+/** Bütün şubelerin listesi "Tümü"de birden çok fiziksel şube açıkken açılınca: kaydın şubesi sorulur */
+export const RUN_BRANCH_QUESTION = "Hangi şubenin listesi?";
 
 // ---------------------------------------------------------------- Sınırlar
 
@@ -715,13 +756,13 @@ export function checklistBell(i: {
       if (state === "open" && nowBm < opensMinute(l.opensAt)) continue;
       const late = state === "overdue";
       out.push({
-        id: `kontrol-${late ? "gecikti" : "bekliyor"}-${l.templateId}-${today!.day}`,
+        id: `kontrol-${late ? "gecikti" : "bekliyor"}-${checklistKey(l)}-${today!.day}`,
         kind: late ? "warning" : "info",
         title: `${listTitle(l.name)} ${late ? "gecikti" : "bekliyor"}`,
         body: `Son saat ${l.dueAt} · ${progressText(l, `0 / ${num(l.required)} madde`)}`,
         timeLabel: "Bugün",
         unread: late,
-        href: `/panel/kontrol/${l.templateId}`,
+        href: checklistHref(l),
       });
     }
     return out;
@@ -729,20 +770,20 @@ export function checklistBell(i: {
   for (const l of today?.lists ?? []) {
     if (listState(l, nowBm, false) !== "overdue") continue;
     out.push({
-      id: `kontrol-gecikti-${l.templateId}-${today!.day}`,
+      id: `kontrol-gecikti-${checklistKey(l)}-${today!.day}`,
       kind: "warning",
       title: `${listTitle(l.name)} gecikti`,
       body: `Son saat ${l.dueAt} · ${progressText(l, "başlanmadı")}`,
       timeLabel: "Bugün",
       unread: true,
-      href: `/panel/kontrol/${l.templateId}`,
+      href: checklistHref(l),
     });
   }
   const y = i.yesterday;
   for (const l of y?.lists ?? []) {
     if (l.run?.complete) continue;
     out.push({
-      id: `kontrol-eksik-${l.templateId}-${y!.day}`,
+      id: `kontrol-eksik-${checklistKey(l)}-${y!.day}`,
       kind: "warning",
       title: `Dünkü ${lowerFirst(listTitle(l.name))} eksik`,
       body: `${longDateTR(y!.day)} · ${progressText(l, "hiç açılmadı")}`,

@@ -220,7 +220,10 @@ Aynı hatırlatmanın ikinci kez gitmemesi `notification_log` tablosundaki tekil
 girmez; metin değişmez, yalnız faturasız borcun ayrıntı etiketi yenidir. Geciken dönemin
 yanında görünen sonraki dönem de aynı anahtarı kullanır: Ekim kirası gecikmişken Kasım için "yaklaşıyor" gittiyse,
 Ekim ödenip Kasım gerçek döneme dönünce aynı e-posta ikinci kez gitmez. Gönderim başarısız olursa anahtar yazılmaz,
-ertesi sabah yeniden denenir; hata ekrandaki "Son gönderimler"de görünür.
+ertesi sabah yeniden denenir; hata ekrandaki "Son gönderimler"de görünür. **Son gönderimler şubeye göre** (şube ayrımı,
+27 Kasım 2026; `notification_log.branch_id`, migration 0101): şube seçiliyken o şubenin gönderimleri (gün sonu e-postası,
+AsilPOS gün sonu, vardiya hatırlatması, şubeye bağlı alıcının düşen sabah e-postası) ve işletme geneli gönderimler
+(sabah ve haftalık e-postası, iş uyarıları, 0101'den önceki kayıtlar); "Tümü"de hepsi.
 
 Resend'e her e-posta içerikten türeyen bir tekil anahtarla (`Idempotency-Key`) gider: aynı iletinin yeniden denemesi
 ve sabah işiyle elle gönderimin çakışması tek e-posta olur. Paraşüt bölümünün anahtarı son Paraşüt bölümlü gönderimin
