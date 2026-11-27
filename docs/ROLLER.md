@@ -142,7 +142,10 @@ oturumları kapanır (oturum sürümü).
   `ownerReview`). Onaylar'ın kasadan çıkan kartında da yöneticinin kategorisinin adı müdüre gitmez ("Bağlı gider:
   yöneticinin kategorisi"); olası tekrar listesi ona yalnız isteğin şubesinin satırlarını ve personelin kategorisindeki
   harcama kayıtlarını gösterir (öteki şubenin satırı, maaş ve kira kaydı gitmez; `src/server/data/cash-out-requests.ts`
-  › `cashOutCards`).
+  › `cashOutCards`). Fiş fotoğrafının okumasındaki kopya denetimi de aynı kuralla: müdürün uyarısı ayrıntılıdır
+  (eşleşen satırın adı, tutarı, günü), bu yüzden yalnız şubesinin kasadan çıkanlarına ve harcama kayıtlarına, yalnız
+  personelin kategorisindekilere bakar; öteki şubenin satırı, işletme geneli (şubesiz) harcama kaydı ve yöneticinin
+  kategorisindeki satır ve kayıt okunmaz (`src/server/photo-read/read.ts` › `recentReceipts`).
 - **Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme müdüre açılmadı:** işletme geneli kâr, kira ve maaşı ve
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
 - **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel
@@ -184,7 +187,8 @@ oturumları kapanır (oturum sürümü).
   izni vermez.
 - `tests/roller-db.test.ts` (gerçek Postgres, `ROLLER_TEST_DATABASE_URL`): kısıtlar; müdür öteki şubeyi okuyamaz,
   öteki şubenin isteğine karar veremez, öteki şubeye yazamaz, yöneticinin kategorisindeki kasadan çıkanı düzeltemez,
-  taşıyamaz, silemez (`tests/kasa-cikan-istek-db.test.ts`: o satırın isteğine de karar veremez), şubesi pasifken oturumu
+  taşıyamaz, silemez (`tests/kasa-cikan-istek-db.test.ts`: o satırın isteğine de karar veremez), fiş okumasının kopya
+  denetimi ona öteki şubenin, işletme genelinin ve yöneticinin kategorisinin kayıtlarını okumaz, şubesi pasifken oturumu
   yok; muhasebecide **bütün** sunucu eylemleri "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube
   kurulumu e-postası müdür, muhasebeci, yönetici ya da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve
   kurulum bağlantısı yazılmaz).
