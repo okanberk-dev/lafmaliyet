@@ -276,7 +276,7 @@ export interface CashPlanInput {
   fixedNames: readonly { id: number; name: string; period: FixedPeriod; endMonth?: string | null }[];
   /** Kafe kapalı işaretli günler (Özel günler; denetim E-41): o günlerde satış ve online girişi yazılmaz. Yoksa boş */
   closedDays?: readonly string[];
-  /** `switchDay`: LafPOS'a geçiş günü (yalnız metinler: dönemin kasası "ModPOS" / "LafPOS"; denetim E-39) */
+  /** `switchDay`: AsilPOS'a geçiş günü (yalnız metinler: dönemin kasası "ModPOS" / "AsilPOS"; denetim E-39) */
   vat: { months: VatMonthInput[]; firstSalesMonth: string | null; hasSite: boolean; switchDay?: string | null };
   vatAnchor: { month: string; amount: number } | null;
   /**
@@ -385,7 +385,7 @@ export interface CashPlanVat {
   chainFrom: string | null;
   rates: { kdv: number; kdvHizmet: number };
   hasSite: boolean;
-  /** LafPOS'a geçiş günü (dökümün "Kasa (ModPOS) cirosu" satırı dönemin kasasıyla) */
+  /** AsilPOS'a geçiş günü (dökümün "Kasa (ModPOS) cirosu" satırı dönemin kasasıyla) */
   switchDay: string | null;
   /** En az bir dönem tahmin edilebildi */
   ok: boolean;
@@ -749,7 +749,7 @@ export function planInputFromModel(
     online: onlineBasis(model, today),
     months,
     fixedNames: model.ds.fixedExpenses.map((f) => ({ id: f.id, name: f.name, period: f.period, endMonth: f.endMonth ?? null })),
-    vat: { ...vat, switchDay: st.lafposGecisGunu },
+    vat: { ...vat, switchDay: st.asilposGecisGunu },
     // Ufuktaki kafe kapalı işaretli günler (E-41)
     closedDays: (model.ds.closedDays ?? []).filter((d) => d >= today && d <= addDays(today, PLAN_DAYS - 1)),
     sgkRates: { year: Number(cur.slice(0, 4)), isveren: rules.sgk.isverenOran.value, issizlik: rules.sgk.isverenIssizlik.value },

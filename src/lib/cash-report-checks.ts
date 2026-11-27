@@ -1,6 +1,6 @@
 import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, revenueWord, unreceiptedText, withCardExtra, type CarryCheck, type CashOffDevice, type CashReportFields } from "./cash-report";
 import { money } from "./format";
-import { lafposDiffText, type LafposDiff } from "./lafpos/diffs";
+import { asilposDiffText, type AsilposDiff } from "./asilpos/diffs";
 import { modposDiffText, type ModposDiff } from "./modpos/compare";
 import { okcHasFigures, okcReconcile } from "./okc-z";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
@@ -11,7 +11,7 @@ import { emailFailedLine } from "./staff-errors";
  * Yöneticinin kasa raporu penceresinin "Kontrol" listesi (sahibin kararı, 4 Kasım 2026: sade, profesyonel, gereksiz
  * bilgi yok): raporun kendi denetimleri ve dış kaynaklarla farkları tek listede, her biri tek satır. Kasa farkı başlıkta
  * olduğu için burada yok. Sıra: e-posta, raporun kendi içi (ödeme türleri, fişsiz çıkış, açılış ↔ devir), kart ve yazarkasa, dış
- * kaynaklar (ModPOS API, LafPOS, fotoğraf). Saf: tests/kasa-raporu-sade.test.ts
+ * kaynaklar (ModPOS API, AsilPOS, fotoğraf). Saf: tests/kasa-raporu-sade.test.ts
  */
 export interface ReportCheck {
   key: string;
@@ -22,13 +22,13 @@ export interface ReportCheck {
 export function reportChecks(i: {
   report: CashReportFields;
   cardExtra?: number | null;
-  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer (withCardExtra) */
+  /** AsilPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer (withCardExtra) */
   offDevice?: CashOffDevice | null;
-  kasa?: "ModPOS" | "LafPOS";
+  kasa?: "ModPOS" | "AsilPOS";
   carry?: CarryCheck | null;
   next?: CarryCheck | null;
   modposDiffs?: readonly ModposDiff[] | null;
-  lafposDiffs?: readonly LafposDiff[] | null;
+  asilposDiffs?: readonly AsilposDiff[] | null;
   photoDiffs?: readonly PhotoDiff[] | null;
   emailError?: string | null;
   /** Fişsiz çıkış (bulgu 2; unreceiptedCashOut): "Gün içinde çıkan"ın kasadan çıkan satırlarından fazlası */
@@ -60,7 +60,7 @@ export function reportChecks(i: {
     out.push({ key: "card", tone: "warn", text: `Banka POS ${kasa} kartından ${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}` });
   }
   for (const d of i.modposDiffs ?? []) out.push({ key: `modpos:${d.field}`, tone: "warn", text: `ModPOS API'den farklı: ${modposDiffText(d)}` });
-  for (const d of i.lafposDiffs ?? []) out.push({ key: `lafpos:${d.field}`, tone: "warn", text: `LafPOS'tan farklı: ${lafposDiffText(d)}` });
+  for (const d of i.asilposDiffs ?? []) out.push({ key: `asilpos:${d.field}`, tone: "warn", text: `AsilPOS'tan farklı: ${asilposDiffText(d)}` });
   for (const [n, d] of (i.photoDiffs ?? []).entries()) out.push({ key: `photo:${n}`, tone: "warn", text: `Fotoğraftan farklı: ${photoDiffText(d)}` });
   return out;
 }

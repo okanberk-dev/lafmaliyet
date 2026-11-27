@@ -76,7 +76,7 @@ test("badgeLabel (K16): Muhasebeciden, Eksik bilgi, yalnız damga; Ödemeler'de 
 
 test("U17: Vergi kârı tablosunun yönetim verisi rozeti gri kaynak sözü, uyarı değil", () => {
   assert.equal(plainBadge(managementBadge("2026-09", null)), "Kasa programının rakamı (ModPOS), resmî belge değil");
-  assert.equal(plainBadge(managementBadge("2026-11", "2026-11-10")), "Kasa programının rakamı (ModPOS ve LafPOS), resmî belge değil");
+  assert.equal(plainBadge(managementBadge("2026-11", "2026-11-10")), "Kasa programının rakamı (ModPOS ve AsilPOS), resmî belge değil");
   assert.equal(plainBadge("mali belge · Z"), "mali belge · Z");
   assert.equal(plainBadgeTone(managementBadge("2026-09", null)), "gray");
   assert.equal(plainBadgeTone("mali belge · beyanname"), "green");

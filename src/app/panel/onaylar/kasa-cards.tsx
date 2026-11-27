@@ -15,7 +15,7 @@ import { Notice } from "@/components/ui/notice";
 import { carryDiffText, changeLine, computeCash, diffText, stampTR, zNoOrder, type CashReportFields } from "@/lib/cash-report";
 import { olderFirstText } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
-import type { LafposDay } from "@/lib/lafpos/prefill";
+import type { AsilposDay } from "@/lib/asilpos/prefill";
 import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,7 @@ import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/
 
 import { CashForm } from "../kasa/cash-form";
 import { SavedPhotos } from "../kasa/cash-photos";
-import { CashBreakdown, LafposDiffList } from "../kasa/cash-summary";
+import { CashBreakdown, AsilposDiffList } from "../kasa/cash-summary";
 // İsteğin kasası (birden çok şube açıkken): kartta adı, günün bağlantısında `?sube=`; kasadan çıkan kartları da kullanır
 import { BranchBadge, kasaDayHref } from "./branch-badge";
 import { ClosedDayItem } from "./kasa-closed-cards";
@@ -195,9 +195,9 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
             </li>
           ) : null}
           {card.receipts?.unreceipted ? <li className="font-medium text-bad">Fişsiz çıkış: {money(card.receipts.unreceipted)}</li> : null}
-          {card.receipts?.lafposHanded ? (
+          {card.receipts?.asilposHanded ? (
             <li className="text-ink-soft">
-              Fişlerden fazlası LafPOS&apos;ta olup Kasadan çıkanlar&apos;a girilmemiş teslim ({money(card.receipts.lafposHanded)}): fişsiz değil.
+              Fişlerden fazlası AsilPOS&apos;ta olup Kasadan çıkanlar&apos;a girilmemiş teslim ({money(card.receipts.asilposHanded)}): fişsiz değil.
             </li>
           ) : null}
           {card.monthPassed ? (
@@ -289,8 +289,8 @@ function DeleteItem({ card }: { card: DeleteCard }) {
   );
 }
 
-/** "LafPOS gün sonu · Z 14 · 63 fiş · 12.400 ₺ · nakit 3.100 ₺ · sayılan 3.050 ₺" (yönetici kartı) */
-function lafposZLine(day: LafposDay): string {
+/** "AsilPOS gün sonu · Z 14 · 63 fiş · 12.400 ₺ · nakit 3.100 ₺ · sayılan 3.050 ₺" (yönetici kartı) */
+function asilposZLine(day: AsilposDay): string {
   const v = day.prefill.values;
   const n = (k: keyof typeof v) => (v[k] ? Number(v[k]!.value) : null);
   const parts = [
@@ -300,7 +300,7 @@ function lafposZLine(day: LafposDay): string {
     n("cash") !== null ? `nakit ${money(n("cash")!)}` : null,
     n("countedCash") !== null ? `sayılan ${money(n("countedCash")!)}` : "sayım yok",
   ].filter(Boolean);
-  return `LafPOS gün sonu · ${parts.join(" · ")}`;
+  return `AsilPOS gün sonu · ${parts.join(" · ")}`;
 }
 
 /** Zincirin bir halkasının adı: "13 Ekim" ya da "13 Ekim (onay bekliyor)" */
@@ -319,11 +319,11 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
   const day = longDateTR(card.date);
   const f = card.fields;
   const { prev, next, prevCheck, nextCheck } = card.chain;
-  // Z no sırası yalnız aynı kasanın komşusuyla (LafPOS'a geçişte Z numarası 1'den başlar)
-  const zPrev = prev && card.lafpos.sameTill.prev ? { date: prev.date, zNo: prev.zNo, pending: prev.kind === "bekleyen" } : null;
-  const zNext = next && card.lafpos.sameTill.next ? { date: next.date, zNo: next.zNo, pending: next.kind === "bekleyen" } : null;
+  // Z no sırası yalnız aynı kasanın komşusuyla (AsilPOS'a geçişte Z numarası 1'den başlar)
+  const zPrev = prev && card.asilpos.sameTill.prev ? { date: prev.date, zNo: prev.zNo, pending: prev.kind === "bekleyen" } : null;
+  const zNext = next && card.asilpos.sameTill.next ? { date: next.date, zNo: next.zNo, pending: next.kind === "bekleyen" } : null;
   const z = zNoOrder(zPrev, f.zNo, zNext);
-  const zOtherTill = (prev && !card.lafpos.sameTill.prev) || (next && !card.lafpos.sameTill.next);
+  const zOtherTill = (prev && !card.asilpos.sameTill.prev) || (next && !card.asilpos.sameTill.next);
   const carry = computeCash(f).carryOver;
   const blocked = card.reported ? "Bu günün raporu artık var; isteği reddedin" : card.olderPending ? olderFirstText(card.olderPending) : null;
   // Açılış önceki raporun devriyle tutmuyor ve not yok: kayıt kuralı not ister, olduğu gibi onaylanamaz
@@ -351,21 +351,21 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
         {card.message ? <p className="text-sm break-words text-ink-soft">Neden geç: {card.message}</p> : null}
       </div>
       {card.photos.length ? <SavedPhotos photos={card.photos} diffs={card.diffs} admin={false} /> : null}
-      {/* LafPOS gününde kanıt LafPOS'un gün sonu (G8); personelin ondan farklı yazdıkları (E-09) */}
-      {card.lafpos.day ? (
-        <Notice tone="neutral" size="sm" className="tabular" title={lafposZLine(card.lafpos.day)} />
-      ) : card.lafpos.lafpos ? (
-        <Notice tone="warn" size="sm" title="LafPOS'un bu gün sonu gelmedi: Z fotoğrafından kontrol edin" />
+      {/* AsilPOS gününde kanıt AsilPOS'un gün sonu (G8); personelin ondan farklı yazdıkları (E-09) */}
+      {card.asilpos.day ? (
+        <Notice tone="neutral" size="sm" className="tabular" title={asilposZLine(card.asilpos.day)} />
+      ) : card.asilpos.asilpos ? (
+        <Notice tone="warn" size="sm" title="AsilPOS'un bu gün sonu gelmedi: Z fotoğrafından kontrol edin" />
       ) : null}
-      <LafposDiffList diffs={card.lafpos.diffs} />
+      <AsilposDiffList diffs={card.asilpos.diffs} />
       {card.unread ? <Notice tone="warn" size="sm" title="Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin" /> : null}
       <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>
         {z.text}
-        {zOtherTill ? " · komşu rapor öteki kasanın (ModPOS / LafPOS), Z no karşılaştırılmaz" : ""}
+        {zOtherTill ? " · komşu rapor öteki kasanın (ModPOS / AsilPOS), Z no karşılaştırılmaz" : ""}
       </p>
       {/* Yazarkasa Z'si iki komşusuyla: Z no sırası ve kümülatif zinciri (docs/planlar/okc-z.md §3.8) */}
       {card.okcChain ? <p className={cn("text-sm break-words tabular", card.okcChain.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{card.okcChain.text}</p> : null}
-      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} audience="admin" kasa={card.lafpos.lafpos ? "LafPOS" : "ModPOS"} cardExtra={card.lafpos.day?.cardExtra ?? null} offDevice={card.lafpos.day?.offDevice ?? null} />
+      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} audience="admin" kasa={card.asilpos.asilpos ? "AsilPOS" : "ModPOS"} cardExtra={card.asilpos.day?.cardExtra ?? null} offDevice={card.asilpos.day?.offDevice ?? null} />
       {handover ? (
         <p className="text-sm text-ink">
           Teslim edilen {money(f.handedOver)}
@@ -385,7 +385,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           {next ? `${linkName(next)} açılışı ${money(next.openingCash)} · bu raporun devri ${money(carry)}: ${nextCheck ? carryDiffText(nextCheck) : "tutuyor"}` : "Sonraki rapor yok"}
         </li>
         <li className="text-ink-soft">{card.monthLine}</li>
-        {card.outs.warning ? <li className={card.outs.lafposHanded !== null && card.outs.unreceipted < 1 ? "text-ink-soft" : "font-medium text-bad"}>{card.outs.warning}</li> : null}
+        {card.outs.warning ? <li className={card.outs.asilposHanded !== null && card.outs.unreceipted < 1 ? "text-ink-soft" : "font-medium text-bad"}>{card.outs.warning}</li> : null}
         <li>
           <Notice tone="neutral" size="line" title="Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten yazılabilir." />
         </li>
@@ -413,8 +413,8 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           mode="review"
           initial={f}
           prevOkcZ={card.okcPrevZ}
-          lafpos={card.lafpos.day}
-          lafposMode={card.lafpos.lafpos}
+          asilpos={card.asilpos.day}
+          asilposMode={card.asilpos.asilpos}
           reviewPending={pending}
           onCancel={() => {
             setCorrecting(false);

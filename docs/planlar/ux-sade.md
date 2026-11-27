@@ -40,7 +40,7 @@ kayarsa metinle bulunur.
 | 7 | Telefonda ilk ekran rakama döner: Genel bakış ve Bugün iş listesinde sıradaki iş tam kart, ötekiler "Diğer N iş" arkasında; "Yapılacak" griye döner, kırmızı yalnız gerçek sorunda | 2 |
 | 8 | **Vergi sadeleşir**: Özet'in ilk ekranı iki rakam + takvim; Hazırlık karosu, iki tam feragat kopyası ve ayrı iki kâr vergisi kartı kalkar; Başlarken tek satıra iner; KDV satırı kendi cevabını yazar; SGK iki günü yan yana yazar | 3 |
 | 9 | Gereksiz tekrarlar kalkar ya da bir dokunuşa iner (§9 defteri: 26 madde, her birinin nedeni ve nerede kaldığı) | 3 |
-| 10 | **Satış kaynağı** tek satırla ve tek yerde (ModPOS raporu / LafPOS / geçiş / ileride ModPOS bağlantısı); hiçbir ekran "elle aylık yükleme tek kaynak" varsaymaz | 3 |
+| 10 | **Satış kaynağı** tek satırla ve tek yerde (ModPOS raporu / AsilPOS / geçiş / ileride ModPOS bağlantısı); hiçbir ekran "elle aylık yükleme tek kaynak" varsaymaz | 3 |
 
 Ölçülebilir hedefler (ayrıntı §13): telefonda (390×844) ilk ekranda katlanabilir uyarı + iş listesi + ipucu Genel
 bakış 592 → ≤ 300 px, Bugün 652 / 645 → ≤ 340 px, Vergi Özet 200 → ≤ 90 px, Muhasebeci 171 → ≤ 40 px; §13'te ayrıca
@@ -80,7 +80,7 @@ listelenmeyen her sayfada ≤ 90 px (1440'ta ≤ 60 px); personelin 14 ekranınd
 ## 2. Değişmeyenler
 
 - **Bütün adresler** (`?ay=`, `?gun=`, `?ceyrek=`, `?yil=`, `#kdv` (Nakit planı), `#sorular`, `#bilgi`,
-  `#siniflandir`, `#kdv-beyannamesi`, `#baslarken`, `#gecici`, `#oranlar`, `#gecmis`, `#yedek`, `#lafpos` dahil). Yalnız
+  `#siniflandir`, `#kdv-beyannamesi`, `#baslarken`, `#gecici`, `#oranlar`, `#gecmis`, `#yedek`, `#asilpos` dahil). Yalnız
   yeni çapa eklenir (§3.7).
 - Personelin ağacı (`tests/kenar-cubugu.test.ts` "personelin ağacı değişmedi" anahattı), `BOTTOM_NAV.staff`,
   `STAFF_PATHS`, personelin palet kümesi, personelin Yardım'ı (`staffPathOf` çıktıları).
@@ -747,7 +747,7 @@ Uyarı ya da durum söyleyenler `Notice`'e geçer; önizleme, boş durum ve form
 | `karaoke/doluluk/page.tsx:218` "Oda saatleri varsayılan …" + düğme | gri | `neutral·md` · eylem `HoursButton` |
 | `ayarlar/photo-card.tsx:63` "Bu ortamda ANTHROPIC_API_KEY yok …" | gri | `neutral·sm` · **"Fotoğraftan okuma bu ortamda kapalı"** · tech bugünkü metin |
 | `ayarlar/jobs-card.tsx:97` "Günlük işler yalnız canlı sitede (Vercel Cron) çalışır …" | gri | `neutral·sm` · **"Günlük işler yalnız canlı sitede çalışır"** · tech "Vercel Cron; yerelde uyarı verilmez." |
-| Önizleme, boş durum, form bilgisi: `komisyonlar/channel-card.tsx:112,128`, `zayi/waste-board.tsx:229`, `parasut/parasut-client.tsx:1698,1702`, `analiz/analysis-client.tsx:973`, `receteler/new-product-sheet.tsx:277`, `receteler/my-requests.tsx:104`, `kullanicilar/users-client.tsx:837`, `hesap/two-factor.tsx:249`, `page.tsx:889,1239`, `onaylar/review-list.tsx:233,468,496,710,727`, `hammaddeler/price-holds.tsx:226`, `hammaddeler/ingredients-client.tsx:1370`, `urunler/fiyatlar/bulk-editor.tsx:351,961`, `urunler/[id]/price-history-card.tsx:127`, `urunler/[id]/site-menu-card.tsx:175`, `urunler/site/site-new-product.tsx:126`, `ayarlar/backup-client.tsx:73`, `ayarlar/lafpos-card.tsx:68`, `ayarlar/page.tsx:162`, `ayarlar/stock-valuation.tsx:168`, `ayarlar/photo-card.tsx:53`, `gelir-gider/site-sales-card.tsx:162`, `gelir-gider/month-view.tsx:280`, `tedarikciler/cari-payment-dialog.tsx:454,482,546`, `tedarikciler/[cari]/link-dialog.tsx:311`, `tedarikciler/[cari]/allocation-dialog.tsx:218`, `karaoke/orders-board.tsx:198`, `karaoke/sold-out-card.tsx:233`, `tahmin/forecast-settings.tsx:134` | gri | **değişmez** (uyarı değil) |
+| Önizleme, boş durum, form bilgisi: `komisyonlar/channel-card.tsx:112,128`, `zayi/waste-board.tsx:229`, `parasut/parasut-client.tsx:1698,1702`, `analiz/analysis-client.tsx:973`, `receteler/new-product-sheet.tsx:277`, `receteler/my-requests.tsx:104`, `kullanicilar/users-client.tsx:837`, `hesap/two-factor.tsx:249`, `page.tsx:889,1239`, `onaylar/review-list.tsx:233,468,496,710,727`, `hammaddeler/price-holds.tsx:226`, `hammaddeler/ingredients-client.tsx:1370`, `urunler/fiyatlar/bulk-editor.tsx:351,961`, `urunler/[id]/price-history-card.tsx:127`, `urunler/[id]/site-menu-card.tsx:175`, `urunler/site/site-new-product.tsx:126`, `ayarlar/backup-client.tsx:73`, `ayarlar/asilpos-card.tsx:68`, `ayarlar/page.tsx:162`, `ayarlar/stock-valuation.tsx:168`, `ayarlar/photo-card.tsx:53`, `gelir-gider/site-sales-card.tsx:162`, `gelir-gider/month-view.tsx:280`, `tedarikciler/cari-payment-dialog.tsx:454,482,546`, `tedarikciler/[cari]/link-dialog.tsx:311`, `tedarikciler/[cari]/allocation-dialog.tsx:218`, `karaoke/orders-board.tsx:198`, `karaoke/sold-out-card.tsx:233`, `tahmin/forecast-settings.tsx:134` | gri | **değişmez** (uyarı değil) |
 
 ---
 ## 7. Bölüm 3: Vergi sadeleştirme
@@ -1069,7 +1069,7 @@ Kural: açıklama tek cümle, "ne yaparsınız", ≤ 100 harf (test §3.11); esk
 | `/panel/sayim` | Stok sayımı | aynı (dinamik `COUNT_RULE`) | – | – |
 | `/panel/zayi` | Zayi & ikram | **Atılan, bozulan (zayi) ve ödenmeden verilen (ikram) ürünleri girin.** ("Tutarlılık ekranı" sözü kalkar: personel açamaz) | – | – |
 | `/panel/tutarlilik` | **Tutarlılık** (eski "Tutarlılık kontrolü") | **Satış, alış ve reçete tutuyor mu: hangi malzeme fazla gidiyor.** | eski | satış kaynağı |
-| `/panel/satislar` | Satışlar | kaynağa göre (§10): ModPOS raporu **Ay sonunda ModPOS ürün satış raporunu yükleyin, eşleşmeyen ürünleri bağlayın.** · LafPOS **LafPOS'un gün sonları her gece gelir; eşleşmeyen ürünleri bağlayın.** · geçiş **Geçiş ayı: önce ModPOS raporu, sonra LafPOS gün sonları; eşleşmeyenleri bağlayın.** | eski üç `DESCRIPTION*` ("Patron (ModPOS)" → "ModPOS") | satış kaynağı |
+| `/panel/satislar` | Satışlar | kaynağa göre (§10): ModPOS raporu **Ay sonunda ModPOS ürün satış raporunu yükleyin, eşleşmeyen ürünleri bağlayın.** · AsilPOS **AsilPOS'un gün sonları her gece gelir; eşleşmeyen ürünleri bağlayın.** · geçiş **Geçiş ayı: önce ModPOS raporu, sonra AsilPOS gün sonları; eşleşmeyenleri bağlayın.** | eski üç `DESCRIPTION*` ("Patron (ModPOS)" → "ModPOS") | satış kaynağı |
 | `/panel/komisyonlar` | Komisyon & hakediş | **Yemek kartı ve platformların kestiği komisyon ve size ödeyecekleri para (hakediş).** | eski | – |
 | `/panel/analiz` | Analiz & senaryo | **Hangi ürünü öne çıkarmalı, hangisine zam yapmalı; fiyat değişirse ay sonu ne olur.** | eski | satış kaynağı |
 | `/panel/faturalar` | Faturalar | **Alış faturaları Paraşüt'ten her sabah gelir; elle de ekleyebilirsiniz.** | eski | – |
@@ -1150,30 +1150,30 @@ raporu" varsaymamasını ve bağlantı geldiğinde tek yerden açılmasını sa�
 **Tek kaynak (yeni, saf): `src/lib/sales-source.ts`**
 
 ```ts
-export type SalesSourceKind = "modpos-rapor" | "lafpos" | "gecis" | "modpos-baglanti";
+export type SalesSourceKind = "modpos-rapor" | "asilpos" | "gecis" | "modpos-baglanti";
 export interface SalesSource {
   kind: SalesSourceKind;
-  /** Kısa ad: "ModPOS raporu" · "LafPOS" · "ModPOS raporu + LafPOS" · "ModPOS bağlantısı" */
+  /** Kısa ad: "ModPOS raporu" · "AsilPOS" · "ModPOS raporu + AsilPOS" · "ModPOS bağlantısı" */
   label: string;
   /** Başlığın altındaki tek satır (meta): "Satışlar: ModPOS raporu (elle, ay sonunda)" … */
   line: string;
-  /** Satış verisi yokken ne yapılır: "Satışlar'a ürün satış raporunu yükleyin" · "LafPOS gün sonları her gece gelir" · "ModPOS bağlantısı bu ayı henüz getirmedi" */
+  /** Satış verisi yokken ne yapılır: "Satışlar'a ürün satış raporunu yükleyin" · "AsilPOS gün sonları her gece gelir" · "ModPOS bağlantısı bu ayı henüz getirmedi" */
   missing: string;
   /** Elle yükleme bu ayın kaynağı mı (ImportCard ve "Satış raporu" işi bunu okur) */
   manual: boolean;
 }
 /** Ayın satış kaynağı; bugün `salesMonthKasa` üstüne kurulur. `connectedMonths` ileride ModPOS bağlantısının getirdiği aylar (bugün hiçbir çağıran vermez) */
-export function salesSourceOf(month: string, switchDay: string | null, lafposSales: { months: readonly LafposSalesMonth[] } | undefined, connectedMonths?: ReadonlySet<string>): SalesSource;
+export function salesSourceOf(month: string, switchDay: string | null, asilposSales: { months: readonly AsilposSalesMonth[] } | undefined, connectedMonths?: ReadonlySet<string>): SalesSource;
 ```
 
 | `kind` | Ne zaman | `line` |
 |---|---|---|
 | `modpos-rapor` | geçiş günü yok ya da ay geçişten önce (bugünkü `MODPOS_MONTH`) | **"Satışlar: ModPOS raporu (ay sonunda elle yüklenir)"** |
-| `lafpos` | ay tamamen LafPOS | **"Satışlar: LafPOS (her gece kendiliğinden)"** |
-| `gecis` | geçiş ayı | **"Satışlar: {monthKasa.long}"** (ör. "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)") |
+| `asilpos` | ay tamamen AsilPOS | **"Satışlar: AsilPOS (her gece kendiliğinden)"** |
+| `gecis` | geçiş ayı | **"Satışlar: {monthKasa.long}"** (ör. "Kasa (ModPOS 1–9 Kasım · AsilPOS 10–30 Kasım)") |
 | `modpos-baglanti` | `connectedMonths.has(month)` (ileride) | **"Satışlar: ModPOS bağlantısı (kendiliğinden)"** |
 
-Öncelik: `modpos-baglanti` > `lafpos` / `gecis` > `modpos-rapor` (bağlantı geldiğinde açılıştan bu yana bütün aylar
+Öncelik: `modpos-baglanti` > `asilpos` / `gecis` > `modpos-rapor` (bağlantı geldiğinde açılıştan bu yana bütün aylar
 ondan okunur; aynı ay için elle yüklenmiş rapor varsa hangisinin sayılacağı **bağlantı PR'ının kararı**dır, bu PR
 yalnız etiketi ayırır).
 
@@ -1187,17 +1187,17 @@ yalnız etiketi ayırır).
    `tutarlilik/page.tsx:356`, `tutarlilik/consistency-client.tsx:931` (düğme etiketi `manual` ise "Satış raporu yükle",
    değilse "Satışlar'a git"). Ay belli değilse (`tahmin`, fiyat paneli) bugünün ayı.
 4. Genel bakış "Satış raporu" işi (`dashboard-tasks.tsx:268-340`): `manual === false` olan ayda iş "yükle" demez
-   (bugün LafPOS ayında zaten böyle; kural `salesSourceOf`'a bağlanır, `monthTasks`'ın sonucu bugünkü verilerde aynı,
+   (bugün AsilPOS ayında zaten böyle; kural `salesSourceOf`'a bağlanır, `monthTasks`'ın sonucu bugünkü verilerde aynı,
    `tests/dashboard-tasks.test.ts` aynı).
 5. Yardım "Satış raporunu yükleyin (ModPOS raporuyla çalışan aylarda)" (§3.9).
 
 **Bilerek bağlanmayan** (bugün doğru, bağlantı PR'ının işi): `src/lib/calc/insights.ts:1087` (hesap katmanı, K11),
-`src/lib/weekly/items.ts:50` (haftalık e-posta), `src/lib/lafpos/sales.ts` (ModPOS listesi ile LafPOS çakışma
+`src/lib/weekly/items.ts:50` (haftalık e-posta), `src/lib/asilpos/sales.ts` (ModPOS listesi ile AsilPOS çakışma
 cümleleri: zaten "ModPOS listesi" der), `dashboard-tasks.tsx:336-337` "Patron'dan … yükleyin" (ModPOS'un rapor
 programının adı; yalnız `manual` aylarda görünür).
 
 **Bağlantı geldiğinde açılacak yerler (bu PR'da yer ayrılır, kod yazılmaz):**
-- Ayarlar › Bağlantılar: LafPOS kartının (`#lafpos`) yanında "ModPOS bağlantısı" kartı, çapa **`#modpos`** (bu PR'da
+- Ayarlar › Bağlantılar: AsilPOS kartının (`#asilpos`) yanında "ModPOS bağlantısı" kartı, çapa **`#modpos`** (bu PR'da
   çapa ve kart yok; ad ve yer burada sabitlenir). ⌘K kaydı ("ModPOS bağlantısı" → `/panel/ayarlar#modpos`) kart gelince
   eklenir.
 - `salesSourceOf(…, connectedMonths)`: bağlantının yazdığı ayların kümesi; ekranların hepsi kendiliğinden "ModPOS
@@ -1205,7 +1205,7 @@ programının adı; yalnız `manual` aylarda görünür).
 - Satışlar `ImportCard`: `manual === false` ayda kart "Bu ayın satışı ModPOS bağlantısından geldi" der, elle yükleme
   "Raporu yine de yükle" ikincil düğmesine iner (bağlantı PR'ı).
 - Kasa raporu ModPOS Z karşılaştırması ve Genel bakış "Kasa · {kaynak}" etiketleri `monthKasa` üstünden zaten aydan
-  türer; bağlantı `monthSource`'a dördüncü değer eklerse etiketler tek yerden değişir (`docs/LAFPOS.md` › Metinler).
+  türer; bağlantı `monthSource`'a dördüncü değer eklerse etiketler tek yerden değişir (`docs/ASILPOS.md` › Metinler).
 - Kenar çubuğu, ⌘K grupları ve adresler **değişmez**: Satışlar "Satış" grubunda kalır; geçmiş aylar (açılıştan beri)
   aynı ay seçiciyle açılır.
 
@@ -1266,9 +1266,9 @@ inceleme bulguları, **`main`'e birleştirme** (sahibin isteği), canlıda §14'
 - Belgeler: bu dosya `docs/planlar/ux-sade.md` olarak (ekleriyle); `docs/TASARIM.md` §3 (menü ağacı, alt menü "Tümü",
   bir ekran bir ad, bağlam satırı); `docs/VERGI.md` (sekme adları, Özet'in yeni düzeni, bant, sözlük, gecikmiş satır;
   §1 kuralı aynen); `docs/BUGUN.md` (telefon deseni, "Diğer N iş"); `docs/NAKIT-PLANI.md` (sekmeler, "Ödemeler'e ekle",
-  "Damga ödendi mi?"); `docs/LAFPOS.md` › Metinler (`salesSourceOf`); `docs/planlar/KALAN-ISLER.md` (ModPOS bağlantısı:
+  "Damga ödendi mi?"); `docs/ASILPOS.md` › Metinler (`salesSourceOf`); `docs/planlar/KALAN-ISLER.md` (ModPOS bağlantısı:
   §10'un "açılacak yerler" listesi). Belgeyi okuyan testler (`tests/ayni-rakam.test.ts:375` NAKIT-PLANI,
-  `tests/lafpos.test.ts:522` LAFPOS, `tests/predeploy.test.ts:144` ve `tests/veritabani-baglanti.test.ts:672-678`
+  `tests/asilpos.test.ts:522` ASILPOS, `tests/predeploy.test.ts:144` ve `tests/veritabani-baglanti.test.ts:672-678`
   KALAN-ISLER) yeşil kalmalı: belgeye **ekle**, aradıkları cümleleri silme.
 - Testler §12.
 
@@ -1386,7 +1386,7 @@ Yalnız yerel: Postgres `postgres://postgres:postgres@localhost:5432/<yeni db>` 
 `require('playwright')` ile (Chromium kurulu; `playwright install` koşulmaz).
 
 1. Yeni veritabanı (ör. `lafmaliyet_uxsade`), `npm run db:migrate`, `npm run db:seed`, ardından
-   `ux/seed-extra.sql` (anketin gecikmiş SGK, KDV, sayımsız ay, taslak vergi, LafPOS geçiş günü verisi). Dev sunucusu
+   `ux/seed-extra.sql` (anketin gecikmiş SGK, KDV, sayımsız ay, taslak vergi, AsilPOS geçiş günü verisi). Dev sunucusu
    boş bir portta. "Bugün" sistem saatidir: anket 29 Ekim 2026'da ölçüldü; başka bir gün ölçülürse `seed-extra.sql`'in
    günleri (gecikmiş SGK 26 Ekim, KDV 28 Ekim, kasa raporları 23-26 Ekim) aynı farkla kaydırılır, yoksa gecikme ve iş
    listesi başka görünür.
@@ -1410,7 +1410,7 @@ Yalnız yerel: Postgres `postgres://postgres:postgres@localhost:5432/<yeni db>` 
    - Bir `Notice` "Ayrıntı" klavyeyle açılır (Tab + Enter), odak halkası görünür; ekran okuyucu önekinin DOM'da
      olduğu (`.sr-only`).
    - Ödemeler: "Ödedim" düğmesi, geri alma; sekmeler Ödemeler · Nakit planı.
-   - Satışlar: başlık altı satış kaynağı satırı (ModPOS ayı ve LafPOS / geçiş ayı).
+   - Satışlar: başlık altı satış kaynağı satırı (ModPOS ayı ve AsilPOS / geçiş ayı).
 5. Personel turu (`state-staff.json`): 14 ekran; zayi, kasa, sayım, reçete defteri (fiyat notu yok), karaoke (U7
    metni, tech yok); `npx tsx scripts/personel-sizinti.ts` dev sunucusuna karşı temiz.
 6. `npm run build` (yerelde `NODE_ENV` set etmeden) ve `npm test` tam; CI yeşil; birleştirmeden sonra canlıda yönetici
@@ -1478,11 +1478,11 @@ metinle bulunur.
 | 11 | `ayarlar/jobs-card.tsx:64` | bad · işin hata mesajı | Notice bad·sm | metin aynı |
 | 12 | `ayarlar/jobs-card.tsx:91` | bad · `CRON_SECRET` tanımlı değil | Notice bad·sm risk=veri | **"Günlük işler çalışmıyor: zamanlayıcı anahtarı yok"** · tech "`CRON_SECRET` tanımlı değil; Vercel › Settings › Environment Variables'a ekleyip yeniden yayınlayın (docs/DEPLOY.md § 4)." |
 | 13 | `ayarlar/jobs-card.tsx:108` | bad · durum okunamadı | Notice bad·sm | metin aynı |
-| 14 | `ayarlar/lafpos-card.tsx:38` | bad · LafPOS durumu okunamadı | Notice bad·sm | metin aynı |
-| 15 | `ayarlar/lafpos-card.tsx:48` | bad · reddedilen günler (bağlıyken kırmızı) | Notice (linked ? bad : neutral)·sm | ilk satır başlık, gerisi Ayrıntı (metin aynı) |
-| 16 | `ayarlar/lafpos-card.tsx:84` | warn · "LafPOS'tan Gönder bekleniyor" | Notice (linked ? warn : neutral)·sm | **"LafPOS'tan Gönder bekleniyor · {tarih}"** · text `clearedText` |
-| 17 | `ayarlar/lafpos-card.tsx:110` | warn · doğrulanmamış gönderim | Notice (loud ? warn : neutral)·sm | metin aynı |
-| 18 | `ayarlar/lafpos-client.tsx:112` | warn · bağlantı kurulmadı (geçiş günü penceresi) | Notice warn·sm | **"Bağlantı kurulmadı: anahtar girilene kadar LafPOS günleri gelmez"** |
+| 14 | `ayarlar/asilpos-card.tsx:38` | bad · AsilPOS durumu okunamadı | Notice bad·sm | metin aynı |
+| 15 | `ayarlar/asilpos-card.tsx:48` | bad · reddedilen günler (bağlıyken kırmızı) | Notice (linked ? bad : neutral)·sm | ilk satır başlık, gerisi Ayrıntı (metin aynı) |
+| 16 | `ayarlar/asilpos-card.tsx:84` | warn · "AsilPOS'tan Gönder bekleniyor" | Notice (linked ? warn : neutral)·sm | **"AsilPOS'tan Gönder bekleniyor · {tarih}"** · text `clearedText` |
+| 17 | `ayarlar/asilpos-card.tsx:110` | warn · doğrulanmamış gönderim | Notice (loud ? warn : neutral)·sm | metin aynı |
+| 18 | `ayarlar/asilpos-client.tsx:112` | warn · bağlantı kurulmadı (geçiş günü penceresi) | Notice warn·sm | **"Bağlantı kurulmadı: anahtar girilene kadar AsilPOS günleri gelmez"** |
 | 19 | `ayarlar/page.tsx:191` | bad · yedek bilgisi okunamadı | Notice bad·sm | metin aynı |
 | 20 | `ayarlar/page.tsx:333` | bad · bağlantı hatası | Notice bad·sm | metin aynı |
 | 21 | `ayarlar/photo-card.tsx:68` | warn · depo 1 GB'a yaklaşıyor | Notice warn·sm risk=veri | metin aynı |
@@ -1552,17 +1552,17 @@ metinle bulunur.
 | 85 | `karaoke/orders-board.tsx:302` | warn · yeni masa siparişi kartı vurgusu | D | – |
 | 86 | `karaoke/orders-board.tsx:325` | warn · müşterinin notu | D | içerik vurgusu, uyarı değil |
 | 87 | `kasa/cash-form.tsx:893` | bad,lime/25 · e-posta durumu (kırmızı / yeşil / gri) | Notice bad / good / neutral·sm | metin aynı · eylem "Yeniden dene" |
-| 88 | `kasa/cash-form.tsx:904` | info · LafPOS kasadan çıkanlar | Notice neutral·sm | metin aynı |
+| 88 | `kasa/cash-form.tsx:904` | info · AsilPOS kasadan çıkanlar | Notice neutral·sm | metin aynı |
 | 89 | `kasa/cash-form.tsx:905` | info · sonraki not | Notice neutral·sm | metin aynı |
-| 90 | `kasa/cash-form.tsx:1099` | info,r-note · geç rapor notu | Notice neutral·md | **"Geç rapor · {tarih}: yönetici onaylayınca kayda geçer"** · text kip metninin ikinci cümlesi ("Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın." / LafPOS kipleri aynı) |
+| 90 | `kasa/cash-form.tsx:1099` | info,r-note · geç rapor notu | Notice neutral·md | **"Geç rapor · {tarih}: yönetici onaylayınca kayda geçer"** · text kip metninin ikinci cümlesi ("Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın." / AsilPOS kipleri aynı) |
 | 91 | `kasa/cash-form.tsx:1113` | info,r-note · düzeltme önerisi | Notice neutral·md | **"{gün} kasa raporu · düzeltme önerisi"** · text bugünkü cümle |
-| 92 | `kasa/cash-form.tsx:1128` | info,r-note · LafPOS gün sonu | Notice neutral·md | **"LafPOS gün sonu · Z {no} · {saat}"** · text `lafposNote` · eylem bugünkü |
+| 92 | `kasa/cash-form.tsx:1128` | info,r-note · AsilPOS gün sonu | Notice neutral·md | **"AsilPOS gün sonu · Z {no} · {saat}"** · text `asilposNote` · eylem bugünkü |
 | 93 | `kasa/cash-form.tsx:1181` | warn · ödeme türleri Z toplamından farklı | Notice warn·sm | **"Ödeme türleri Z toplamından {fark} {fazla/az}"** · text "Bir tutarı yanlış yazmış olabilirsiniz…" (bugünkü kalan) |
 | 94 | `kasa/cash-form.tsx:1192` | warn,r-status · açılış devirle tutmuyor | Notice warn·sm risk=para | **"Önceki raporun devri {tutar} ({gün}); yazdığınız {fark}"** · text "Kasaya para kondu ya da alındıysa nedenini nota yazın." · eylem "Devri yaz" |
 | 95 | `kasa/cash-form.tsx:1279` | warn · kasadan çıkan uyarısı | Notice warn·sm | metin aynı |
-| 96 | `kasa/cash-form.tsx:1280` | info · LafPOS kasadan çıkanlar | Notice neutral·sm | metin aynı |
+| 96 | `kasa/cash-form.tsx:1280` | info · AsilPOS kasadan çıkanlar | Notice neutral·sm | metin aynı |
 | 97 | `kasa/cash-form.tsx:1292` | info · bir banka fişi daha okundu | Notice neutral·sm | başlık metin aynı · text `unsure` · eylem iki düğme (pencere içi istisna) |
-| 98 | `kasa/cash-form.tsx:1347` | info · LafPOS teslimi kasadan çıkanlarda yok | Notice neutral·sm | metin aynı |
+| 98 | `kasa/cash-form.tsx:1347` | info · AsilPOS teslimi kasadan çıkanlarda yok | Notice neutral·sm | metin aynı |
 | 99 | `kasa/cash-history.tsx:323` | bad · e-posta gitmedi | Notice bad·sm | **"E-posta gitmedi: {hata}"** |
 | 100 | `kasa/cash-out-dialog.tsx:332` | info · istek bilgisi | Notice neutral·sm | metin aynı |
 | 101 | `kasa/cash-out-dialog.tsx:371` | info · tedarikçi ipucu | Notice neutral·sm | **"{tedarikçi} tedarikçimiz"** · text "Borç ödemesiyse "Teslim · ödeme" seçin; alışverişse böyle kalsın." · eylem bugünkü |
@@ -1576,7 +1576,7 @@ metinle bulunur.
 | 109 | `kasa/cash-requests.tsx:88` | warn,r-status · silme isteğiniz onay bekliyor | Notice neutral·sm | **"Silme isteğiniz onay bekliyor · {zaman}"** · text "Neden: …" · eylem "Geri çek" |
 | 110 | `kasa/cash-settings.tsx:53` | warn · U8 | Notice → §6.1 | bkz. §6.1 (U8) |
 | 111 | `kasa/cash-settings.tsx:58` | bad,r-note · engellenen alıcılar | Notice bad·sm | **"Bu adreslere rapor gitmez"** · text adres ve neden listesi (görünür) |
-| 112 | `kasa/cash-summary.tsx:38` | warn,r-note · LafPOS'tan farklı yazılan | Notice warn·sm | **"LafPOS'tan farklı yazılan {n} alan"** · text liste |
+| 112 | `kasa/cash-summary.tsx:38` | warn,r-note · AsilPOS'tan farklı yazılan | Notice warn·sm | **"AsilPOS'tan farklı yazılan {n} alan"** · text liste |
 | 113 | `kasa/cash-summary.tsx:148` | warn · ödeme türleri Z'den farklı | Notice warn·sm risk=para | metin aynı |
 | 114 | `kasa/cash-summary.tsx:256` | warn,info,lime/25 · özet satırları (warn / good / info) | Notice·sm (tonu satırdan: warn→warn, good→good, info→neutral) | metin aynı |
 | 115 | `kasa/closed-day.tsx:36` | r-note · kafe kapalı işaretli | Notice neutral·md | metin aynı |
@@ -1609,8 +1609,8 @@ metinle bulunur.
 | 142 | `kullanicilar/users-client.tsx:1032` | bad · Sil | D | – |
 | 143 | `onaylar/karaoke-cards.tsx:84` | warn · istekten sonra değişti | Notice warn·sm | **"İstekten sonra değişti"** · text satırlar |
 | 144 | `onaylar/kasa-cards.tsx:249` | warn · silme sonucu | Notice warn·sm risk=veri | **"Silinince rapor ve önceki sürümleri gider"** · text "Değerleri işlem geçmişinde kalır, fotoğraflar 30 gün saklanır." + `{next}` |
-| 145 | `onaylar/kasa-cards.tsx:344` | info · LafPOS Z satırı | Notice neutral·sm | metin aynı |
-| 146 | `onaylar/kasa-cards.tsx:346` | warn · LafPOS gün sonu gelmedi | Notice warn·sm | **"LafPOS'un bu gün sonu gelmedi: Z fotoğrafından kontrol edin"** |
+| 145 | `onaylar/kasa-cards.tsx:344` | info · AsilPOS Z satırı | Notice neutral·sm | metin aynı |
+| 146 | `onaylar/kasa-cards.tsx:346` | warn · AsilPOS gün sonu gelmedi | Notice warn·sm | **"AsilPOS'un bu gün sonu gelmedi: Z fotoğrafından kontrol edin"** |
 | 147 | `onaylar/kasa-cards.tsx:349` | warn · fotoğraf okunmadı | Notice warn·sm | **"Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin"** |
 | 148 | `onaylar/kasa-cards.tsx:387` | warn · açılış devirle tutmuyor, not yok | Notice bad·sm (onayı engelliyor) | **"Açılış devirle tutmuyor ve not yok: bu hâliyle kaydedilemez"** · text "Düzeltip onaylayın ve nedeni nota yazın." |
 | 149 | `onaylar/kasa-out-cards.tsx:153` | warn · istekten sonra değişti | Notice warn·sm | **"İstekten sonra değişti"** · text "Satır, fişi ya da bağlı gider kaydı. Günü açıp bakın; onaylarsanız istenen hâl yazılır." |
@@ -1642,7 +1642,7 @@ metinle bulunur.
 | 175 | `satislar/sales-client.tsx:611` | info · hizmet düğmesi tonu | D | – |
 | 176 | `satislar/sales-client.tsx:892` | lime/25 · önerilen eşleşme düğmesi | D | – |
 | 177 | `satislar/sales-client.tsx:976` | bad,r-alert · listede toplam satırı var | Notice bad·md live=assertive risk=para | **"Listede toplam satırı var: ciro ve kâr iki kat görünür"** · text "Silin." · Ayrıntı (açık) satır düğmeleri |
-| 178 | `satislar/sales-client.tsx:1803` | info · LafPOS'tan geliyor | Notice neutral·md | metin aynı |
+| 178 | `satislar/sales-client.tsx:1803` | info · AsilPOS'tan geliyor | Notice neutral·md | metin aynı |
 | 179 | `satislar/sales-client.tsx:1823` | bad · Ayı temizle | D | – |
 | 180 | `satislar/sales-client.tsx:1899` | bad · Ayı temizle | D | – |
 | 181 | `satislar/sales-client.tsx:1935` | info,r-status · atlanan satırlar | Notice neutral·sm | **"{skippedText}: ürün sayılmaz"** · Ayrıntı "Ay cirosu iki kez sayılmasın diye yüklenmez." + liste |
@@ -1733,8 +1733,8 @@ metinle bulunur.
 | 266 | `vergi/ui.tsx:57` | lime/25 · "gözden geçirildi" çipi | D | çip |
 | 267 | `vergi/ui.tsx:73` | r-note · — | bkz. §7.4 | `TaxBanner` kutusuz tek satıra iner (bkz. §7.4); `role="note"` satırda kalır |
 | 268 | `zayi/page.tsx:185` | warn · bu gün istek onay bekliyor | Notice warn·md | **"Bu gün {n} istek onay bekliyor"** · eylem `NoticeLink` "Onaylar" |
-| 269 | `zayi/waste-board.tsx:219` | info · LafPOS notu | Notice neutral·sm | metin aynı |
-| 270 | `zayi/waste-board.tsx:221` | info · LafPOS ikram notu | Notice neutral·sm | metin aynı |
+| 269 | `zayi/waste-board.tsx:219` | info · AsilPOS notu | Notice neutral·sm | metin aynı |
+| 270 | `zayi/waste-board.tsx:221` | info · AsilPOS ikram notu | Notice neutral·sm | metin aynı |
 | 271 | `c/panel/command-palette.tsx:416` | r-status · — | D | sonuç yok durumu |
 | 272 | `c/panel/confirm-password-dialog.tsx:81` | warn,r-status · parola penceresi notu | Notice warn·sm | metin aynı |
 | 273 | `c/panel/error-view.tsx:32` | r-alert · sayfa hatası (`role="alert"`) | D | sayfa hata görünümü, ayrı desen |
@@ -1791,7 +1791,7 @@ sayfada `<TaxBanner data={banner} />`, `ui.tsx`'te `{TAX_DISCLAIMER}` (`Disclaim
 güncellenir; 277 ve 296 kart başlıkları aynen: veri değişmez), `vergi-kurumlar:159`, `vergi-muhtasar:58` (aynen),
 `arayuz-duzeltmeleri:70` (öz denetimde bulundu: parola penceresinin `role="status"` notu Ek A 272'de `Notice` olur,
 regex güncellenir), `siparis-planli:98` (aynen: satır içi renk). Belgeyi okuyan testler (`ayni-rakam:375`,
-`lafpos:522`, `predeploy:144`, `veritabani-baglanti:672-678`) için kural: belgeye ekle, aranan cümleyi silme. "Bu
+`asilpos:522`, `predeploy:144`, `veritabani-baglanti:672-678`) için kural: belgeye ekle, aranan cümleyi silme. "Bu
 ayın işleri" başlığını doğrulayan test yok (yalnız yorumlar).
 
 **Personelin ağacı.** Yeni ya da yeniden adlanan bütün düğümler (`fiyatlar`, `nakit`, `vergi` grubu ve alt öğeleri,
@@ -1803,8 +1803,8 @@ Personelin gördüğü yalnız azalır: yüzen hap (Y1), fiyat kaynaklı ürün 
 
 **Adresler.** `page.tsx` ve `route.ts` eklenmez, silinmez, taşınmaz. Yeni çapalar §3.7'de (`#kdv`, `#sgk`, `#muhtasar`
 Vergi'de; `#kar-vergisi`, `#kurallar`, `#feragat`, `#sgk-oranlari`, `#kar-zarar`, `#baglanti`). Var olduğu kodda
-görülenler: `#oranlar`, `#gecmis` (`ayarlar/settings-client.tsx`), `#yedek` (`ayarlar/page.tsx`), `#lafpos`
-(`ayarlar/lafpos-card.tsx`), `#sorular`, `#bilgi` (`vergi/kurallar`), `#siniflandir` (`classify-list.tsx`),
+görülenler: `#oranlar`, `#gecmis` (`ayarlar/settings-client.tsx`), `#yedek` (`ayarlar/page.tsx`), `#asilpos`
+(`ayarlar/asilpos-card.tsx`), `#sorular`, `#bilgi` (`vergi/kurallar`), `#siniflandir` (`classify-list.tsx`),
 `#kdv-beyannamesi`, `#kdv` (Nakit planı `vat-card.tsx`), `#urun-baglantilari` (`parasut/breakdowns.ts`), `#baslarken`
 ve `#gecici` (`tax-cards.tsx`, kalır). Kapalı kap içine atlayan çapa: Ayarlar akordeonu (var olan `section-card.tsx`
 deseni), `#sgk-oranlari` ve `#kurallar` (aynı desenle açılır); `#bilgi` bilerek açık bırakıldı; `#baglanti` karaoke
@@ -1995,7 +1995,7 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
     saf `overdueTaxNotice` (`overdue.ts`) işlevinde, test edilebilsin diye.
 33. **Kasa raporunun açıklaması rolü kendisi okur**: başlık iki rolün açtığı sayfada `Suspense`'in dışında; açıklama
     küçük bir sunucu bileşeninde rolü okur (yüklenirken personelin cümlesi, en dar olan). Yöneticinin "Nasıl
-    çalışır?"u günün kasasına göre (ModPOS / LafPOS; eski metin).
+    çalışır?"u günün kasasına göre (ModPOS / AsilPOS; eski metin).
 34. **§8 açıklama denetimi yalnız sayfa başlığını okur** (`tests/sayfa-basligi.test.ts`): `*DESCRIPTION*` sabitleri ve
     `<PageHeader>`, `<VergiHeader>`, yerel `<Header>` öğelerinin `description`'ı. Kartların `description`'ı
     (`CardHeader`) §8'in konusu değil; ilk sürüm onları da sayıp 30 kart açıklamasını "uzun" buluyordu.
@@ -2031,7 +2031,7 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
     düzeltildi).
 40. **Gelir-gider'in satış kaynağı satırı yılın aylarından** (§10 tek ay der): yıl tablosu iki kasalı yılda yalnız bu
     ayın (geçmiş yılda Aralık'ın) kaynağını yazıyordu. Satır yılın bu aya kadarki aylarından (`periodSalesSource`):
-    hepsi aynı türse o tür, karışıksa "Satışlar: ModPOS / LafPOS" (tablonun `periodKasa` etiketiyle aynı). Kaynağı
+    hepsi aynı türse o tür, karışıksa "Satışlar: ModPOS / AsilPOS" (tablonun `periodKasa` etiketiyle aynı). Kaynağı
     sormayan metinler kaynaktan bağımsız sözle: Genel bakış'ın maliyet göstergesi ("Satış verisi gelince …") ve kâr ⓘ'si
     ("Ürün satışları gelince …"), Hammaddeler ve Ayarlar'ın su metni ("satışlar gelince hesaplanır …"), Tutarlılık'ın
     boş durumu ("Bu ay için satış verisi yok"). `insights.ts` §10'un listesinde, dokunulmadı.

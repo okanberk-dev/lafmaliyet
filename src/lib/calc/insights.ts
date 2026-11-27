@@ -697,7 +697,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const listFixed = listShare ? fixedForListPeriod(fixedMonth, listShare) : fixedMonth;
   const fixed = listFixed.sections;
   const fixedTotal = listFixed.total;
-  // Yalnız ModPOS listesi günlerinin indirimi: LafPOS'un satırları indirimden sonradır (engine listDiscounts)
+  // Yalnız ModPOS listesi günlerinin indirimi: AsilPOS'un satırları indirimden sonradır (engine listDiscounts)
   const discountsNet = (listShare ? listShare.lp.discounts : model.listDiscounts(month)) / (1 + st.kdv);
   // laffogato.net online satışı reçeteye göre (kâr-zarardaki gibi: kâr ModPOS + online ile)
   const online = hasSales ? onlineTheory(model.onlineMonth(month), share) : null;
@@ -1272,7 +1272,7 @@ export function consistency(model: Model, month: string) {
   const listTotal = sales.revenue;
   // Liste kasa raporlarından kısa bir dönemi kapsıyorsa (süren ayda yapıştırılan liste) karşılaştırma o dönemle
   const lp = sales.lines.length ? model.listPeriod(month) : null;
-  // Yalnız ModPOS listesi günlerinin indirimi: LafPOS'un satırları indirimden sonradır (engine listDiscounts)
+  // Yalnız ModPOS listesi günlerinin indirimi: AsilPOS'un satırları indirimden sonradır (engine listDiscounts)
   const discounts = lp ? lp.discounts : model.listDiscounts(month);
   const computed = listTotal - discounts;
   const pos = lp ? lp.posRevenue : (info?.posRevenue ?? null);
@@ -1377,10 +1377,10 @@ export function consistency(model: Model, month: string) {
       /** Listenin dönemi, kasa raporlarından kısaysa (POS ve indirim o dönemin); yoksa null */
       listPeriod: lp,
       /**
-       * Listede LafPOS satırı var: `discounts` yalnız ModPOS listesi günlerinin indirimidir, LafPOS'un satırları indirimden
+       * Listede AsilPOS satırı var: `discounts` yalnız ModPOS listesi günlerinin indirimidir, AsilPOS'un satırları indirimden
        * sonradır (engine listDiscounts; hesap sözleşmesi §11)
        */
-      lafposLines: sales.lines.some((l) => l.line.lafpos),
+      asilposLines: sales.lines.some((l) => l.line.asilpos),
       offRevenue,
       offRevenueCost: (offRevenue / (1 + st.kdv)) * sales.avgCostRatio,
       hasLines: sales.lines.length > 0,
@@ -1523,7 +1523,7 @@ export interface ScenarioInput {
 }
 
 export interface ScenarioBase {
-  /** Satış listesi (ModPOS / LafPOS) cirosu, KDV dahil */
+  /** Satış listesi (ModPOS / AsilPOS) cirosu, KDV dahil */
   revenue: number;
   net: number;
   discountsNet: number;

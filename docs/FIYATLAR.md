@@ -163,8 +163,8 @@ seçimin kasaları ayrı okunur (`loadTillScopes`):
 | Son işaretlenenler | Seçimin kasalarının işaretleri; satır şubeyle başlar ("Marina · Ayşe · 14:05") |
 | Zil | Kasa başına satır: "Marina: Kasada değişecek 2 fiyat", kimlik şubeyi taşır, bağlantı o şubeyi seçer (`&sube=`) |
 | Bugün, asistan | Toplam ve kasa başına sayı: "Kasada değişecek 4 fiyat (Tuzla 3, Marina 1)" (`combineTillPos`) |
-| Ürün kartı | Eski fiyatı duran her kasa için ayrı uyarı ("Marina kasasında (LafPOS) hâlâ …") |
-| Haftalık özet | Kasa başına madde ("Marina: LafPOS'ta 2 fiyat değişecek"); aylık adet işletmenin toplamı |
+| Ürün kartı | Eski fiyatı duran her kasa için ayrı uyarı ("Marina kasasında (AsilPOS) hâlâ …") |
+| Haftalık özet | Kasa başına madde ("Marina: AsilPOS'ta 2 fiyat değişecek"); aylık adet işletmenin toplamı |
 | Ürünler'in "Kasa N"si, sekme sayısı | Kasaların toplamı |
 
 İşaret eylemi (`markPosDone(ürünler, şube)`) listenin kasasını gönderir; yazım `formBranch(…, "till", { requireExplicit })`
@@ -174,42 +174,42 @@ ile o kasaya iner: "Tümü"de birden çok kasa açıkken kasası gelmeyen istek 
 açıkken şubeyi yazar ("Marina: Latte M 205 ₺").
 
 Göç (`0078_kasa_fiyat_sube`, veri adımı `0079_kasa_fiyat_sube_veri`): şubeler öncesi tek kasanın durumu
-(`products.pos_stale_*`) Tuzla'ya ve kasası ModPOS olan öbür etkin fiziksel şubelere olduğu gibi, Marina'ya (LafPOS'un
-şubesi) okuyucunun süzgeciyle (geçiş günü gelmişse yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra
+(`products.pos_stale_*`) Tuzla'ya ve kasası ModPOS olan öbür etkin fiziksel şubelere olduğu gibi, Marina'ya (AsilPOS'un
+şubesi) okuyucunun süzgeciyle (geçiş günü gelmişse yalnız siteye bağlı olmayan ve fiyatı AsilPOS başladıktan sonra
 panelde değişen ürünler) kopyalandı; eski işaretler Tuzla'nın oldu. Ürünün `pos_stale_*` sütunları bir sürüm geri
 dönüş güvenliği için durur, hiçbir kod okumaz ya da yazmaz (`tests/fiyatlar.test.ts`), sonraki göçle kalkar.
 
-### LafPOS'a geçiş gününden itibaren (denetim B11, E-39)
+### AsilPOS'a geçiş gününden itibaren (denetim B11, E-39)
 
-Kasa LafPOS olunca (Ayarlar › LafPOS › "LafPOS'a geçiş günü"; bugünün iş günü, 05:00 kuralı, o günden önce değilse)
-siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır: gün açıkken LafPOS sürüm sinyalinin (20 sn) `menu`
+Kasa AsilPOS olunca (Ayarlar › AsilPOS › "AsilPOS'a geçiş günü"; bugünün iş günü, 05:00 kuralı, o günden önce değilse)
+siteye bağlı ürünün satış fiyatını AsilPOS siteden kendisi alır: gün açıkken AsilPOS sürüm sinyalinin (20 sn) `menu`
 işaretiyle yaklaşık 20 sn içinde yeniden eşitler ve fiyatı imzalı panel listesinden alır (`withPanelPrices`); sinyal
-yoksa yedek 15 dakikalık çekme (lafpos `server/jobs.ts`). Sitenin herkese açık menüsü `s-maxage=60`. Gece hiçbir şey
-çekilmez; gece yapılan değişiklik gün açılınca geçer (LafPOS 03-ENTEGRASYON §2.1). Kural tek yerde (`src/lib/lafpos/kasa.ts` `tillScope`, `tillPriceManual`;
+yoksa yedek 15 dakikalık çekme (AsilPOS deposunda `server/jobs.ts`). Sitenin herkese açık menüsü `s-maxage=60`. Gece hiçbir şey
+çekilmez; gece yapılan değişiklik gün açılınca geçer (AsilPOS 03-ENTEGRASYON §2.1). Kural tek yerde (`src/lib/asilpos/kasa.ts` `tillScope`, `tillPriceManual`;
 okuyucu `src/server/data/till-scope.ts` `tillProductFilter`, `tillSince`):
 
-| | ModPOS günü (geçiş günü boş ya da bugün ondan önce) | LafPOS günü |
+| | ModPOS günü (geçiş günü boş ya da bugün ondan önce) | AsilPOS günü |
 |---|---|---|
-| Siteye bağlı ürünün fiyatı değişti (her yol: hücre, kart, toplu, geri alma, sitenin çekmesi) | Listeye girer (bugünkü gibi) | Kasanın (ModPOS) durumu yine yazılır ama hiçbir okuyucuda görünmez; fiyat geçmişine yazılır; bildirim "LafPOS yeni fiyatı siteden alır" (`posPending` false) |
-| Siteye bağlı olmayan ürünün fiyatı panelde değişti | Listeye girer | Girer; tarihi en erken LafPOS'un başladığı an. Bildirim: "LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin" (LafPOS siteden gelen ürünün fiyatını değiştirtmez) |
+| Siteye bağlı ürünün fiyatı değişti (her yol: hücre, kart, toplu, geri alma, sitenin çekmesi) | Listeye girer (bugünkü gibi) | Kasanın (ModPOS) durumu yine yazılır ama hiçbir okuyucuda görünmez; fiyat geçmişine yazılır; bildirim "AsilPOS yeni fiyatı siteden alır" (`posPending` false) |
+| Siteye bağlı olmayan ürünün fiyatı panelde değişti | Listeye girer | Girer; tarihi en erken AsilPOS'un başladığı an. Bildirim: "AsilPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; AsilPOS'ta yerel ürünse orada elle değiştirin" (AsilPOS siteden gelen ürünün fiyatını değiştirtmez) |
 | Bekleyen eski (ModPOS) işaret: siteye bağlı ürünün, geçiş gününden sonra siteden ayrılan ürünün ya da fiyatı geçiş gününden beri panelde değişmeyen bağlı olmayan ürünün | Görünür | Hiçbir okuyucuda görünmez (Kasaya işle, Kasadaki fiyatlar, zil, Bugün, haftalık özetin kâr kaybı, ürün kartı, Ürünler'in "Kasa N"si); **silinmez**, geçiş günü kaldırılır ya da ileri alınırsa geri gelir |
-| Görev kimde | Yönetici ve personel (Kasadaki fiyatlar, zil, Bugün) | Yalnız yönetici: LafPOS'ta ürün fiyatını yalnız menüyü yöneten (`menu.yonet`: patron, müdür) değiştirir, kasiyer değiştiremez. Personelin zilinde ve Bugün'ünde satır yok, Kasadaki fiyatlar "Fiyatları yönetici değiştirir" der, `markPosDone` personeli reddeder (kendi işaretini geri alması sürer) |
-| "Kasada: …" adı | ModPOS listelerinde geçen ad | LafPOS'un gün sonlarında geçen ad |
+| Görev kimde | Yönetici ve personel (Kasadaki fiyatlar, zil, Bugün) | Yalnız yönetici: AsilPOS'ta ürün fiyatını yalnız menüyü yöneten (`menu.yonet`: patron, müdür) değiştirir, kasiyer değiştiremez. Personelin zilinde ve Bugün'ünde satır yok, Kasadaki fiyatlar "Fiyatları yönetici değiştirir" der, `markPosDone` personeli reddeder (kendi işaretini geri alması sürer) |
+| "Kasada: …" adı | ModPOS listelerinde geçen ad | AsilPOS'un gün sonlarında geçen ad |
 
-LafPOS gününde listede görünme kuralı: ürün siteye bağlı değil **ve** geçmişinde geçiş gününün 05:00'inden sonra
+AsilPOS gününde listede görünme kuralı: ürün siteye bağlı değil **ve** geçmişinde geçiş gününün 05:00'inden sonra
 yalnız panelde (`on_site` olmayan) bir fiyat değişikliği var. Marina'nın kasasının durumu da her fiyat değişikliğinde
-yazılır (`pos_stale`, şube başına); LafPOS'un yerel ürünü kurulurken fiyat panelden alındığı varsayılır. Bilinen sınır: geçiş gününden önce
-ModPOS'ta kalmış bir işaretin üstüne LafPOS günü fiyat yeniden değişirse listede ModPOS'un eski fiyatı yazar (yapılacak
-iş doğrudur: LafPOS'ta yeni fiyat); fiyat LafPOS günü ModPOS'taki eski fiyata geri dönerse işaret kalkar.
+yazılır (`pos_stale`, şube başına); AsilPOS'un yerel ürünü kurulurken fiyat panelden alındığı varsayılır. Bilinen sınır: geçiş gününden önce
+ModPOS'ta kalmış bir işaretin üstüne AsilPOS günü fiyat yeniden değişirse listede ModPOS'un eski fiyatı yazar (yapılacak
+iş doğrudur: AsilPOS'ta yeni fiyat); fiyat AsilPOS günü ModPOS'taki eski fiyata geri dönerse işaret kalkar.
 
 **Şube:** kasa, kasanın şubesinindir (seçili fiziksel şube; "Tümü"de ve istek dışında, ör. haftalık özette, Tuzla):
-geçiş günü yalnız Marina'nın (LafPOS) kasasınındır, Tuzla seçiliyken ya da Tuzla'ya bağlı personelde liste ModPOS'a
+geçiş günü yalnız Marina'nın (AsilPOS) kasasınındır, Tuzla seçiliyken ya da Tuzla'ya bağlı personelde liste ModPOS'a
 göredir (`loadTillScope`; denetim 21 Kasım #5). Kasanın durumu ve işaret şube başınadır (`pos_stale`, `pos_marks.branch_id`;
 yukarıda "Şube başına kasa"): bir şubede işaretlenen ürün öbürünün listesinde kalır.
 
 Geçiş günü değişince hiçbir kayıt yazılmaz ya da silinmez; yalnız okuyucular değişir. Fiyat yazımı da geçiş gününe göre
 farklı bir şey saklamaz (yalnız bildirimin metni değişir). Metinlerin hepsi geçiş günü boşken bugünkünün aynısıdır
-(`tests/lafpos-metin.test.ts`, veritabanında `tests/lafpos-metin-db.test.ts`).
+(`tests/asilpos-metin.test.ts`, veritabanında `tests/asilpos-metin-db.test.ts`).
 
 ### Personel: Kasadaki fiyatlar ve işaret kaydı (dalga 10 §2.2)
 
@@ -287,7 +287,7 @@ fiyat `site` kaynağıyla girer.
 
 Sahibin kararı (4 Kasım 2026, [SUBE.md](SUBE.md); yapımı 23 Kasım 2026'da onaylandı, hesap sözleşmesi §8 "ladmin
 (LM-5)"): satış fiyatı şubeye göre değişebilir. Fiyat sitede tutulur (laffogato.net'in docs/PANEL-MENU.md "Şube
-fiyatı"); panel yazar ve okur, LafPOS siteden alır.
+fiyatı"); panel yazar ve okur, AsilPOS siteden alır.
 
 - **Taban** sitenin kalemindeki fiyattır: Tuzla'nın (ana şube) ve kendi fiyatı olmayan her şubenin. Toplu değiştir'in
   "Tümü" seçimi ve ürün kartı bugünkü gibi tabanı (ve `products.price`'ı) yazar.
@@ -322,8 +322,8 @@ fiyatı"); panel yazar ve okur, LafPOS siteden alır.
 
 ### Durum ve eski fiyat (`src/lib/prices/branch.ts`)
 
-Kaynak yalnız LafPOS gün sonunun `lines[].listPrices`'ıdır (satılan parçaların dondurulan liste fiyatları;
-[LAFPOS.md](LAFPOS.md) › Faz 2 alanları). `revenue / qty` liste fiyatı değildir (indirim, mutlu saat, ek), ondan
+Kaynak yalnız AsilPOS gün sonunun `lines[].listPrices`'ıdır (satılan parçaların dondurulan liste fiyatları;
+[ASILPOS.md](ASILPOS.md) › Faz 2 alanları). `revenue / qty` liste fiyatı değildir (indirim, mutlu saat, ek), ondan
 hiçbir şey çıkarılmaz. İş günü [D 05:00, D+1 05:00) İstanbul.
 
 | Durum | Ne zaman |
@@ -331,16 +331,16 @@ hiçbir şey çıkarılmaz. İş günü [D 05:00, D+1 05:00) İstanbul.
 | **Bekliyor** | Anı gelmedi ya da o andan sonra bu boy satılmadı |
 | **Uygulandı · gün** | O andan (anı içeren gün dahil) sonra yeni fiyatla satılan ilk gün |
 | **Uygulanmadı** | Yeni fiyatla satış yok; anından sonra başlayan tam bir günde yalnız başka fiyat (anı içeren günün eski fiyatı sayılmaz: andan önce satılmış olabilir) |
-| **Bilinmiyor** | Yalnız liste fiyatı taşımayan gün sonu (eski LafPOS) |
+| **Bilinmiyor** | Yalnız liste fiyatı taşımayan gün sonu (eski AsilPOS) |
 
 Değişikliğin penceresi o boyun fiyatını değiştiren sonraki anda biter (şube satırı ya da izlenen tabanın
 değişikliği); yalnız öteki boyu değiştiren satır kesmez. **Eski fiyattan satılan**: günün başında geçerli
 fiyattan farklı liste fiyatı; gün içinde fiyat değiştiyse (şube satırı ya da tabanın değişikliği) iki fiyat da
 doğrudur. Tabanın geçmişi siteye bağlı ürünün `product_prices`'ından (siteden gelen değişiklik panelin çektiği anla
 kayıtlıdır, birkaç dakika geç düşebilir). Kasada gün 05:00'ten sonra kapanırsa o gecenin satırları ertesi günün
-fiyatına göre denetlenir (yaklaşık; LafPOS iş gününü kendi açılış / kapanışıyla sayar).
+fiyatına göre denetlenir (yaklaşık; AsilPOS iş gününü kendi açılış / kapanışıyla sayar).
 
-Ekonomi (önerilen fiyat, zam etkisi, maliyet oranı) tabanla hesaplanır; şube fiyatı Satışlar'a LafPOS'un gerçek
+Ekonomi (önerilen fiyat, zam etkisi, maliyet oranı) tabanla hesaplanır; şube fiyatı Satışlar'a AsilPOS'un gerçek
 cirosuyla zaten girer.
 
 **Panel asistanı** (26 Kasım 2026; [ASISTAN.md](ASISTAN.md) › İşlemler): asistanın fiyat kartı (`urun_fiyati_degistir`)
@@ -358,7 +358,7 @@ yazılmaz. Bir şubenin kendi fiyatını asistan yazmaz; Şube fiyatı sekmesini
 | `pos_marks.branch_id` | İşaretin kasası (şubeler öncesi işaretler Tuzla'nın); şube silme sayımına girer |
 | `products.pos_stale_price`, `pos_stale_since` | ESKİ (göç 0079'a kadar kasanın durumu); okunmaz, yazılmaz, sonraki göçle kalkar |
 | `integration_state.menu_site_branch_prices` | Sitenin şube fiyatı satırları (`now`, `at`, `rows`), menü çekmesinde ve şube fiyatı yazımının yanıtıyla ([SITE-MENU.md](SITE-MENU.md)) |
-| `pos_daily_sales.list_prices` | LafPOS gün sonu satırının liste fiyatları (`[{price, qty}]`, eski LafPOS'ta null); migration `0077_sube_fiyati` |
+| `pos_daily_sales.list_prices` | AsilPOS gün sonu satırının liste fiyatları (`[{price, qty}]`, eski AsilPOS'ta null); migration `0077_sube_fiyati` |
 
 Ayrı bir toplu değişiklik tablosu yok: başlık satırlardan türer. Migration `fiyat_gecmisi` (numarası birleştirmede
 verilir). `npm run db:reset` ürünlerle birlikte geçmişi de siler; tam yedek yeni tabloyu ve sütunları kendiliğinden

@@ -1,5 +1,5 @@
-// Tahmini stoğun LafPOS başlangıcı gerçek Postgres'te (docs/STOK-TAHMINI.md): geçiş ayında Marina'nın ModPOS listesi
-// ayın bir gününde bitiyorsa (sales.coverage, integration_state'te) LafPOS satışları ertesi günden sayılır. Kayıt
+// Tahmini stoğun AsilPOS başlangıcı gerçek Postgres'te (docs/STOK-TAHMINI.md): geçiş ayında Marina'nın ModPOS listesi
+// ayın bir gününde bitiyorsa (sales.coverage, integration_state'te) AsilPOS satışları ertesi günden sayılır. Kayıt
 // settings'te aranırsa hep boş kalıyordu ve başlangıç sonraki ayın 1'ine kayıyordu.
 //
 // Marina'nın online ay kaydı (26 Kasım 2026, docs/STOK-TAHMINI.md § 2; sitenin sahte ucuyla, laffogato.net'e gidilmez):
@@ -24,7 +24,7 @@ import { monthRange, SITE_SALES_VERSION } from "../src/lib/site-sales/schema";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { ASILPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.STOK_TAHMINI_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_stok_tahmini_${process.pid}`;
@@ -52,7 +52,7 @@ function salesBody(month: string, latte: number, branch?: string) {
   };
 }
 
-describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL && "STOK_TAHMINI_TEST_DATABASE_URL yok" }, () => {
+describe("Tahmini stok: AsilPOS'un sayıldığı ilk gün", { skip: !SERVER_URL && "STOK_TAHMINI_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
   let db: DB;
   let estimate: typeof import("../src/server/data/stock-estimate");
@@ -99,15 +99,15 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
     await admin?.end();
   });
 
-  test("geçiş ayında ModPOS listesi 20 Kasım'da bitiyorsa LafPOS 21 Kasım'dan sayılır", async () => {
-    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: "2026-11-21" });
-    await db.insert(s.months).values({ month: "2026-11", branchId: LAFPOS_SUBE }).onConflictDoNothing();
-    await db.insert(s.salesLines).values({ month: "2026-11", branchId: LAFPOS_SUBE, posName: "LATTE", qty: 10, revenue: 1_000 });
+  test("geçiş ayında ModPOS listesi 20 Kasım'da bitiyorsa AsilPOS 21 Kasım'dan sayılır", async () => {
+    await db.insert(s.settings).values({ key: "asilposGecisGunu", value: "2026-11-21" });
+    await db.insert(s.months).values({ month: "2026-11", branchId: ASILPOS_SUBE }).onConflictDoNothing();
+    await db.insert(s.salesLines).values({ month: "2026-11", branchId: ASILPOS_SUBE, posName: "LATTE", qty: 10, revenue: 1_000 });
     await db.insert(s.integrationState).values({ key: SALES_COVERAGE_KEY, value: { "2026-11": "2026-11-20" } });
     const r = await estimate.loadStockEstimate(db, NOW);
     assert.ok(r, "geçiş günü var: tahmin döner");
     assert.equal(r.switchDay, "2026-11-21");
-    assert.equal(r.lafposFrom, "2026-11-21");
+    assert.equal(r.asilposFrom, "2026-11-21");
   });
 
   test("sınır Marina'nın kendi kapsam kaydından: Tuzla aynı aya 24 Kasım'a kadar yükleyince ya da Aralık'ta ayın tamamını yükleyince kaymaz", async () => {
@@ -119,12 +119,12 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
         { key: SALES_COVERAGE_KEY, value: shared },
         { key: SALES_COVERAGE_BRANCH_KEY, value: perBranch },
       ]);
-      return (await estimate.loadStockEstimate(db, NOW))?.lafposFrom;
+      return (await estimate.loadStockEstimate(db, NOW))?.asilposFrom;
     };
     // Tuzla'nın yüklemesi ortak kaydı 24 Kasım yaptı; Marina'nın kendi kaydı 20 Kasım
-    assert.equal(await coverage({ "2026-11": "2026-11-24" }, { [LAFPOS_SUBE]: { "2026-11": "2026-11-20" }, [MODPOS_SUBE]: { "2026-11": "2026-11-24" } }), "2026-11-21");
+    assert.equal(await coverage({ "2026-11": "2026-11-24" }, { [ASILPOS_SUBE]: { "2026-11": "2026-11-20" }, [MODPOS_SUBE]: { "2026-11": "2026-11-24" } }), "2026-11-21");
     // Tuzla Kasım'ın tamamını Aralık'ta yükledi: ortak kayıtta Kasım yok
-    assert.equal(await coverage({}, { [LAFPOS_SUBE]: { "2026-11": "2026-11-20" }, [MODPOS_SUBE]: { "2026-11": null } }), "2026-11-21");
+    assert.equal(await coverage({}, { [ASILPOS_SUBE]: { "2026-11": "2026-11-20" }, [MODPOS_SUBE]: { "2026-11": null } }), "2026-11-21");
     // Şube kaydı olmayan (bu değişiklikten önce yüklenmiş) listede ortak kayıt
     assert.equal(await coverage({ "2026-11": "2026-11-20" }, {}), "2026-11-21");
   });
@@ -156,7 +156,7 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
     };
     // Eski (dönemin başı) şubesi seçilmemiş fatura, yeni ve seçilmiş faturaların arkasında kalırdı
     const eskiAcik = await bill("2026-09-02", "Eski süt", null);
-    await bill("2026-11-20", "Yeni süt", LAFPOS_SUBE);
+    await bill("2026-11-20", "Yeni süt", ASILPOS_SUBE);
     await bill("2026-11-22", "Daha yeni süt", MODPOS_SUBE);
     const yeniAcik = await bill("2026-11-23", "Açık süt", null);
     await bill("2026-08-30", "Dönem dışı", null);
@@ -230,7 +230,7 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
       .values({ categoryId: cat.id, name: "Latte", size: "M", price: 195, sortOrder: 1, siteMenuId: "mnu-0003", siteMenuSlot: "M" })
       .returning({ id: s.products.id });
     await db.insert(s.recipeItems).values({ productId: latte.id, ingredientId: sut.id, qty: 200 });
-    await db.insert(s.stockCounts).values({ month: "2026-11", branchId: LAFPOS_SUBE, ingredientId: sut.id, qty: 10, factor: 1000 });
+    await db.insert(s.stockCounts).values({ month: "2026-11", branchId: ASILPOS_SUBE, ingredientId: sut.id, qty: 10, factor: 1000 });
 
     const at = new Date("2026-12-10T12:00:00+03:00");
     const e = await estimate.loadStockEstimate(db, at);
@@ -243,7 +243,7 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
     assert.ok(Math.abs((line.estimate ?? 0) - (10_000 - 1050)) < 1e-6, `tahmin ${line.estimate}`);
     assert.ok(e.estimate.online, "site bağlı: online özeti var");
     assert.equal(e.estimate.online.orders, 5, "Aralık'ın kasadan geçmeyen siparişi");
-    assert.equal(e.estimate.online.tillOrders, 3, "kasada ödenen 2 + elle girilen 1: LafPOS'ta, düşülmez");
+    assert.equal(e.estimate.online.tillOrders, 3, "kasada ödenen 2 + elle girilen 1: AsilPOS'ta, düşülmez");
     assert.deepEqual(e.estimate.online.missingMonths, [], "Kasım (ortalama) ve Aralık (dönem) var");
 
     // Marina'nın Aralık kaydı yokken ay eksik görünür ve düşülmez

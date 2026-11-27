@@ -62,7 +62,7 @@ export function cashOutsTotal(lines: { amount: number }[]): number {
   return Math.round(lines.reduce((a, l) => a + l.amount, 0) * 100) / 100;
 }
 
-/** Satırların "Teslim" olanlarının toplamı (LafPOS'un tesliminin panele girilmiş kısmı; lafposHandedGap) */
+/** Satırların "Teslim" olanlarının toplamı (AsilPOS'un tesliminin panele girilmiş kısmı; asilposHandedGap) */
 export function teslimTotalOf(lines: { kind: CashOutKind; amount: number }[]): number {
   return cashOutsTotal(lines.filter((l) => l.kind === "teslim"));
 }
@@ -70,7 +70,7 @@ export function teslimTotalOf(lines: { kind: CashOutKind; amount: number }[]): n
 /**
  * Raporun "Gün içinde kasadan çıkan" tutarı satırların toplamından 1 ₺'den fazla azsa uyarı (engellemez: fişin parası
  * kasadan çıkmamış olabilir). Fazlası burada uyarılmaz (fişsiz çıkan para da olur): personel neye çıktığını yazar
- * (cashOutNoteMissing), yöneticiye "Fişsiz çıkış" işaretlenir (src/lib/lafpos/prefill.ts unreceiptedCashOut).
+ * (cashOutNoteMissing), yöneticiye "Fişsiz çıkış" işaretlenir (src/lib/asilpos/prefill.ts unreceiptedCashOut).
  */
 export function cashOutCheck(cashOut: number, lines: number[]): string | null {
   if (!lines.length) return null;
@@ -152,19 +152,19 @@ export function cashOutWritesExpense(o: {
    */
   awaitingInvoice?: boolean;
   /**
-   * Satır kategorisini bekleyen LafPOS harcaması (Faz 3; src/lib/lafpos/cash-moves.ts lafposAwaitingCategory: LafPOS'un
-   * açtığı, kaydı olmayan, LafPOS'un personelin kategorisiyle göndermediği harcama). Sunucu saklı gövdeden bilir, pencereye
+   * Satır kategorisini bekleyen AsilPOS harcaması (Faz 3; src/lib/asilpos/cash-moves.ts asilposAwaitingCategory: AsilPOS'un
+   * açtığı, kaydı olmayan, AsilPOS'un personelin kategorisiyle göndermediği harcama). Sunucu saklı gövdeden bilir, pencereye
    * satırla gelir. Personelin düzeltmesi yeni satırın kuralıyla: kategori seçilince kayıt açılır. Kaydı yöneticinin
-   * kaldırdığı LafPOS satırında ve sahiplenilen elle girilmiş satırda verilmez: kayıt geri gelmez (inceleme LM-3)
+   * kaldırdığı AsilPOS satırında ve sahiplenilen elle girilmiş satırda verilmez: kayıt geri gelmez (inceleme LM-3)
    */
-  lafposAwaitingCategory?: boolean;
+  asilposAwaitingCategory?: boolean;
 }): boolean {
   if (o.kind !== "harcama") return false;
   if (o.admin || o.mode === "restore") return o.requested;
   if (o.mode === "edit") {
     const leftInvoice = o.prevDocType != null && isInvoiceDoc(o.prevDocType) && staffToExpenses(o.kind, o.docType) && o.awaitingInvoice !== false;
-    const lafposCategory = o.lafposAwaitingCategory === true && staffToExpenses(o.kind, o.docType);
-    return o.hasExpense || leftInvoice || lafposCategory;
+    const asilposCategory = o.asilposAwaitingCategory === true && staffToExpenses(o.kind, o.docType);
+    return o.hasExpense || leftInvoice || asilposCategory;
   }
   return staffToExpenses(o.kind, o.docType);
 }
@@ -279,10 +279,10 @@ export const STAFF_CASH_OUT_FIELDS = [
   "expenseEntryId",
   "categoryId",
   "categoryName",
-  // Faz 3: satır LafPOS'un kasa hareketinden geldi (kimlik ULID; kişisel değil): tutar, tür ve gün kilitli
-  "lafposId",
-  // Faz 3: LafPOS'un kategorisiz yazdığı harcama, kategori seçilince Aylık harcamalar'a yazılır (yalnız işaret)
-  "lafposAwaitingCategory",
+  // Faz 3: satır AsilPOS'un kasa hareketinden geldi (kimlik ULID; kişisel değil): tutar, tür ve gün kilitli
+  "asilposId",
+  // Faz 3: AsilPOS'un kategorisiz yazdığı harcama, kategori seçilince Aylık harcamalar'a yazılır (yalnız işaret)
+  "asilposAwaitingCategory",
 ] as const;
 
 export type StaffCashOutField = (typeof STAFF_CASH_OUT_FIELDS)[number];

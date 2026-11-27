@@ -211,7 +211,7 @@ test("sabah e-postası › kontrol kutusu şube şube: kapalı şubenin açılma
   assert.deepEqual(names(closedDayDigestLists(solo, marks([], kutuk("2026-11-20")), new Set())), ["Tuzla açılış", "Kapanış"], "kapalı değilse hepsi");
 });
 
-test("kaynak: zil, sabah e-postası ve LafPOS kanıtı şubesiz okumaz", () => {
+test("kaynak: zil, sabah e-postası ve AsilPOS kanıtı şubesiz okumaz", () => {
   // Zil ve e-posta kapalı günü şube şube okur (önceden şubesiz isClosedDay: herhangi bir şubenin işareti)
   const bell = read("src/server/actions/notifications.ts");
   assert.doesNotMatch(bell, /isClosedDay\(/);
@@ -223,16 +223,16 @@ test("kaynak: zil, sabah e-postası ve LafPOS kanıtı şubesiz okumaz", () => {
   assert.match(data, /closedDayDigestLists\(lists, marks, new Set\(reports\.map\(\(r\) => r\.branchId\)\)\)/);
   // Listenin şubesi günün listesiyle gelir
   assert.match(read("src/server/checklists/store.ts"), /run: summary,\n {4}branchId: t\.branchId,/);
-  // LafPOS'un gün sonu kanıtı: şube verilmezse LafPOS'un şubesininki (günün herhangi bir satırı değil)
+  // AsilPOS'un gün sonu kanıtı: şube verilmezse AsilPOS'un şubesininki (günün herhangi bir satırı değil)
   const closed = read("src/server/closed-days.ts");
-  const ev = closed.slice(closed.indexOf("async function lafposEvidence"), closed.indexOf("/** İş gününün penceresi"));
-  assert.match(ev, /const branch = branchId \?\? lafposBranch;/);
-  assert.match(ev, /lafposBranchId\(db\)/, "LafPOS'un şubesi kütükten (lafposBranchId)");
+  const ev = closed.slice(closed.indexOf("async function asilposEvidence"), closed.indexOf("/** İş gününün penceresi"));
+  assert.match(ev, /const branch = branchId \?\? asilposBranch;/);
+  assert.match(ev, /asilposBranchId\(db\)/, "AsilPOS'un şubesi kütükten (asilposBranchId)");
   assert.match(ev, /\.where\(and\(eq\(s\.posDayReports\.date, date\), eq\(s\.posDayReports\.branchId, branch\)\)\)/);
-  assert.match(ev, /branchSwitchDay\(switchDay, branch, lafposBranch\)/);
-  assert.match(ev, /lafposSwitchDay\(db\)/, "geçiş günü LafPOS'un şubesinin şube ayarından");
-  const saved = closed.slice(closed.indexOf("export async function onLafposDaySaved"), closed.indexOf("export async function onNextReport"));
-  assert.match(saved, /branchSwitchDay\(switchDay, branchId, lafposBranch\)/);
+  assert.match(ev, /branchSwitchDay\(switchDay, branch, asilposBranch\)/);
+  assert.match(ev, /asilposSwitchDay\(db\)/, "geçiş günü AsilPOS'un şubesinin şube ayarından");
+  const saved = closed.slice(closed.indexOf("export async function onAsilposDaySaved"), closed.indexOf("export async function onNextReport"));
+  assert.match(saved, /branchSwitchDay\(switchDay, branchId, asilposBranch\)/);
 });
 
 // ---------------------------------------------------------------- Personelin özel günleri

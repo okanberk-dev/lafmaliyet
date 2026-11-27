@@ -15,10 +15,10 @@ import type { BranchSettingView } from "@/server/branch-settings-view";
 /**
  * Şube ayarları › Banka POS ve yazarkasa (şube ayarı kasa.cihaz; docs/SUBE.md › Şube başına ayarlar): cihaz şubenin
  * kendisinin, "Diğer şubeyle aynı" yok. Kasa raporu e-postasının yazarkasa başlığı ("Pavo · sicil AB123"), akşam
- * hatırlatmasının "gün sonu fişi" metni ve LafPOS cihazı henüz göndermediyse fotoğraf okuması bunu kullanır. Boşken her
+ * hatırlatmasının "gün sonu fişi" metni ve AsilPOS cihazı henüz göndermediyse fotoğraf okuması bunu kullanır. Boşken her
  * şey bugünkü gibi.
  */
-export function TillDeviceCard({ view, lafpos }: { view: BranchSettingView<TillDeviceSetting>; lafpos: boolean }) {
+export function TillDeviceCard({ view, asilpos }: { view: BranchSettingView<TillDeviceSetting>; asilpos: boolean }) {
   const [device, setDevice] = useState<TillDevice | "">(view.value.device ?? "");
   const [registerNo, setRegisterNo] = useState(view.value.registerNo ?? "");
   const [bank, setBank] = useState(view.value.bank ?? "");
@@ -43,7 +43,7 @@ export function TillDeviceCard({ view, lafpos }: { view: BranchSettingView<TillD
           <Field
             label="Cihaz"
             htmlFor="cihaz-tur"
-            hint={lafpos ? "Boşsa LafPOS'un gönderdiği cihaz (gelmediyse Pavo)" : "Kasa raporu e-postasının yazarkasa başlığında görünür"}
+            hint={asilpos ? "Boşsa AsilPOS'un gönderdiği cihaz (gelmediyse Pavo)" : "Kasa raporu e-postasının yazarkasa başlığında görünür"}
           >
             <Select id="cihaz-tur" value={device} onChange={(e) => setDevice(e.target.value as TillDevice | "")} className="pointer-coarse:h-12">
               <option value="">Belirtilmedi</option>

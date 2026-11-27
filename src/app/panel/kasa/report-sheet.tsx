@@ -8,7 +8,7 @@ import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
 import { reportChecks } from "@/lib/cash-report-checks";
 import { computeCash, diffKind, diffText, paymentLines, withCardExtra, zSectionTitle, type CarryCheck, type CashOffDevice, type CashReportFields, type CashRevisionRow } from "@/lib/cash-report";
 import { money } from "@/lib/format";
-import type { LafposDiff } from "@/lib/lafpos/diffs";
+import type { AsilposDiff } from "@/lib/asilpos/diffs";
 import type { ModposDiff } from "@/lib/modpos/compare";
 import type { PhotoDiff } from "@/lib/photo-read/kasa";
 import { handedOverLine } from "@/lib/teslim";
@@ -34,7 +34,7 @@ export function ReportSheet({
   carry = null,
   next = null,
   modposDiffs = null,
-  lafposDiffs = null,
+  asilposDiffs = null,
   photos = [],
   photoDiffs = [],
   emailError = null,
@@ -44,15 +44,15 @@ export function ReportSheet({
   unreceipted = null,
 }: {
   report: CashReportFields & { handedToName?: string | null; revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string };
-  kasa?: "ModPOS" | "LafPOS";
+  kasa?: "ModPOS" | "AsilPOS";
   cardExtra?: number | null;
-  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
+  /** AsilPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
   offDevice?: CashOffDevice | null;
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
   carry?: CarryCheck | null;
   next?: CarryCheck | null;
   modposDiffs?: readonly ModposDiff[] | null;
-  lafposDiffs?: readonly LafposDiff[] | null;
+  asilposDiffs?: readonly AsilposDiff[] | null;
   photos?: CashPhotoDTO[];
   photoDiffs?: PhotoDiff[];
   emailError?: string | null;
@@ -65,7 +65,7 @@ export function ReportSheet({
   const f = withCardExtra(report, cardExtra, offDevice, kasa);
   const c = computeCash(f);
   const kind = diffKind(report.cashDiff);
-  const checks = reportChecks({ report, cardExtra, offDevice, kasa, carry, next, modposDiffs, lafposDiffs, photoDiffs, emailError, unreceipted });
+  const checks = reportChecks({ report, cardExtra, offDevice, kasa, carry, next, modposDiffs, asilposDiffs, photoDiffs, emailError, unreceipted });
   const zMeta = [report.zNo ? `Z no ${report.zNo}` : null, report.receipts ? `${report.receipts} fiş` : null].filter(Boolean).join(" · ");
   const card = <CardDetail report={f} audience="admin" okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} offDevice={offDevice} />;
   const edits = Math.max(0, report.revision - 1);

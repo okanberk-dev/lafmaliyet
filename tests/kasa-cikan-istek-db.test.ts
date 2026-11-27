@@ -640,7 +640,7 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
       await refused(write.assertOwnerRowOpen(tx, mudur, salary), CASH_OUT_REQUEST_TEXT.ownerRow);
       await write.assertOwnerRowOpen(tx, mudur, plain);
       await write.assertOwnerRowOpen(tx, users.ali, salary);
-      await write.assertOwnerRowOpen(tx, { id: 0, name: "LafPOS", role: "admin" }, salary);
+      await write.assertOwnerRowOpen(tx, { id: 0, name: "AsilPOS", role: "admin" }, salary);
     });
     // Doğrudan kayıt: yeni satır yöneticinin kategorisine yazılmaz; geri alma silinen kaydın kategorisini getirir
     const direct = (restore: boolean) =>

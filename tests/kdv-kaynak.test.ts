@@ -1,5 +1,5 @@
 // KDV tahmininin kasa KDV'si gün gün kaynağından (Dalga 2, 26 Kasım 2026; docs/NAKIT-PLANI.md › KDV tahmini › Kasa
-// KDV'sinin kaynağı): kasa raporunda yazarkasa Z'sinin KDV'si girilmiş gün Z'den, LafPOS'un dökümü olan gün LafPOS'tan,
+// KDV'sinin kaynağı): kasa raporunda yazarkasa Z'sinin KDV'si girilmiş gün Z'den, AsilPOS'un dökümü olan gün AsilPOS'tan,
 // kalanı oranla; kaynak ekranda yazar ("12 gün yazarkasa Z'sinden, 3 gün tahmin"). Gelir-gider'in KDV hariç cirosu
 // değişmez. Çalıştırma: npx tsx --test tests/kdv-kaynak.test.ts
 
@@ -19,7 +19,7 @@ const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const close = (a: number | null | undefined, b: number, msg: string, eps = 0.005) => assert.ok(a != null && Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 
-/** Kasım'ın on günü (tests/lafpos-gun-alanlari.test.ts ile aynı günler): gün, ciro; ödeme dökümü ciroyu tutar */
+/** Kasım'ın on günü (tests/asilpos-gun-alanlari.test.ts ile aynı günler): gün, ciro; ödeme dökümü ciroyu tutar */
 const DAYS: [string, number][] = [
   ["2026-11-13", 390],
   ["2026-11-14", 3311],
@@ -34,7 +34,7 @@ const DAYS: [string, number][] = [
 ];
 const REVENUE = 33_633.75;
 
-/** Günün satırı; `extra` ile yazarkasa Z'si ya da LafPOS dökümü */
+/** Günün satırı; `extra` ile yazarkasa Z'si ya da AsilPOS dökümü */
 const rowsOf = (branchId: string, extra: Record<string, Partial<TillRow>> = {}): TillRow[] =>
   DAYS.map(([date, z]) => ({ date, zTotal: z, card: z, mealCard: 0, discounts: 0, offRevenue: 0, payments: z, branchId, ...extra[date] }));
 
@@ -44,7 +44,7 @@ function novemberModel(rows: TillRow[], switchDay: string | null, typed?: { posR
   const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, switchDay);
   const stored = typed ? { month: "2026-11", discounts: null, offRevenue: null, cardShare: null, note: null, ...typed } : undefined;
   const nov = resolveMonth("2026-11", stored, till);
-  const ds: Dataset = { ...base, settings: { ...base.settings, lafposGecisGunu: switchDay }, salesLines: base.salesLines.filter((l) => l.month !== "2026-11"), months: [...base.months.filter((m) => m.month !== "2026-11"), nov] };
+  const ds: Dataset = { ...base, settings: { ...base.settings, asilposGecisGunu: switchDay }, salesLines: base.salesLines.filter((l) => l.month !== "2026-11"), months: [...base.months.filter((m) => m.month !== "2026-11"), nov] };
   return { model: createModel(ds), till };
 }
 
@@ -69,7 +69,7 @@ test("vatDaysOf: Z'li gün Z'den (kapsanan kısım ciroyla sınırlı), akla yat
     "2026-11-14": { okc: { total: 3311, vat: 900 } },
   });
   const d = vatDaysOf([...rows, { date: "2026-11-23", zTotal: 0, card: 0, mealCard: 0, discounts: 0, offRevenue: 0, payments: 0, branchId: "tuzla", okc: { total: 10, vat: 1 } }]);
-  assert.deepEqual(d, { z: { days: 3, revenue: 7680.5, covered: 7060, vat: 699.09 }, lafpos: 0, estimate: 7 });
+  assert.deepEqual(d, { z: { days: 3, revenue: 7680.5, covered: 7060, vat: 699.09 }, asilpos: 0, estimate: 7 });
 });
 
 test("KDV tahmini: Z'si girilmiş günlerin KDV'si Z'den, kalanı oranla; kaynak yazar; Gelir-gider'in cirosu değişmez", () => {
@@ -88,35 +88,35 @@ test("KDV tahmini: Z'si girilmiş günlerin KDV'si Z'den, kalanı oranla; kaynak
   // Yazarkasadan geçen 7.060 ₺'nin oranlı tahmini (÷ 11) çıkar, Z'lerin KDV'si (699,09) girer
   assert.equal(after.vat, r2(REVENUE / 11 - 7060 / 11 + 699.09));
   assert.equal(after.vat, 3114.89);
-  assert.deepEqual(after.source, { z: 3, lafpos: 0, estimate: 7 });
+  assert.deepEqual(after.source, { z: 3, asilpos: 0, estimate: 7 });
   assert.deepEqual(withZ.model.posNet("2026-11"), plain.model.posNet("2026-11"), "Gelir-gider'in KDV hariç cirosu aynı");
   const est = (m: ReturnType<typeof createModel>) => {
     const inp = vatMonthInputs(m, "2026-12-10");
     return vatEstimates({ today: "2026-12-10", months: inp.months, firstSalesMonth: inp.firstSalesMonth, anchor: null, known: new Map(), periods: ["2026-11"], hasSite: false }).get("2026-11")!;
   };
   const e = est(withZ.model);
-  assert.deepEqual(e.basis.posSource, { z: 3, lafpos: 0, estimate: 7 });
+  assert.deepEqual(e.basis.posSource, { z: 3, asilpos: 0, estimate: 7 });
   assert.equal(e.pos, 3100, "100'e yuvarlı");
   assert.match(vatLineDetail(e), /Kasa KDV'si: 3 gün yazarkasa Z'sinden, 7 gün tahmin\./);
   assert.equal(est(plain.model).basis.posSource, undefined);
   assert.doesNotMatch(vatLineDetail(est(plain.model)), /Kasa KDV'si/);
 });
 
-test("KDV tahmini: LafPOS'un dökümü olan gün LafPOS'tan kalır (Z'si girilmiş olsa da), öteki Z'li gün Z'den", () => {
+test("KDV tahmini: AsilPOS'un dökümü olan gün AsilPOS'tan kalır (Z'si girilmiş olsa da), öteki Z'li gün Z'den", () => {
   const laf = { vat: [{ rate: 10, base: 5713.64, vat: 571.36 }], okc: { total: 6285, vat: 600 } };
   const only = novemberModel(rowsOf("marina", { "2026-11-22": laf }), "2026-11-22");
-  assert.deepEqual(only.till.vatDays, { z: { days: 0, revenue: 0, covered: 0, vat: 0 }, lafpos: 1, estimate: 9 });
+  assert.deepEqual(only.till.vatDays, { z: { days: 0, revenue: 0, covered: 0, vat: 0 }, asilpos: 1, estimate: 9 });
   const base = only.model.posNet("2026-11")!;
   assert.equal(base.byDay, true);
-  assert.equal(novInput(only.model).pos!.vat, base.vat, "yalnız LafPOS dökümü: KDV değişmez");
-  assert.deepEqual(novInput(only.model).pos!.source, { z: 0, lafpos: 1, estimate: 9 });
+  assert.equal(novInput(only.model).pos!.vat, base.vat, "yalnız AsilPOS dökümü: KDV değişmez");
+  assert.deepEqual(novInput(only.model).pos!.source, { z: 0, asilpos: 1, estimate: 9 });
   const both = novemberModel(rowsOf("marina", { "2026-11-22": laf, "2026-11-13": { okc: { total: 390, vat: 40 } } }), "2026-11-22");
   const pos = novInput(both.model).pos!;
-  // LafPOS dışı cironun etkin oranı: (KDV − LafPOS'un KDV'si) ÷ (ciro − LafPOS'un cirosu); 390 ₺'nin tahmini çıkar, 40 ₺ girer
+  // AsilPOS dışı cironun etkin oranı: (KDV − AsilPOS'un KDV'si) ÷ (ciro − AsilPOS'un cirosu); 390 ₺'nin tahmini çıkar, 40 ₺ girer
   const rate = (base.vat - 571.36) / (REVENUE - 6285);
   assert.equal(pos.vat, r2(base.vat - 390 * rate + 40));
-  assert.deepEqual(pos.source, { z: 1, lafpos: 1, estimate: 8 });
-  assert.equal(vatSourceText(pos.source), "1 gün yazarkasa Z'sinden, 1 gün LafPOS'un KDV dökümünden, 8 gün tahmin");
+  assert.deepEqual(pos.source, { z: 1, asilpos: 1, estimate: 8 });
+  assert.equal(vatSourceText(pos.source), "1 gün yazarkasa Z'sinden, 1 gün AsilPOS'un KDV dökümünden, 8 gün tahmin");
 });
 
 test("KDV tahmini: elle yazılan ciroda kasa günleri ayın tamamı olmayabilir, Z'ye bakılmaz", () => {
@@ -127,15 +127,15 @@ test("KDV tahmini: elle yazılan ciroda kasa günleri ayın tamamı olmayabilir,
 });
 
 test("posVatByDays ve vatSourceText: kaynak yoksa null; bütün günler Z'liyse KDV Z'lerin toplamı", () => {
-  assert.deepEqual(posVatByDays({ revenue: 1100, vat: 100, lafposKnown: null, days: undefined }), { vat: 100, source: null });
-  assert.deepEqual(posVatByDays({ revenue: 1100, vat: 100, lafposKnown: null, days: { z: { days: 0, revenue: 0, covered: 0, vat: 0 }, lafpos: 0, estimate: 4 } }), { vat: 100, source: null });
-  assert.deepEqual(posVatByDays({ revenue: 1100, vat: 100, lafposKnown: null, days: { z: { days: 2, revenue: 1100, covered: 1100, vat: 131.5 }, lafpos: 0, estimate: 0 } }), {
+  assert.deepEqual(posVatByDays({ revenue: 1100, vat: 100, asilposKnown: null, days: undefined }), { vat: 100, source: null });
+  assert.deepEqual(posVatByDays({ revenue: 1100, vat: 100, asilposKnown: null, days: { z: { days: 0, revenue: 0, covered: 0, vat: 0 }, asilpos: 0, estimate: 4 } }), { vat: 100, source: null });
+  assert.deepEqual(posVatByDays({ revenue: 1100, vat: 100, asilposKnown: null, days: { z: { days: 2, revenue: 1100, covered: 1100, vat: 131.5 }, asilpos: 0, estimate: 0 } }), {
     vat: 131.5,
-    source: { z: 2, lafpos: 0, estimate: 0 },
+    source: { z: 2, asilpos: 0, estimate: 0 },
   });
-  assert.equal(vatSourceText({ z: 12, lafpos: 0, estimate: 3 }), "12 gün yazarkasa Z'sinden, 3 gün tahmin");
-  assert.equal(vatSourceText({ z: 30, lafpos: 0, estimate: 0 }), "30 gün yazarkasa Z'sinden");
-  assert.equal(vatSourceText({ z: 0, lafpos: 0, estimate: 30 }), null);
+  assert.equal(vatSourceText({ z: 12, asilpos: 0, estimate: 3 }), "12 gün yazarkasa Z'sinden, 3 gün tahmin");
+  assert.equal(vatSourceText({ z: 30, asilpos: 0, estimate: 0 }), "30 gün yazarkasa Z'sinden");
+  assert.equal(vatSourceText({ z: 0, asilpos: 0, estimate: 30 }), null);
   assert.equal(vatSourceText(null), null);
   // Kaynak ekranda: kapalı satırda ve dökümde
   const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");

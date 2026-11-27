@@ -19,7 +19,7 @@
  *
  * Döküm tutmayan gün için uydurmak yerine bugünkü değer bırakılır: o gün zaten "ödemelerin toplamı ciroyu tutmuyor"
  * uyarısı verir (src/lib/cash-report-checks.ts, src/lib/modpos/ayarlar.ts modposDayWarnings) ve düzeltilmesi istenir.
- * Kural üç kaynağın hepsinde aynı çalışır: elle girilen kasa raporu, LafPOS gün sonu ve ModPOS kasa föyü.
+ * Kural üç kaynağın hepsinde aynı çalışır: elle girilen kasa raporu, AsilPOS gün sonu ve ModPOS kasa föyü.
  *
  * Ayrıntı: docs/KASA-RAPORU.md › Ciro ve ödenmez, docs/MODPOS-API.md › Eşleme.
  */

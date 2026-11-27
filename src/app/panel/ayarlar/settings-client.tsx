@@ -66,8 +66,8 @@ const sectionOf = (key: NumericKey) => (RATE_FIELDS.some((f) => f.key === key) ?
 
 // ---------------------------------------------------------------- Hesap ayarları
 
-/** Bu formun kaydettiği ayarlar (stok değerleme başlangıcı ve LafPOS'a geçiş günü kendi kartlarında: stock-valuation.tsx, lafpos-card.tsx) */
-type FormKey = Exclude<keyof Settings, "stokFifoBaslangic" | "lafposGecisGunu">;
+/** Bu formun kaydettiği ayarlar (stok değerleme başlangıcı ve AsilPOS'a geçiş günü kendi kartlarında: stock-valuation.tsx, asilpos-card.tsx) */
+type FormKey = Exclude<keyof Settings, "stokFifoBaslangic" | "asilposGecisGunu">;
 type Out = Partial<Record<FormKey, number | boolean | null>>;
 type SettingsInput = Parameters<typeof saveSettings>[0];
 

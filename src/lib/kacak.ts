@@ -1,11 +1,11 @@
 // Marina ay sonu kaçak raporu (Raporlar › Kaçak raporu; docs/RAPORLAR.md): ayın son günündeki tahmini stok
-// (src/lib/stock-estimate.ts; önceki sayım + Marina'ya gelen faturalı alış − LafPOS satışının reçeteye göre tüketimi ×
+// (src/lib/stock-estimate.ts; önceki sayım + Marina'ya gelen faturalı alış − AsilPOS satışının reçeteye göre tüketimi ×
 // (1 + genel fire) − zayi ve ikram) ile ayın sayımı arasındaki fark, malzemenin ay sonu birim maliyetiyle TL. Saf;
 // yükleyici src/server/data/kacak.ts, testi tests/kacak.test.ts.
 //
 // Fark = sayılan − tahmini: eksi kaçaktır (rafta olması gerekenden az), artı fazla (çoğu kez Marina'ya işaretlenmemiş
 // fatura ya da sayılmayan devir). Genel fire tahminin içinde: kaçak, olağan firenin üstündeki kayıptır. Tahmini olmayan
-// (sayım yok, LafPOS öncesi) ve bu ay sayılmayan malzeme rapora girmez, sayısı yazılır; fiyatı olmayan malzemenin farkı
+// (sayım yok, AsilPOS öncesi) ve bu ay sayılmayan malzeme rapora girmez, sayısı yazılır; fiyatı olmayan malzemenin farkı
 // miktarla yazılır, TL toplamına girmez.
 
 import type { StockEstimate, StockEstimateLine } from "./stock-estimate";
@@ -53,7 +53,7 @@ export interface LeakReport {
   leakTotal: number;
   surplusTotal: number;
   net: number;
-  /** Rapora girmeyenler: bu ay sayılmayan (tahmini var), tahmini olmayan (sayım yok / LafPOS öncesi) ve fiyatı olmayan */
+  /** Rapora girmeyenler: bu ay sayılmayan (tahmini var), tahmini olmayan (sayım yok / AsilPOS öncesi) ve fiyatı olmayan */
   notCounted: number;
   noEstimate: number;
   unpriced: string[];

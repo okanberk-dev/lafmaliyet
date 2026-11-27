@@ -8,7 +8,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 /**
- * Ürünün geçmişi (silme engeli, src/lib/product-delete.ts): ModPOS satış satırı, LafPOS'un günlük satış satırı, zayi /
+ * Ürünün geçmişi (silme engeli, src/lib/product-delete.ts): ModPOS satış satırı, AsilPOS'un günlük satış satırı, zayi /
  * ikram, ilk kayıt dışındaki fiyat değişiklikleri ve bağlı olduğu site kaleminin online satışı olan aylar
  */
 export async function productHistoryCounts(p: { id: number; siteMenuId: string | null; siteMenuSlot: "M" | "L" | null }): Promise<ProductHistoryCounts> {
@@ -27,7 +27,7 @@ export async function productHistoryCounts(p: { id: number; siteMenuId: string |
 
 /**
  * Ürüne bağlı ModPOS satış satırı (sales_lines; sayılmayan aydaki liste dahil). Ürün kartı da bunu okur: aylık modelin
- * satırları LafPOS'a geçilen ayların listesini içermez, kart ile eylem ayrı sayardı (denetim B08 incelemesi)
+ * satırları AsilPOS'a geçilen ayların listesini içermez, kart ile eylem ayrı sayardı (denetim B08 incelemesi)
  */
 export async function salesLinesCount(productId: number, db: DB = getDb()): Promise<number> {
   // ŞUBEYE GÖRE SÜZÜLMEZ: bu bir görünüm değil, silme güvenliği. Marina'ya bakarken Tuzla'da satılmış ürün
@@ -36,7 +36,7 @@ export async function salesLinesCount(productId: number, db: DB = getDb()): Prom
   return r?.n ?? 0;
 }
 
-/** Ürüne bağlı LafPOS günlük satış satırı (pos_daily_sales; silinirse bağı sessizce kopardı: FK "set null") */
+/** Ürüne bağlı AsilPOS günlük satış satırı (pos_daily_sales; silinirse bağı sessizce kopardı: FK "set null") */
 export async function posDailySalesCount(productId: number, db: DB = getDb()): Promise<number> {
   const [r] = await db.select({ n: count() }).from(s.posDailySales).where(eq(s.posDailySales.productId, productId));
   return r?.n ?? 0;

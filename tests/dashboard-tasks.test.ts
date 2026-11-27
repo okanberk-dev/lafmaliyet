@@ -12,7 +12,7 @@ import { dashboard } from "../src/lib/calc/insights";
 import type { Dataset, PnlEntry } from "../src/lib/calc/types";
 import type { UpcomingItem } from "../src/lib/reminders";
 import { money } from "../src/lib/format";
-import { lafposMonthStatus } from "../src/lib/lafpos/sales";
+import { asilposMonthStatus } from "../src/lib/asilpos/sales";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import {
   defaultTaskMonth,
@@ -239,47 +239,47 @@ test("Ay sonu stok sayımı: tek satır kaydedilmiş ay 'Tamam' değil, yarım '
   assert.equal(monthTasks({ ...base, stock: { lines: 2, total: 50, counted: 0, listed: 72 } }).find((t) => t.key === "sayim")!.status, "todo");
 });
 
-test("LafPOS'a geçilen ay: Satışlar bandının uyarısı Genel bakış'ta da; eksik gün varken satış raporu 'Tamam' değil (denetim B08 incelemesi)", () => {
-  // Geçiş günü 15 Ekim, Ekim'e ModPOS listesi yüklenmedi; LafPOS 15-26 Ekim, hepsi eşleşti
+test("AsilPOS'a geçilen ay: Satışlar bandının uyarısı Genel bakış'ta da; eksik gün varken satış raporu 'Tamam' değil (denetim B08 incelemesi)", () => {
+  // Geçiş günü 15 Ekim, Ekim'e ModPOS listesi yüklenmedi; AsilPOS 15-26 Ekim, hepsi eşleşti
   const S = "2026-10-15";
-  const st = lafposMonthStatus({ month: "2026-10", switchDay: S, today: "2026-10-27", modpos: null, lafpos: { days: 12, last: "2026-10-26" } })!;
+  const st = asilposMonthStatus({ month: "2026-10", switchDay: S, today: "2026-10-27", modpos: null, asilpos: { days: 12, last: "2026-10-26" } })!;
   const latte = model.ds.products[0];
-  const lines = ds.salesLines.filter((l) => l.month !== "2026-10").concat([{ id: -1, month: "2026-10", posName: "LATTE", qty: 120, revenue: 24_000, productId: latte.id, isService: false, note: null, lafpos: { days: 12 } }]);
-  const m = createModel({ ...ds, salesLines: lines, lafposSales: { switchDay: S, countFrom: S, months: [st] } });
+  const lines = ds.salesLines.filter((l) => l.month !== "2026-10").concat([{ id: -1, month: "2026-10", posName: "LATTE", qty: 120, revenue: 24_000, productId: latte.id, isService: false, note: null, asilpos: { days: 12 } }]);
+  const m = createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: S, countFrom: S, months: [st] } });
   const facts = monthTaskFacts(m, "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null });
-  assert.deepEqual(facts.sales.lafpos && [facts.sales.lafpos.source, facts.sales.lafpos.days], ["gecis", 12]);
+  assert.deepEqual(facts.sales.asilpos && [facts.sales.asilpos.source, facts.sales.asilpos.days], ["gecis", 12]);
   const satis = monthTasks(facts).find((t) => t.key === "satis")!;
   assert.equal(satis.status, "warn");
-  assert.equal(satis.detail.replace(/\u00a0/g, " ").replace(/\u2060/g, ""), "1–14 Ekim ModPOS satışı yüklenmedi: LafPOS 15 Ekim'den itibaren sayılıyor. 1–14 Ekim listesini yükleyin.");
+  assert.equal(satis.detail.replace(/\u00a0/g, " ").replace(/\u2060/g, ""), "1–14 Ekim ModPOS satışı yüklenmedi: AsilPOS 15 Ekim'den itibaren sayılıyor. 1–14 Ekim listesini yükleyin.");
   assert.equal(satis.href, "/panel/satislar?ay=2026-10");
   assert.equal(taskSummary(monthTasks(facts)).allDone, false);
-  // LafPOS'un gün sonu gelmemiş raporlu günü (ayın tamamı LafPOS): uyarı
-  const full = lafposMonthStatus({
+  // AsilPOS'un gün sonu gelmemiş raporlu günü (ayın tamamı AsilPOS): uyarı
+  const full = asilposMonthStatus({
     month: "2026-10",
     switchDay: "2026-10-01",
     today: "2026-10-27",
     modpos: null,
-    lafpos: { days: 17, last: "2026-10-26" },
+    asilpos: { days: 17, last: "2026-10-26" },
     kasaDays: ["2026-10-01", "2026-10-02", "2026-10-10", "2026-10-27"],
-    lafposDates: ["2026-10-10"],
+    asilposDates: ["2026-10-10"],
   })!;
   assert.deepEqual(full.missing, ["2026-10-01", "2026-10-02"], "bugünün raporu gün sonundan önce girilmiş olabilir");
-  const fm = createModel({ ...ds, salesLines: lines, lafposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", months: [full] } });
+  const fm = createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", months: [full] } });
   const fullTask = monthTasks(monthTaskFacts(fm, "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null })).find((t) => t.key === "satis")!;
   assert.equal(fullTask.status, "warn");
-  assert.match(fullTask.detail, /^2 günün LafPOS gün sonu gelmedi, kasa raporu var: 1, 2 Ekim\. Bu günlerin satışı hesapta yok; LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın\.$/);
-  // Sorunsuz LafPOS ayı: tamam, metin listeden değil LafPOS'tan söz eder; satırsız süren ay "Patron listesi" demez
-  const clean = lafposMonthStatus({ month: "2026-10", switchDay: "2026-10-01", today: "2026-10-27", modpos: null, lafpos: { days: 26, last: "2026-10-26" } })!;
-  const base: MonthTaskFacts = monthTaskFacts(createModel({ ...ds, salesLines: lines, lafposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", months: [clean] } }), "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null });
+  assert.match(fullTask.detail, /^2 günün AsilPOS gün sonu gelmedi, kasa raporu var: 1, 2 Ekim\. Bu günlerin satışı hesapta yok; AsilPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın\.$/);
+  // Sorunsuz AsilPOS ayı: tamam, metin listeden değil AsilPOS'tan söz eder; satırsız süren ay "Patron listesi" demez
+  const clean = asilposMonthStatus({ month: "2026-10", switchDay: "2026-10-01", today: "2026-10-27", modpos: null, asilpos: { days: 26, last: "2026-10-26" } })!;
+  const base: MonthTaskFacts = monthTaskFacts(createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", months: [clean] } }), "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null });
   const ok = monthTasks(base).find((t) => t.key === "satis")!;
   assert.equal(ok.status, "done");
-  assert.equal(ok.detail, "LafPOS'tan 26 gün geldi (1 satır), hepsi reçeteyle eşleşti.");
+  assert.equal(ok.detail, "AsilPOS'tan 26 gün geldi (1 satır), hepsi reçeteyle eşleşti.");
   const empty = monthTasks({ ...base, state: "running", sales: { ...base.sales, lines: 0 } }).find((t) => t.key === "satis")!;
-  assert.deepEqual([empty.status, empty.detail], ["later", "Satışlar her gün sonunda LafPOS'tan gelir; bu ay henüz sayılan gün sonu yok."]);
+  assert.deepEqual([empty.status, empty.detail], ["later", "Satışlar her gün sonunda AsilPOS'tan gelir; bu ay henüz sayılan gün sonu yok."]);
   const closedEmpty = monthTasks({ ...base, sales: { ...base.sales, lines: 0 } }).find((t) => t.key === "satis")!;
-  assert.deepEqual([closedEmpty.status, closedEmpty.href], ["todo", "/panel/ayarlar#lafpos"]);
+  assert.deepEqual([closedEmpty.status, closedEmpty.href], ["todo", "/panel/ayarlar#asilpos"]);
   // Geçiş günü yokken alan yok, metinler bugünkü gibi
-  assert.equal("lafpos" in monthTaskFacts(model, "2026-09", "closed", null, { payments: NO_PAYMENTS, parasut: null }).sales, false);
+  assert.equal("asilpos" in monthTaskFacts(model, "2026-09", "closed", null, { payments: NO_PAYMENTS, parasut: null }).sales, false);
 });
 
 // ---------------------------------------------------------------- "Bu ay düşülen sabit gider" kutusu (dashboard-fixed.tsx)

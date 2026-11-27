@@ -3,8 +3,8 @@
  * FOTO_EVAL=1 ve ANTHROPIC_API_KEY verilince çalışır. Canlıdaki istekle aynı yol (runExtraction) ve aynı denetimler
  * (src/lib/photo-read); veritabanına dokunmaz. Görseller: python3 scripts/foto-eval/make-images.py (→ .data/foto-eval/),
  * beklenenler cases.json'da. İstem, şema, küçültme ayarı ya da model değişince çalıştırın. Yazarkasa bölümü (`kasa-okc`)
- * güçlü istemle (OKC_TASK) okunur; `"task": "kisa"` LafPOS gününün ucuz okumasının istemini (OKC_SHORT_TASK, ucuz model)
- * dener; `lafposDevice` verilirse okuma LafPOS gününün metinleriyle (okcReadingOnLafposDay) denetlenir.
+ * güçlü istemle (OKC_TASK) okunur; `"task": "kisa"` AsilPOS gününün ucuz okumasının istemini (OKC_SHORT_TASK, ucuz model)
+ * dener; `asilposDevice` verilirse okuma AsilPOS gününün metinleriyle (okcReadingOnAsilposDay) denetlenir.
  *
  *   FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/foto-eval/run.ts [--max 4] [--only z-raporu]   # --max yoksa hepsi
  *   npx tsx scripts/foto-eval/run.ts --kayitli     # ağsız ve parasız: betiğin kendisini kayıtlı yanıtlarla sınar
@@ -20,7 +20,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { money } from "../../src/lib/format";
 import { normalizePos, normalizeZ, type CashReading, type ReadField } from "../../src/lib/photo-read/kasa";
 import { PHOTO_CHEAP_MODEL } from "../../src/lib/photo-read/models";
-import { normalizeOkc, okcPaperView, okcReadingOnLafposDay, type LafposOkcDevice } from "../../src/lib/photo-read/okc";
+import { normalizeOkc, okcPaperView, okcReadingOnAsilposDay, type AsilposOkcDevice } from "../../src/lib/photo-read/okc";
 import { OKC_SHORT_TASK, OKC_TASK, POS_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "../../src/lib/photo-read/prompts";
 import { normalizeReceipt, type ReceiptField, type ReceiptReading } from "../../src/lib/photo-read/receipt";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw, ReceiptRaw, type KasaOkc, type KasaPos, type KasaZ, type Receipt } from "../../src/lib/photo-read/schemas";
@@ -34,15 +34,15 @@ interface Case {
   feature: Exclude<AiFeature, "asistan">;
   day: string;
   prevZNo?: string | null;
-  /** Yazarkasa bölümü: "kisa" LafPOS gününün ucuz okuması (OKC_SHORT_TASK, ucuz model); yoksa OKC_TASK */
+  /** Yazarkasa bölümü: "kisa" AsilPOS gününün ucuz okuması (OKC_SHORT_TASK, ucuz model); yoksa OKC_TASK */
   task?: "kisa";
-  /** LafPOS günü: günün yazarkasa cihazı (Pavo ayrı mali Z basmaz); metinler okcReadingOnLafposDay ile */
-  lafposDevice?: LafposOkcDevice;
+  /** AsilPOS günü: günün yazarkasa cihazı (Pavo ayrı mali Z basmaz); metinler okcReadingOnAsilposDay ile */
+  asilposDevice?: AsilposOkcDevice;
   expect: {
     documentType?: string;
-    /** Kodun karşılaştırdığı belge türü (okcPaperView: LafPOS'un kâğıdı modelin kararından bağımsız banka fişi) */
+    /** Kodun karşılaştırdığı belge türü (okcPaperView: AsilPOS'un kâğıdı modelin kararından bağımsız banka fişi) */
     viewType?: string;
-    /** Forma yazılmaması gereken alanlar (LafPOS kâğıdının Z no'su ve NET CİRO'su: okcZNo, okcTotal) */
+    /** Forma yazılmaması gereken alanlar (AsilPOS kâğıdının Z no'su ve NET CİRO'su: okcZNo, okcTotal) */
     absent?: string[];
     /** Hiçbir uyarı ya da bilgi satırında geçmemesi gereken (ör. Pavo gününde "Z raporunu da çekin") */
     checksExclude?: string[];
@@ -101,7 +101,7 @@ type Reading = { kind: "cash"; r: CashReading } | { kind: "receipt"; r: ReceiptR
 function normalize(c: Case, raw: KasaZ | KasaPos | KasaOkc | Receipt): Reading {
   if (c.feature === "kasa-okc") {
     const r = normalizeOkc(raw as KasaOkc, { day: c.day, prev: { z: null } });
-    return { kind: "cash", r: c.lafposDevice ? okcReadingOnLafposDay(r, c.lafposDevice) : r };
+    return { kind: "cash", r: c.asilposDevice ? okcReadingOnAsilposDay(r, c.asilposDevice) : r };
   }
   if (c.feature === "kasa-z") return { kind: "cash", r: normalizeZ(raw as KasaZ, { day: c.day, prevZNo: c.prevZNo ?? null }) };
   if (c.feature === "kasa-pos") return { kind: "cash", r: normalizePos(raw as KasaPos, { day: c.day }) };

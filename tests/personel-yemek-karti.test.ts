@@ -61,7 +61,7 @@ test("§6: işveren maliyeti varsayılan ayarlarla: Arda 57.065, Cenk 52.909, De
 test("Ayarlar: günlük tutar ve gün değişince yemek kartı değişir; çalışılan gün kancası (LM-4b) günü geçersiz kılar", () => {
   const st: Settings = { ...DEFAULT_SETTINGS, mealCardDaily: 300, mealCardDays: 20 };
   close(staffCost(ARDA, st).mealCard, 6_000, "300 × 20");
-  close(staffCost(ARDA, DEFAULT_SETTINGS, { mealDays: 22 }).mealCard, 330 * 22, "kanca: LafPOS'un çalışılan günü");
+  close(staffCost(ARDA, DEFAULT_SETTINGS, { mealDays: 22 }).mealCard, 330 * 22, "kanca: AsilPOS'un çalışılan günü");
   // Kayıtta yoksa varsayılan; kayıt varsa o
   const rows = settingsFromRows([{ key: "mealCardDaily", value: 350 }]);
   assert.deepEqual([rows.mealCardDaily, rows.mealCardDays], [350, 26]);

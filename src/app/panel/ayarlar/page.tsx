@@ -39,7 +39,7 @@ import { BranchSettingsLinkCard } from "./branch-settings-card";
 import { DatabaseCard } from "./database-card";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
-import { LafposCard } from "./lafpos-card";
+import { AsilposCard } from "./asilpos-card";
 import { ModposCard } from "./modpos-card";
 import { PackageCard } from "./package-card";
 import { ClosedPeriodCard } from "./period-card";
@@ -442,7 +442,7 @@ async function SettingsContent() {
     db.select().from(s.activityLog).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
     // Kaydın hesabı: ad tek başına yanıltabiliyorsa (sonradan değişti ya da başka hesap aynı adı taşıyor) e-postası da
     db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
-    // Kasa kartları seçili şubeye göre (LafPOS, ModPOS; src/lib/pos-cards.ts)
+    // Kasa kartları seçili şubeye göre (AsilPOS, ModPOS; src/lib/pos-cards.ts)
     currentBranchScope(),
     listBranches(),
   ]);
@@ -490,7 +490,7 @@ async function SettingsContent() {
       </div>
       <JobsCard />
       <SiteLinksCard />
-      <LafposCard
+      <AsilposCard
         products={model.products.map((p) => ({
           id: p.product.id,
           name: p.product.name,

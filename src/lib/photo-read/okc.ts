@@ -44,55 +44,55 @@ function wrongOkcDocument(documentType: KasaOkc["documentType"]): CashReading {
 }
 
 /**
- * LafPOS gününde (geçiş gününden itibaren; denetim E-39) ModPOS Z bölümü yok: yazılım Z'si (LafPOS'un gün sonu çıktısı)
+ * AsilPOS gününde (geçiş gününden itibaren; denetim E-39) ModPOS Z bölümü yok: yazılım Z'si (AsilPOS'un gün sonu çıktısı)
  * yazarkasa bölümüne çekilirse "ModPOS bölümüne okut" önerilmez, kasanın rakamları gün sonuyla kendiliğinden gelir.
  * Ayrı mali Z basan cihazda (TokenX) ya da cihaz bilinmiyorsa yazarkasanın Z'si istenir; Pavo ayrı mali Z basmaz
- * (LafPOS'ta `zReport: false`), orada Pavo'nun gün sonu fişi (detaylı Z) istenir
+ * (AsilPOS'ta `zReport: false`), orada Pavo'nun gün sonu fişi (detaylı Z) istenir
  */
-export const OKC_SOFTWARE_Z_LAFPOS_TEXT = "Bu kasanın (LafPOS) gün sonu gibi görünüyor; onun rakamları panele kendiliğinden gelir. Banka POS'un (yazarkasa) Z raporunu çekin.";
+export const OKC_SOFTWARE_Z_ASILPOS_TEXT = "Bu kasanın (AsilPOS) gün sonu gibi görünüyor; onun rakamları panele kendiliğinden gelir. Banka POS'un (yazarkasa) Z raporunu çekin.";
 /** Aynısı Pavo gününde (24 Kasım 2026, Marina): Pavo ayrı mali Z basmaz, gün sonu fişi istenir */
-export const OKC_SOFTWARE_Z_PAVO_TEXT = "Bu LafPOS'un kendi raporu (mali Z değil); rakamları panele kendiliğinden gelir. Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını çekin.";
+export const OKC_SOFTWARE_Z_PAVO_TEXT = "Bu AsilPOS'un kendi raporu (mali Z değil); rakamları panele kendiliğinden gelir. Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını çekin.";
 
 /** Yalnız banka gün sonu fişi okundu (ModPOS günü, ayrı mali Z basan cihaz): yazarkasanın Z'si de istenir */
 export const OKC_BATCH_SLIP_TEXT = "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin.";
 /**
- * Aynısı LafPOS gününde (ayrı mali Z basmayan cihaz, ör. Pavo): yazarkasa rakamları LafPOS'tan gelir, ikinci bir Z
- * istenmez (24 Kasım 2026, Marina: kör kasada LafPOS'un bastığı kâğıtta yalnız banka gün sonu var; "Z değil, Z'yi de
+ * Aynısı AsilPOS gününde (ayrı mali Z basmayan cihaz, ör. Pavo): yazarkasa rakamları AsilPOS'tan gelir, ikinci bir Z
+ * istenmez (24 Kasım 2026, Marina: kör kasada AsilPOS'un bastığı kâğıtta yalnız banka gün sonu var; "Z değil, Z'yi de
  * çekin" yanlış yönergeydi)
  */
-export const OKC_BATCH_SLIP_LAFPOS_TEXT = "Banka gün sonu okundu; yazarkasa rakamları LafPOS'tan gelir.";
+export const OKC_BATCH_SLIP_ASILPOS_TEXT = "Banka gün sonu okundu; yazarkasa rakamları AsilPOS'tan gelir.";
 
-/** Günün yazarkasa cihazı (LafPOS'un `okc`'si): sağlayıcı ve ayrı mali Z basıyor mu */
-export interface LafposOkcDevice {
+/** Günün yazarkasa cihazı (AsilPOS'un `okc`'si): sağlayıcı ve ayrı mali Z basıyor mu */
+export interface AsilposOkcDevice {
   provider: "pavo" | "tokenx";
   zReport: boolean;
 }
 
 /** Cihaz ayrı mali Z basıyor mu (TokenX); bilinmiyorsa basar sayılır (eski metin, yazarkasanın Z'si istenir) */
-const separateZ = (device: LafposOkcDevice | null | undefined) => !device || (device.provider === "tokenx" && device.zReport);
+const separateZ = (device: AsilposOkcDevice | null | undefined) => !device || (device.provider === "tokenx" && device.zReport);
 
 /**
- * Yazarkasa okumasını LafPOS gününe uyarlar: ModPOS bölümüne okutma önerisi kalkar; ayrı mali Z basmayan cihazda (Pavo)
- * yazılım Z'sinin metni Pavo'nun fişini, yalnız banka gün sonunun bilgisi "rakamlar LafPOS'tan gelir" der
+ * Yazarkasa okumasını AsilPOS gününe uyarlar: ModPOS bölümüne okutma önerisi kalkar; ayrı mali Z basmayan cihazda (Pavo)
+ * yazılım Z'sinin metni Pavo'nun fişini, yalnız banka gün sonunun bilgisi "rakamlar AsilPOS'tan gelir" der
  */
-export function okcReadingOnLafposDay(r: CashReading, device?: LafposOkcDevice | null): CashReading {
+export function okcReadingOnAsilposDay(r: CashReading, device?: AsilposOkcDevice | null): CashReading {
   if (r.kind !== "kasa-okc") return r;
-  if (!r.ok) return r.switchTo === "kasa-z" ? { ...r, error: separateZ(device) ? OKC_SOFTWARE_Z_LAFPOS_TEXT : OKC_SOFTWARE_Z_PAVO_TEXT, switchTo: null } : r;
+  if (!r.ok) return r.switchTo === "kasa-z" ? { ...r, error: separateZ(device) ? OKC_SOFTWARE_Z_ASILPOS_TEXT : OKC_SOFTWARE_Z_PAVO_TEXT, switchTo: null } : r;
   if (separateZ(device) || !r.checks.some((c) => c.text === OKC_BATCH_SLIP_TEXT)) return r;
-  return { ...r, checks: r.checks.map((c) => (c.text === OKC_BATCH_SLIP_TEXT ? { ...c, text: OKC_BATCH_SLIP_LAFPOS_TEXT } : c)) };
+  return { ...r, checks: r.checks.map((c) => (c.text === OKC_BATCH_SLIP_TEXT ? { ...c, text: OKC_BATCH_SLIP_ASILPOS_TEXT } : c)) };
 }
 
 /**
- * LafPOS'un kendi gün sonu kâğıdı (kapanışta fiş yazıcısından; 24 Kasım 2026, Marina): kasanın rakamlarını gören basınca
- * önce LafPOS'un yönetim raporu ("GÜN SONU · Z n", NET CİRO, altında "LafPOS yönetim raporudur, mali Z değildir"),
+ * AsilPOS'un kendi gün sonu kâğıdı (kapanışta fiş yazıcısından; 24 Kasım 2026, Marina): kasanın rakamlarını gören basınca
+ * önce AsilPOS'un yönetim raporu ("GÜN SONU · Z n", NET CİRO, altında "AsilPOS yönetim raporudur, mali Z değildir"),
  * ardından Pavo'nun banka gün sonu ("BANKA GÜN SONU · PAVO"); kör kasada (kasa.rakam yok) yalnız banka kısmı. Gün
- * açıkken basılan ara raporun başlığı "ARA RAPOR (X)" (aynı düzen, aynı dipnot). Mali değildir: Z no'su LafPOS'un kendi
- * sayacı, NET CİRO'su LafPOS'un cirosu; yazarkasa alanlarına ve Z no'ya hiç gitmez. Tanıma: basılı başlık (model de kod
+ * açıkken basılan ara raporun başlığı "ARA RAPOR (X)" (aynı düzen, aynı dipnot). Mali değildir: Z no'su AsilPOS'un kendi
+ * sayacı, NET CİRO'su AsilPOS'un cirosu; yazarkasa alanlarına ve Z no'ya hiç gitmez. Tanıma: basılı başlık (model de kod
  * da ilk başlığı aynen yazar; ayraç "·", "-", "|", "—" ya da hiç) ya da "NET CİRO" etiketi ("NET CİRO:", "NET CİRO (KDV
- * DAHİL)" da); ikisinde de mali işaret (MF logosu, EKÜ NO, KÜM. satırları) olmamalı: LafPOS'un kâğıdında hiçbiri yoktur,
- * başlığı "GÜN SONU - Z 7" okunmuş gerçek bir mali Z LafPOS'un kâğıdı sayılmaz
+ * DAHİL)" da); ikisinde de mali işaret (MF logosu, EKÜ NO, KÜM. satırları) olmamalı: AsilPOS'un kâğıdında hiçbiri yoktur,
+ * başlığı "GÜN SONU - Z 7" okunmuş gerçek bir mali Z AsilPOS'un kâğıdı sayılmaz
  */
-export function isLafposPaper(raw: Pick<KasaOkc, "title" | "dailyTotalLabel" | "fiscalMarks">): boolean {
+export function isAsilposPaper(raw: Pick<KasaOkc, "title" | "dailyTotalLabel" | "fiscalMarks">): boolean {
   if (raw.fiscalMarks.mfLogo || raw.fiscalMarks.ekuNo || raw.fiscalMarks.cumulativeLines) return false;
   const title = upTR(raw.title);
   if (MANAGEMENT_TITLE.test(title) || BANK_TITLE.test(title) || INTERIM_TITLE.test(title)) return true;
@@ -106,22 +106,22 @@ const upTR = (v: string | null) => (v ?? "").toLocaleUpperCase("tr-TR");
 const MANAGEMENT_TITLE = /G[ÜU]N\s*SONU\s*[^A-Z0-9ÇĞİÖŞÜ]{0,2}\s*Z\s*\d/;
 /** "BANKA GÜN SONU · PAVO" (ayraç isteğe bağlı) */
 const BANK_TITLE = /BANKA\s*G[ÜU]N\s*SONU\s*[^A-Z0-9ÇĞİÖŞÜ]{0,2}\s*PAVO/;
-/** "ARA RAPOR (X)": gün açıkken LafPOS'un ara raporu */
+/** "ARA RAPOR (X)": gün açıkken AsilPOS'un ara raporu */
 const INTERIM_TITLE = /ARA\s*RAPOR\s*\(?\s*X\b/;
 
 const NO_AMOUNT: AmountRaw = { text: null, value: null, confidence: "low" };
 
 /**
  * Okunuşun karşılaştırılan ve forma giden hâli (yeni şema değeri yok: eski ai_calls satırları da aynı yoldan geçer).
- * Yalnız LafPOS'un kâğıdı dönüşür: banka kısmı okunduysa banka gün sonu fişi (`batch_slip`); Z no, toplam, ödeme ve KDV
- * (LafPOS'un kendi rakamları) atılır, model `z_report` dese de. Banka kısmı ("BANKA GÜN SONU · PAVO" başlığı ya da model
+ * Yalnız AsilPOS'un kâğıdı dönüşür: banka kısmı okunduysa banka gün sonu fişi (`batch_slip`); Z no, toplam, ödeme ve KDV
+ * (AsilPOS'un kendi rakamları) atılır, model `z_report` dese de. Banka kısmı ("BANKA GÜN SONU · PAVO" başlığı ya da model
  * `batch_slip` dedi) var ama hiçbir banka satırı okunmadıysa (satırlar kadraj dışı, ya da kartla satış yok: "İşlem
  * yok") okunamamış banka gün sonu fişidir (personele "Z'yi çekin" denmez); banka kısmı yoksa yazılım Z'si (ARA RAPOR da).
  * Öteki her okunuş olduğu gibi: banka satırı da okunmuş bir yazılım Z'si (Tuzla'da ModPOS Z'si; ya da Pavo'nun detaylı
  * Z'si yanlış sınıflanmış) yanlış belge kalır, ModPOS bölümüne okut önerisi ve güçlü modelin ikinci bakışı korunur
  */
 export function okcPaperView(raw: KasaOkc): KasaOkc {
-  if (!isLafposPaper(raw)) return raw;
+  if (!isAsilposPaper(raw)) return raw;
   const bankPart = raw.batches.length > 0 || raw.documentType === "batch_slip" || BANK_TITLE.test(upTR(raw.title));
   return {
     ...raw,
@@ -142,16 +142,16 @@ export function okcPaperView(raw: KasaOkc): KasaOkc {
   };
 }
 
-/** LafPOS'un banka gün sonu kâğıdı okundu ama banka satırları yok (kadraj dışı ya da "İşlem yok") */
-export const OKC_LAFPOS_BANK_UNREAD_TEXT = "Bu LafPOS'un banka gün sonu kâğıdı ama banka satırları okunamadı; Bankalar ve TOPLAM görünecek şekilde yeniden çekin.";
+/** AsilPOS'un banka gün sonu kâğıdı okundu ama banka satırları yok (kadraj dışı ya da "İşlem yok") */
+export const OKC_ASILPOS_BANK_UNREAD_TEXT = "Bu AsilPOS'un banka gün sonu kâğıdı ama banka satırları okunamadı; Bankalar ve TOPLAM görünecek şekilde yeniden çekin.";
 
 /**
  * Yalnız banka gün sonu fişi okundu ama Z'nin izleri var (Z no, günün toplamı, nakit / kart / yemek kartı / diğer satırı,
- * KDV) ya da başlığı Z ya da detaylı Z diyor; LafPOS'un kâğıdı değil: ucuz okuma Pavo'nun detaylı Z'sini banka fişi
+ * KDV) ya da başlığı Z ya da detaylı Z diyor; AsilPOS'un kâğıdı değil: ucuz okuma Pavo'nun detaylı Z'sini banka fişi
  * sanmış olabilir. Güçlü model bir kez bakar (yoksa Z no hiç okunmaz, karşılaştırma sessizce "uyumlu" kalır)
  */
 export function slipWithZTraces(raw: KasaOkc): boolean {
-  if (raw.documentType !== "batch_slip" || isLafposPaper(raw)) return false;
+  if (raw.documentType !== "batch_slip" || isAsilposPaper(raw)) return false;
   const has = (a: AmountRaw) => a.text !== null || a.value !== null;
   const title = (raw.title ?? "").toLocaleUpperCase("tr-TR");
   return (
@@ -220,7 +220,7 @@ function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Conf
 export function normalizeOkc(read: KasaOkc, ctx: OkcReadContext): CashReading {
   const raw = okcPaperView(read);
   if (raw.documentType !== "z_report" && raw.documentType !== "batch_slip") return wrongOkcDocument(raw.documentType);
-  if (!raw.readable || raw.issues.includes("not_a_document")) return failed("kasa-okc", raw !== read && raw.documentType === "batch_slip" && !raw.batches.length ? OKC_LAFPOS_BANK_UNREAD_TEXT : UNREADABLE_TEXT);
+  if (!raw.readable || raw.issues.includes("not_a_document")) return failed("kasa-okc", raw !== read && raw.documentType === "batch_slip" && !raw.batches.length ? OKC_ASILPOS_BANK_UNREAD_TEXT : UNREADABLE_TEXT);
   const values: Partial<Record<ReadField, ReadValue>> = {};
   const checks: (ReadCheck | null)[] = [];
   const issues = (fieldValues: Partial<Record<ReadField, ReadValue>>) =>

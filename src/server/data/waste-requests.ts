@@ -7,15 +7,15 @@ import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, namedTill, requestIn
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
-import { productIkramRefusal, recordedOffRevenue } from "@/lib/lafpos/ikram";
-import { branchSwitchDay } from "@/lib/lafpos/switch";
+import { productIkramRefusal, recordedOffRevenue } from "@/lib/asilpos/ikram";
+import { branchSwitchDay } from "@/lib/asilpos/switch";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText, type LateWastePayloadT, type WasteDeletePayloadT } from "@/lib/waste-requests";
 import { listBranches } from "@/server/branches";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { asilposBranchId } from "@/server/asilpos/branch";
 import { requestBranches } from "@/server/staff-requests/branch";
 
 /*
@@ -252,19 +252,19 @@ export interface LateWasteCard extends CardBase {
   otherPending: string[];
   report: { exists: boolean; emailed: boolean; offRevenue: number | null };
   /**
-   * İkramda: o günün sayılan ikramının menü değeri (Z ödenmez ile karşılaştırma; motorun saydığı kayıtlar). LafPOS'un
-   * gün sonu gelen günde LafPOS'un listesinin tamamı (ikram ve zayi satırları: LafPOS'un ödenmez tutarı ikisini kapsar)
+   * İkramda: o günün sayılan ikramının menü değeri (Z ödenmez ile karşılaştırma; motorun saydığı kayıtlar). AsilPOS'un
+   * gün sonu gelen günde AsilPOS'un listesinin tamamı (ikram ve zayi satırları: AsilPOS'un ödenmez tutarı ikisini kapsar)
    */
   ikramRecorded: number | null;
-  /** O günün ikramı LafPOS'un gün sonundan (karşılaştırma LafPOS'un kendi iki rakamı) */
-  ikramFromLafpos: boolean;
+  /** O günün ikramı AsilPOS'un gün sonundan (karşılaştırma AsilPOS'un kendi iki rakamı) */
+  ikramFromAsilpos: boolean;
   /** "Ekim sayımı girilmiş: onaylanırsa tutarlılık değişir" */
   countDone: string | null;
   /**
-   * Ürün ikramı o güne panelden kapalı (LafPOS gününde gün sonu geldi ya da gün bugün; geçiş günü ya da gün sonu
-   * istekten sonra geldi): onaylanmaz, reddedilir (src/lib/lafpos/ikram.ts productIkramClosed); metni, değilse null
+   * Ürün ikramı o güne panelden kapalı (AsilPOS gününde gün sonu geldi ya da gün bugün; geçiş günü ya da gün sonu
+   * istekten sonra geldi): onaylanmaz, reddedilir (src/lib/asilpos/ikram.ts productIkramClosed); metni, değilse null
    */
-  lafposRefusal: string | null;
+  asilposRefusal: string | null;
 }
 
 export interface WasteDeleteCard extends CardBase {
@@ -285,7 +285,7 @@ export type WasteRequestCard = LateWasteCard | WasteDeleteCard;
  * Onaylar › Zayi ve ikram: bekleyen istekler, en eski gün önce. Kartın bağlamı isteğin şubesinden, yöneticinin şube
  * seçiminden değil (docs/SUBE.md › Kasa raporu "Tümü"de; denetim 21 Kasım #28): geç kayıtta isteği açanın şubesi (yük;
  * bu alandan önceki isteklerde Tuzla, onay da oraya yazar), silmede kaydın şubesi. Günün kasa raporu (Z ödenmez,
- * gönderildi mi), o günün aynı kalemden kayıtları, aynı kalemin bekleyen öteki istekleri, kayıtlı ikram ve LafPOS
+ * gönderildi mi), o günün aynı kalemden kayıtları, aynı kalemin bekleyen öteki istekleri, kayıtlı ikram ve AsilPOS
  * günleri o şubenin; maliyet modeli de şubenin kapsamıyla (`modelOf`; Onaylar'da istek başına şube başına bir kez,
  * loadBranchModelOnce). Önceden günle okunuyordu: Marina'nın isteği Tuzla'nın raporunu ve iki şubenin ikramını gösteriyordu.
  */
@@ -335,12 +335,12 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
   const countedMonths = new Set(counted.filter((c) => c.n > 0).map((c) => c.month));
   const time = (d: Date) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(d);
   const productPrice = (model: Model, id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
-  // Geçiş günü ayarın kendisi; isteğin şubesine göre uygulanır (branchSwitchDay). LafPOS'un gün sonu gelen günleri
-  // şubenin modelinden (LafPOS'un şubesinde geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
-  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDayOf(db), lafposBranchId(db)]);
+  // Geçiş günü ayarın kendisi; isteğin şubesine göre uygulanır (branchSwitchDay). AsilPOS'un gün sonu gelen günleri
+  // şubenin modelinden (AsilPOS'un şubesinde geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
+  const [switchDay, asilposBranch] = await Promise.all([asilposSwitchDayOf(db), asilposBranchId(db)]);
   const today = businessDate(now);
   /**
-   * Günün sayılan ikramının menü değeri (şubenin modeli; Z'nin ödenmez tutarıyla karşılaştırılır): LafPOS satırı kendi
+   * Günün sayılan ikramının menü değeri (şubenin modeli; Z'nin ödenmez tutarıyla karşılaştırılır): AsilPOS satırı kendi
    * değeriyle (zayi dahil, hazırlanmış iptal hariç: ödenmez tutarında yok), panelin ürün ikramı menü fiyatıyla
    */
   const ikramValueOf = (model: Model, date: string) =>
@@ -375,7 +375,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
       });
       const menu = p.kind === "ikram" ? productPrice(model, p.productId) : null;
       const ikramRecorded = p.kind === "ikram" ? ikramValueOf(model, p.date) : null;
-      const lafposDays = new Set(model.ds.lafposIkram?.days ?? []);
+      const asilposDays = new Set(model.ds.asilposIkram?.days ?? []);
       return [
         {
           ...base,
@@ -392,9 +392,9 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
           otherPending: [...new Set(others)],
           report: { exists: !!report, emailed: !!report?.emailedAt, offRevenue: report?.offRevenue ?? null },
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
-          ikramFromLafpos: lafposDays.has(p.date),
+          ikramFromAsilpos: asilposDays.has(p.date),
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
-          lafposRefusal: productIkramRefusal(p, branchSwitchDay(switchDay, p.branchId, lafposBranch), { received: lafposDays.has(p.date), today }, "onay"),
+          asilposRefusal: productIkramRefusal(p, branchSwitchDay(switchDay, p.branchId, asilposBranch), { received: asilposDays.has(p.date), today }, "onay"),
         },
       ];
     }

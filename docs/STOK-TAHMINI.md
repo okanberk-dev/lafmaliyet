@@ -1,7 +1,7 @@
 # Tahmini stok ve kritik stok uyarısı (Marina)
 
 **Sahibe kısa özet.** Marina'da her malzemeden rafta şu an ne kadar kaldığını tahmin eder: son ay sonu sayımına
-Marina'ya gelen faturalı malı ekler, LafPOS'tan gelen satışların ve kasadan geçmeyen laffogato.net online
+Marina'ya gelen faturalı malı ekler, AsilPOS'tan gelen satışların ve kasadan geçmeyen laffogato.net online
 siparişlerinin reçeteye göre harcadığını, girilen zayi ile ikramı düşer. Son 14 günün ortalamasıyla her malzemenin
 **kaç gün yeteceğini** yazar ve seçtiğiniz tedarik süresine göre bir **eşik önerir**; öneri kendiliğinden yazılmaz,
 siz Kaydet'e basınca eşik olur. Rakamlar tahminidir; gerçek stok yine ay sonu sayımıdır ve yeni sayım girilince tahmin
@@ -15,8 +15,8 @@ değişmez.
 > Sahip (Dalga 2, 26 Kasım 2026): _"Stok tahmini Marina'nın online siparişlerini düşsün; 'kaç gün yeter' ve eşik
 > önerisi eklensin."_
 >
-> - **Online:** laffogato.net'in Marina siparişlerinin reçeteye göre tüketimi düşülsün. LafPOS satışıyla **çift
->   sayılmasın**: kasada ödenen ya da panelden elle girilen online sipariş LafPOS'ta çalınır, gün sonuyla zaten gelir;
+> - **Online:** laffogato.net'in Marina siparişlerinin reçeteye göre tüketimi düşülsün. AsilPOS satışıyla **çift
+>   sayılmasın**: kasada ödenen ya da panelden elle girilen online sipariş AsilPOS'ta çalınır, gün sonuyla zaten gelir;
 >   yalnız kasadan geçmeyenler düşülür.
 > - **Kaç gün yeter:** son N günün ortalama günlük kullanımıyla tahmini stok kaç gün yeter.
 > - **Eşik önerisi:** tedarik süresine göre; uygulanmadan önce yönetici onaylar (kendiliğinden yazılmaz).
@@ -30,7 +30,7 @@ değişmez.
   **Siteden al** düğmesi, "Marina'ya gelen faturalar" kartı (faturanın şubesini seçer).
 - **Personel:** listeyi, "kaç gün yeter"i ve eşikleri okur, değiştirmez. Tutar, fiyat, fatura ve tedarikçi görmez (ekranda para yok;
   personel maliyet ve kâr görmez kuralı). Başka şubeye kilitli personele ekran veri göstermez.
-- **Yalnız Marina ve yalnız LafPOS'a geçildiyse:** Ayarlar › LafPOS'taki geçiş günü boşken ekran "LafPOS'a geçilmedi"
+- **Yalnız Marina ve yalnız AsilPOS'a geçildiyse:** Ayarlar › AsilPOS'taki geçiş günü boşken ekran "AsilPOS'a geçilmedi"
   der, kartlar çizilmez. Tuzla (ModPOS) için tahmin yok: ModPOS'un satış listesi aylık gelir, gün gün bölünemez.
 
 ## 2. Hesap
@@ -40,7 +40,7 @@ Her malzeme için, malzemenin kendi biriminde (gr, ml, adet, dilim):
 ```
 tahmini stok = son sayım
              + Marina'ya gelen faturalı alış
-             − LafPOS satışlarının reçeteye göre tüketimi × (1 + genel fire)
+             − AsilPOS satışlarının reçeteye göre tüketimi × (1 + genel fire)
              − kasadan geçmeyen online siparişlerin reçeteye göre tüketimi × (1 + genel fire)
              − zayi ve ikram (reçeteden ya da hammadde olarak, fire eklenmeden)
 ```
@@ -48,24 +48,24 @@ tahmini stok = son sayım
 - **Son sayım:** Marina'nın bu malzemeyi saydığı en son **bitmiş** ay (Stok sayımı, şube Marina). Sayım ay sonu
   stoğudur: dönem sayımın ertesi ayının 1'inde başlar. Süren ayın sayımı (ay bitmeden girilen) ay bitince tahmine girer.
   Sayılan miktar sayıldığı birimin çarpanıyla çevrilir (KG ve LT 1000, ADET ve DİLİM 1).
-- **Satış:** yalnız LafPOS'un Marina gün sonları (`pos_daily_sales`, şube Marina), dönemin başından bugüne. Ürün
+- **Satış:** yalnız AsilPOS'un Marina gün sonları (`pos_daily_sales`, şube Marina), dönemin başından bugüne. Ürün
   reçetesindeki miktar × satılan adet; formüllü reçete satırı Ayarlar'daki değerlerle hesaplanır (motorla aynı kural).
   Genel fire (Ayarlar, %5) satışa bir kez eklenir; "fire ambalaja uygulanmaz" açıksa Ambalaj kalemlerine eklenmez
   (Gelir-gider'in reçeteye göre tahmini mal maliyetiyle aynı yaklaşım, [STOK-DEGERLEME.md](STOK-DEGERLEME.md) §5).
   - Ürüne bağlanmamış satır ve reçetesi boş ürün **atlanır ve sayılır**: ekran yöneticiye kaç satır, kaç adet olduğunu
-    ve adlarını yazar (Ayarlar › LafPOS'ta bağlanır ya da reçete yazılır). Hizmet satırı (karaoke) sayılmaz.
-- **Zayi ve ikram** ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)): Marina'ya panelde girilen kayıtlar ve LafPOS'un gün sonuyla
-  gelen ikram ve zayi satırları. Her gün tek kaynak (`panelWasteCounts`): LafPOS'un gün sonu gelen günde panele girilmiş
-  ürün ikramı sayılmaz (LafPOS'taki sayılır); zayi ve hammadde ikramı her zaman sayılır. Ürün reçeteden, hammadde
+    ve adlarını yazar (Ayarlar › AsilPOS'ta bağlanır ya da reçete yazılır). Hizmet satırı (karaoke) sayılmaz.
+- **Zayi ve ikram** ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)): Marina'ya panelde girilen kayıtlar ve AsilPOS'un gün sonuyla
+  gelen ikram ve zayi satırları. Her gün tek kaynak (`panelWasteCounts`): AsilPOS'un gün sonu gelen günde panele girilmiş
+  ürün ikramı sayılmaz (AsilPOS'taki sayılır); zayi ve hammadde ikramı her zaman sayılır. Ürün reçeteden, hammadde
   girildiği birimin çarpanıyla; fire eklenmez.
-- **İptal:** LafPOS sözleşmesinde ayrı alan yok. İptal edilen kalem satışa girmez, tüketim yazılmaz; hazırlanıp
+- **İptal:** AsilPOS sözleşmesinde ayrı alan yok. İptal edilen kalem satışa girmez, tüketim yazılmaz; hazırlanıp
   atıldıysa personel zayi olarak girer.
 - **Online sipariş** (laffogato.net; [SITE-SATIS.md](SITE-SATIS.md)): sitenin **Marina'ya göre ay kaydı**
   (`GET /api/panel/sales?month=YYYY-MM&branch=marina`; yanıt `branch: "marina"` demezse kayıt yazılmaz). Yalnız
   **kasadan geçmeyen** kafe siparişleri düşülür: site kasada ödenen (`counter`: "Ödendi olarak işaretle", nakit ya da
   kasadaki kart) ve panelden elle girilen (`manual`) siparişleri kafe satırlarından (`cafe.lines`) zaten çıkarır; onlar
-  LafPOS'ta çalınır ve gün sonuyla satış olarak gelir. **Çift sayılmaz.** Ekran ikisini ayrı söyler ("kasadan geçmeyen
-  34 sipariş düşüldü · kasada ödenen 5 sipariş LafPOS satışında sayıldı").
+  AsilPOS'ta çalınır ve gün sonuyla satış olarak gelir. **Çift sayılmaz.** Ekran ikisini ayrı söyler ("kasadan geçmeyen
+  34 sipariş düşüldü · kasada ödenen 5 sipariş AsilPOS satışında sayıldı").
   - Satır menü bağlantısıyla ürüne eşlenir (L → L yuvası, M ve tek boy → M), seçenekler (ekstra shot, şurup,
     alternatif süt) kendi ürünleriyle: Tutarlılık'ın online tüketimiyle aynı kural (`estimateOnlineMonth`). Bağlanamayan
     satır ve ürünü olmayan seçenek atlanır ve sayılır ("Online, panel ürününe bağlı değil": Ürünler › Site menüsü),
@@ -107,7 +107,7 @@ tahmini stok olduğundan az görünür, sayım düzeltir.
 
 ## 3a. Kaç gün yeter ve eşik önerisi (26 Kasım 2026)
 
-- **Günlük kullanım:** dünden geriye **14 gün** (`AVG_DAYS`). LafPOS satışı × (1 + fire), zayi ve ikram (yukarıdaki
+- **Günlük kullanım:** dünden geriye **14 gün** (`AVG_DAYS`). AsilPOS satışı × (1 + fire), zayi ve ikram (yukarıdaki
   kurallarla) **gün sonu gelen ya da kapalı işaretli günlere** bölünür: gün sonu gelmeyen gün ne paya ne paydaya girer
   (o günün satışı bilinmiyor; ortalamayı düşürmesin). Online sipariş takvim günüyle eklenir: pencerenin değdiği her ayın
   kaydı, kaydın kapsadığı günlere bölünüp penceredeki günleriyle çarpılır, 14'e bölünür. Ortalama dönemden bağımsızdır
@@ -137,11 +137,11 @@ tahmini stok olduğundan az görünür, sayım düzeltir.
 
 | Durum | Ne zaman | Ekranda |
 |---|---|---|
-| Tahmin | Son sayım LafPOS'un sayıldığı ilk günden sonra başlıyor | Rakam ve "tahmini" rozeti |
+| Tahmin | Son sayım AsilPOS'un sayıldığı ilk günden sonra başlıyor | Rakam ve "tahmini" rozeti |
 | Sayım yok | Marina'da bitmiş bir ayda hiç sayılmadı | "Sayım yok" |
-| LafPOS öncesi sayım | Dönem LafPOS'tan önce başlıyor (o günlerin satışı ModPOS'un aylık listesinde, gün gün bölünemez) | "Sayım LafPOS'tan önce": ilk sayımdan sonra başlar |
+| AsilPOS öncesi sayım | Dönem AsilPOS'tan önce başlıyor (o günlerin satışı ModPOS'un aylık listesinde, gün gün bölünemez) | "Sayım AsilPOS'tan önce": ilk sayımdan sonra başlar |
 
-- **Gün sonu gelmeyen gün** (yönetici): dönemde LafPOS gün sonu gelmeyen ve kapalı işaretli olmayan gün varsa sayısı
+- **Gün sonu gelmeyen gün** (yönetici): dönemde AsilPOS gün sonu gelmeyen ve kapalı işaretli olmayan gün varsa sayısı
   ve günleri: o günlerin satışı tahmine girmedi, stok olduğundan fazla görünür.
 - **Online siparişler alınmadı** (yönetici): tahminin ya da ortalamanın gerektirdiği ay(lar)ın Marina kaydı yok;
   **Siteden al** ve son denemenin hatası (ör. "Site şubeye göre satış vermedi").
@@ -161,18 +161,18 @@ tahmini stok olduğundan az görünür, sayım düzeltir.
   sayılır.
 - Kayda geçmeyen fire (dökülme, tadım) genel fire payıyla yaklaşık düşülür; gerçek fark ay sonu sayımında ve
   Tutarlılık'ta görünür.
-- Tuzla LafPOS'a geçerse aynı modül Tuzla için açılabilir (eşik ve faturanın şubesi zaten şube başına).
+- Tuzla AsilPOS'a geçerse aynı modül Tuzla için açılabilir (eşik ve faturanın şubesi zaten şube başına).
 
 ## 8. Kod
 
 | Dosya | Görev |
 |---|---|
 | `src/lib/stock-estimate.ts` | Saf hesap: dönem, birim dönüşümü, satış, online ve zayi tüketimi, atlanan satırlar, kritik eşik, günlük kullanım, kaç gün yeter, eşik önerisi, sitenin ay kaydının eşlenmesi (`estimateOnlineMonth`), kartın özeti, görünürlük kuralı |
-| `src/server/data/stock-estimate.ts` | Okuyucu (yalnız okuma): Marina'nın sayımı, LafPOS gün sonları, zayi ve ikram, işaretli faturaların partileri, eşikler, Marina'nın online ay kayıtları. İsteğe bağlı `asOf` günü (26 Kasım 2026): tahmin o günün sonundaki stok, o ayın sayımı başlangıç sayılmaz; Raporlar › Kaçak raporu ayın son günüyle okur ve ayın sayımıyla karşılaştırır ([RAPORLAR.md › Kaçak raporu](RAPORLAR.md#kaçak-raporu-marina)) |
+| `src/server/data/stock-estimate.ts` | Okuyucu (yalnız okuma): Marina'nın sayımı, AsilPOS gün sonları, zayi ve ikram, işaretli faturaların partileri, eşikler, Marina'nın online ay kayıtları. İsteğe bağlı `asOf` günü (26 Kasım 2026): tahmin o günün sonundaki stok, o ayın sayımı başlangıç sayılmaz; Raporlar › Kaçak raporu ayın son günüyle okur ve ayın sayımıyla karşılaştırır ([RAPORLAR.md › Kaçak raporu](RAPORLAR.md#kaçak-raporu-marina)) |
 | `src/server/site-sales/sync.ts` | Marina'nın online ay kaydı: `syncBranchSiteSales`, `loadBranchSiteSales`, durumu (`site_sales_sube_sync`) |
 | `src/server/actions/stock-estimate.ts` | Eşiği yazar (yönetici, işlem geçmişine düşer); online siparişleri siteden alır (`refreshStockOnline`); faturanın şubesini `setInvoiceBranch` (src/server/actions/invoices.ts) |
 | `src/app/panel/sayim/tahmini/` | Ekran (eşik alanı ve öneri `threshold-input.tsx`, Siteden al `online-refresh.tsx`) |
 | `src/app/panel/stock-alert-card.tsx` | Genel bakış ve Bugün'ün kartı |
 | `drizzle/0066_tahmini_stok.sql` | `stock_thresholds`, `stock_receipts` (yalnız ekleme; `stock_receipts` 0089'da kalktı, seçim faturanın şubesinde) |
-| `tests/stok-tahmini.test.ts` | Sayım yok, LafPOS öncesi, reçetesiz ve bağlanmamış ürün, birim dönüşümü, zayi ve ikram kuralı, alış, eşik, Tuzla'nın etkilenmemesi; online sipariş (çift sayılmama, dönemden önceki ay, eksik ay, sitenin satırlarının eşlenmesi), kaç gün yeter, eşik önerisi ve onayı |
-| `tests/stok-tahmini-db.test.ts` | Veritabanında LafPOS'un sayıldığı ilk gün: Marina'nın geçiş ayı listesinin son gününden sonra, Marina'nın kendi kapsam kaydından (Tuzla'nın aynı aya yüklediği liste kaydırmaz; docs/LAFPOS.md › Günlük satış). Sitenin sahte ucuyla Marina'nın online ay kaydı: ayrı anahtar (loadSiteSales görmez), şubesiz eski yanıt yazılmaz ve durum hatayı söyler, Siteden yenile Marina'yı da çeker, tahmin yalnız Marina'nın kasadan geçmeyen siparişini düşer, kaydı olmayan ay eksik görünür |
+| `tests/stok-tahmini.test.ts` | Sayım yok, AsilPOS öncesi, reçetesiz ve bağlanmamış ürün, birim dönüşümü, zayi ve ikram kuralı, alış, eşik, Tuzla'nın etkilenmemesi; online sipariş (çift sayılmama, dönemden önceki ay, eksik ay, sitenin satırlarının eşlenmesi), kaç gün yeter, eşik önerisi ve onayı |
+| `tests/stok-tahmini-db.test.ts` | Veritabanında AsilPOS'un sayıldığı ilk gün: Marina'nın geçiş ayı listesinin son gününden sonra, Marina'nın kendi kapsam kaydından (Tuzla'nın aynı aya yüklediği liste kaydırmaz; docs/ASILPOS.md › Günlük satış). Sitenin sahte ucuyla Marina'nın online ay kaydı: ayrı anahtar (loadSiteSales görmez), şubesiz eski yanıt yazılmaz ve durum hatayı söyler, Siteden yenile Marina'yı da çeker, tahmin yalnız Marina'nın kasadan geçmeyen siparişini düşer, kaydı olmayan ay eksik görünür |

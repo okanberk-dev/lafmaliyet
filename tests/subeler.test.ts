@@ -9,6 +9,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { ESKI_KASA_KAYNAGI } from "../src/lib/asilpos/eski-adlar";
+
 import {
   ALL_BRANCHES,
   BRANCH_EMAIL_TAKEN,
@@ -86,7 +88,7 @@ test("kimlik önerisi: Türkçe harfler sadeleşir, boşluk tireye döner", () =
 
 test("tür ↔ kasa kaynağı: online kanalın kasası olmaz, şube kasasız kalmaz", () => {
   assert.equal(branchSourceError("fiziksel", "modpos"), null);
-  assert.equal(branchSourceError("fiziksel", "lafpos"), null);
+  assert.equal(branchSourceError("fiziksel", "asilpos"), null);
   assert.equal(branchSourceError("online", "yok"), null);
   assert.notEqual(branchSourceError("online", "modpos"), null);
   assert.notEqual(branchSourceError("fiziksel", "yok"), null);
@@ -95,7 +97,9 @@ test("tür ↔ kasa kaynağı: online kanalın kasası olmaz, şube kasasız kal
 test("0053_subeler.sql CHECK kuralları saf işlevlerle aynı şeyi söyler", () => {
   const sql = readFileSync(join(process.cwd(), "drizzle/0053_subeler.sql"), "utf8");
   for (const k of BRANCH_KINDS) assert.ok(sql.includes(`'${k}'`), k);
-  for (const p of BRANCH_POS_SOURCES) assert.ok(sql.includes(`'${p}'`), p);
+  // Kasa kaynağının değeri veritabanında eski adla (ESKI_KASA_KAYNAGI; şemanın sütunu çevirir), yeni ad 0098'de eklendi
+  for (const p of BRANCH_POS_SOURCES) assert.ok(sql.includes(`'${p === "asilpos" ? ESKI_KASA_KAYNAGI : p}'`), p);
+  assert.ok(readFileSync(join(process.cwd(), "drizzle/0098_asilpos_adi.sql"), "utf8").includes(`'${ESKI_KASA_KAYNAGI}','asilpos'`));
   assert.ok(sql.includes("branches_source_kind_ck"), "tür ↔ kaynak kuralı şemada da olmalı");
 });
 
@@ -109,7 +113,7 @@ test("sabit kayıtlar: Tuzla ve laffogato.net kapatılamaz, türü değişmez, s
 });
 
 test("sıradan şube: kapatılabilir, güncellenebilir; son açık şube kapatılamaz", () => {
-  assert.equal(branchChangeError(MARINA, { kind: "fiziksel", posSource: "lafpos", active: true }, [TUZLA, ONLINE]), null);
+  assert.equal(branchChangeError(MARINA, { kind: "fiziksel", posSource: "asilpos", active: true }, [TUZLA, ONLINE]), null);
   assert.equal(branchChangeError(MARINA, { kind: "fiziksel", posSource: "modpos", active: false }, [TUZLA, ONLINE]), null);
   // Tuzla da kapalıysa Marina son açık şubedir: kapatılamaz
   const tuzlaKapali = { ...TUZLA, active: false };
@@ -131,7 +135,7 @@ test("silme: yalnız kaydı olmayan sıradan şube silinir", () => {
 });
 
 test("şube kurulumu e-postası: yalnız şubesiz ya da bu şubedeki personel hesabı kabul edilir", () => {
-  // Kurulum bağlantısı adresin hesabına gider ve kasanın eşitleme anahtarını verir (docs/LAFPOS.md › Şube kurulumu)
+  // Kurulum bağlantısı adresin hesabına gider ve kasanın eşitleme anahtarını verir (docs/ASILPOS.md › Şube kurulumu)
   const hesap = (role: string, branchId: string | null) => ({ role, branchId });
   assert.equal(branchEmailTaken(null, "marina"), false, "adres boşta");
   assert.equal(branchEmailTaken(undefined, "marina"), false, "adres boşta");

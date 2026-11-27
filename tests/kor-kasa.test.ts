@@ -1,7 +1,7 @@
-// Kör kasa (Marina; denetim 25 Kasım 2026, bulgu 0; docs/LAFPOS.md › Kör kasa): LafPOS'ta kasiyer çekmeceyi kör sayar.
-// Panel de personele LafPOS gününde açılışı, sayılan nakdi, teslimi, olması gerekeni ve kasa farkını göstermez: kayıtlı
+// Kör kasa (Marina; denetim 25 Kasım 2026, bulgu 0; docs/ASILPOS.md › Kör kasa): AsilPOS'ta kasiyer çekmeceyi kör sayar.
+// Panel de personele AsilPOS gününde açılışı, sayılan nakdi, teslimi, olması gerekeni ve kasa farkını göstermez: kayıtlı
 // rapor kartı, döküm, Bugün, Son 7 gün ve RSC yükü. Yönetici her şeyi görür. Sunucu yolları (yükleyici, ret)
-// tests/lafpos-gun-sonu-tam-db.test.ts'te.
+// tests/asilpos-gun-sonu-tam-db.test.ts'te.
 // Çalıştırma: npx tsx --test tests/kor-kasa.test.ts
 
 import assert from "node:assert/strict";
@@ -13,10 +13,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { dayTasks, type CashLite, type DayFacts } from "../src/app/panel/bugun/logic";
 import { type CashReportFields } from "../src/lib/cash-report";
-import { autoValuesOf } from "../src/lib/lafpos/gun-sonu";
-import { BLIND_TEXT, blindLafposDay, blindNote, blindReport, staffBlindDay } from "../src/lib/lafpos/kor-kasa";
-import { lafposDayOf } from "../src/lib/lafpos/prefill";
-import type { PosDayZ } from "../src/lib/lafpos/day";
+import { ASILPOS_AUTO_BY, autoValuesOf } from "../src/lib/asilpos/gun-sonu";
+import { ESKI_URUN_ADI } from "../src/lib/asilpos/eski-adlar";
+import { BLIND_TEXT, blindAsilposDay, blindNote, blindReport, staffBlindDay } from "../src/lib/asilpos/kor-kasa";
+import { asilposDayOf } from "../src/lib/asilpos/prefill";
+import type { PosDayZ } from "../src/lib/asilpos/day";
 
 const plain = (t: string) => t.replace(/ /g, " ");
 
@@ -70,11 +71,11 @@ const report: CashReportFields & { cashDiff: number } = {
 /** Sayımı ele veren rakamlar (metinde biçimiyle de aranır) */
 const SECRETS = ["1234.5", "1.234,50", "3333.25", "3.333,25", "751.25", "751,25", "4.084,50", "1.200", "1.100"];
 
-test("kural: yalnız personel, yalnız LafPOS'un şubesinin LafPOS günü", () => {
-  assert.equal(staffBlindDay({ admin: false, branchId: "marina", lafposDay: true, lafposBranch: "marina" }), true);
-  assert.equal(staffBlindDay({ admin: true, branchId: "marina", lafposDay: true, lafposBranch: "marina" }), false, "yönetici görür");
-  assert.equal(staffBlindDay({ admin: false, branchId: "tuzla", lafposDay: true, lafposBranch: "marina" }), false, "ModPOS'taki şube eskisi gibi");
-  assert.equal(staffBlindDay({ admin: false, branchId: "marina", lafposDay: false, lafposBranch: "marina" }), false, "geçiş gününden önce eskisi gibi");
+test("kural: yalnız personel, yalnız AsilPOS'un şubesinin AsilPOS günü", () => {
+  assert.equal(staffBlindDay({ admin: false, branchId: "marina", asilposDay: true, asilposBranch: "marina" }), true);
+  assert.equal(staffBlindDay({ admin: true, branchId: "marina", asilposDay: true, asilposBranch: "marina" }), false, "yönetici görür");
+  assert.equal(staffBlindDay({ admin: false, branchId: "tuzla", asilposDay: true, asilposBranch: "marina" }), false, "ModPOS'taki şube eskisi gibi");
+  assert.equal(staffBlindDay({ admin: false, branchId: "marina", asilposDay: false, asilposBranch: "marina" }), false, "geçiş gününden önce eskisi gibi");
 });
 
 test("rapor: açılış, sayılan, teslim ve fark personelin yükünde yok; notun açılış cümleleri çıkar, kapanış notu kalır", () => {
@@ -86,21 +87,29 @@ test("rapor: açılış, sayılan, teslim ve fark personelin yükünde yok; notu
   for (const v of SECRETS) assert.ok(!json.includes(v), `yükte ${v} var: ${json}`);
   assert.equal(
     b.note,
-    "LafPOS gün sonundan otomatik yazıldı. Kapanış notu (LafPOS): Kapanış sakin geçti. Eksik: Banka POS: LafPOS'tan Pavo gün sonu gelmedi · Yazarkasa: LafPOS'ta cihaz belgesi yok.",
+    "AsilPOS gün sonundan otomatik yazıldı. Kapanış notu (AsilPOS): Kapanış sakin geçti. Eksik: Banka POS: AsilPOS'tan Pavo gün sonu gelmedi · Yazarkasa: AsilPOS'ta cihaz belgesi yok.",
   );
-  // Panelin devir denetimi tutmadıysa ve LafPOS'un beklediği yazıldıysa ikisi de çıkar; eksik bölümü kalır (staffAutoNote işler)
+  // Panelin devir denetimi tutmadıysa ve AsilPOS'un beklediği yazıldıysa ikisi de çıkar; eksik bölümü kalır (staffAutoNote işler)
   assert.equal(
-    blindNote("LafPOS gün sonundan otomatik yazıldı. Açılış LafPOS'ta beklenenden 20,50 ₺ fazla (beklenen 1.279,50 ₺); neden: bozuk. para. Eksik: Banka POS: LafPOS'tan Pavo gün sonu gelmedi."),
-    "LafPOS gün sonundan otomatik yazıldı. Eksik: Banka POS: LafPOS'tan Pavo gün sonu gelmedi.",
+    blindNote("AsilPOS gün sonundan otomatik yazıldı. Açılış AsilPOS'ta beklenenden 20,50 ₺ fazla (beklenen 1.279,50 ₺); neden: bozuk. para. Eksik: Banka POS: AsilPOS'tan Pavo gün sonu gelmedi."),
+    "AsilPOS gün sonundan otomatik yazıldı. Eksik: Banka POS: AsilPOS'tan Pavo gün sonu gelmedi.",
   );
-  assert.equal(blindNote("Açılış notu (LafPOS): bozuk para."), null);
+  assert.equal(blindNote("Açılış notu (AsilPOS): bozuk para."), null);
   assert.equal(blindNote(null), null);
+  // Ad değişikliğinden (26 Kasım 2026) önce yazılmış notlar ürünün eski adını taşır: onlarda da beklenen açılış çıkar
+  const E = ESKI_URUN_ADI;
+  assert.equal(
+    blindNote(`${E} gün sonundan otomatik yazıldı. Açılış ${E}'ta beklenenden 20,50 ₺ fazla (beklenen 1.279,50 ₺); neden: bozuk. para. Kapanış notu (${E}): sakin. Eksik: Banka POS: ${E}'tan Pavo gün sonu gelmedi.`),
+    `${E} gün sonundan otomatik yazıldı. Kapanış notu (${E}): sakin. Eksik: Banka POS: ${E}'tan Pavo gün sonu gelmedi.`,
+  );
+  assert.equal(blindNote(`Açılış önceki raporun devrinden 20,50 ₺ fazla; ${E}'taki açılış yazıldı. Neden (${E}): bozuk para.`), null);
+  assert.equal(blindNote(`Açılış notu (${E}): bozuk para.`), null);
 });
 
-test("LafPOS'un gün sonu: personele açılış, sayım ve LafPOS'un olması gereken satırı gitmez", () => {
-  const day = lafposDayOf({ ...Z, expectedCash: 9_999 }, "2026-11-24T21:00:00.000Z");
+test("AsilPOS'un gün sonu: personele açılış, sayım ve AsilPOS'un olması gereken satırı gitmez", () => {
+  const day = asilposDayOf({ ...Z, expectedCash: 9_999 }, "2026-11-24T21:00:00.000Z");
   assert.ok(day.prefill.values.countedCash && day.prefill.checks.length, "yöneticinin hâlinde var");
-  const b = blindLafposDay(day);
+  const b = blindAsilposDay(day);
   assert.deepEqual(Object.keys(b.prefill.values).filter((k) => ["openingCash", "countedCash", "handedOver"].includes(k)), []);
   assert.deepEqual([b.prefill.checks, b.prefill.missing], [[], []]);
   assert.equal(b.prefill.values.zTotal?.value, 9_000, "Z kalır");
@@ -115,22 +124,22 @@ test("döküm: kör raporda kasa bölümü yalnız nakit satış ve çıkan; yö
   require.cache[marker] = { id: marker, filename: marker, loaded: true, exports: {} } as unknown as NodeJS.Module;
   const { CashBreakdown } = await import("../src/app/panel/kasa/cash-summary");
   const b = blindReport(report);
-  const staffHtml = plain(renderToStaticMarkup(createElement(CashBreakdown, { report: b, audience: "staff", kasa: "LafPOS", blind: true })));
+  const staffHtml = plain(renderToStaticMarkup(createElement(CashBreakdown, { report: b, audience: "staff", kasa: "AsilPOS", blind: true })));
   for (const w of ["Açılış", "Olması gereken", "Sayılan", "Fark", "Ertesi güne devir", "Kasa tutuyor"]) assert.ok(!staffHtml.includes(w), `personelde ${w} var`);
   assert.ok(staffHtml.includes(BLIND_TEXT.breakdown));
   assert.match(staffHtml, /Nakit satış[\s\S]*3\.000 ₺/);
-  const adminHtml = plain(renderToStaticMarkup(createElement(CashBreakdown, { report, audience: "admin", kasa: "LafPOS" })));
+  const adminHtml = plain(renderToStaticMarkup(createElement(CashBreakdown, { report, audience: "admin", kasa: "AsilPOS" })));
   for (const w of ["Açılış", "Olması gereken", "Sayılan", "751,25 ₺ eksik"]) assert.ok(adminHtml.includes(w), `yöneticide ${w} yok`);
 });
 
-test("Bugün: personelin LafPOS günü satırı farkı yazmaz; ModPOS günü ve yönetici eskisi gibi", () => {
+test("Bugün: personelin AsilPOS günü satırı farkı yazmaz; ModPOS günü ve yönetici eskisi gibi", () => {
   const now = new Date("2026-11-24T22:00:00+03:00");
-  const lite = (o: Partial<CashLite>): CashLite => ({ date: "2026-11-24", cashDiff: 0, zTotal: 9_000, cash: 3_000, card: 6_000, submittedByName: "LafPOS (otomatik)", revision: 1, note: null, ...o });
+  const lite = (o: Partial<CashLite>): CashLite => ({ date: "2026-11-24", cashDiff: 0, zTotal: 9_000, cash: 3_000, card: 6_000, submittedByName: ASILPOS_AUTO_BY, revision: 1, note: null, ...o });
   const facts = (r: CashLite, role: "staff" | "admin" = "staff"): DayFacts =>
     ({ role, now, cash: { today: r, yesterday: null, firstDate: "2026-11-01" }, waste: { count: 0, zayi: null, ikram: null }, stock: null, ...(role === "admin" ? { system: [], payments: [], invoices: { review: 0 } } : {}) }) as DayFacts;
   const kasa = (f: DayFacts) => dayTasks(f).find((t) => t.key === "kasa");
-  const done = kasa(facts(lite({ blind: true, lafposPhoto: "done" })));
-  assert.equal(plain(done?.detail ?? ""), "LafPOS gün sonu · Fotoğraf alındı");
+  const done = kasa(facts(lite({ blind: true, asilposPhoto: "done" })));
+  assert.equal(plain(done?.detail ?? ""), "AsilPOS gün sonu · Fotoğraf alındı");
   const manual = kasa(facts(lite({ blind: true, submittedByName: "Ali" })));
   assert.equal(plain(manual?.detail ?? ""), "Ali gönderdi");
   // ModPOS günü (kör değil): fark yazar (sıfırlanmış değil, gerçek fark)

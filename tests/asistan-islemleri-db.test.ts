@@ -281,7 +281,7 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
     await assert.rejects(open("urun_tukendi_yap", { urun: "Filtre Kahve" }), /Site menüsü/);
     await assert.rejects(open("urun_satisa_ac", { urun: "Ice Latte" }), /zaten satışta/);
     const { card } = await ok("urun_tukendi_yap", { urun: "ice latte" });
-    assert.deepEqual(card.effects, ["site", "lafpos"]);
+    assert.deepEqual(card.effects, ["site", "asilpos"]);
     assert.ok(card.lines.some((l) => l.label === "Boylar" && l.to === "M, L"));
     assert.equal(site.get("ice-latte")!.isActive, false);
     const undo = await confirm.undoOp(users.ali, card.id);

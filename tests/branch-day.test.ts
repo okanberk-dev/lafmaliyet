@@ -31,14 +31,14 @@ test("gün: bütün şubeler bugünü kapattıysa bugün, biri eksikse dün", ()
   assert.equal(pickDay([], [], TODAY), YESTERDAY);
 });
 
-test("kaynak: kasa raporu LafPOS gün sonunu, o da ModPOS föyünü ezer", () => {
-  const rows = [src("tuzla", YESTERDAY, { source: "lafpos", zTotal: 900 }), src("tuzla", YESTERDAY, { zTotal: 1000 })];
+test("kaynak: kasa raporu AsilPOS gün sonunu, o da ModPOS föyünü ezer", () => {
+  const rows = [src("tuzla", YESTERDAY, { source: "asilpos", zTotal: 900 }), src("tuzla", YESTERDAY, { zTotal: 1000 })];
   assert.equal(pickSource(rows, "tuzla", YESTERDAY)?.source, "rapor");
-  assert.equal(pickSource([rows[0]], "tuzla", YESTERDAY)?.source, "lafpos");
+  assert.equal(pickSource([rows[0]], "tuzla", YESTERDAY)?.source, "asilpos");
   assert.equal(pickSource(rows, "marina", YESTERDAY), null);
   const foy = src("tuzla", YESTERDAY, { source: "modpos", zTotal: 800, cashDiff: null });
   assert.equal(pickSource([foy, ...rows], "tuzla", YESTERDAY)?.source, "rapor");
-  assert.equal(pickSource([foy, rows[0]], "tuzla", YESTERDAY)?.source, "lafpos");
+  assert.equal(pickSource([foy, rows[0]], "tuzla", YESTERDAY)?.source, "asilpos");
   assert.equal(pickSource([foy], "tuzla", YESTERDAY)?.source, "modpos");
 });
 
@@ -94,7 +94,7 @@ test("son sekiz gün: eskiden yeniye, satırlarla aynı ciro kuralı; gün sonu 
     src("tuzla", WEEK_AGO, { zTotal: 800, cash: 200, card: 600 }),
     // Ödenmez Z'nin içinde: ciro 1.000 (özetteki gibi)
     src("tuzla", YESTERDAY, { zTotal: 1100, offRevenue: 100 }),
-    src("tuzla", "2026-11-02", { source: "lafpos", zTotal: 900, cash: 300, card: 600 }),
+    src("tuzla", "2026-11-02", { source: "asilpos", zTotal: 900, cash: 300, card: 600 }),
     src("marina", "2026-11-02"),
   ];
   const trend = dailyTrend(branches, rows, YESTERDAY);

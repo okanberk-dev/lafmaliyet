@@ -224,12 +224,12 @@ test("bekçi koşullu sınıfı da yakalar: dolgu ve renk ayrı dizelerde (göç
   assert.equal(boxHits(f, `<span className={cn("rounded-full", warn ? "bg-warn-soft" : "bg-note")} />`).box.length, 0);
   // Yorumdaki eski kutu sayılmaz
   assert.equal(boxHits(f, `{/* <p className={cn("px-3 py-2", "bg-warn-soft")}> */}`).box.length, 0);
-  // Sabite ya da ton nesnesine alınmış sınıf: göç öncesi cari-strips.tsx (Strip) ve ayarlar/lafpos-card.tsx
+  // Sabite ya da ton nesnesine alınmış sınıf: göç öncesi cari-strips.tsx (Strip) ve ayarlar/asilpos-card.tsx
   const strip = `const TONE = {\n  info: "bg-info-soft text-info",\n  warn: "bg-warn-soft text-warn",\n} as const;\nfunction Strip() {\n  return <div className={cn("flex rounded-2xl px-4 py-3 text-[13px]", TONE[tone])} />;\n}`;
   assert.deepEqual(boxHits("src/app/panel/tedarikciler/[cari]/cari-strips.tsx", strip).box.length, 1);
-  const lafpos = `const box = "space-y-2 rounded-2xl px-4 py-3 text-[13px]";\nconst redBox = linked ? "bg-bad-soft text-bad" : "bg-surface";\n<div className={cn(box, redBox)} />`;
-  assert.equal(boxHits("src/app/panel/ayarlar/lafpos-card.tsx", lafpos).box.length, 1);
-  assert.ok(boxHits("src/app/panel/ayarlar/lafpos-card.tsx", lafpos).ink.length > 0);
+  const asilpos = `const box = "space-y-2 rounded-2xl px-4 py-3 text-[13px]";\nconst redBox = linked ? "bg-bad-soft text-bad" : "bg-surface";\n<div className={cn(box, redBox)} />`;
+  assert.equal(boxHits("src/app/panel/ayarlar/asilpos-card.tsx", asilpos).box.length, 1);
+  assert.ok(boxHits("src/app/panel/ayarlar/asilpos-card.tsx", asilpos).ink.length > 0);
 });
 
 /** Uyarı ikonunun JSX'i: yalnız ortak bileşenler ve §4.7'nin kart / rakam başlığı ikonları */
@@ -410,8 +410,8 @@ test("personelin açtığı ekranlarda tech yalnız yönetici dalında (role ===
 const NOTICE_FILES = [
   "analiz/analysis-client.tsx",
   "ayarlar/jobs-card.tsx",
-  "ayarlar/lafpos-card.tsx",
-  "ayarlar/lafpos-client.tsx",
+  "ayarlar/asilpos-card.tsx",
+  "ayarlar/asilpos-client.tsx",
   "ayarlar/page.tsx",
   "ayarlar/photo-card.tsx",
   "ayarlar/settings-client.tsx",

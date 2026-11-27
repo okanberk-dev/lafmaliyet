@@ -305,8 +305,8 @@ oda saatleri; mal siparişi ayarları; haftalık özetin ayarı ve geçmişi".
   (W2.0), returns `null` today, and every reader falls back to monthly data (siparis usage; tahmin daily totals and
   the dessert mix; doluluk counter karaoke). Nobody implements `dailyUsage` or `byWeekday` now; mcp keeps
   `salesFor(model, month)`. When the sample file arrives, one import task fills the seam.
-  **Update (26 Oct):** ModPOS never sent the export; LafPOS (the new till) fills the seam with its signed day-close
-  push (`POST /api/pos/gun` → `pos_daily_sales`), and the readers' monthly fallback is unchanged: `docs/LAFPOS.md`.
+  **Update (26 Oct):** ModPOS never sent the export; AsilPOS (the new till) fills the seam with its signed day-close
+  push (`POST /api/pos/gun` → `pos_daily_sales`), and the readers' monthly fallback is unchanged: `docs/ASILPOS.md`.
 
 ### R19. Location and hours: Tuzla, Opera AVM
 - **The café** is in Tuzla, Opera AVM (`PROMPT-VE-PLAN.md:11`; rent to "Opera AVM"). MaviBahçe AVM (İzmir) is the

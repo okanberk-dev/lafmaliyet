@@ -4,21 +4,21 @@ import { Suspense, type ReactNode } from "react";
 import { loadTillScope } from "@/server/data/till-scope";
 
 /**
- * Bugünün kasasına göre metin (denetim E-39; src/lib/lafpos/kasa.ts): geçiş günü boşken, bugün ondan önceyse ya da ayar
- * okunamazsa `modpos` (bugünkü metin, beklerken de o görünür), geçiş gününden itibaren `lafpos`. Yalnız sunucuda çizilen
+ * Bugünün kasasına göre metin (denetim E-39; src/lib/asilpos/kasa.ts): geçiş günü boşken, bugün ondan önceyse ya da ayar
+ * okunamazsa `modpos` (bugünkü metin, beklerken de o görünür), geçiş gününden itibaren `asilpos`. Yalnız sunucuda çizilen
  * sayfa başlıkları için (ör. Kasa raporunun açıklaması); verisi zaten okunan ekran metni yükleyicinin `kasa`'sını kullanır.
  */
-export function KasaText({ modpos, lafpos }: { modpos: ReactNode; lafpos: ReactNode }) {
+export function KasaText({ modpos, asilpos }: { modpos: ReactNode; asilpos: ReactNode }) {
   return (
     <Suspense fallback={modpos}>
-      <KasaTextNow modpos={modpos} lafpos={lafpos} />
+      <KasaTextNow modpos={modpos} asilpos={asilpos} />
     </Suspense>
   );
 }
 
-async function KasaTextNow({ modpos, lafpos }: { modpos: ReactNode; lafpos: ReactNode }) {
+async function KasaTextNow({ modpos, asilpos }: { modpos: ReactNode; asilpos: ReactNode }) {
   // Saat isteğin anında okunur (önceden çizilen kabukta ModPOS metni kalır)
   await connection();
   const scope = await loadTillScope().catch(() => null);
-  return scope?.lafpos ? lafpos : modpos;
+  return scope?.asilpos ? asilpos : modpos;
 }

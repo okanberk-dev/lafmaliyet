@@ -51,9 +51,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/closed-day.tsx",
   "src/app/panel/ozel-gunler/page.tsx",
   "src/app/panel/ozel-gunler/staff-special-days.tsx",
-  // LafPOS'tan doldur (docs/LAFPOS.md): okuyucu ve formun alanlarına eşleme
-  "src/server/data/lafpos-day.ts",
-  "src/lib/lafpos/prefill.ts",
+  // AsilPOS'tan doldur (docs/ASILPOS.md): okuyucu ve formun alanlarına eşleme
+  "src/server/data/asilpos-day.ts",
+  "src/lib/asilpos/prefill.ts",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -267,17 +267,17 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   assert.ok(a2.includes("Yazarkasa toplam 11.540 ₺ → 11.640,50 ₺") && a2.includes("Yazarkasa fiş sayısı (fotoğrafta 149)"), a2);
 });
 
-test("LafPOS'tan doldur: personelin okuyucusu yalnız Z, yazarkasadan geçmeyen ödeme ve geliş anı (sabit sütunlar); ödeme kanalları ve ikram okunmaz", () => {
-  const loader = stripComments(read("src/server/data/lafpos-day.ts"));
+test("AsilPOS'tan doldur: personelin okuyucusu yalnız Z, yazarkasadan geçmeyen ödeme ve geliş anı (sabit sütunlar); ödeme kanalları ve ikram okunmaz", () => {
+  const loader = stripComments(read("src/server/data/asilpos-day.ts"));
   assert.match(loader, /^import "server-only";/);
   // Faz 2: yazarkasadan geçmeyen kart ve nakit (iki tutar) da gider: personelin kart karşılaştırması yöneticininkiyle aynı
   // sonucu versin (kartla bahşiş gibi, G11; tutarı metinde yalnız yöneticininki yazar)
   // Gün sonu tam: yazarkasanın belgeleri (okc) yalnız cihazda iptal edileni yazarkasadan geçmeyene eklemek için okunur
   assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, offDevice: s\.posDayReports\.offDevice, okc: s\.posDayReports\.okc, receivedAt: s\.posDayReports\.receivedAt \}\)/);
   assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
-  // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
-  const prefill = read("src/lib/lafpos/prefill.ts");
-  const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
+  // Forma giden yalnız formun alanları: kasa farkı (AsilPOS'un hesabı) da gitmez, form kendisi hesaplar
+  const prefill = read("src/lib/asilpos/prefill.ts");
+  const map = prefill.slice(prefill.indexOf("export function asilposPrefill"), prefill.indexOf("export function asilposSummary"));
   const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashIn", "cashOut", "countedCash", "handedOver"]);
 });
@@ -303,18 +303,18 @@ test("ModPOS API: personele giden kasa kaynaklarında föyün anahtarları yok",
 });
 
 /**
- * Kör kasa (bulgu 0; docs/LAFPOS.md › Kör kasa): LafPOS gününde personele giden her rapor yükü sayımsızdır. Davranışı
- * tests/kor-kasa.test.ts (saf) ve tests/lafpos-gun-sonu-tam-db.test.ts (yükleyici, ret) sınar; burada personele rapor
+ * Kör kasa (bulgu 0; docs/ASILPOS.md › Kör kasa): AsilPOS gününde personele giden her rapor yükü sayımsızdır. Davranışı
+ * tests/kor-kasa.test.ts (saf) ve tests/asilpos-gun-sonu-tam-db.test.ts (yükleyici, ret) sınar; burada personele rapor
  * götüren yolların hepsinin süzgeçten geçtiği kilitlenir (yeni bir yol eklenirse süzgeçsiz kalmasın)
  */
-test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 gün, eski LafPOS günü, Bugün)", () => {
+test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 gün, eski AsilPOS günü, Bugün)", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /const shownReport = report && blind \? blindReport\(report\) : report;/);
   assert.match(page, /report=\{shownReport\}/);
   assert.match(page, /carry=\{blind \? null : carry\}/);
   assert.match(page, /next=\{blind \? null : next\}/);
   assert.match(page, /revisions=\{blind \? \[\] : revisions\}/);
-  assert.match(page, /lafpos=\{blind && lafposState\.day \? blindLafposDay\(lafposState\.day\) : lafposState\.day\}/);
+  assert.match(page, /asilpos=\{blind && asilposState\.day \? blindAsilposDay\(asilposState\.day\) : asilposState\.day\}/);
   assert.match(page, /const whatsapp = report && !blind/);
   assert.match(page, /cashReportsBetween\(addDays\(today, -6\), today\)\.then\(\(r\) => blindForStaff\(r, "staff"\)\)/);
   assert.match(page, /getCashReport\(date, "staff"\)\.then\(async \(r\) => \(r \? \(await blindForStaff\(\[r\], "staff"\)\)\[0\] : null\)\)/);

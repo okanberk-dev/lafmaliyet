@@ -1,9 +1,9 @@
 import "server-only";
 
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { sortBranches, type BranchRow } from "@/lib/branches";
-import { legacyOwnerId, plainFields, type BranchSettingGroup } from "@/lib/branch-settings/groups";
+import { branchSettingGroup, groupReadIds, legacyOwnerId, plainFields, type BranchSettingGroup } from "@/lib/branch-settings/groups";
 import { settingCloseError, settingLinkError, settingMode, settingSource, type SettingLink, type SettingMode } from "@/lib/branch-settings/rules";
 import { UserError } from "@/server/actions/util";
 import { currentVia } from "@/server/activity-via";
@@ -57,13 +57,31 @@ async function branchesOf(db: Reader): Promise<BranchRow[]> {
   return sortBranches(rows);
 }
 
+/**
+ * Grubun satırları. Ad değişikliği (grubun `readIds`'i, AsilPOS): yeni adlı satırlar da okunur, bir şubede ikisi varsa
+ * yeni adlı geçer; satırların `grp`'si grubun yazılan adına (`id`) çevrilir
+ */
 async function rowsOf(db: Reader, grp: string): Promise<Row[]> {
-  return db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, grp));
+  const group = branchSettingGroup(grp);
+  const ids = group ? groupReadIds(group) : [grp];
+  if (ids.length === 1) return db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, grp));
+  const rows = await db.select().from(s.branchSettings).where(inArray(s.branchSettings.grp, ids));
+  const rank = (r: Row) => ids.indexOf(r.grp);
+  const best = new Map<string, Row>();
+  for (const r of rows) {
+    const prev = best.get(r.branchId);
+    if (!prev || rank(r) < rank(prev)) best.set(r.branchId, r);
+  }
+  return [...best.values()].map((r) => ({ ...r, grp: group!.id }));
 }
 
 /** Eski genel kayıt: integration_state'teki anahtar ve (varsa) settings tablosundaki alanlar */
-async function legacyRaw(db: Reader, group: Pick<BranchSettingGroup, "legacyKey" | "legacySettings">): Promise<Record<string, unknown>> {
-  const fields = Object.entries(group.legacySettings ?? {});
+async function legacyRaw(db: Reader, group: Pick<BranchSettingGroup, "legacyKey" | "legacySettings" | "legacySettingsNew">): Promise<Record<string, unknown>> {
+  // Ad değişikliği: alanın yeni settings anahtarı (legacySettingsNew) önce okunur, yoksa eskisi
+  const fields = Object.entries(group.legacySettings ?? {}).flatMap(([field, key]) => {
+    const yeni = group.legacySettingsNew?.[field];
+    return yeni ? [[field, key] as const, [field, yeni] as const] : [[field, key] as const];
+  });
   const [state, settings] = await Promise.all([
     group.legacyKey ? db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, group.legacyKey)).limit(1) : Promise.resolve([]),
     fields.length ? db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings).where(inArray(s.settings.key, fields.map(([, k]) => k))) : Promise.resolve([]),
@@ -163,12 +181,24 @@ async function settingBranch(tx: Tx, branchId: string): Promise<{ branch: Branch
   return { branch, branches };
 }
 
-async function writeRow(tx: Tx, grp: string, branchId: string, set: { value: Record<string, unknown>; secrets: Record<string, string> | null; sameAs: string | null }, by: string) {
-  const values = { branchId, grp, ...set, updatedBy: by, updatedAt: new Date() };
+/**
+ * Şubenin satırını yazar: grubun yazılan adıyla (`id`). Ad değişikliği: aynı şubenin yeni adlı satırı (`readIds`; temizlik
+ * PR'ı A3 yazar, oradan geri dönülürse kalır) varsa o da aynı değeri alır. Okuma onu önce okur (rowsOf): yalnız eski
+ * adlıya yazılsaydı değişiklik sessizce görünmezdi
+ */
+async function writeRow(tx: Tx, group: Pick<BranchSettingGroup, "id" | "readIds">, branchId: string, set: { value: Record<string, unknown>; secrets: Record<string, string> | null; sameAs: string | null }, by: string) {
+  const now = new Date();
+  const fields = { value: set.value, secrets: set.secrets, sameAs: set.sameAs, updatedBy: by, updatedAt: now };
   await tx
     .insert(s.branchSettings)
-    .values(values)
-    .onConflictDoUpdate({ target: [s.branchSettings.branchId, s.branchSettings.grp], set: { value: set.value, secrets: set.secrets, sameAs: set.sameAs, updatedBy: by, updatedAt: new Date() } });
+    .values({ branchId, grp: group.id, ...fields })
+    .onConflictDoUpdate({ target: [s.branchSettings.branchId, s.branchSettings.grp], set: fields });
+  if (group.readIds?.length) {
+    await tx
+      .update(s.branchSettings)
+      .set(fields)
+      .where(and(eq(s.branchSettings.branchId, branchId), inArray(s.branchSettings.grp, [...group.readIds])));
+  }
 }
 
 /** İşlem geçmişi, yazımla aynı işlemde (yalnız ayarın adı ve ne olduğu; değer yazılmaz) */
@@ -209,7 +239,7 @@ export async function putBranchSetting<T extends Record<string, unknown>>(
     } else plain[k] = v;
   }
   const value = group.read({ ...plain }, process.env);
-  await writeRow(tx, group.id, branchId, { value: plainFields(group, value), secrets: Object.keys(sealed).length ? sealed : null, sameAs: null }, by);
+  await writeRow(tx, group, branchId, { value: plainFields(group, value), secrets: Object.keys(sealed).length ? sealed : null, sameAs: null }, by);
   return value;
 }
 
@@ -225,7 +255,7 @@ export async function linkBranchSetting(tx: Tx, group: BranchSettingGroup, branc
   const rows = await rowsOf(tx, group.id);
   const err = settingLinkError(group, branchId, target, rows, branches);
   if (err) throw new UserError(err);
-  await writeRow(tx, group.id, branchId, { value: {}, secrets: null, sameAs: target }, by);
+  await writeRow(tx, group, branchId, { value: {}, secrets: null, sameAs: target }, by);
 }
 
 /**
@@ -238,7 +268,7 @@ export async function unlinkBranchSetting(tx: Tx, group: BranchSettingGroup, bra
   const rows = await rowsOf(tx, group.id);
   if (settingMode(group, branchId, rows).kind === "own") throw new UserError("Bu şubenin zaten kendi ayarı var");
   const current = await resolveWith(tx, group, branchId, rows, branches);
-  await writeRow(tx, group.id, branchId, { value: plainFields(group, current.value), secrets: null, sameAs: null }, by);
+  await writeRow(tx, group, branchId, { value: plainFields(group, current.value), secrets: null, sameAs: null }, by);
   return { secretsLeft: group.secretFields.filter((f) => current.secrets[f] === "saved") };
 }
 
@@ -252,11 +282,13 @@ export async function branchSettingsCloseError(db: Reader, branch: Pick<BranchRo
     db
       .select({ grp: s.branchSettings.grp, branchId: s.branchSettings.branchId, sameAs: s.branchSettings.sameAs })
       .from(s.branchSettings)
-      .where(inArray(s.branchSettings.grp, groups.map((g) => g.id))),
+      .where(inArray(s.branchSettings.grp, groups.flatMap((g) => groupReadIds(g)))),
     branchesOf(db),
   ]);
   const byGroup = new Map<string, SettingLink[]>();
-  for (const r of rows) byGroup.set(r.grp, [...(byGroup.get(r.grp) ?? []), r]);
+  // Yeni adlı satır grubun yazılan adına sayılır (ad değişikliği; groupReadIds)
+  const idOf = (grp: string) => groups.find((g) => groupReadIds(g).includes(grp))?.id ?? grp;
+  for (const r of rows) byGroup.set(idOf(r.grp), [...(byGroup.get(idOf(r.grp)) ?? []), r]);
   const err = settingCloseError(groups, branch, byGroup, branches);
   if (err) return err;
   // Kapalı şubeye bağlı satır kalmasın (kapalı şubeden de olsa: silmede yabancı anahtar reddeder)

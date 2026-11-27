@@ -28,11 +28,11 @@ const PATH = "/panel/raporlar/iscilik";
 const TITLE = "İşçilik / ciro";
 const DESCRIPTION = "Personel maliyetinin ciroya oranı: günlük, haftalık ve şube şube.";
 const MORE =
-  "Ayın satırı Gelir-gider'in personeli ve cirosudur (KDV hariç). Günlük ve haftalık satırlarda tam zamanlının aylık işveren maliyeti ayın günlerine eşit bölünür (kapalı günde de maaş işler), part-time'ın günlük ücreti Vardiya'da çalıştığı güne yazılır. Giderlerdeki maaş ödemeleri kullanılmaz: ödeme günü çalışılan gün değildir. Cirosu bilinmeyen gün (kasa raporu, LafPOS gün sonu ya da föy yok) orana girmez, sıfır sayılmaz.";
+  "Ayın satırı Gelir-gider'in personeli ve cirosudur (KDV hariç). Günlük ve haftalık satırlarda tam zamanlının aylık işveren maliyeti ayın günlerine eşit bölünür (kapalı günde de maaş işler), part-time'ın günlük ücreti Vardiya'da çalıştığı güne yazılır. Giderlerdeki maaş ödemeleri kullanılmaz: ödeme günü çalışılan gün değildir. Cirosu bilinmeyen gün (kasa raporu, AsilPOS gün sonu ya da föy yok) orana girmez, sıfır sayılmaz.";
 // Kişisel ücreti görmeyen rol (müdür; docs/ROLLER.md): oran yalnız aylık ücretlerle, tutar ve günlük görünüm yok
 const DESCRIPTION_NO_WAGES = "Personelin aylık ücretlerinin ciroya oranı: haftalık ve aylık.";
 const MORE_NO_WAGES =
-  "Tam zamanlının aylık işveren maliyeti ve part-time'ın aylık ek ödemesi ayın günlerine eşit bölünür (kapalı günde de maaş işler). Part-time'ın günlük ücreti kişisel ücrettir: Vardiya'daki günlerine yazılmaz, orana girmez; işçiliğin tutarı ve günlük görünüm yöneticinin. Cirosu bilinmeyen gün (kasa raporu, LafPOS gün sonu ya da föy yok) orana girmez, sıfır sayılmaz.";
+  "Tam zamanlının aylık işveren maliyeti ve part-time'ın aylık ek ödemesi ayın günlerine eşit bölünür (kapalı günde de maaş işler). Part-time'ın günlük ücreti kişisel ücrettir: Vardiya'daki günlerine yazılmaz, orana girmez; işçiliğin tutarı ve günlük görünüm yöneticinin. Cirosu bilinmeyen gün (kasa raporu, AsilPOS gün sonu ya da föy yok) orana girmez, sıfır sayılmaz.";
 
 const PICKER_MONTHS = 24;
 

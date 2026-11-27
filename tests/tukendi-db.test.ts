@@ -137,7 +137,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     return json(200, { item });
   }
   /**
-   * Veritabanı başka testlerle paylaşılır (ör. lafpos-db kendi ürünlerini bağlar): bu testin tam çekmeleri (409 stale,
+   * Veritabanı başka testlerle paylaşılır (ör. asilpos-db kendi ürünlerini bağlar): bu testin tam çekmeleri (409 stale,
    * zaman aşımı, eşitleme) onların bağlantısını "sitede silinmiş" sayıp kaldırmasın diye sahte site, bu testin
    * kalemleri dışında bağlı her ürünün kalemini panelin değerleriyle aynen listeler (çekme onlara dokunmaz)
    */

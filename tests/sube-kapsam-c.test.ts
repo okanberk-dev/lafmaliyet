@@ -103,7 +103,7 @@ test("kaynak: Satışlar'ın ay bilgisi 'Tümü'de birden çok kasa açıkken ş
   assert.ok(ask > 0 && ask < page.indexOf("<MonthInfoForm"), "soru formdan önce");
   assert.match(page, /title="Hangi şubenin ay bilgisi\?"/);
   // Ayı temizle onayı sunucunun denetlediği sayıyı gösterir
-  assert.match(read("src/app/panel/satislar/sales-client.tsx"), /\{num\(clearCount\)\} \{lafpos \? "ModPOS" : "satış"\} satırı silinecek\./);
+  assert.match(read("src/app/panel/satislar/sales-client.tsx"), /\{num\(clearCount\)\} \{asilpos \? "ModPOS" : "satış"\} satırı silinecek\./);
 });
 
 test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, Vergi ve Cari firma geneli", () => {
@@ -162,7 +162,7 @@ test("sabah e-postası şubenin başlığıyla: konu şubenin adıyla başlar, g
 test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de yok", () => {
   const known = [
     { id: "tuzla", name: "Tuzla", kind: "fiziksel" as const, posSource: "modpos" as const, active: true, openedOn: null, sortOrder: 1 },
-    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "lafpos" as const, active: true, openedOn: null, sortOrder: 2 },
+    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "asilpos" as const, active: true, openedOn: null, sortOrder: 2 },
   ];
   assert.equal(companyWideNote("vergi", ALL_BRANCHES, known), null);
   const note = companyWideNote("tedarikciler", "marina", known);
@@ -183,7 +183,7 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
 test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve bilinmeyen şube seçenekleriyle reddedilir", () => {
   const known = [
     { id: "tuzla", name: "Tuzla", kind: "fiziksel" as const, posSource: "modpos" as const, active: true, openedOn: null, sortOrder: 1 },
-    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "lafpos" as const, active: true, openedOn: null, sortOrder: 2 },
+    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "asilpos" as const, active: true, openedOn: null, sortOrder: 2 },
     { id: "eski", name: "Eski", kind: "fiziksel" as const, posSource: "modpos" as const, active: false, openedOn: null, sortOrder: 9 },
   ];
   assert.deepEqual(mcpBranchScope("Marina", known), { scope: "marina" });

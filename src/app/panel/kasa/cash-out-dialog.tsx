@@ -18,7 +18,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { CASH_OUT_REQUEST_TEXT, type CashOutOp } from "@/lib/cash-out-requests";
 import { CASH_OUT_UNDO_TOAST_MS, cashOutShortLabel, cashOutWritesExpense, supplierNameHint, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
-import { LAFPOS_CASH_OUT_TEXT } from "@/lib/lafpos/cash-moves";
+import { ASILPOS_CASH_OUT_TEXT } from "@/lib/asilpos/cash-moves";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import type { ReceiptCheck, ReceiptField, ReceiptReading } from "@/lib/photo-read/receipt";
 import { photoCaption } from "@/lib/photo-rules";
@@ -146,8 +146,8 @@ export function CashOutDialog({
   supplierNames?: string[];
 }) {
   const line = mode.mode === "edit" ? mode.line : null;
-  // LafPOS'un kasa hareketinden gelen satır (Faz 3): tutar, tür ve gün LafPOS'tan (sunucu da reddeder), silinmez
-  const fromLafpos = line?.lafposId != null;
+  // AsilPOS'un kasa hareketinden gelen satır (Faz 3): tutar, tür ve gün AsilPOS'tan (sunucu da reddeder), silinmez
+  const fromAsilpos = line?.asilposId != null;
   const [draft, setDraft] = useState<Draft>(() => draftOf(line, "harcama"));
   const [filled, setFilled] = useState<Partial<Record<DraftField, string>>>({});
   const [applied, setApplied] = useState<number | null>(null);
@@ -188,7 +188,7 @@ export function CashOutDialog({
     requested: draft.toExpenses,
     hasExpense: line?.expenseEntryId != null,
     prevDocType: line?.docType ?? null,
-    lafposAwaitingCategory: line?.lafposAwaitingCategory === true,
+    asilposAwaitingCategory: line?.asilposAwaitingCategory === true,
   });
   // Kaydı yöneticinin kategorisinde (personelin listesinde yok): personel tutarı düzeltir, silemez ve taşıyamaz
   const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
@@ -196,7 +196,7 @@ export function CashOutDialog({
   const categoryFixed = locked || (request !== null && line !== null);
   const hidePhoto = request?.reason === "locked" && line !== null;
   // Fişsiz alışverişin Yer'i bir tedarikçinin adı: borç ödemesi olabilir (ad listesi borca göre süzülmez; R9d)
-  const supplierHint = !withPhoto && !locked && !fromLafpos && draft.kind === "harcama" && draft.docType === "yok" ? supplierNameHint(draft.store, supplierNames) : null;
+  const supplierHint = !withPhoto && !locked && !fromAsilpos && draft.kind === "harcama" && draft.docType === "yok" ? supplierNameHint(draft.store, supplierNames) : null;
   const checks: ReceiptCheck[] = reading?.checks ?? [];
   const warnFields = new Set<ReceiptField>(checks.filter((c) => c.level === "warn").flatMap((c) => c.fields));
   const suggested = reading && reading.confidence.categoryId === "high" ? categories.find((c) => c.id === reading.values.categoryId) : undefined;
@@ -315,11 +315,11 @@ export function CashOutDialog({
       description={request && !line && request.reason === "old" ? longDateTR(date) : undefined}
       footerStartOnPhone={request ? "body" : "footer"}
       footerStart={
-        request && line && !fromLafpos ? (
+        request && line && !fromAsilpos ? (
           <Button variant="ghost" className="text-bad" onClick={askDelete} disabled={pending}>
             <Trash2 size={15} /> Silinmesini iste
           </Button>
-        ) : line && !locked && !fromLafpos ? (
+        ) : line && !locked && !fromAsilpos ? (
           <Button variant="ghost" className="text-bad" onClick={remove} disabled={pending}>
             <Trash2 size={15} /> Sil
           </Button>
@@ -353,8 +353,8 @@ export function CashOutDialog({
             {/* İstekte fişli satırın türü salt okunur (fişli satır alışveriştir; fiş bu yoldan değişmez) */}
             {request && line ? <p className="text-[13px] text-ink-mute">Ne için: {draft.kind === "harcama" ? "Alışveriş" : "Teslim · ödeme"}</p> : null}
           </div>
-        ) : locked && !request ? null : fromLafpos ? (
-          <p className="text-[13px] text-ink-mute">Ne için: {draft.kind === "harcama" ? "Alışveriş" : "Teslim · ödeme"} (LafPOS)</p>
+        ) : locked && !request ? null : fromAsilpos ? (
+          <p className="text-[13px] text-ink-mute">Ne için: {draft.kind === "harcama" ? "Alışveriş" : "Teslim · ödeme"} (AsilPOS)</p>
         ) : (
           <Field label="Ne için" hint="Tedarikçinin şoförüne verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz.">
             <Segmented<CashOutKind>
@@ -371,7 +371,7 @@ export function CashOutDialog({
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={chip("amount", "Tutar (₺)")} htmlFor="co-amount">
-            <NumberInput id="co-amount" value={draft.amount} onChange={set("amount")} placeholder="0" enterKeyHint="next" data-warn={warn("amount")} readOnly={fromLafpos} disabled={fromLafpos} />
+            <NumberInput id="co-amount" value={draft.amount} onChange={set("amount")} placeholder="0" enterKeyHint="next" data-warn={warn("amount")} readOnly={fromAsilpos} disabled={fromAsilpos} />
           </Field>
           <Field label={chip("store", harcama ? "Yer" : "Kime")} htmlFor="co-store">
             <Input id="co-store" value={draft.store} onChange={set("store")} maxLength={60} placeholder={harcama ? "ör. Migros" : "ör. patrona, bankaya, tedarikçiye (Sütaş)"} autoComplete="off" data-warn={warn("store")} />
@@ -427,7 +427,7 @@ export function CashOutDialog({
         {locked && !request ? (
           <Notice tone="neutral" size="sm" title="Bu satır yöneticinin harcama kaydına bağlı" text="Silmek için yöneticiye haber verin." />
         ) : null}
-        {fromLafpos ? <Notice tone="neutral" size="sm" title="LafPOS'tan geldi" text={LAFPOS_CASH_OUT_TEXT.hint} /> : null}
+        {fromAsilpos ? <Notice tone="neutral" size="sm" title="AsilPOS'tan geldi" text={ASILPOS_CASH_OUT_TEXT.hint} /> : null}
         {request ? (
           <Field label="Yöneticiye not" htmlFor="co-note" hint="İsteğe bağlı; neden eklendiğini ya da değiştiğini yazın">
             <Textarea id="co-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={200} />

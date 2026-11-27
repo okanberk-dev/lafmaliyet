@@ -198,11 +198,11 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         role={user.role}
         branch={branchLabel}
         // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur). Tahmini stok yalnız
-        // Marina'nın (LafPOS'un şubesi, geçiş günü seçiliyken; docs/STOK-TAHMINI.md): Tuzla'nın başlığı aynı kalır.
+        // Marina'nın (AsilPOS'un şubesi, geçiş günü seçiliyken; docs/STOK-TAHMINI.md): Tuzla'nın başlığı aynı kalır.
         // Kaydedilmemiş sayım varken bağlantıyı da form durdurup sorar (useLeaveGuard)
         picker={
           <>
-            {branch.id === STOCK_ESTIMATE_BRANCH && model.settings.lafposGecisGunu ? (
+            {branch.id === STOCK_ESTIMATE_BRANCH && model.settings.asilposGecisGunu ? (
               <ButtonLink href={STOCK_ESTIMATE_PATH} variant="secondary">
                 Tahmini stok
               </ButtonLink>

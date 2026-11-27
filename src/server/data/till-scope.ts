@@ -4,13 +4,13 @@ import { and, eq, exists, gte, isNull, type SQL } from "drizzle-orm";
 
 import { ALL_BRANCHES, namedTill, tillBranches, type BranchRow } from "@/lib/branches";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
-import { tillScope, type TillScope } from "@/lib/lafpos/kasa";
-import { branchSwitchDay, lafposBranchOf } from "@/lib/lafpos/switch";
+import { tillScope, type TillScope } from "@/lib/asilpos/kasa";
+import { branchSwitchDay, asilposBranchOf } from "@/lib/asilpos/switch";
 import { currentBranchScope, currentTillBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { asilposBranchId } from "@/server/asilpos/branch";
 
 /**
  * Bir şubenin bugünkü kasası (şube kapsamı A3, 24 Kasım 2026): kasada bekleyen fiyat şube başına tutulur (pos_stale),
@@ -23,23 +23,23 @@ export interface BranchTill extends TillScope {
 }
 
 /**
- * Şubenin kasası, geçiş günü verilmiş (saf; işlem içinden ve döngüde tek okuma için). `lafposBranch`: LafPOS'un şubesi
- * (lafposBranchId); verilmezse `branches`'tan türetilir (lafposBranchOf; liste de yoksa geri düşüş değeri)
+ * Şubenin kasası, geçiş günü verilmiş (saf; işlem içinden ve döngüde tek okuma için). `asilposBranch`: AsilPOS'un şubesi
+ * (asilposBranchId); verilmezse `branches`'tan türetilir (asilposBranchOf; liste de yoksa geri düşüş değeri)
  */
-export function branchTill(switchDay: string | null, branchId: string, now: Date, branches: readonly BranchRow[] = [], lafposBranch: string = lafposBranchOf(branches)): BranchTill {
-  return { ...tillScope(businessDate(now), branchSwitchDay(switchDay, branchId, lafposBranch)), branchId, name: namedTill(branches, branchId)?.name ?? null };
+export function branchTill(switchDay: string | null, branchId: string, now: Date, branches: readonly BranchRow[] = [], asilposBranch: string = asilposBranchOf(branches)): BranchTill {
+  return { ...tillScope(businessDate(now), branchSwitchDay(switchDay, branchId, asilposBranch)), branchId, name: namedTill(branches, branchId)?.name ?? null };
 }
 
 /**
- * Bugünün kasası (denetim E-39; kural src/lib/lafpos/kasa.ts tillScope): geçiş günü seçili ve bugün (iş günü, 05:00
- * kuralı) ondan önce değilse LafPOS, değilse ModPOS. Kasadaki fiyatların okuyucuları (Kasaya işle, Kasadaki fiyatlar,
+ * Bugünün kasası (denetim E-39; kural src/lib/asilpos/kasa.ts tillScope): geçiş günü seçili ve bugün (iş günü, 05:00
+ * kuralı) ondan önce değilse AsilPOS, değilse ModPOS. Kasadaki fiyatların okuyucuları (Kasaya işle, Kasadaki fiyatlar,
  * zil, Bugün, haftalık özet, ürün kartı) ve metinleri buna bakar. Kasa, kasanın şubesinindir (`branchId` verilmezse
- * seçili fiziksel şube, "Tümü"de ve istek dışında Tuzla): geçiş günü yalnız LafPOS'un şubesinin kasasına uygulanır,
+ * seçili fiziksel şube, "Tümü"de ve istek dışında Tuzla): geçiş günü yalnız AsilPOS'un şubesinin kasasına uygulanır,
  * ModPOS'ta kalan şubede (Tuzla) liste ModPOS'a göredir (branchSwitchDay; denetim 21 Kasım #5)
  */
 export async function loadTillScope(db: Pick<DB, "select"> = getDb(), now: Date = new Date(), branchId?: string): Promise<BranchTill> {
-  const [switchDay, sube, lafposBranch] = await Promise.all([lafposSwitchDayOf(db), branchId ?? currentTillBranch(), lafposBranchId(db)]);
-  return branchTill(switchDay, sube, now, [], lafposBranch);
+  const [switchDay, sube, asilposBranch] = await Promise.all([asilposSwitchDayOf(db), branchId ?? currentTillBranch(), asilposBranchId(db)]);
+  return branchTill(switchDay, sube, now, [], asilposBranch);
 }
 
 /**
@@ -51,7 +51,7 @@ export async function loadTillScopes(db: Pick<DB, "select"> = getDb(), now: Date
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
   if (scope !== ALL_BRANCHES || tills.length < 2) return [await loadTillScope(db, now)];
-  const switchDay = await lafposSwitchDayOf(db);
+  const switchDay = await asilposSwitchDayOf(db);
   return tills.map((b) => branchTill(switchDay, b.id, now, branches));
 }
 
@@ -60,21 +60,21 @@ export function posStaleJoin(till: Pick<BranchTill, "branchId">): SQL {
   return and(eq(s.posStale.productId, s.products.id), eq(s.posStale.branchId, till.branchId))!;
 }
 
-/** LafPOS'un başladığı an: geçiş gününün 05:00'i (Türkiye, UTC+3); ModPOS gününde null */
+/** AsilPOS'un başladığı an: geçiş gününün 05:00'i (Türkiye, UTC+3); ModPOS gününde null */
 export function tillStart(scope: TillScope): Date | null {
   return scope.switchDay ? new Date(`${scope.switchDay}T${String(DAY_TURN_HOUR).padStart(2, "0")}:00:00+03:00`) : null;
 }
 
 /**
- * Kasa listesinin ürün süzgeci. ModPOS gününde süzgeç yok. LafPOS gününde yalnız siteye bağlı olmayan ve satış fiyatı
- * LafPOS başladıktan sonra yalnız panelde değişmiş ürünler (geçmişte o andan sonra `on_site` olmayan bir satır):
- * siteye bağlınınkini LafPOS siteden alır; ModPOS'tan kalan işaretin (fiyat geçiş gününden önce değişti) LafPOS'la ilgisi
- * yok, LafPOS'un yerel ürünü kurulurken fiyat panelden alınır. Satırlar silinmez: geçiş günü kaldırılınca hepsi geri
+ * Kasa listesinin ürün süzgeci. ModPOS gününde süzgeç yok. AsilPOS gününde yalnız siteye bağlı olmayan ve satış fiyatı
+ * AsilPOS başladıktan sonra yalnız panelde değişmiş ürünler (geçmişte o andan sonra `on_site` olmayan bir satır):
+ * siteye bağlınınkini AsilPOS siteden alır; ModPOS'tan kalan işaretin (fiyat geçiş gününden önce değişti) AsilPOS'la ilgisi
+ * yok, AsilPOS'un yerel ürünü kurulurken fiyat panelden alınır. Satırlar silinmez: geçiş günü kaldırılınca hepsi geri
  * gelir (switch.ts: ayar değişince yalnız okuyanlar değişir).
  */
 export function tillProductFilter(scope: TillScope, db: Pick<DB, "select"> = getDb()): SQL | undefined {
   const start = tillStart(scope);
-  if (!scope.lafpos || !start) return undefined;
+  if (!scope.asilpos || !start) return undefined;
   const pp = s.productPrices;
   const changedSinceStart = exists(
     db
@@ -86,8 +86,8 @@ export function tillProductFilter(scope: TillScope, db: Pick<DB, "select"> = get
 }
 
 /**
- * Kasanın ne zamandan beri geride olduğu, günün kasasına göre: LafPOS gününde en erken LafPOS'un başladığı an (ModPOS'tan
- * kalan işaretin tarihi LafPOS için "40 gündür" demesin)
+ * Kasanın ne zamandan beri geride olduğu, günün kasasına göre: AsilPOS gününde en erken AsilPOS'un başladığı an (ModPOS'tan
+ * kalan işaretin tarihi AsilPOS için "40 gündür" demesin)
  */
 export function tillSince<T extends Date | null>(scope: TillScope, since: T): T {
   const start = tillStart(scope);

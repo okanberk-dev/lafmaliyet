@@ -199,7 +199,7 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
-    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "lafpos", sortOrder: 2 }).onConflictDoNothing();
+    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "asilpos", sortOrder: 2 }).onConflictDoNothing();
     const [u] = await db.insert(s.users).values({ email: "hesap@laffogato.net", name: "Test", passwordHash: "x", role: "admin" }).returning();
     stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => ({ ...u, role: "admin" }), requireUser: async () => ({ ...u, role: "admin" }) });
     const client = await import("../src/server/parasut/client");

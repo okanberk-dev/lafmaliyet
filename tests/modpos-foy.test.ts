@@ -982,7 +982,7 @@ describe("plan.ts: çekilecek günler", () => {
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 1, failed: { "2026-11-11": { count: 1, lastAt: "2026-11-12T04:00:00.000Z" } } }), ["2026-11-11"]);
   });
 
-  test("LafPOS'a geçiş gününden itibaren hiçbir gün çekilmez; eksik gün sayısı da geçiş gününden önceye", () => {
+  test("AsilPOS'a geçiş gününden itibaren hiçbir gün çekilmez; eksik gün sayısı da geçiş gününden önceye", () => {
     // Geçiş günü 5 Kasım: dün (11 Kasım) ve 5–10 Kasım çekilmez; geçmiş geçişin önceki gününden eskiye
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: new Map(), left: 2, until: "2026-11-05" }), ["2026-11-04", "2026-11-03"]);
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-03", "2026-11-04"), left: 3, until: "2026-11-05" }), ["2026-11-02", "2026-11-01"]);

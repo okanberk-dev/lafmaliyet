@@ -25,7 +25,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, dayTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
-import type { MonthKasa } from "@/lib/lafpos/kasa";
+import type { MonthKasa } from "@/lib/asilpos/kasa";
 import type { SalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { HOLDS_HREF } from "@/lib/price-hold";
@@ -76,7 +76,7 @@ interface Row {
 
 /**
  * Beklenen tüketimin kaynağı: online kafe siparişlerinin payı varsa "ModPOS 1.200 · online 300" (`kasa` ayın kasası,
- * geçiş gününden itibaren "LafPOS", geçiş ayında "Kasa"; denetim E-39)
+ * geçiş gününden itibaren "AsilPOS", geçiş ayında "Kasa"; denetim E-39)
  */
 function UsageSplit({ row, kasa }: { row: Pick<Row, "usage" | "onlineUsage">; kasa: MonthKasa["short"] }) {
   if (!row.onlineUsage) return null;
@@ -480,7 +480,7 @@ export function ConsistencyTable({
 }: {
   month: string;
   monthLabel: string;
-  /** Ayın kasası (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", geçiş ayında "Kasa") */
+  /** Ayın kasası (src/lib/asilpos/kasa.ts monthKasa: "ModPOS", "AsilPOS", geçiş ayında "Kasa") */
   kasa?: MonthKasa["short"];
   /** Ayın satış kaynağı (src/lib/sales-source.ts): boş listenin metni ve düğmesi elle yüklenen ayda "yükle" der */
   salesSource: Pick<SalesSource, "missing" | "manual">;

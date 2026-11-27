@@ -1,5 +1,5 @@
 // Genel bakış › "günlük ciro" kartının verisi (saf; tests/genel-bakis-gunluk.test.ts). Satırlar ay bilgisinin okuduğu
-// kasa satırları (src/server/data/cash-reports.ts tillRows: rapor > LafPOS gün sonu > ModPOS föyü, şube başına günde bir
+// kasa satırları (src/server/data/cash-reports.ts tillRows: rapor > AsilPOS gün sonu > ModPOS föyü, şube başına günde bir
 // satır), ciro kuralı ay bilgisininki (src/lib/cash-month.ts tillMonths, src/lib/cash-revenue.ts dayRevenue): günlerin
 // toplamı ayın POS cirosu, gün sayısı açık gün.
 

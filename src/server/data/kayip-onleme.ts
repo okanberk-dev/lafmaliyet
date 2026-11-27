@@ -5,21 +5,21 @@ import { and, eq, gte, lte } from "drizzle-orm";
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { lossSummary, staffPersonKey, type LossCashReport, type LossCount, type LossDay, type LossPerson, type LossSummary, type LossWasteEntry } from "@/lib/kayip-onleme";
-import { LAFPOS_AUTO_BY } from "@/lib/lafpos/gun-sonu";
-import { branchSwitchDay, isLafposDay, lafposBranchOf } from "@/lib/lafpos/switch";
+import { isAsilposAutoBy } from "@/lib/asilpos/gun-sonu";
+import { branchSwitchDay, isAsilposDay, asilposBranchOf } from "@/lib/asilpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { monthDays } from "@/lib/sube-karsilastirma";
 import { requireAdmin } from "@/server/auth/dal";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
-import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadAsilposSwitchDay } from "@/server/asilpos/status";
 
 export interface LossData {
   months: string[];
   from: string;
   to: string;
-  branches: { id: string; name: string; lafpos: boolean }[];
+  branches: { id: string; name: string; asilpos: boolean }[];
   summary: LossSummary;
 }
 
@@ -30,8 +30,8 @@ const nameKey = (name: string) => `x:${name.trim().toLocaleLowerCase("tr-TR")}`;
 /**
  * Kişi bazında kayıp önleme özeti (docs/RAPORLAR.md › Kayıp önleme; hesap src/lib/kayip-onleme.ts). Yalnız yönetici;
  * soldaki seçiciden bağımsız, açık fiziksel şubeler. Kişi bilgisi panelde olanlardan: kasa raporunun sayanı, kör sayımı
- * kilitleyen ve değiştiren (cash_counts), zayi / ikram kaydını giren, o gün çalışanlar (LafPOS'un listesi, yoksa Vardiya).
- * Yalnız okur; LafPOS'un göndermediği alan (iptal eden, ikram eden, indirim yapan, LafPOS'ta kasayı sayan) uydurulmaz:
+ * kilitleyen ve değiştiren (cash_counts), zayi / ikram kaydını giren, o gün çalışanlar (AsilPOS'un listesi, yoksa Vardiya).
+ * Yalnız okur; AsilPOS'un göndermediği alan (iptal eden, ikram eden, indirim yapan, AsilPOS'ta kasayı sayan) uydurulmaz:
  * ekran bunu yazar.
  */
 export async function loadLossSummary(lastMonth: string, span: number, now: Date = new Date()): Promise<LossData | null> {
@@ -48,7 +48,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
   const all = await listBranches(db);
   const branches = tillBranches(all);
   if (!branches.length) return null;
-  const lafposBranch = lafposBranchOf(all);
+  const asilposBranch = asilposBranchOf(all);
 
   const [cash, counts, waste, posDays, shifts, staff, users, switchDay, model] = await Promise.all([
     db
@@ -102,7 +102,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
       .where(and(eq(s.shifts.kind, "work"), gte(s.shifts.date, from), lte(s.shifts.date, to))),
     db.select({ id: s.staff.id, name: s.staff.name, userId: s.staff.userId, personRef: s.staff.personRef }).from(s.staff),
     db.select({ id: s.users.id, name: s.users.name }).from(s.users),
-    loadLafposSwitchDay(db),
+    loadAsilposSwitchDay(db),
     loadModel({ scope: ALL_BRANCHES }),
   ]);
 
@@ -121,8 +121,8 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
     branchId: r.branchId,
     date: r.date,
     cashDiff: r.cashDiff,
-    // Sayan; eski raporda gönderen. LafPOS'un otomatik raporunda ikisi de yok (LafPOS kasayı sayanı göndermiyor)
-    person: r.countedBy || r.countedByName ? person(r.countedBy, r.countedByName) : r.submittedByName === LAFPOS_AUTO_BY ? null : person(r.submittedBy, r.submittedByName),
+    // Sayan; eski raporda gönderen. AsilPOS'un otomatik raporunda ikisi de yok (AsilPOS kasayı sayanı göndermiyor)
+    person: r.countedBy || r.countedByName ? person(r.countedBy, r.countedByName) : isAsilposAutoBy(r.submittedByName) ? null : person(r.submittedBy, r.submittedByName),
   }));
   const countRows: LossCount[] = counts.map((c) => ({
     branchId: c.branchId,
@@ -149,29 +149,29 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
   }
   const days: LossDay[] = [];
   for (const b of branches) {
-    const switchOf = branchSwitchDay(switchDay, b.id, lafposBranch);
+    const switchOf = branchSwitchDay(switchDay, b.id, asilposBranch);
     for (const m of months) {
       for (const date of monthDays(m, to)) {
         const k = `${b.id}|${date}`;
         const report = reportOf.get(k);
-        // LafPOS'un geçiş gününden önceki gün sonları deneme günüdür: hiçbir hesaba girmez (Kıyas'la aynı)
+        // AsilPOS'un geçiş gününden önceki gün sonları deneme günüdür: hiçbir hesaba girmez (Kıyas'la aynı)
         const pos = posOf.get(k);
-        const lafpos = pos && isLafposDay(date, switchOf) ? pos : null;
-        if (!report && !lafpos) continue;
+        const asilpos = pos && isAsilposDay(date, switchOf) ? pos : null;
+        if (!report && !asilpos) continue;
         const values: LossDay["values"] = { cashDiff: report ? report.cashDiff : null };
-        if (lafpos) {
-          values.iptal = lafpos.iptal ? r2(lafpos.iptal.reduce((a, x) => a + x.listValue, 0)) : null;
-          values.ikram = r2(lafpos.ikram.filter((x) => x.kind !== "zayi").reduce((a, x) => a + x.menuValue, 0));
-          values.discount = lafpos.z.discounts;
+        if (asilpos) {
+          values.iptal = asilpos.iptal ? r2(asilpos.iptal.reduce((a, x) => a + x.listValue, 0)) : null;
+          values.ikram = r2(asilpos.ikram.filter((x) => x.kind !== "zayi").reduce((a, x) => a + x.menuValue, 0));
+          values.discount = asilpos.z.discounts;
         } else if (report) {
           values.iptal = null;
           values.ikram = report.offRevenue;
           values.discount = report.discounts;
         }
-        const fromLafpos = lafpos?.workedStaff ?? null;
+        const fromAsilpos = asilpos?.workedStaff ?? null;
         const planned = shiftWorkers.get(k);
-        const workers = fromLafpos
-          ? [...new Set(fromLafpos.map((ref) => {
+        const workers = fromAsilpos
+          ? [...new Set(fromAsilpos.map((ref) => {
               const id = Number(ref.slice(2));
               const row = staffById.get(id);
               return row ? staffPersonKey(row) : ref;
@@ -179,7 +179,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
           : planned?.length
             ? [...new Set(planned)]
             : null;
-        days.push({ branchId: b.id, date, workers, workersFrom: fromLafpos ? "lafpos" : planned?.length ? "vardiya" : undefined, values });
+        days.push({ branchId: b.id, date, workers, workersFrom: fromAsilpos ? "asilpos" : planned?.length ? "vardiya" : undefined, values });
       }
     }
   }
@@ -189,7 +189,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
     months,
     from,
     to,
-    branches: branches.map((b) => ({ id: b.id, name: b.name, lafpos: b.id === lafposBranch && switchDay !== null })),
+    branches: branches.map((b) => ({ id: b.id, name: b.name, asilpos: b.id === asilposBranch && switchDay !== null })),
     summary: lossSummary({
       cash: cashReports.filter((r) => ids.has(r.branchId)),
       counts: countRows.filter((c) => ids.has(c.branchId)),

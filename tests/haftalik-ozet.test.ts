@@ -324,7 +324,7 @@ const weekReports = (from: string, n: number, total: number, branchId = "tuzla")
   Array.from({ length: n }, (_, i) => till(new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), total / n, branchId));
 const TUZLA = { id: "tuzla", name: "Tuzla", openedOn: null };
 const line = (rows: TillRow[], branches: { id: string; name: string; openedOn: string | null }[] = [TUZLA], switchDay: string | null = null) =>
-  salesLine({ week: W44, rows, branches, switchDay, lafposBranch: "marina" });
+  salesLine({ week: W44, rows, branches, switchDay, asilposBranch: "marina" });
 
 test("kasa cirosu satırı: tam haftalar karşılaştırılır; eksik hafta gün sayısıyla; rapor yoksa satır yok", () => {
   const prev = ["2026-10-12", "2026-10-05", "2026-09-28", "2026-09-21"].flatMap((d) => weekReports(d, 7, 78_300));
@@ -340,9 +340,9 @@ test("kasa cirosu satırı ödenmezi saymaz: Genel bakış ve Bugün'ün cirosuy
   assert.equal(line([till("2026-10-20", 10_000, "tuzla", { offRevenue: 500, payments: 9_500 })]), `Geçen hafta kasa cirosu 9.500${NB}₺ (1 gün raporlu)`);
   // Ödenmez Z'nin dışındaysa (ödemeler Z'yi tutuyor) Z toplamı
   assert.equal(line([till("2026-10-20", 10_000, "tuzla", { offRevenue: 500, payments: 10_000 })]), `Geçen hafta kasa cirosu 10.000${NB}₺ (1 gün raporlu)`);
-  // Toplayıcı satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından kurar (tillRows: raporu olmayan LafPOS günü dahil)
+  // Toplayıcı satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından kurar (tillRows: raporu olmayan AsilPOS günü dahil)
   const collect = readFileSync(join(process.cwd(), "src/server/weekly/collect.ts"), "utf8");
-  assert.match(collect, /Promise\.all\(\[tillRows\(\), loadLafposSwitchDay\(\)\]\)/);
+  assert.match(collect, /Promise\.all\(\[tillRows\(\), loadAsilposSwitchDay\(\)\]\)/);
 });
 
 test("kasa cirosu satırı: yeni açılan şube büyüme sayılmaz, karşılaştırma aynı şube ve günlerle (bulgu 65)", () => {
@@ -361,10 +361,10 @@ test("kasa cirosu satırı: yeni açılan şube büyüme sayılmaz, karşılaşt
   assert.equal(line(both, [TUZLA, { ...opened, openedOn: null }]), `Geçen hafta kasa cirosu 105.000${NB}₺ · önceki 4 haftayla aynı`);
 });
 
-test("kasa cirosu satırı: raporu olmayan LafPOS günü gün sonundan sayılır; geçiş gününden önceki deneme günü sayılmaz (bulgu 65)", () => {
+test("kasa cirosu satırı: raporu olmayan AsilPOS günü gün sonundan sayılır; geçiş gününden önceki deneme günü sayılmaz (bulgu 65)", () => {
   const marina = { id: "marina", name: "Marina", openedOn: null };
-  // 20 Ekim Marina'nın kasa raporu yok, LafPOS gün sonu var (tillRows'un yedek satırı)
-  const rows = [till("2026-10-20", 4_000), till("2026-10-20", 3_000, "marina", { source: "lafpos" })];
+  // 20 Ekim Marina'nın kasa raporu yok, AsilPOS gün sonu var (tillRows'un yedek satırı)
+  const rows = [till("2026-10-20", 4_000), till("2026-10-20", 3_000, "marina", { source: "asilpos" })];
   assert.equal(line(rows, [TUZLA, marina], "2026-10-01"), `Geçen hafta kasa cirosu 7.000${NB}₺ (1 gün raporlu)`);
   // Geçiş günü sonraysa o gün deneme: sayılmaz
   assert.equal(line(rows, [TUZLA, marina], "2026-10-22"), `Geçen hafta kasa cirosu 4.000${NB}₺ (1 gün raporlu)`);

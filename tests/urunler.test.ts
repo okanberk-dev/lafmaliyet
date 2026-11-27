@@ -292,7 +292,7 @@ test("Yeni ürünün zayi oranı: kategorideki en sık oran; eşitlikte en yeni 
   assert.equal(newProductFireHint(null), "Zayi oranı Ayarlar'daki genel oran olur; ürün kartından değiştirebilirsiniz.");
 });
 
-test("ürün silme: satışı (ModPOS ya da LafPOS), zayi kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez, pasif yapılır", () => {
+test("ürün silme: satışı (ModPOS ya da AsilPOS), zayi kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez, pasif yapılır", () => {
   const none = { salesLines: 0, posDailySales: 0, waste: 0, priceChanges: 0, onlineMonths: 0 };
   // Geçmişi yok (yalnız ilk fiyat kaydı): silinebilir
   assert.equal(productDeleteBlocker(none), null);
@@ -301,10 +301,10 @@ test("ürün silme: satışı (ModPOS ya da LafPOS), zayi kaydı, fiyat geçmiş
     msg,
     "Bu ürünün 12 satış satırı, 1 ayda online satış, 2 zayi / ikram, 3 fiyat değişikliği kaydı var; silinirse geçmiş ayların maliyeti ve kârı değişir, fiyat geçmişi kaybolur. Silmek yerine “Menüde aktif” anahtarını kapatıp kaydedin.",
   );
-  // Yalnız LafPOS'un günlük satırı olan ürün de silinmez (denetim E-34: FK "set null" bağı sessizce koparırdı)
+  // Yalnız AsilPOS'un günlük satırı olan ürün de silinmez (denetim E-34: FK "set null" bağı sessizce koparırdı)
   assert.equal(
     productDeleteBlocker({ ...none, posDailySales: 21 }),
-    "Bu ürünün 21 LafPOS günlük satış satırı kaydı var; silinirse geçmiş ayların maliyeti ve kârı değişir, fiyat geçmişi kaybolur. Silmek yerine “Menüde aktif” anahtarını kapatıp kaydedin.",
+    "Bu ürünün 21 AsilPOS günlük satış satırı kaydı var; silinirse geçmiş ayların maliyeti ve kârı değişir, fiyat geçmişi kaybolur. Silmek yerine “Menüde aktif” anahtarını kapatıp kaydedin.",
   );
   // Tek bir kayıt bile yeter
   for (const k of ["salesLines", "posDailySales", "waste", "priceChanges", "onlineMonths"] as const) assert.ok(productDeleteBlocker({ ...none, [k]: 1 }), k);
@@ -316,8 +316,8 @@ test("ürün silme: satışı (ModPOS ya da LafPOS), zayi kaydı, fiyat geçmiş
   assert.match(history, /^import "server-only";/);
   assert.match(history, /ne\(s\.productPrices\.source, "create"\)/);
   assert.match(history, /from\(s\.posDailySales\)\.where\(eq\(s\.posDailySales\.productId, productId\)\)/);
-  // Reçete kartı da aynı sayaçları veritabanından okur: aylık modelin satırları LafPOS ayına yüklenmiş (sayılmayan) listeyi
-  // içermez, LafPOS'un ay toplamlarını da içerir (denetim B08 incelemesi)
+  // Reçete kartı da aynı sayaçları veritabanından okur: aylık modelin satırları AsilPOS ayına yüklenmiş (sayılmayan) listeyi
+  // içermez, AsilPOS'un ay toplamlarını da içerir (denetim B08 incelemesi)
   const card = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/page.tsx"), "utf8");
   // Şube kapsamı C P2-6: kart eylemin sayacının kendisini okur (bütün şubelerden; zayi de)
   assert.match(card, /productHistoryCounts\(\{ id: product\.id, siteMenuId: link\?\.siteMenuId \?\? null, siteMenuSlot: link\?\.slot \?\? null \}\)/);

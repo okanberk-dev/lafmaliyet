@@ -12,10 +12,10 @@ import { saveBlindCount } from "@/server/actions/branch-settings";
 /**
  * Şube ayarları › Kör sayım (şube ayarı kasa.kor; docs/KASA-RAPORU.md › Kör sayım): personel kasa raporunda önce
  * çekmecedeki nakdi sayıp kilitler, olması gereken ve kasa farkı sonra görünür; kilitli sayımın değişikliği nedeniyle
- * yazılır ve yöneticiye görünür. Seçilmemişken varsayılan (kasası ModPOS olan şubede açık). LafPOS'un şubesinin LafPOS
- * günlerinde sayım zaten LafPOS'ta kördür. Her dokunuş hemen kaydedilir (tek işlem, işlem geçmişine yazılır).
+ * yazılır ve yöneticiye görünür. Seçilmemişken varsayılan (kasası ModPOS olan şubede açık). AsilPOS'un şubesinin AsilPOS
+ * günlerinde sayım zaten AsilPOS'ta kördür. Her dokunuş hemen kaydedilir (tek işlem, işlem geçmişine yazılır).
  */
-export function BlindCountCard({ branchId, branchName, on, isDefault, lafpos }: { branchId: string; branchName: string; on: boolean; isDefault: boolean; lafpos: boolean }) {
+export function BlindCountCard({ branchId, branchName, on, isDefault, asilpos }: { branchId: string; branchName: string; on: boolean; isDefault: boolean; asilpos: boolean }) {
   const [pending, start] = useActionTransition();
   const [checked, setChecked] = useState(on);
 
@@ -32,8 +32,8 @@ export function BlindCountCard({ branchId, branchName, on, isDefault, lafpos }: 
     });
   }
 
-  const note = lafpos
-    ? "LafPOS günlerinde sayım zaten LafPOS'ta kör; bu ayar yalnız panelde girilen (ModPOS) günlere uygulanır."
+  const note = asilpos
+    ? "AsilPOS günlerinde sayım zaten AsilPOS'ta kör; bu ayar yalnız panelde girilen (ModPOS) günlere uygulanır."
     : isDefault
       ? "Varsayılan: kasası ModPOS olan şubede açık."
       : null;

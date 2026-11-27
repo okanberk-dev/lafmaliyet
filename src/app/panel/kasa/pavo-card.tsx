@@ -2,20 +2,20 @@ import { CreditCard } from "lucide-react";
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
-import { PAVO_TITLE, pavoView } from "@/lib/lafpos/bank-pos";
-import type { BankPos } from "@/lib/lafpos/day";
+import { PAVO_TITLE, pavoView } from "@/lib/asilpos/bank-pos";
+import type { BankPos } from "@/lib/asilpos/day";
 
 /**
- * Yöneticinin Kasa gün görünümünde LafPOS gününün Pavo – LafPOS kart karşılaştırması (src/lib/lafpos/bank-pos.ts):
- * gün sonu tam gövdesinde Pavo'nun günü (Σ batch) ↔ LafPOS'un bütün gün kartı, sonra her batch ve son batch'in ayrıntısı;
+ * Yöneticinin Kasa gün görünümünde AsilPOS gününün Pavo – AsilPOS kart karşılaştırması (src/lib/asilpos/bank-pos.ts):
+ * gün sonu tam gövdesinde Pavo'nun günü (Σ batch) ↔ AsilPOS'un bütün gün kartı, sonra her batch ve son batch'in ayrıntısı;
  * fark 0 ise "Uyumlu", değilse belirgin "FARK VAR". Pavo sonucu gelmediyse kart görünmez. Gün sonu fotoğrafının
- * karşılaştırması altındaki kartta (lafpos-photo.tsx). Sunucu bileşeni.
+ * karşılaştırması altındaki kartta (asilpos-photo.tsx). Sunucu bileşeni.
  */
 export function PavoCard({ bankPos }: { bankPos: BankPos }) {
   const v = pavoView(bankPos);
   return (
     <Card>
-      <CardHeader icon={<CreditCard />} title={PAVO_TITLE} description="Banka POS'unun (Pavo) gün sonu kart toplamı ile LafPOS'un kart toplamı" />
+      <CardHeader icon={<CreditCard />} title={PAVO_TITLE} description="Banka POS'unun (Pavo) gün sonu kart toplamı ile AsilPOS'un kart toplamı" />
       <div className="space-y-3 px-5 pb-5 text-sm">
         {v.state === "fark" ? (
           <Notice tone="bad" risk="para" title="FARK VAR" text={v.headline.replace(/^FARK VAR: /, "")} />

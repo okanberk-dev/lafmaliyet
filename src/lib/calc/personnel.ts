@@ -7,7 +7,7 @@ import type { FixedExpense, Staff } from "./types";
 /** Gelir-gider'in yemek kartı satırının adı (engine.ts MEAL_CARD_ROW_LABEL) */
 export const MEAL_CARD_LABEL = MEAL_CARD_ROW_LABEL;
 
-export type StaffWarningKind = "meal-double" | "meal-extras" | "meal-lafpos-unseen" | "parttime-double" | "parttime-unlinked" | "parttime-other-branch";
+export type StaffWarningKind = "meal-double" | "meal-extras" | "meal-asilpos-unseen" | "parttime-double" | "parttime-unlinked" | "parttime-other-branch";
 
 export interface StaffWarning {
   kind: StaffWarningKind;
@@ -54,8 +54,8 @@ const names = (xs: readonly { name: string }[]) => [...new Set(xs.map((x) => x.n
  * - meal-double: yemek kartı işaretli kişi + aynı ayda etkin "Personel yemeği" sabit gideri (işletme geneli ya da kişinin
  *   şubesinin): aynı yemek iki kez sayılabilir;
  * - meal-extras: işaretli kişinin ek ödemesi yemek kartı gibi duruyor (günlük tutarın tam katı);
- * - meal-lafpos-unseen: yemek kartı işaretli tam zamanlı LafPOS'un şubesinde, ayın LafPOS günleri çalışanlarıyla geliyor
- *   ama kişinin kimliği hiçbir günde yok (model.lafposUnseenOf, LM-4b): LafPOS'ta bağlı değil ya da "Devam ettir"den
+ * - meal-asilpos-unseen: yemek kartı işaretli tam zamanlı AsilPOS'un şubesinde, ayın AsilPOS günleri çalışanlarıyla geliyor
+ *   ama kişinin kimliği hiçbir günde yok (model.asilposUnseenOf, LM-4b): AsilPOS'ta bağlı değil ya da "Devam ettir"den
  *   önceki satıra bağlı; yemek kartı Ayarlar'daki günle sayıldı;
  * - parttime-double: aynı ayda "Part-time çalışan" sabit gideri ve çağrıldığı günü olan günlük part-time satırı (işletme
  *   geneli ya da kişinin şubesinin kalemi): aynı iş iki kez sayılabilir;
@@ -65,7 +65,7 @@ const names = (xs: readonly { name: string }[]) => [...new Set(xs.map((x) => x.n
  *   vardiyaları okunur).
  */
 export function staffWarnings(
-  model: Pick<Model, "personnelFor" | "fixedInMonth" | "settings"> & Partial<Pick<Model, "strayPartTimeShifts" | "lafposUnseenOf">>,
+  model: Pick<Model, "personnelFor" | "fixedInMonth" | "settings"> & Partial<Pick<Model, "strayPartTimeShifts" | "asilposUnseenOf">>,
   month: string,
 ): StaffWarning[] {
   const out: StaffWarning[] = [];
@@ -97,13 +97,13 @@ export function staffWarnings(
       });
     }
   }
-  const unseen = rows.filter((r) => r.mealCard > 0 && !isPartTime(r.staff) && (model.lafposUnseenOf?.(r.staff, month) ?? false)).map((r) => r.staff);
+  const unseen = rows.filter((r) => r.mealCard > 0 && !isPartTime(r.staff) && (model.asilposUnseenOf?.(r.staff, month) ?? false)).map((r) => r.staff);
   if (unseen.length) {
     out.push({
-      kind: "meal-lafpos-unseen",
+      kind: "meal-asilpos-unseen",
       level: "warning",
-      title: "Yemek kartı işaretli kişi LafPOS'ta görünmüyor",
-      detail: `${names(unseen)}: bu ayın LafPOS gün sonları çalışanlarıyla geliyor ama bu kişi hiçbir günde yok. LafPOS'ta kullanıcısı bu maaş satırına bağlı değil ya da "Devam ettir"den önceki satıra bağlı. Yemek kartı Ayarlar'daki günle sayıldı; LafPOS'ta Personel bağlantısından doğru satıra bağlayın.`,
+      title: "Yemek kartı işaretli kişi AsilPOS'ta görünmüyor",
+      detail: `${names(unseen)}: bu ayın AsilPOS gün sonları çalışanlarıyla geliyor ama bu kişi hiçbir günde yok. AsilPOS'ta kullanıcısı bu maaş satırına bağlı değil ya da "Devam ettir"den önceki satıra bağlı. Yemek kartı Ayarlar'daki günle sayıldı; AsilPOS'ta Personel bağlantısından doğru satıra bağlayın.`,
       staffIds: unseen.map((s) => s.id),
       href: "/panel/personel",
     });

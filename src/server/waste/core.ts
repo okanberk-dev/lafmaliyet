@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { productIkramRefusal } from "@/lib/lafpos/ikram";
+import { productIkramRefusal } from "@/lib/asilpos/ikram";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import {
   LateWastePayload,
@@ -25,7 +25,7 @@ import { currentPhysicalBranch, staffBranchRefusal } from "@/server/branch-scope
 import { closedDayRefusal } from "@/server/closed-days";
 import { resolveWasteTarget } from "@/server/data/waste";
 import { schema as s, type DB } from "@/server/db";
-import { loadBranchSwitchDay } from "@/server/lafpos/branch";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
@@ -33,9 +33,9 @@ import { UserError } from "@/server/user-error";
  * Zayi / ikram yazımının çekirdeği (docs/ZAYI-IKRAM.md; plan docs/planlar/personel-yetki.md §2.8): doğrudan kayıt ve
  * silme (iki rol), personelin geç kayıt ve silme isteği, yöneticinin kararı. Personelin doğrudan yolu bugün ve dün (dün
  * kilitlenene kadar; staffWasteMode / staffDeleteMode); kapalı işaretli güne personel yazamaz (closedDayRefusal). Her
- * silme (doğrudan ya da onaylı) aynı kaydın öteki bekleyen silme isteklerini kapatır. LafPOS gününde (geçiş günü
- * seçili ve gün ondan önce değil) ürün ikramı panele girilmez, LafPOS'ta işaretlenir (iki rol; geç kayıt isteği ve
- * onayı da; src/lib/lafpos/ikram.ts): hammadde ikramı ve zayi girilir. Gün sonu gelmeyen geçmiş LafPOS gününde ürün
+ * silme (doğrudan ya da onaylı) aynı kaydın öteki bekleyen silme isteklerini kapatır. AsilPOS gününde (geçiş günü
+ * seçili ve gün ondan önce değil) ürün ikramı panele girilmez, AsilPOS'ta işaretlenir (iki rol; geç kayıt isteği ve
+ * onayı da; src/lib/asilpos/ikram.ts): hammadde ikramı ve zayi girilir. Gün sonu gelmeyen geçmiş AsilPOS gününde ürün
  * ikramı girilir (o gün panelinki sayılır). Sunucu eylemi değil:
  * src/server/actions/waste.ts ve waste-requests.ts oturumu ve rolü denetleyip çağırır (tests/zayi-istek-db.test.ts).
  */
@@ -78,12 +78,12 @@ export async function wasteLock(db: Tx, date: string, branchId: string): Promise
 }
 
 /**
- * Ürün ikramının LafPOS reddi (src/lib/lafpos/ikram.ts productIkramClosed): LafPOS gününde o günün sonu geldiyse ya da
+ * Ürün ikramının AsilPOS reddi (src/lib/asilpos/ikram.ts productIkramClosed): AsilPOS gününde o günün sonu geldiyse ya da
  * gün bugünse metin; gün sonu gelmeyen geçmiş günde, geçiş günü boşken ve ürün ikramı değilse null. Kaydın şubesine
- * bakılır: geçiş günü yalnız LafPOS'un şubesinin kasasınındır, ModPOS'ta kalan şubenin ürün ikramı panele girilir; gün
+ * bakılır: geçiş günü yalnız AsilPOS'un şubesinin kasasınındır, ModPOS'ta kalan şubenin ürün ikramı panele girilir; gün
  * sonu da kaydın şubesininki (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function lafposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date, where: "zayi" | "onay"): Promise<string | null> {
+async function asilposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date, where: "zayi" | "onay"): Promise<string | null> {
   if (data.kind !== "ikram" || data.productId === null) return null;
   const switchDay = await loadBranchSwitchDay(branchId, tx);
   if (!switchDay || data.date < switchDay) return null;
@@ -95,9 +95,9 @@ async function lafposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind"
   return productIkramRefusal(data, switchDay, { received: Boolean(day), today: businessDate(now) }, where);
 }
 
-/** Ürün ikramı LafPOS gününde reddedilir (LafPOS'ta işaretlenir) */
-async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date): Promise<void> {
-  const refusal = await lafposIkramRefusal(tx, data, branchId, now, "zayi");
+/** Ürün ikramı AsilPOS gününde reddedilir (AsilPOS'ta işaretlenir) */
+async function refuseAsilposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date): Promise<void> {
+  const refusal = await asilposIkramRefusal(tx, data, branchId, now, "zayi");
   if (refusal) throw new UserError(refusal);
 }
 
@@ -117,7 +117,7 @@ export async function addWaste(
   const { clientKey = null, ...fields } = data;
   if (fields.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
   // Zayi şube başına (stok gibi): formun şubesine (`branch`; eylem formBranch(…, "waste") ile doğrular). Verilmezse
-  // seçili fiziksel şube ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md). Kilit, kapalı gün ve LafPOS reddi de
+  // seçili fiziksel şube ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md). Kilit, kapalı gün ve AsilPOS reddi de
   // o şubenin
   const branchId = branch ?? (await currentPhysicalBranch()).id;
   return db.transaction(async (tx) => {
@@ -129,7 +129,7 @@ export async function addWaste(
         return { id: same.id, name: same.name, unit: same.unit, qty: same.qty, repeated: true };
       }
     }
-    await refuseLafposIkram(tx, data, branchId, now);
+    await refuseAsilposIkram(tx, data, branchId, now);
     if (me.role !== "admin") {
       const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date, branchId));
       if (mode !== "direct") throw new UserError(WASTE_REQUEST_TEXT.directOnly);
@@ -202,7 +202,7 @@ export async function proposeLateWaste(
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);
     const closed = await closedDayRefusal(input.date, me.role, tx, branchId);
     if (closed) throw new UserError(closed);
-    await refuseLafposIkram(tx, input, branchId, now);
+    await refuseAsilposIkram(tx, input, branchId, now);
     const target = await resolveWasteTarget(tx, input);
     const payload: LateWastePayloadT = LateWastePayload.parse({
       date: input.date,
@@ -315,7 +315,7 @@ export async function reviewWasteRequestCore(
       const p = LateWastePayload.parse(row.payload);
       // İstek geçiş günü seçilmeden ya da gün sonu gelmeden önce açılmış olabilir: ürün ikramı o güne panelden
       // kapalıysa onaylanmaz, reddedilir
-      const refusal = await lafposIkramRefusal(tx, p, p.branchId ?? DEFAULT_BRANCH_ID, now, "onay");
+      const refusal = await asilposIkramRefusal(tx, p, p.branchId ?? DEFAULT_BRANCH_ID, now, "onay");
       if (refusal) throw new UserError(`${refusal} İsteği reddedin.`);
       const target = await resolveWasteTarget(tx, p, { requireActive: false }).catch(() => null);
       if (!target || target.name !== p.name || target.unit !== p.unit) throw new UserError("Kalem silinmiş ya da adı değişmiş; isteği reddedin");

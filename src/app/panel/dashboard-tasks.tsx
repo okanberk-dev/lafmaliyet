@@ -10,7 +10,7 @@ import { missingText } from "@/lib/cash-month";
 import { CASH_OUT_INVOICES_HREF, cashOutInvoiceDay, pendingCashOutSummary, type InvoiceCashOut } from "@/lib/cash-outs";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
-import { commonListWaitText, lafposMonthNotes } from "@/lib/lafpos/sales";
+import { commonListWaitText, asilposMonthNotes } from "@/lib/asilpos/sales";
 import { salesSourceOf, type SalesSource } from "@/lib/sales-source";
 import type { UpcomingItem } from "@/lib/reminders";
 import { unreachable } from "@/lib/unreachable";
@@ -65,7 +65,7 @@ export interface MonthTaskFacts {
   state: MonthState;
   dim: number;
   /**
-   * `lafpos`: geçiş gününden itibaren ayın kaynağı (src/lib/lafpos/sales.ts lafposMonthStatus): ay LafPOS'tan mı geliyor,
+   * `asilpos`: geçiş gününden itibaren ayın kaynağı (src/lib/asilpos/sales.ts asilposMonthStatus): ay AsilPOS'tan mı geliyor,
    * gelen gün sayısı ve Satışlar bandının ilk uyarısı (eksik gün, sayılmayan gün, liste ↔ Z); geçiş günü yoksa yok
    */
   sales: {
@@ -79,15 +79,15 @@ export interface MonthTaskFacts {
     noRecipe?: { count: number; names: string[]; unpriced: number; inactive?: number };
     summaryRows: number;
     refMonth: string | null;
-    lafpos?: { source: "gecis" | "lafpos"; days: number; warning: string | null };
+    asilpos?: { source: "gecis" | "asilpos"; days: number; warning: string | null };
     /**
      * Ayın satış kaynağı (src/lib/sales-source.ts salesSourceOf; docs/planlar/ux-sade.md §10): elle yüklenmeyen ayda
-     * (LafPOS, ileride ModPOS bağlantısı) iş "yükle" demez. Yoksa eski kural (LafPOS ayı elle değil)
+     * (AsilPOS, ileride ModPOS bağlantısı) iş "yükle" demez. Yoksa eski kural (AsilPOS ayı elle değil)
      */
     source?: Pick<SalesSource, "kind" | "manual" | "missing">;
     /**
      * "Tümü"de ortak dönemi olmayan ay (bulgu 62): ModPOS'ta kalan bu şubenin listesi yok, ayın satırları liste gelince
-     * sayılır (Dataset.commonLists `through` null). İş "LafPOS … sayılıyor" demez
+     * sayılır (Dataset.commonLists `through` null). İş "AsilPOS … sayılıyor" demez
      */
     commonMissing?: { branch: string };
   };
@@ -209,8 +209,8 @@ export function monthTaskFacts(
   const invoices = monthInvoices.filter((i) => !SEPARATE_CATEGORIES.includes(i.category));
   const bill = pm.cells.get("manual:su")?.value ?? null;
   const usedInRecipes = model.ds.ingredients.some((i) => i.priceSource === "water" && model.usedIn.has(i.id));
-  // LafPOS'a geçildiyse ayın kaynağı: Satışlar'ın bandındaki uyarı burada da (yalnız Satışlar'da kalırsa liste yeşil görünürdü)
-  const lp = model.ds.lafposSales;
+  // AsilPOS'a geçildiyse ayın kaynağı: Satışlar'ın bandındaki uyarı burada da (yalnız Satışlar'da kalırsa liste yeşil görünürdü)
+  const lp = model.ds.asilposSales;
   const st = lp?.months.find((x) => x.month === month) ?? null;
   return {
     month,
@@ -224,8 +224,8 @@ export function monthTaskFacts(
         : {}),
       summaryRows: sales.lines.filter((l) => isSummaryRow(l.line.posName)).length,
       refMonth,
-      ...(lp && st ? { lafpos: { source: st.source, days: st.lafpos?.days ?? 0, warning: lafposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
-      source: (({ kind, manual, missing }) => ({ kind, manual, missing }))(salesSourceOf(month, lp?.switchDay ?? model.settings.lafposGecisGunu, lp)),
+      ...(lp && st ? { asilpos: { source: st.source, days: st.asilpos?.days ?? 0, warning: asilposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
+      source: (({ kind, manual, missing }) => ({ kind, manual, missing }))(salesSourceOf(month, lp?.switchDay ?? model.settings.asilposGecisGunu, lp)),
       ...(() => {
         const c = model.ds.commonLists?.find((x) => x.month === month && x.through === null);
         return c ? { commonMissing: { branch: c.branch } } : {};
@@ -296,7 +296,7 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         action: "Satırı sil",
       });
     } else if (s.commonMissing && !s.lines && !notStarted) {
-      // "Tümü"de ortak dönem yok (bulgu 62): Marina'nın LafPOS satırları da ModPOS şubesinin listesi gelince sayılır
+      // "Tümü"de ortak dönem yok (bulgu 62): Marina'nın AsilPOS satırları da ModPOS şubesinin listesi gelince sayılır
       out.push({
         key: "satis",
         title: "Satış raporu",
@@ -305,16 +305,16 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         href,
         action: f.state === "running" ? "Satışları aç" : "Satış raporu yükle",
       });
-    } else if (s.lafpos?.warning && !notStarted) {
-      // LafPOS'a geçilen ayda eksik ya da sayılmayan gün, liste ↔ Z farkı: satırlar olsa da ay tamam değil
-      out.push({ key: "satis", title: "Satış raporu", status: "warn", detail: s.lafpos.warning, href, action: "Satışlara bak" });
+    } else if (s.asilpos?.warning && !notStarted) {
+      // AsilPOS'a geçilen ayda eksik ya da sayılmayan gün, liste ↔ Z farkı: satırlar olsa da ay tamam değil
+      out.push({ key: "satis", title: "Satış raporu", status: "warn", detail: s.asilpos.warning, href, action: "Satışlara bak" });
     } else if (s.lines && s.unmatched) {
       const noRecipe = s.noRecipe ? ` Ayrıca ${noRecipeText(s.noRecipe)}.` : "";
       out.push({
         key: "satis",
         title: "Satış raporu",
         status: "todo",
-        detail: `${s.lafpos ? `${num(s.lines)} satır` : `${num(s.lines)} satır yüklendi`}; ${num(s.unmatched)} POS ürünü reçeteyle eşleşmedi, bunlara ortalama maliyet oranı uygulanıyor.${noRecipe}`,
+        detail: `${s.asilpos ? `${num(s.lines)} satır` : `${num(s.lines)} satır yüklendi`}; ${num(s.unmatched)} POS ürünü reçeteyle eşleşmedi, bunlara ortalama maliyet oranı uygulanıyor.${noRecipe}`,
         href: `${href}&durum=eslesmeyen#satirlar`,
         action: "Eşleştir",
       });
@@ -331,10 +331,10 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
       });
     } else if (s.lines) {
       const detail =
-        s.lafpos?.source === "lafpos"
-          ? `LafPOS'tan ${num(s.lafpos.days)} gün geldi (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
-          : s.lafpos
-            ? `ModPOS listesi ve LafPOS'tan ${num(s.lafpos.days)} gün (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
+        s.asilpos?.source === "asilpos"
+          ? `AsilPOS'tan ${num(s.asilpos.days)} gün geldi (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
+          : s.asilpos
+            ? `ModPOS listesi ve AsilPOS'tan ${num(s.asilpos.days)} gün (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
             : `${num(s.lines)} satır yüklendi, hepsi reçeteyle eşleşti.`;
       out.push({ key: "satis", title: "Satış raporu", status: "done", detail, href, action: "Satışları aç" });
     } else if (s.source?.kind === "modpos-baglanti") {
@@ -347,8 +347,8 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         href,
         action: "Satışları aç",
       });
-    } else if (s.source ? !s.source.manual : s.lafpos?.source === "lafpos") {
-      // Ayın tamamı LafPOS'tan: liste yüklenmez, satırlar gün sonunda gelir
+    } else if (s.source ? !s.source.manual : s.asilpos?.source === "asilpos") {
+      // Ayın tamamı AsilPOS'tan: liste yüklenmez, satırlar gün sonunda gelir
       out.push({
         key: "satis",
         title: "Satış raporu",
@@ -356,10 +356,10 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         detail: notStarted
           ? "Ay başlamadı."
           : f.state === "running"
-            ? "Satışlar her gün sonunda LafPOS'tan gelir; bu ay henüz sayılan gün sonu yok."
-            : "Bu aya LafPOS gün sonu gelmedi: reçeteye göre kâr hesaplanamıyor. Ayarlar › LafPOS kartına bakın.",
-        href: notStarted || f.state === "running" ? href : "/panel/ayarlar#lafpos",
-        action: notStarted || f.state === "running" ? "Satışları aç" : "LafPOS'a bak",
+            ? "Satışlar her gün sonunda AsilPOS'tan gelir; bu ay henüz sayılan gün sonu yok."
+            : "Bu aya AsilPOS gün sonu gelmedi: reçeteye göre kâr hesaplanamıyor. Ayarlar › AsilPOS kartına bakın.",
+        href: notStarted || f.state === "running" ? href : "/panel/ayarlar#asilpos",
+        action: notStarted || f.state === "running" ? "Satışları aç" : "AsilPOS'a bak",
       });
     } else {
       const ratio = ref ? ` Kâr oranı şimdilik ${ref} satışlarından alınıyor.` : "";
@@ -370,8 +370,8 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         detail: notStarted
           ? "Ay başlamadı."
           : f.state === "running"
-            ? s.lafpos
-              ? `Geçiş ayı: Patron'dan geçiş gününden önceki günlerin ürün satış raporunu yükleyin; sonrası LafPOS'tan gelir.${ratio}`
+            ? s.asilpos
+              ? `Geçiş ayı: Patron'dan geçiş gününden önceki günlerin ürün satış raporunu yükleyin; sonrası AsilPOS'tan gelir.${ratio}`
               : `Ay bitince Patron'dan ürün satış raporunu yükleyin.${ratio}`
             : `Yüklenmedi: reçeteye göre kâr hesaplanamıyor.${ratio}`,
         href,

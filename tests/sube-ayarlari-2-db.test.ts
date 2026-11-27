@@ -1,11 +1,11 @@
 // Şube başına ayarların ikinci turu (docs/SUBE.md › Şube başına ayarlar), gerçek Postgres'te:
-// - geçiş: satır yokken eski genel kayıtlar (settings › lafposGecisGunu, modposAyYedegi, acikGun; integration_state ›
+// - geçiş: satır yokken eski genel kayıtlar (settings › asilposGecisGunu, modposAyYedegi, acikGun; integration_state ›
 //   komisyon.ayar) sahibi şubenin değeri, "aynı" sunulan grupta öbür şubeler Tuzla'yla aynı; okuma satır yazmaz;
-// - LafPOS geçiş günü LafPOS'un şubesinin satırına yazılır; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez;
-// - LafPOS anahtarı şifreli saklanır, ortamdakinin önüne geçer, istemciye gitmez; kısa, sitenin anahtarı ya da başka şube
+// - AsilPOS geçiş günü AsilPOS'un şubesinin satırına yazılır; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez;
+// - AsilPOS anahtarı şifreli saklanır, ortamdakinin önüne geçer, istemciye gitmez; kısa, sitenin anahtarı ya da başka şube
 //   reddedilir; silinince ortamdaki;
 // - komisyon ödeme süreleri, ModPOS ay yedeği ve çalışma takvimi "aynı"yla; ayırınca kopyalanır, sonra ayrı;
-// - banka POS / yazarkasa şubenin kendisinin ("aynı" yok); LafPOS cihaz göndermediyse fotoğraf okuması ondan;
+// - banka POS / yazarkasa şubenin kendisinin ("aynı" yok); AsilPOS cihaz göndermediyse fotoğraf okuması ondan;
 // - yalnız yönetici.
 //
 // SUBE_AYAR2_TEST_DATABASE_URL verilmezse atlanır (ör. postgres://postgres:postgres@localhost:5432/postgres). Test o sunucuda
@@ -20,7 +20,8 @@ import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, TILL_DEVICE_GROUP } from "../src/lib/branch-settings/groups";
+import { GECIS_GUNU_AYARI } from "../src/lib/asilpos/eski-adlar";
+import { CALENDAR_GROUP, COMMISSION_GROUP, ASILPOS_GROUP, MODPOS_GROUP, TILL_DEVICE_GROUP } from "../src/lib/branch-settings/groups";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { STEP_UP_REQUIRED, WRONG_PASSWORD } from "../src/lib/step-up";
 import type { DB } from "../src/server/db";
@@ -28,9 +29,9 @@ import * as s from "../src/server/db/schema";
 
 const SERVER_URL = process.env.SUBE_AYAR2_TEST_DATABASE_URL;
 const DB_NAME = `lm_sube_a2_${process.pid}`;
-const ENV_SECRET = "ortamdaki-lafpos-anahtari-en-az-otuz-iki-karakter";
+const ENV_SECRET = "ortamdaki-asilpos-anahtari-en-az-otuz-iki-karakter";
 const SITE_SECRET = "sitenin-anahtari-en-az-otuz-iki-karakterlik-metin";
-const PANEL_SECRET = "panelde-saklanan-lafpos-anahtari-otuz-iki-karakter";
+const PANEL_SECRET = "panelde-saklanan-asilpos-anahtari-otuz-iki-karakter";
 const PASSWORD = "yonetici-parolasi-1";
 
 type Who = { id: number; name: string; role: "admin" | "staff"; branchId: string | null };
@@ -53,7 +54,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     Object.assign(process.env, {
       DATABASE_URL: url.href,
       AUTH_SECRET: "sube-ayarlari-2-testi-icin-en-az-otuz-iki-karakterlik-anahtar",
-      LAFPOS_SYNC_SECRET: ENV_SECRET,
+      ASILPOS_SYNC_SECRET: ENV_SECRET,
       KARAOKE_SYNC_SECRET: SITE_SECRET,
     });
     const require = createRequire(import.meta.url);
@@ -77,7 +78,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     await migrate(db, { migrationsFolder: "drizzle" });
     await db.insert(s.branches).values(DEFAULT_BRANCHES.map((b) => ({ ...b }))).onConflictDoNothing();
     await db.insert(s.branches).values({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "modpos", active: true, sortOrder: 4 });
-    await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "marina"));
+    await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "marina"));
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
         .insert(s.users)
@@ -87,7 +88,8 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     }
     // Bugünkü kurulumun eski genel kayıtları
     await db.insert(s.settings).values([
-      { key: "lafposGecisGunu", value: "2026-11-21" },
+      // Geçiş gününün eski anahtarı (canlıdaki kayıt; ad değişikliğinden sonra da okunur)
+      { key: GECIS_GUNU_AYARI, value: "2026-11-21" },
       { key: "modposAyYedegi", value: true },
       { key: "acikGun", value: 26 },
     ]);
@@ -105,11 +107,11 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
 
   test("geçiş: hiçbir şey yapmadan bugünkü değerler; öbür şubeler Tuzla'yla aynı; okuma satır yazmaz", async () => {
     const { resolveBranchSetting } = await import("../src/server/branch-settings");
-    const { lafposSwitchDay, lafposSecret } = await import("../src/server/lafpos/branch");
+    const { asilposSwitchDay, asilposSecret } = await import("../src/server/asilpos/branch");
     const { loadModposFallback, modposFallbackBranches } = await import("../src/server/modpos/fallback");
     const { loadSettings } = await import("../src/server/data/dataset");
-    assert.equal(await lafposSwitchDay(db), "2026-11-21", "geçiş günü Marina'nın (eski kayıt)");
-    assert.equal(await lafposSecret(db), ENV_SECRET, "anahtar ortamdan");
+    assert.equal(await asilposSwitchDay(db), "2026-11-21", "geçiş günü Marina'nın (eski kayıt)");
+    assert.equal(await asilposSecret(db), ENV_SECRET, "anahtar ortamdan");
     assert.equal(await loadModposFallback(db, "tuzla"), true);
     assert.equal(await loadModposFallback(db, "bodrum"), true, "Bodrum Tuzla'yla aynı başlar");
     assert.deepEqual([...(await modposFallbackBranches(db))].sort(), ["bodrum", "marina", "tuzla"]);
@@ -119,97 +121,97 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.deepEqual((await resolveBranchSetting(CALENDAR_GROUP, "marina", db)).value, { openDays: 26, eveningHour: 20 });
     const st = await loadSettings();
     assert.equal(st.acikGun, 26);
-    assert.equal(st.lafposGecisGunu, "2026-11-21");
+    assert.equal(st.asilposGecisGunu, "2026-11-21");
     assert.deepEqual((await resolveBranchSetting(TILL_DEVICE_GROUP, "tuzla", db)).value, { device: null, registerNo: null, bank: null });
     assert.equal((await db.select().from(s.branchSettings)).length, 0, "okuma satır yazmaz");
   });
 
-  test("LafPOS geçiş günü LafPOS'un şubesine yazılır; kaynak başka şubeye geçerse Marina'nın günü ona geçmez", async () => {
-    const { writeLafposSwitchDay } = await import("../src/server/lafpos/admin");
-    const { forgetLafposBranch, lafposSwitchDay } = await import("../src/server/lafpos/branch");
-    const change = await writeLafposSwitchDay(db, users.ali, "2026-11-22", "2026-11-25");
+  test("AsilPOS geçiş günü AsilPOS'un şubesine yazılır; kaynak başka şubeye geçerse Marina'nın günü ona geçmez", async () => {
+    const { writeAsilposSwitchDay } = await import("../src/server/asilpos/admin");
+    const { forgetAsilposBranch, asilposSwitchDay } = await import("../src/server/asilpos/branch");
+    const change = await writeAsilposSwitchDay(db, users.ali, "2026-11-22", "2026-11-25");
     assert.match(change ?? "", /21\sKasım\s2026 → 22\sKasım\s2026/);
-    assert.deepEqual((await rowOf(LAFPOS_GROUP.id, "marina"))?.value, { switchDay: "2026-11-22" });
-    assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "lafposGecisGunu")))[0]?.value, "2026-11-21", "eski kayıt bırakılır");
-    assert.equal(await lafposSwitchDay(db), "2026-11-22");
-    assert.equal(await writeLafposSwitchDay(db, users.ali, "2026-11-22", "2026-11-25"), null, "değişiklik yok");
-    await assert.rejects(writeLafposSwitchDay(db, users.ayse, null, "2026-11-25"), /yalnız yönetici/);
+    assert.deepEqual((await rowOf(ASILPOS_GROUP.id, "marina"))?.value, { switchDay: "2026-11-22" });
+    assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, GECIS_GUNU_AYARI)))[0]?.value, "2026-11-21", "eski kayıt bırakılır");
+    assert.equal(await asilposSwitchDay(db), "2026-11-22");
+    assert.equal(await writeAsilposSwitchDay(db, users.ali, "2026-11-22", "2026-11-25"), null, "değişiklik yok");
+    await assert.rejects(writeAsilposSwitchDay(db, users.ayse, null, "2026-11-25"), /yalnız yönetici/);
     // Kasa kaynağı Tuzla'ya geçer: Tuzla'nın kendi günü yok
     await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "marina"));
-    await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "tuzla"));
-    forgetLafposBranch();
+    await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "tuzla"));
+    forgetAsilposBranch();
     try {
-      assert.equal(await lafposSwitchDay(db), null, "Marina'nın günü Tuzla'ya geçmez");
+      assert.equal(await asilposSwitchDay(db), null, "Marina'nın günü Tuzla'ya geçmez");
     } finally {
       await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "tuzla"));
-      await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "marina"));
-      forgetLafposBranch();
+      await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "marina"));
+      forgetAsilposBranch();
     }
-    assert.equal(await lafposSwitchDay(db), "2026-11-22");
+    assert.equal(await asilposSwitchDay(db), "2026-11-22");
   });
 
-  test("LafPOS anahtarı şifreli, ortamdakinin önüne geçer, istemciye gitmez; ret kuralları; silinince ortamdaki", async () => {
+  test("AsilPOS anahtarı şifreli, ortamdakinin önüne geçer, istemciye gitmez; ret kuralları; silinince ortamdaki", async () => {
     const actions = await import("../src/server/actions/branch-settings");
-    const { lafposSecret, lafposSecretState } = await import("../src/server/lafpos/branch");
+    const { asilposSecret, asilposSecretState } = await import("../src/server/asilpos/branch");
     const { branchSettingView } = await import("../src/server/branch-settings-view");
-    const no = async (input: Parameters<typeof actions.saveLafposSecret>[0], re: RegExp) => {
-      const r = await actions.saveLafposSecret(input);
+    const no = async (input: Parameters<typeof actions.saveAsilposSecret>[0], re: RegExp) => {
+      const r = await actions.saveAsilposSecret(input);
       assert.ok(!r.ok && re.test(r.error), r.ok ? "kabul edildi" : r.error);
     };
     await no({ branchId: "marina", secret: "kisa" }, /en az 32/);
     await no({ branchId: "marina", secret: SITE_SECRET }, /sitenin anahtarı/);
-    await no({ branchId: "tuzla", secret: PANEL_SECRET }, /yalnız kasası LafPOS olan şubede/);
-    await no({ branchId: "tuzla", secret: null }, /panelde saklanan LafPOS anahtarı yok/);
+    await no({ branchId: "tuzla", secret: PANEL_SECRET }, /yalnız kasası AsilPOS olan şubede/);
+    await no({ branchId: "tuzla", secret: null }, /panelde saklanan AsilPOS anahtarı yok/);
     // Parolayla: onaysız ve yanlış parolayla yazılmaz
-    assert.deepEqual(await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET }), { ok: false, error: STEP_UP_REQUIRED });
-    assert.deepEqual(await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: "yanlis" }), { ok: false, error: WRONG_PASSWORD });
-    assert.equal(await rowOf(LAFPOS_GROUP.id, "marina").then((r) => r?.secrets ?? null), null, "parolasız yazılmadı");
-    const r = await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: PASSWORD });
+    assert.deepEqual(await actions.saveAsilposSecret({ branchId: "marina", secret: PANEL_SECRET }), { ok: false, error: STEP_UP_REQUIRED });
+    assert.deepEqual(await actions.saveAsilposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: "yanlis" }), { ok: false, error: WRONG_PASSWORD });
+    assert.equal(await rowOf(ASILPOS_GROUP.id, "marina").then((r) => r?.secrets ?? null), null, "parolasız yazılmadı");
+    const r = await actions.saveAsilposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: PASSWORD });
     assert.ok(r.ok, r.ok ? "" : r.error);
-    assert.equal(await lafposSecret(db), PANEL_SECRET);
-    assert.deepEqual(await lafposSecretState(db), { problem: null, source: "panel" });
-    const row = await rowOf(LAFPOS_GROUP.id, "marina");
+    assert.equal(await asilposSecret(db), PANEL_SECRET);
+    assert.deepEqual(await asilposSecretState(db), { problem: null, source: "panel", envName: "ASILPOS_SYNC_SECRET" });
+    const row = await rowOf(ASILPOS_GROUP.id, "marina");
     assert.ok(row?.secrets && typeof (row.secrets as Record<string, unknown>).secret === "string", "şifreli alan");
     assert.ok(!JSON.stringify(row).includes(PANEL_SECRET), "anahtar açık metin olarak durmaz");
     assert.deepEqual(row?.value, { switchDay: "2026-11-22" }, "geçiş günü korunur");
-    const view = await branchSettingView(LAFPOS_GROUP, "marina");
+    const view = await branchSettingView(ASILPOS_GROUP, "marina");
     assert.ok(!JSON.stringify(view).includes(PANEL_SECRET), "istemciye giden veride anahtar yok");
     assert.equal(view.secrets.secret, "saved");
     const log = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Şube ayarı"));
-    assert.ok(log.some((l) => /LafPOS anahtarı değiştirildi/.test(l.detail ?? "")) && !log.some((l) => (l.detail ?? "").includes(PANEL_SECRET)), "işlem geçmişinde anahtar yok");
+    assert.ok(log.some((l) => /AsilPOS anahtarı değiştirildi/.test(l.detail ?? "")) && !log.some((l) => (l.detail ?? "").includes(PANEL_SECRET)), "işlem geçmişinde anahtar yok");
     me = users.ayse;
     try {
-      assert.equal((await actions.saveLafposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, false, "personel anahtarı değiştiremez");
+      assert.equal((await actions.saveAsilposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, false, "personel anahtarı değiştiremez");
     } finally {
       me = users.ali;
     }
     // Kasa kaynağı başka şubeye geçerse eski şubedeki anahtar kullanılmaz; yenisi yazılamaz ama silinebilir
-    const { forgetLafposBranch } = await import("../src/server/lafpos/branch");
+    const { forgetAsilposBranch } = await import("../src/server/asilpos/branch");
     await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "marina"));
-    await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "tuzla"));
-    forgetLafposBranch();
+    await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "tuzla"));
+    forgetAsilposBranch();
     try {
-      assert.equal(await lafposSecret(db), ENV_SECRET, "Tuzla'nın panel anahtarı yok: ortamdaki");
-      await no({ branchId: "marina", secret: PANEL_SECRET }, /yalnız kasası LafPOS olan şubede/);
-      assert.ok((await actions.saveLafposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, "eski şubedeki anahtar silinir");
-      assert.equal((await branchSettingView(LAFPOS_GROUP, "marina")).secrets.secret, "none");
+      assert.equal(await asilposSecret(db), ENV_SECRET, "Tuzla'nın panel anahtarı yok: ortamdaki");
+      await no({ branchId: "marina", secret: PANEL_SECRET }, /yalnız kasası AsilPOS olan şubede/);
+      assert.ok((await actions.saveAsilposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, "eski şubedeki anahtar silinir");
+      assert.equal((await branchSettingView(ASILPOS_GROUP, "marina")).secrets.secret, "none");
     } finally {
       await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "tuzla"));
-      await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "marina"));
-      forgetLafposBranch();
+      await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "marina"));
+      forgetAsilposBranch();
     }
-    assert.equal(await lafposSecret(db), ENV_SECRET, "silinince ortamdaki");
-    assert.deepEqual(await lafposSecretState(db), { problem: null, source: "ortam" });
+    assert.equal(await asilposSecret(db), ENV_SECRET, "silinince ortamdaki");
+    assert.deepEqual(await asilposSecretState(db), { problem: null, source: "ortam", envName: "ASILPOS_SYNC_SECRET" });
   });
 
-  test("döndürülen LafPOS anahtarı başka sunucu örneğinin önbelleğinde de hemen geçmez; yenisi en geç 10 sn'de geçer", async () => {
-    const branch = await import("../src/server/lafpos/branch");
+  test("döndürülen AsilPOS anahtarı başka sunucu örneğinin önbelleğinde de hemen geçmez; yenisi en geç 10 sn'de geçer", async () => {
+    const branch = await import("../src/server/asilpos/branch");
     const { putBranchSetting } = await import("../src/server/branch-settings");
     const { signedHeaders, SIGNATURE_HEADER, TIMESTAMP_HEADER } = await import("../src/lib/karaoke/signature");
-    const OLD = "eski-lafpos-anahtari-en-az-otuz-iki-karakterlik-metin";
-    const NEW = "yeni-lafpos-anahtari-en-az-otuz-iki-karakterlik-metin";
-    // Başka bir sunucu örneğinin yazması: bu örneğin önbelleği düşmez (forgetLafposSecret çağrılmaz)
-    const store = (secret: string | null) => db.transaction((tx) => putBranchSetting(tx, LAFPOS_GROUP, "marina", { secret }, "Başka örnek"));
+    const OLD = "eski-asilpos-anahtari-en-az-otuz-iki-karakterlik-metin";
+    const NEW = "yeni-asilpos-anahtari-en-az-otuz-iki-karakterlik-metin";
+    // Başka bir sunucu örneğinin yazması: bu örneğin önbelleği düşmez (forgetAsilposSecret çağrılmaz)
+    const store = (secret: string | null) => db.transaction((tx) => putBranchSetting(tx, ASILPOS_GROUP, "marina", { secret }, "Başka örnek"));
     const url = new URL("https://ladmin.laffogato.net/api/panel/pos/urunler");
     const t0 = Date.now();
     const req = (secret: string, now: number) => {
@@ -225,44 +227,44 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     });
     try {
       await store(OLD);
-      branch.forgetLafposSecret();
-      assert.equal(await branch.lafposSecret(counted, process.env, t0), OLD, "önbellek eski anahtarla doldu");
+      branch.forgetAsilposSecret();
+      assert.equal(await branch.asilposSecret(counted, process.env, t0), OLD, "önbellek eski anahtarla doldu");
 
       // İmzasız ya da yanlış imzalı istek veritabanını okutmaz (önbellek ön süzgeç)
       reads.length = 0;
-      assert.equal(await branch.lafposSecretFor({ method: "GET", url, body: "", timestamp: null, signature: null }, counted, process.env, t0 + 1_000), OLD);
-      assert.equal(await branch.lafposSecretFor(req("baska-bir-anahtar-en-az-otuz-iki-karakterlik", t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
+      assert.equal(await branch.asilposSecretFor({ method: "GET", url, body: "", timestamp: null, signature: null }, counted, process.env, t0 + 1_000), OLD);
+      assert.equal(await branch.asilposSecretFor(req("baska-bir-anahtar-en-az-otuz-iki-karakterlik", t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
       assert.deepEqual(reads, [], "imzası tutmayan istekte okuma yok");
 
       // Anahtar başka örnekte döndürüldü: eski anahtarla imzalı istek artık eski anahtarı almaz (uç 401 verir)
       await store(NEW);
-      assert.equal(await branch.lafposSecret(counted, process.env, t0 + 2_000), OLD, "önbellek henüz eski");
+      assert.equal(await branch.asilposSecret(counted, process.env, t0 + 2_000), OLD, "önbellek henüz eski");
       const old = req(OLD, t0 + 2_000);
-      const got = await branch.lafposSecretFor(old, counted, process.env, t0 + 2_000);
+      const got = await branch.asilposSecretFor(old, counted, process.env, t0 + 2_000);
       assert.equal(got, NEW, "imza tutunca anahtar veritabanından yeniden okundu");
-      const { checkLafposRequest } = await import("../src/lib/lafpos/request");
-      assert.deepEqual(checkLafposRequest({ ...old, secret: got, method: "GET", maxBytes: 0, now: t0 + 2_000 }), { ok: false, status: 401, error: "unauthorized" });
-      assert.equal(await branch.lafposSecret(counted, process.env, t0 + 2_500), NEW, "önbellek de yenilendi");
+      const { checkAsilposRequest } = await import("../src/lib/asilpos/request");
+      assert.deepEqual(checkAsilposRequest({ ...old, secret: got, method: "GET", maxBytes: 0, now: t0 + 2_000 }), { ok: false, status: 401, error: "unauthorized" });
+      assert.equal(await branch.asilposSecret(counted, process.env, t0 + 2_500), NEW, "önbellek de yenilendi");
 
       // Yeni anahtarla imzalı istek: imza tutar, okunan anahtar aynı
-      assert.equal(await branch.lafposSecretFor(req(NEW, t0 + 3_000), counted, process.env, t0 + 3_000), NEW);
+      assert.equal(await branch.asilposSecretFor(req(NEW, t0 + 3_000), counted, process.env, t0 + 3_000), NEW);
 
       // Ters yön: yeni anahtar başka örnekte kaydedildi, bu örneğin önbelleği eski. Yeni anahtarla gelen istek ilk
-      // LAFPOS_SECRET_RELOAD_MS içinde önbellektekini alır (401), sonra bir kez yeniden okunur ve geçer
+      // ASILPOS_SECRET_RELOAD_MS içinde önbellektekini alır (401), sonra bir kez yeniden okunur ve geçer
       await store(OLD);
-      branch.forgetLafposSecret();
-      assert.equal(await branch.lafposSecret(counted, process.env, t0), OLD);
+      branch.forgetAsilposSecret();
+      assert.equal(await branch.asilposSecret(counted, process.env, t0), OLD);
       await store(NEW);
-      assert.equal(await branch.lafposSecretFor(req(NEW, t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
-      const later = t0 + branch.LAFPOS_SECRET_RELOAD_MS;
-      assert.equal(await branch.lafposSecretFor(req(NEW, later), counted, process.env, later), NEW, "en geç 10 sn sonra yeni anahtar");
+      assert.equal(await branch.asilposSecretFor(req(NEW, t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
+      const later = t0 + branch.ASILPOS_SECRET_RELOAD_MS;
+      assert.equal(await branch.asilposSecretFor(req(NEW, later), counted, process.env, later), NEW, "en geç 10 sn sonra yeni anahtar");
 
       // Panelden silinince ortamdaki: eski panel anahtarıyla imzalı istek geçmez
       await store(null);
-      assert.equal(await branch.lafposSecretFor(req(NEW, later + 1), counted, process.env, later + 1), ENV_SECRET);
+      assert.equal(await branch.asilposSecretFor(req(NEW, later + 1), counted, process.env, later + 1), ENV_SECRET);
     } finally {
       await store(null);
-      branch.forgetLafposSecret();
+      branch.forgetAsilposSecret();
     }
   });
 
@@ -345,14 +347,14 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     }
   });
 
-  test("banka POS ve yazarkasa şubenin kendisinin; LafPOS cihaz göndermediyse fotoğraf okuması ondan", async () => {
+  test("banka POS ve yazarkasa şubenin kendisinin; AsilPOS cihaz göndermediyse fotoğraf okuması ondan", async () => {
     const actions = await import("../src/server/actions/branch-settings");
-    const { lafposOkcDeviceOf } = await import("../src/server/lafpos/foto");
+    const { asilposOkcDeviceOf } = await import("../src/server/asilpos/foto");
     const r = await actions.saveTillDevice({ branchId: "marina", device: "tokenx", registerNo: " AB 123 ", bank: "" });
     assert.ok(r.ok, r.ok ? "" : r.error);
     assert.deepEqual(r.data, { device: "tokenx", registerNo: "AB 123", bank: null });
-    assert.deepEqual(await lafposOkcDeviceOf(db, "marina"), { provider: "tokenx", zReport: true });
-    assert.equal(await lafposOkcDeviceOf(db, "tuzla"), null, "Tuzla'da cihaz belirtilmedi");
+    assert.deepEqual(await asilposOkcDeviceOf(db, "marina"), { provider: "tokenx", zReport: true });
+    assert.equal(await asilposOkcDeviceOf(db, "tuzla"), null, "Tuzla'da cihaz belirtilmedi");
     const sameAs = await actions.setBranchSettingLink({ branchId: "marina", group: "kasa.cihaz", sameAs: "tuzla" });
     assert.ok(!sameAs.ok && /şube başına tutulur/.test(sameAs.error), "cihazda 'aynı' yok");
     me = users.ayse;

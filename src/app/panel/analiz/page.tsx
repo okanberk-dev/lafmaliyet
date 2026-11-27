@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { MENU_CLASS_INFO, menuEngineering, scenarioBase } from "@/lib/calc/insights";
 import { monthLabel } from "@/lib/format";
-import { monthKasa } from "@/lib/lafpos/kasa";
+import { monthKasa } from "@/lib/asilpos/kasa";
 import { salesSourceOf } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
@@ -48,7 +48,7 @@ async function AnalysisContent({ searchParams }: { searchParams: PageProps<"/pan
   const month = resolveMonth(sp.ay, model);
   const hasSales = model.monthSales(month).lines.length > 0;
   // Ayın satış kaynağı (docs/planlar/ux-sade.md §10): başlığın altındaki satır ve boş durumun metni
-  const source = salesSourceOf(month, model.settings.lafposGecisGunu, model.ds.lafposSales);
+  const source = salesSourceOf(month, model.settings.asilposGecisGunu, model.ds.asilposSales);
 
   return (
     <>
@@ -125,7 +125,7 @@ function AnalysisReady({ model, month }: { model: Awaited<ReturnType<typeof load
           monthLabel={monthLabel(month)}
           fixedItems={scenarioFixedItems(model, month)}
           breakEvenItems={scenarioBreakEvenItems(model, month)}
-          kasa={monthKasa(month, model.settings.lafposGecisGunu).short}
+          kasa={monthKasa(month, model.settings.asilposGecisGunu).short}
         />
       }
     />

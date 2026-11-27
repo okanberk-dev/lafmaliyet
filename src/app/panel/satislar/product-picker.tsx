@@ -12,7 +12,7 @@ import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Seçicinin ürünü (yalnız yönetici ekranları: Satışlar, Ayarlar › LafPOS; maliyet ve fiyat görünür) */
+/** Seçicinin ürünü (yalnız yönetici ekranları: Satışlar, Ayarlar › AsilPOS; maliyet ve fiyat görünür) */
 export interface ProductOption {
   id: number;
   name: string;
@@ -26,7 +26,7 @@ export interface ProductOption {
 const PICKER_LIMIT = 80;
 
 /**
- * POS adını menüdeki bir ürüne (ya da HİZMET'e) bağlamanın penceresi: Satışlar'ın satırları ve Ayarlar › LafPOS'un
+ * POS adını menüdeki bir ürüne (ya da HİZMET'e) bağlamanın penceresi: Satışlar'ın satırları ve Ayarlar › AsilPOS'un
  * eşleşmeyen adları. Arama yokken şu anki eşleşme en üstte; "Eşleşmeyi kaldır" eşleşmemiş adda kapalı
  */
 export function ProductPicker({

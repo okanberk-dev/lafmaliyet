@@ -38,7 +38,7 @@ import { UserError } from "@/server/user-error";
 
 const DAY_MS = 86_400_000;
 
-/** Bir günün bildirimleri aynı anda açılmasın (iki personel aynı dün için; LafPOS'un gün sonu da aynı kilidi alır) */
+/** Bir günün bildirimleri aynı anda açılmasın (iki personel aynı dün için; AsilPOS'un gün sonu da aynı kilidi alır) */
 const lockDay = lockClosedDay;
 
 /**

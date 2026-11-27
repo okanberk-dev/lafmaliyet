@@ -26,8 +26,8 @@ import {
   revenueWord,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
-import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
-import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
+import { asilposDiffText, type AsilposDiff } from "@/lib/asilpos/diffs";
+import { BLIND_TEXT } from "@/lib/asilpos/kor-kasa";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { dayMonthTR } from "@/lib/reminders";
 import { handedOverLine } from "@/lib/teslim";
@@ -35,21 +35,21 @@ import { cn } from "@/lib/utils";
 import { clearOkcCumulative } from "@/server/actions/cash-report";
 
 /**
- * Kayıtlı raporun LafPOS'un gün sonundan farklı yazılan alanları (denetim E-09; yalnız LafPOS günlerinde): kayıtlı
+ * Kayıtlı raporun AsilPOS'un gün sonundan farklı yazılan alanları (denetim E-09; yalnız AsilPOS günlerinde): kayıtlı
  * görünüm, günden güne ayrıntısı ve geç rapor kartı aynı kutuyu gösterir
  */
-export function LafposDiffList({ diffs }: { diffs: readonly LafposDiff[] | null | undefined }) {
+export function AsilposDiffList({ diffs }: { diffs: readonly AsilposDiff[] | null | undefined }) {
   if (!diffs?.length) return null;
   return (
     <Notice
       tone="warn"
       size="sm"
-      title={`LafPOS'tan farklı yazılan ${diffs.length} alan`}
+      title={`AsilPOS'tan farklı yazılan ${diffs.length} alan`}
       text={
         <ul className="list-disc pl-4">
           {diffs.map((d) => (
             <li key={d.field} className="break-words">
-              {lafposDiffText(d)}
+              {asilposDiffText(d)}
             </li>
           ))}
         </ul>
@@ -135,19 +135,19 @@ export function CashBreakdown({
   audience?: "staff" | "admin";
   /** Yalnız yönetici: kümülatif ve "Kümülatifi temizle" */
   okcAdmin?: OkcAdminView | null;
-  /** Günün kasası: LafPOS gününde Z bölümü "LafPOS gün sonu (Z)" */
-  kasa?: "ModPOS" | "LafPOS";
-  /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
+  /** Günün kasası: AsilPOS gününde Z bölümü "AsilPOS gün sonu (Z)" */
+  kasa?: "ModPOS" | "AsilPOS";
+  /** AsilPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
   cardExtra?: number | null;
-  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
+  /** AsilPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
   offDevice?: CashOffDevice | null;
   /**
-   * Kör kasa (bulgu 0; personelin LafPOS günü, blindReport): kasa bölümünde yalnız nakit satış, giren ve çıkan; açılış,
+   * Kör kasa (bulgu 0; personelin AsilPOS günü, blindReport): kasa bölümünde yalnız nakit satış, giren ve çıkan; açılış,
    * olması gereken, sayılan, fark, teslim ve devir yok (raporda sıfırlanmış gelirler)
    */
   blind?: boolean;
 }) {
-  // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2)
+  // Kart karşılaştırması AsilPOS'un kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2)
   // düşer (kaydedilmez)
   report = withCardExtra(report, cardExtra, offDevice, kasa);
   const c = computeCash(report);
@@ -248,7 +248,7 @@ export function CardDetail({
   report: CashReportFields;
   audience: "staff" | "admin";
   okcAdmin: OkcAdminView | null;
-  kasa: "ModPOS" | "LafPOS";
+  kasa: "ModPOS" | "AsilPOS";
   cardExtra: number | null;
   offDevice?: CashOffDevice | null;
 }) {
@@ -261,7 +261,7 @@ export function CardDetail({
     <section aria-label="Kart">
       <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
       <Line label={`${kasa} kart`} value={money(report.card)} />
-      {/* Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok, LafPOS kartından düşülür; yöneticiye tutarıyla */}
+      {/* Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok, AsilPOS kartından düşülür; yöneticiye tutarıyla */}
       {offDevice && offDevice.card > 0 ? <Line label={OFF_DEVICE_CARD_LABEL} value={audience === "admin" ? money(offDevice.card) : "düşüldü"} /> : null}
       <Line label="Banka POS" value={money(report.bankPos)} />
       {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
@@ -291,7 +291,7 @@ function OkcBreakdown({
   audience: "staff" | "admin";
   okcAdmin: OkcAdminView | null;
   /** Günün kasası (karşılaştırma satırları onun adıyla; denetim E-39) */
-  kasa: "ModPOS" | "LafPOS";
+  kasa: "ModPOS" | "AsilPOS";
 }) {
   const lines = okcReconcile({ ...f, bankPos: f.bankPos ?? null }, audience, kasa);
   const head = [f.okcZNo ? `Z no ${f.okcZNo}` : null, f.okcReceipts ? `${f.okcReceipts} fiş` : null].filter(Boolean).join(" · ");

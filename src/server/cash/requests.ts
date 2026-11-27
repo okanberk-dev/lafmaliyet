@@ -18,7 +18,7 @@ import {
   type DeletePayloadT,
   type ProposedFields,
 } from "@/lib/cash-requests";
-import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
+import { ASILPOS_STAFF_WRITE_TEXT } from "@/lib/asilpos/foto";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
@@ -30,7 +30,7 @@ import {
   assertStaffOutNote,
   carryBefore,
   hasLaterReport,
-  isLafposTillDay,
+  isAsilposTillDay,
   lockCashReport,
   lockLateDay,
   ownDeletePending,
@@ -80,8 +80,8 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, date, branchId);
     if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
-    // Kör kasa (bulgu 0): LafPOS gününün raporunu yalnız yönetici düzeltir; öneri sayılanı ve farkı ele verirdi
-    if (await isLafposTillDay(tx, date, branchId)) throw new UserError(LAFPOS_STAFF_WRITE_TEXT.manual);
+    // Kör kasa (bulgu 0): AsilPOS gününün raporunu yalnız yönetici düzeltir; öneri sayılanı ve farkı ele verirdi
+    if (await isAsilposTillDay(tx, date, branchId)) throw new UserError(ASILPOS_STAFF_WRITE_TEXT.manual);
     if (report.revision !== input.baseRevision) throw new UserError(CASH_REQUEST_TEXT.stale);
     if (await ownDeletePending(tx, me.id, date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
     const laterReport = await hasLaterReport(tx, date, branchId);

@@ -12,7 +12,7 @@ import { allAssistantTools } from "./tool-defs";
 /*
  * Panel asistanının araçları gerçek okuyucularla (liste ve kurallar src/server/ai/assistant/tool-defs.ts, read-tools.ts
  * ve op-tools.ts'te). Buradaki her @/server içe aktarımı tests/panel-asistani.test.ts'teki izin listesinde: okuyan
- * işlevler (LafPOS ve operasyon okuyucuları src/server/assistant-reads; kendi izin listesi tests/asistan-okuma.test.ts)
+ * işlevler (AsilPOS ve operasyon okuyucuları src/server/assistant-reads; kendi izin listesi tests/asistan-okuma.test.ts)
  * ve işlem kartının planı (planOp: önizler, plan satırı yazar; hiçbir eylem çağırmaz). Plan uçta seçili şubeyle
  * (withBranchScope) çalışır.
  */

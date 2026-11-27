@@ -1,4 +1,4 @@
-// Şube başına ayarların ikinci turu (docs/SUBE.md › Şube başına ayarlar): komisyon ve yemek kartı kanalları, LafPOS
+// Şube başına ayarların ikinci turu (docs/SUBE.md › Şube başına ayarlar): komisyon ve yemek kartı kanalları, AsilPOS
 // bağlantısı ve geçiş günü, ModPOS ay yedeği, çalışma takvimi, banka POS ve yazarkasa. Saf kurallar ve kaynak kilitleri;
 // veritabanında tests/sube-ayarlari-2-db.test.ts.
 
@@ -9,11 +9,12 @@ import { test } from "node:test";
 
 import { dayContext, dayTasks, eveningHours, nextRefreshAt, type DayFacts } from "../src/app/panel/bugun/logic";
 import { ALL_FIELDS } from "../src/app/panel/ayarlar/fields";
+import { GECIS_GUNU_AYARI, SUBE_AYAR_GRUBU } from "../src/lib/asilpos/eski-adlar";
 import {
   BRANCH_SETTING_GROUPS,
   CALENDAR_GROUP,
   COMMISSION_GROUP,
-  LAFPOS_GROUP,
+  ASILPOS_GROUP,
   legacyOwnerId,
   MODPOS_GROUP,
   plainFields,
@@ -21,6 +22,8 @@ import {
   TILL_DEVICE_GROUP,
   tillDeviceGenitive,
   tillDeviceLabel,
+  groupReadIds,
+  branchSettingGroup,
 } from "../src/lib/branch-settings/groups";
 import { settingLinkError, settingMode } from "../src/lib/branch-settings/rules";
 import type { BranchRow } from "../src/lib/branches";
@@ -44,24 +47,28 @@ const BRANCHES: Pick<BranchRow, "id" | "name" | "kind" | "active">[] = [
   { id: "online", name: "laffogato.net", kind: "online", active: true },
 ];
 
-test("gruplar: komisyon, ModPOS ve takvim 'aynı' sunar (Tuzla'nın eski kaydı); LafPOS ve cihaz şubenin kendisinin", () => {
+test("gruplar: komisyon, ModPOS ve takvim 'aynı' sunar (Tuzla'nın eski kaydı); AsilPOS ve cihaz şubenin kendisinin", () => {
   const ids = BRANCH_SETTING_GROUPS.map((g) => g.id);
-  for (const id of ["komisyon", "pos.lafpos", "modpos", "isletme.takvim", "kasa.cihaz"]) assert.ok(ids.includes(id), id);
+  for (const id of ["komisyon", SUBE_AYAR_GRUBU, "modpos", "isletme.takvim", "kasa.cihaz"]) assert.ok(ids.includes(id), id);
   assert.equal(COMMISSION_GROUP.linkable && MODPOS_GROUP.linkable && CALENDAR_GROUP.linkable, true);
-  assert.equal(LAFPOS_GROUP.linkable || TILL_DEVICE_GROUP.linkable, false);
-  // Eski kaydın sahibi: LafPOS'unki Marina (geçildiği gün LafPOS'un şubesi), öbürleri Tuzla
-  assert.equal(legacyOwnerId(LAFPOS_GROUP), "marina");
+  assert.equal(ASILPOS_GROUP.linkable || TILL_DEVICE_GROUP.linkable, false);
+  // Eski kaydın sahibi: AsilPOS'unki Marina (geçildiği gün AsilPOS'un şubesi), öbürleri Tuzla
+  assert.equal(legacyOwnerId(ASILPOS_GROUP), "marina");
   for (const g of [COMMISSION_GROUP, MODPOS_GROUP, CALENDAR_GROUP]) assert.equal(legacyOwnerId(g), "tuzla", g.id);
-  assert.deepEqual(LAFPOS_GROUP.legacySettings, { switchDay: "lafposGecisGunu" });
+  assert.deepEqual(ASILPOS_GROUP.legacySettings, { switchDay: GECIS_GUNU_AYARI });
+  // Ad değişikliği: grup ve eski kaydın anahtarı eski adla yazılır, yeni adları önce okunur
+  assert.deepEqual([ASILPOS_GROUP.id, ASILPOS_GROUP.readIds, ASILPOS_GROUP.legacySettingsNew], [SUBE_AYAR_GRUBU, ["pos.asilpos"], { switchDay: "asilposGecisGunu" }]);
+  assert.deepEqual(groupReadIds(ASILPOS_GROUP), ["pos.asilpos", SUBE_AYAR_GRUBU]);
+  assert.equal(branchSettingGroup("pos.asilpos"), ASILPOS_GROUP);
   assert.deepEqual(MODPOS_GROUP.legacySettings, { monthFallback: "modposAyYedegi" });
   assert.deepEqual(CALENDAR_GROUP.legacySettings, { openDays: "acikGun" });
   assert.equal(COMMISSION_GROUP.legacyKey, "komisyon.ayar");
   // Satırı yokken öbür şubeler Tuzla'ya örtük bağlı (sahibin varsayılanı: komisyon "aynı")
   assert.deepEqual(settingMode(COMMISSION_GROUP, "marina", []), { kind: "linked", to: "tuzla", implicit: true });
   assert.deepEqual(settingMode(TILL_DEVICE_GROUP, "marina", []), { kind: "own" });
-  assert.match(settingLinkError(LAFPOS_GROUP, "marina", "tuzla", [], BRANCHES) ?? "", /şube başına tutulur/);
+  assert.match(settingLinkError(ASILPOS_GROUP, "marina", "tuzla", [], BRANCHES) ?? "", /şube başına tutulur/);
   // Artık şube başına olanlar "şimdilik ortak" listesinde yok
-  for (const id of ["pos.lafpos", "komisyon", "modpos", "isletme.takvim"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), id);
+  for (const id of [SUBE_AYAR_GRUBU, "komisyon", "modpos", "isletme.takvim"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), id);
 });
 
 test("okuma kuralları: bozuk ya da eksik alan varsayılana düşer; anahtar şifreli alan", () => {
@@ -70,10 +77,10 @@ test("okuma kuralları: bozuk ya da eksik alan varsayılana düşer; anahtar şi
   assert.equal(COMMISSION_GROUP.summary({ channels: {} }), "ödeme süresi 30 gün");
   assert.equal(COMMISSION_GROUP.summary({ channels: { pluxee: { payDays: 20 }, getir: { payDays: 45 } } }), "ödeme süreleri 20–45 gün");
 
-  assert.deepEqual(LAFPOS_GROUP.read({ switchDay: "2026-11-21" }, {}), { switchDay: "2026-11-21" });
-  assert.deepEqual(LAFPOS_GROUP.read({ switchDay: "bozuk", secret: "  gizli  " }, {}), { switchDay: null, secret: "gizli" });
-  assert.deepEqual(LAFPOS_GROUP.secretFields, ["secret"]);
-  assert.deepEqual(plainFields(LAFPOS_GROUP, { switchDay: "2026-11-21", secret: "gizli" }), { switchDay: "2026-11-21" }, "anahtar satırın değerine yazılmaz");
+  assert.deepEqual(ASILPOS_GROUP.read({ switchDay: "2026-11-21" }, {}), { switchDay: "2026-11-21" });
+  assert.deepEqual(ASILPOS_GROUP.read({ switchDay: "bozuk", secret: "  gizli  " }, {}), { switchDay: null, secret: "gizli" });
+  assert.deepEqual(ASILPOS_GROUP.secretFields, ["secret"]);
+  assert.deepEqual(plainFields(ASILPOS_GROUP, { switchDay: "2026-11-21", secret: "gizli" }), { switchDay: "2026-11-21" }, "anahtar satırın değerine yazılmaz");
 
   assert.deepEqual(MODPOS_GROUP.read({ monthFallback: "true" }, {}), { monthFallback: false }, "yalnız true açık");
   assert.deepEqual(MODPOS_GROUP.read({ monthFallback: true }, {}), { monthFallback: true });
@@ -157,26 +164,26 @@ test("kaynak: geçiş günü, ModPOS ay yedeği ve komisyon süreleri eski genel
   const bad: string[] = [];
   for (const f of server) {
     const src = read(f);
-    if (/LAFPOS_SWITCH_KEY/.test(src)) bad.push(`${f}: LAFPOS_SWITCH_KEY`);
+    if (/ASILPOS_SWITCH_KEY/.test(src)) bad.push(`${f}: ASILPOS_SWITCH_KEY`);
     if (/MODPOS_FALLBACK_KEY/.test(src)) bad.push(`${f}: MODPOS_FALLBACK_KEY`);
     if (/COMMISSION_SETTINGS_KEY/.test(src)) bad.push(`${f}: COMMISSION_SETTINGS_KEY`);
   }
   assert.deepEqual(bad, [], "eski kayıt yalnız şube ayarının geçiş okumasında (legacySettings, legacyKey)");
-  // Okuyucular tek yerde: LafPOS'un şubesinin şube ayarı
-  const branch = read("src/server/lafpos/branch.ts");
-  assert.match(branch, /export async function lafposSwitchDay\(db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return switchDayOf\(await lafposBranchId\(db\), db\);/);
-  assert.match(branch, /export async function switchDayOf\(branchId: string, db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return \(await resolveBranchSetting\(LAFPOS_GROUP, branchId, db\)\)\.value\.switchDay;/);
+  // Okuyucular tek yerde: AsilPOS'un şubesinin şube ayarı
+  const branch = read("src/server/asilpos/branch.ts");
+  assert.match(branch, /export async function asilposSwitchDay\(db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return switchDayOf\(await asilposBranchId\(db\), db\);/);
+  assert.match(branch, /export async function switchDayOf\(branchId: string, db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return \(await resolveBranchSetting\(ASILPOS_GROUP, branchId, db\)\)\.value\.switchDay;/);
   // Gün sonunu yazan ve silen işlem geçiş gününü yazdığı şubeyle okur (şube işlemin içinde yeniden türetilmez)
-  assert.match(read("src/server/lafpos/ingest.ts"), /isLafposDay\(day\.date, await switchDayOf\(branchId, tx\)\)/);
-  assert.match(read("src/server/lafpos/admin.ts"), /const counted = isLafposDay\(date, await switchDayOf\(branchId, tx\)\);/);
-  assert.match(read("src/server/lafpos/status.ts"), /export async function loadLafposSwitchDay\(db: DB = getDb\(\)\): Promise<string \| null> \{\s*return lafposSwitchDay\(db\);/);
-  assert.match(read("src/server/data/lafpos-ikram.ts"), /export async function lafposSwitchDayOf\(db: Reader\): Promise<string \| null> \{\s*return lafposSwitchDay\(db\);/);
-  assert.match(read("src/server/data/dataset.ts"), /lafposGecisGunu: switchDay, acikGun: calendar\.value\.openDays/);
+  assert.match(read("src/server/asilpos/ingest.ts"), /isAsilposDay\(day\.date, await switchDayOf\(branchId, tx\)\)/);
+  assert.match(read("src/server/asilpos/admin.ts"), /const counted = isAsilposDay\(date, await switchDayOf\(branchId, tx\)\);/);
+  assert.match(read("src/server/asilpos/status.ts"), /export async function loadAsilposSwitchDay\(db: DB = getDb\(\)\): Promise<string \| null> \{\s*return asilposSwitchDay\(db\);/);
+  assert.match(read("src/server/data/asilpos-ikram.ts"), /export async function asilposSwitchDayOf\(db: Reader\): Promise<string \| null> \{\s*return asilposSwitchDay\(db\);/);
+  assert.match(read("src/server/data/dataset.ts"), /asilposGecisGunu: switchDay, acikGun: calendar\.value\.openDays/);
   // Yazım şube ayarına, grup kilidiyle
-  const admin = read("src/server/lafpos/admin.ts");
-  assert.match(admin, /await lockGroup\(tx, LAFPOS_GROUP\.id\);[\s\S]*?if \(known\) await putBranchSetting\(tx, LAFPOS_GROUP, branchId, \{ switchDay: day \}, me\.name\);/);
-  // Kütükte LafPOS'un şubesi yoksa (tek şubeli eski kurulum) eski genel kayda, okuyanla aynı yere
-  assert.match(admin, /const key = LAFPOS_GROUP\.legacySettings!\.switchDay;/);
+  const admin = read("src/server/asilpos/admin.ts");
+  assert.match(admin, /await lockGroup\(tx, ASILPOS_GROUP\.id\);[\s\S]*?if \(known\) await putBranchSetting\(tx, ASILPOS_GROUP, branchId, \{ switchDay: day \}, me\.name\);/);
+  // Kütükte AsilPOS'un şubesi yoksa (tek şubeli eski kurulum) eski genel kayda, okuyanla aynı yere
+  assert.match(admin, /const key = ASILPOS_GROUP\.legacySettings!\.switchDay;/);
   // Komisyon: hakediş işletmenin; son gün seçiciden bağımsız, şubelerin en kısa süresiyle (ekran, zil, Bugün, e-posta aynı)
   const commission = read("src/server/data/commission.ts");
   assert.doesNotMatch(commission, /settingsBranch/);
@@ -188,29 +195,29 @@ test("kaynak: geçiş günü, ModPOS ay yedeği ve komisyon süreleri eski genel
   assert.match(read("src/server/actions/commission.ts"), /await putBranchSetting\(tx, COMMISSION_GROUP, branchId, /);
 });
 
-test("kaynak: LafPOS'un imzalı uçları anahtarı şube ayarından okur (panelde saklanan önce, yoksa ortam)", () => {
+test("kaynak: AsilPOS'un imzalı uçları anahtarı şube ayarından okur (panelde saklanan önce, yoksa ortam)", () => {
   const routes = ["src/app/api/pos/gun/route.ts", ...readdirSync("src/app/api/panel/pos").map((d) => `src/app/api/panel/pos/${d}/route.ts`)];
   for (const f of routes) {
     const src = read(f);
     // İsteğin anahtarı: önbellek ön süzgeç, imza tutarsa veritabanından yeniden (döndürülen eski anahtar geçmez)
-    assert.match(src, /await lafposRequestSecret\(request(, body)?\)/, f);
-    assert.doesNotMatch(src, /[^t] lafpos(Request)?Secret\(/, `${f}: senkron okuma kalmadı`);
+    assert.match(src, /await asilposRequestSecret\(request(, body)?\)/, f);
+    assert.doesNotMatch(src, /[^t] asilpos(Request)?Secret\(/, `${f}: senkron okuma kalmadı`);
   }
-  const branch = read("src/server/lafpos/branch.ts");
-  assert.match(branch, /if \(stored\) return \{ env: \{ \.\.\.env, LAFPOS_SYNC_SECRET: stored \}, source: "panel" \};/);
-  // Eylem: yalnız yönetici, yalnız LafPOS'un şubesinde, sitenin anahtarı reddedilir; anahtar işlem geçmişine yazılmaz
+  const branch = read("src/server/asilpos/branch.ts");
+  assert.match(branch, /if \(stored\) return \{ secret: stored, source: "panel", envName \};/);
+  // Eylem: yalnız yönetici, yalnız AsilPOS'un şubesinde, sitenin anahtarı reddedilir; anahtar işlem geçmişine yazılmaz
   const action = read("src/server/actions/branch-settings.ts");
-  const save = action.slice(action.indexOf("export async function saveLafposSecret"));
+  const save = action.slice(action.indexOf("export async function saveAsilposSecret"));
   assert.match(save, /const me = await requireAdmin\(\);/);
-  assert.match(save, /if \(d\.secret !== null && d\.branchId !== \(await lafposBranchId\(db\)\)\) throw new UserError/);
+  assert.match(save, /if \(d\.secret !== null && d\.branchId !== \(await asilposBranchId\(db\)\)\) throw new UserError/);
   // Parolayla (anahtar gün sonu yazımlarının güven kökü), denetimlerden sonra, yazımdan önce
   assert.ok(save.indexOf("await requireStepUp(me, confirm,") > save.indexOf("KARAOKE_SYNC_SECRET"));
   assert.ok(save.indexOf("await requireStepUp(me, confirm,") < save.indexOf("db.transaction("));
-  assert.ok(save.indexOf("forgetLafposSecret();") > save.indexOf("db.transaction("), "kayıttan sonra önbellek düşer");
+  assert.ok(save.indexOf("forgetAsilposSecret();") > save.indexOf("db.transaction("), "kayıttan sonra önbellek düşer");
   // İmzalı uçların okuması önbellekli ve veritabanı hatasında null (503)
-  assert.match(branch, /if \(hit && now - hit\.at < LAFPOS_BRANCH_CACHE_MS\) entry = hit;/);
-  assert.match(branch, /console\.error\("\[lafpos\] anahtar okunamadı", e\);\s*return null;/);
-  assert.match(branch, /export function forgetLafposBranch\(\): void \{\s*cache = new WeakMap\(\);\s*forgetLafposSecret\(\);/);
+  assert.match(branch, /if \(hit && now - hit\.at < ASILPOS_BRANCH_CACHE_MS\) entry = hit;/);
+  assert.match(branch, /console\.error\("\[asilpos\] anahtar okunamadı", e\);\s*return null;/);
+  assert.match(branch, /export function forgetAsilposBranch\(\): void \{\s*cache = new WeakMap\(\);\s*forgetAsilposSecret\(\);/);
   assert.match(save, /d\.secret === process\.env\.KARAOKE_SYNC_SECRET\?\.trim\(\)/);
   assert.doesNotMatch(save.slice(save.indexOf("logSetting")), /\$\{d\.secret\}/, "anahtar işlem geçmişine yazılmaz");
   // İstemciye giden kart verisinde gizli alan yok
@@ -219,13 +226,13 @@ test("kaynak: LafPOS'un imzalı uçları anahtarı şube ayarından okur (paneld
 
 test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bileşenler, şubeyle", () => {
   const page = read("src/app/panel/subeler/[id]/page.tsx");
-  for (const re of [/<LafposBranchCard/, /<ModposBranchCard/, /<TillDeviceCard view=\{device\} lafpos=\{lafposHere\} \/>/, /<ChannelSettingsCard settings=\{effectiveSettings\(commission\.value\.channels\)\}/, /<CalendarCard view=\{calendar\} \/>/]) {
+  for (const re of [/<AsilposBranchCard/, /<ModposBranchCard/, /<TillDeviceCard view=\{device\} asilpos=\{asilposHere\} \/>/, /<ChannelSettingsCard settings=\{effectiveSettings\(commission\.value\.channels\)\}/, /<CalendarCard view=\{calendar\} \/>/]) {
     assert.match(page, re);
   }
-  // LafPOS kartı LafPOS'un (türetilmiş) şubesinde: kütükte kaynağı ModPOS görünse de (sunucu ve Ayarlar ile aynı şube)
-  assert.match(page, /const lafposHere = branch\.id === \(await lafposBranchId\(\)\);/);
-  assert.match(page, /sourceModpos: branch\.posSource !== "lafpos",/);
-  assert.match(page, /<LafposOldSecretCard branchId=\{branch\.id\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
+  // AsilPOS kartı AsilPOS'un (türetilmiş) şubesinde: kütükte kaynağı ModPOS görünse de (sunucu ve Ayarlar ile aynı şube)
+  assert.match(page, /const asilposHere = branch\.id === \(await asilposBranchId\(\)\);/);
+  assert.match(page, /sourceModpos: branch\.posSource !== "asilpos",/);
+  assert.match(page, /<AsilposOldSecretCard branchId=\{branch\.id\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
   // "X şubesinde düzenle" bağlantısı kartı olan sayfaya çıkar: başka şube bu şubenin ayarını kullanıyorsa kart çizilir
   assert.match(page, /\{modposHere \|\| modpos\.link\?\.sharedWith\.length \? \(/);
   assert.match(page, /\{hasFeature\(branch, "yemek_karti"\) \|\| commission\.link\?\.sharedWith\.length \? \(/);
@@ -241,18 +248,18 @@ test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bil
   assert.match(toggle, /setBranchSettingLink\(\{ branchId, group, sameAs: to === "link" \? target : null \}\)/);
   // Anahtar alanı parola kutusu, değer bir daha gösterilmez
   const pos = read("src/app/panel/subeler/[id]/pos-card.tsx");
-  assert.match(pos, /<PasswordInput\s+id="lafpos-anahtar"/);
+  assert.match(pos, /<PasswordInput\s+id="asilpos-anahtar"/);
   // Kaydetme ve silme parola penceresiyle
-  assert.match(pos, /await saveLafposSecret\(\{ branchId: data\.branchId, secret: value \}, \{ password \}\)/);
-  assert.match(pos, /await saveLafposSecret\(\{ branchId, secret: null \}, \{ password \}\)/);
+  assert.match(pos, /await saveAsilposSecret\(\{ branchId: data\.branchId, secret: value \}, \{ password \}\)/);
+  assert.match(pos, /await saveAsilposSecret\(\{ branchId, secret: null \}, \{ password \}\)/);
   assert.doesNotMatch(pos, /<ConfirmDialog/);
 });
 
 test("kaynak: zil ve Bugün kasa raporu saatini şubeden, akşam fişini şubenin cihazından okur", () => {
   const bell = read("src/server/bell/kasa.ts");
   assert.match(bell, /resolveForTills\(CALENDAR_GROUP\), resolveForTills\(TILL_DEVICE_GROUP\)/);
-  assert.match(bell, /body: eveningText\(lafpos, evening\.deviceOf\(till\)\)/);
-  assert.match(bell, /body: eveningText\(lafpos, evening\.deviceOf\(b\.id\)\)/);
+  assert.match(bell, /body: eveningText\(asilpos, evening\.deviceOf\(till\)\)/);
+  assert.match(bell, /body: eveningText\(asilpos, evening\.deviceOf\(b\.id\)\)/);
   const today = read("src/server/data/today.ts");
   assert.match(today, /resolveBranchSetting\(CALENDAR_GROUP, karaokeScope\)\.then\(\(r\) => r\.value\.eveningHour\)/);
   assert.match(read("src/app/panel/bugun/logic.ts"), /const c = dayContext\(f\.now, f\.eveningHour\);/);
@@ -261,5 +268,5 @@ test("kaynak: zil ve Bugün kasa raporu saatini şubeden, akşam fişini şubeni
   assert.match(read("src/app/panel/bugun/logic.ts"), /evening: isCashEvening\(f\.now, t\.eveningHour\)/);
   // Kasa raporu e-postası yazarkasa başlığında cihaz ve sicil no
   assert.match(read("src/server/cash/report-email.ts"), /resolveBranchSetting\(TILL_DEVICE_GROUP, row\.branchId\)/);
-  assert.match(read("src/server/lafpos/foto.ts"), /resolveBranchSetting\(TILL_DEVICE_GROUP, branchId, db\)/);
+  assert.match(read("src/server/asilpos/foto.ts"), /resolveBranchSetting\(TILL_DEVICE_GROUP, branchId, db\)/);
 });

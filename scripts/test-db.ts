@@ -1,12 +1,12 @@
 // Veritabanı testlerini gerçek bir Postgres'te koşar: `npm run test:db` (CI: .github/workflows/ci.yml › veritabani).
 //
-// `npm test` bu testleri atlar: her biri kendi `*_TEST_DATABASE_URL` değişkenini ister (LAFPOS_, MODPOS_, CARI_, …). Bu
+// `npm test` bu testleri atlar: her biri kendi `*_TEST_DATABASE_URL` değişkenini ister (ASILPOS_, MODPOS_, CARI_, …). Bu
 // betik o değişkenlerin hepsini tek adrese (`TEST_DATABASE_URL`) bağlar, o veritabanını hazırlar (migration'lar, boşsa
 // başlangıç verisi ve şubeler) ve değişkeni okuyan her test dosyasını TEK TEK, SIRAYLA çalıştırır: bir kısmı aynı
 // veritabanını paylaşır (yan yana koşarlarsa birbirinin satırını görür), bir kısmı aynı sunucuda kendi geçici
 // veritabanını açıp siler.
 //
-// Dosya başına süre sınırı vardır. Sebebi bilinen bir tuzak (21 Kasım 2026, tests/lafpos-db.test.ts): tsx altında
+// Dosya başına süre sınırı vardır. Sebebi bilinen bir tuzak (21 Kasım 2026, tests/asilpos-db.test.ts): tsx altında
 // iletisiz `assert.ok(değer)` düşünce Node iletiyi kendisi üretmek için test dosyasının kaynağını okuyup ayrıştırmaya
 // çalışır ve süreç dakikalarca %100 işlemcide kalır; aynı iddia iletiyle (`assert.ok(değer, "…")`) bir saniyede düşer.
 // `npm test` süre sınırı vermediği için orada takılı kalırdı. Burada test başına `--test-timeout`, dosya başına da kesin
@@ -15,7 +15,7 @@
 //
 // Kullanım:
 //   TEST_DATABASE_URL=postgres://localhost/laffogato_test npm run test:db
-//   TEST_DATABASE_URL=… npm run test:db -- tests/lafpos-db.test.ts tests/lafpos-kasa-db.test.ts
+//   TEST_DATABASE_URL=… npm run test:db -- tests/asilpos-db.test.ts tests/asilpos-kasa-db.test.ts
 // Yalnız bu bilgisayardaki sunucu (localhost) kabul edilir: testler tablo boşaltır, geçici veritabanı açıp siler.
 
 import { spawn } from "node:child_process";
@@ -23,7 +23,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-/** Testlerin okuduğu değişken adları: `LAFPOS_TEST_DATABASE_URL`, `KASA_GEC_TEST_DATABASE_URL`… */
+/** Testlerin okuduğu değişken adları: `ASILPOS_TEST_DATABASE_URL`, `KASA_GEC_TEST_DATABASE_URL`… */
 const ENV_NAME = /\b[A-Z][A-Z0-9_]*_TEST_DATABASE_URL\b/g;
 
 /** Dosyanın okuduğu `*_TEST_DATABASE_URL` adları (yoksa boş: veritabanı testi değil) */

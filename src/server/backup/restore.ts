@@ -22,6 +22,7 @@ import {
   mergeUserRows,
   orderTables,
   ROW_PREFIX,
+  TABLE_RULES,
   USER_CREDENTIAL_COLUMNS,
   type BackupEnd,
   type BackupHeader,
@@ -428,6 +429,14 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
     if (present.size) await tx.unsafe(`TRUNCATE ${[...present].map((t) => `public.${ident(t)}`).join(", ")} RESTART IDENTITY CASCADE`);
 
     const names = [...backup.tables.keys()].filter((t) => {
+      // Yedeğe girmeyen tablo (TABLE_RULES skip) dosyada olsa da yüklenmez. Ad değişikliğinden (migration 0098) önceki
+      // sürüm 0098'li veritabanında yedek alırsa (yeni sürümün derlemesi sürerken, düşen derlemede, geri dönüşte)
+      // kurulum kodlarının tablosunu yeni adıyla tanımaz, özetleri ve mühürlü kodlarıyla döker (docs/YEDEK.md)
+      const skip = TABLE_RULES[t]?.skip;
+      if (skip) {
+        warnings.push(`${t} tablosu dosyada var ama yedeğe girmeyen bir tablo (${skip}); yüklenmedi.`);
+        return false;
+      }
       if (present.has(t)) return true;
       warnings.push(`${t} tablosu bu sürümde yok; atlandı.`);
       return false;

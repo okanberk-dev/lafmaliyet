@@ -1,6 +1,6 @@
 // Yöneticinin Kasa ekranının ModPOS föyü okuyucusu, gerçek Postgres'te (docs/MODPOS-API.md › Nerede görünür;
 // src/server/data/modpos-day.ts): saklanan föy günün Z özetiyle okunur, föyü olmayan ModPOS günü "henüz alınmadı" olur,
-// LafPOS geçiş gününden itibaren gün LafPOS'tur (o güne çekilmiş föy de okunmaz), ayın listesi tek sorguyla aynı sonucu
+// AsilPOS geçiş gününden itibaren gün AsilPOS'tur (o güne çekilmiş föy de okunmaz), ayın listesi tek sorguyla aynı sonucu
 // verir ve okuyucu ModPOS'a hiçbir zaman istek göndermez (günde 2 hak).
 //
 // Test kendi geçici veritabanını açar (MODPOS_TEST_DATABASE_URL'in sunucusunda), migration'ları uygular, sonunda siler.
@@ -21,7 +21,7 @@ import { parseKasaFoyu, type KasaFoyu } from "../src/lib/modpos/foy";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { ASILPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.MODPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_modpos_kasa_${process.pid}`;
@@ -42,8 +42,8 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
   let fetches = 0;
 
   const setSwitch = async (d: string | null) => {
-    await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
-    if (d) await db.insert(s.settings).values({ key: "lafposGecisGunu", value: d });
+    await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
+    if (d) await db.insert(s.settings).values({ key: "asilposGecisGunu", value: d });
   };
 
   before(async () => {
@@ -102,20 +102,20 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
     assert.equal(day.modposKeySet({ MODPOS_API_KEY: "sk_0123 456789abcdef" }), false);
   });
 
-  test("LafPOS geçiş gününden itibaren gün LafPOS: föy okunmaz; öncesi ModPOS", async () => {
-    // İki şubenin de föyü var: LafPOS'un şubesi (Marina; ModPOS'u yedek olarak çekilmeye devam eder) ve Tuzla
-    for (const sube of [LAFPOS_SUBE, MODPOS_SUBE]) {
+  test("AsilPOS geçiş gününden itibaren gün AsilPOS: föy okunmaz; öncesi ModPOS", async () => {
+    // İki şubenin de föyü var: AsilPOS'un şubesi (Marina; ModPOS'u yedek olarak çekilmeye devam eder) ve Tuzla
+    for (const sube of [ASILPOS_SUBE, MODPOS_SUBE]) {
       await store.storeFoy(db, foyOn("2026-11-01"), new Date("2026-11-02T08:02:00+03:00"), null, sube);
       await store.storeFoy(db, foyOn("2026-11-05"), new Date("2026-11-06T08:02:00+03:00"), null, sube);
     }
     await setSwitch("2026-11-03");
-    // LafPOS'un şubesinin kasası: geçiş gününden itibaren LafPOS, föy okunmaz
-    assert.equal((await day.loadKasaModpos("2026-11-01", db, LAFPOS_SUBE)).sheet?.day, "2026-11-01");
-    assert.deepEqual(await day.loadKasaModpos("2026-11-03", db, LAFPOS_SUBE), day.NO_MODPOS);
-    assert.deepEqual(await day.loadKasaModpos("2026-11-05", db, LAFPOS_SUBE), day.NO_MODPOS, "geçişten sonraki güne çekilmiş föy okunmaz");
-    const of = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db, LAFPOS_SUBE);
+    // AsilPOS'un şubesinin kasası: geçiş gününden itibaren AsilPOS, föy okunmaz
+    assert.equal((await day.loadKasaModpos("2026-11-01", db, ASILPOS_SUBE)).sheet?.day, "2026-11-01");
+    assert.deepEqual(await day.loadKasaModpos("2026-11-03", db, ASILPOS_SUBE), day.NO_MODPOS);
+    assert.deepEqual(await day.loadKasaModpos("2026-11-05", db, ASILPOS_SUBE), day.NO_MODPOS, "geçişten sonraki güne çekilmiş föy okunmaz");
+    const of = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db, ASILPOS_SUBE);
     assert.equal(of("2026-11-01").sheet?.day, "2026-11-01");
-    assert.equal(of("2026-11-01").sheet?.branchId, LAFPOS_SUBE);
+    assert.equal(of("2026-11-01").sheet?.branchId, ASILPOS_SUBE);
     assert.deepEqual(of("2026-11-02"), { modpos: true, sheet: null, z: null });
     assert.deepEqual(of("2026-11-03"), day.NO_MODPOS);
     assert.deepEqual(of("2026-11-05"), day.NO_MODPOS);
@@ -125,9 +125,9 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
     assert.deepEqual(await day.loadKasaModpos("2026-11-03", db, MODPOS_SUBE), { modpos: true, sheet: null, z: null });
     assert.equal(of("2026-11-05", MODPOS_SUBE).sheet?.day, "2026-11-05");
     assert.equal(of("2026-11-05", MODPOS_SUBE).sheet?.branchId, MODPOS_SUBE);
-    // Ayın tamamı geçiş gününden sonra: LafPOS'un şubesinde hiçbir gün ModPOS değil, Tuzla'da hepsi
+    // Ayın tamamı geçiş gününden sonra: AsilPOS'un şubesinde hiçbir gün ModPOS değil, Tuzla'da hepsi
     await setSwitch("2026-10-15");
-    const later = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db, LAFPOS_SUBE);
+    const later = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db, ASILPOS_SUBE);
     assert.deepEqual(later("2026-11-01"), day.NO_MODPOS);
     assert.equal(later("2026-11-01", MODPOS_SUBE).sheet?.day, "2026-11-01");
     assert.equal(fetches, 0);

@@ -59,7 +59,7 @@ maddeyi düşer (komisyonda sıradaki uyarı geçer). Ertesi pazartesi hâlâ a�
 
 - `Geçen hafta kasa cirosu 68.900 ₺ · önceki 4 haftaya göre %12 az` (KDV dahil, Z toplamının içindeki ödenmez /
   ikram düşülür: Genel bakış ve Bugün'ün cirosuyla aynı kural, denetim 13 Kasım HM-08; laffogato.net online kasadan
-  geçmez). Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`): kasa raporu, raporu olmayan LafPOS
+  geçmez). Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`): kasa raporu, raporu olmayan AsilPOS
   gününde gün sonu (geçiş gününden önceki deneme günü sayılmaz). Karşılaştırma **aynı şube ve günlerle** (25 Kasım 2026,
   denetim bulgusu 65; `salesLine`, Kıyas kartının `comparePairs`'ı): geçen haftanın her günü önceki dört haftanın aynı
   günüyle şube şube eşlenir, iki günü de bilinen şube-gün iki tarafa girer. Geçen hafta en az 6 gün raporlu ve önceki dört

@@ -91,9 +91,9 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.cashReports,
     s.posDayReports,
     s.posDailySales,
-    // LafPOS gün sonlarının sürüm geçmişi (docs/LAFPOS.md › Sürüm geçmişi)
+    // AsilPOS gün sonlarının sürüm geçmişi (docs/ASILPOS.md › Sürüm geçmişi)
     s.posDayRevisions,
-    s.lafposDayEnds,
+    s.asilposDayEnds,
     s.modposCashSheets,
     s.months,
     s.salesLines,

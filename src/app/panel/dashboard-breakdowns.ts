@@ -2,8 +2,8 @@ import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/bre
 import type { Model, SalesPosCommission } from "@/lib/calc/engine";
 import { expensePlanSub, listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
 import { money, monthLabel, num, numPossessive, pct, tl } from "@/lib/format";
-import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
-import { dayRangeTR } from "@/lib/lafpos/sales";
+import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/asilpos/kasa";
+import { dayRangeTR } from "@/lib/asilpos/sales";
 import { siteGross } from "@/lib/site-sales/calc";
 
 import { pnlRowLabel, sentenceCase } from "./gelir-gider/breakdowns";
@@ -53,11 +53,11 @@ const salesNetSub = (model: Model, d: DashboardData) =>
 
 /**
  * POS cirosunun KDV hariç hesabı (gelir-gider tablosuyla aynı, engine.ts posNet): hizmet payı varsa kendi oranıyla;
- * LafPOS'un şubesinin ayında gün gün (LafPOS günü kendi KDV dökümüyle, öteki günler günün oranıyla, ay günlerin toplamı)
+ * AsilPOS'un şubesinin ayında gün gün (AsilPOS günü kendi KDV dökümüyle, öteki günler günün oranıyla, ay günlerin toplamı)
  */
 const posNetSub = (model: Model, pm: { month: string; revenue: number | null; serviceRevenue: number }) => {
   const service = pm.serviceRevenue ? `, hizmet (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : "";
-  if (model.posNet(pm.month)?.byDay) return `POS cirosu ${tl(pm.revenue ?? 0)} gün gün: LafPOS günü kendi KDV dökümüyle, öteki günler ÷ (1 + KDV ${rate(model.settings.kdv)})${service}; ay günlerin toplamı`;
+  if (model.posNet(pm.month)?.byDay) return `POS cirosu ${tl(pm.revenue ?? 0)} gün gün: AsilPOS günü kendi KDV dökümüyle, öteki günler ÷ (1 + KDV ${rate(model.settings.kdv)})${service}; ay günlerin toplamı`;
   return pm.serviceRevenue
     ? `POS cirosu ${tl(pm.revenue ?? 0)}: hizmet (karaoke) ${tl(pm.serviceRevenue)} ÷ (1 + ${rate(model.settings.kdvHizmet)}), kalanı ÷ (1 + KDV ${rate(model.settings.kdv)})`
     : `POS cirosu ${tl(pm.revenue ?? 0)} ÷ (1 + KDV ${rate(model.settings.kdv)})`;
@@ -366,15 +366,15 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
 
 // ---------------------------------------------------------------- Satış listesi olmayan ay
 
-/** Ayın kasası (metinler; denetim E-39): geçiş günü boşken ve öncesinde "Patron (ModPOS)", sonra "LafPOS" */
-const kasaOf = (model: Model, month: string) => monthKasa(month, model.settings.lafposGecisGunu);
+/** Ayın kasası (metinler; denetim E-39): geçiş günü boşken ve öncesinde "Patron (ModPOS)", sonra "AsilPOS" */
+const kasaOf = (model: Model, month: string) => monthKasa(month, model.settings.asilposGecisGunu);
 
-/** Ürün satışlarının kasası: geçiş ayında modelin saydığı bölünmeyle (ModPOS listesinin son günü, LafPOS'un sayılan günleri) */
+/** Ürün satışlarının kasası: geçiş ayında modelin saydığı bölünmeyle (ModPOS listesinin son günü, AsilPOS'un sayılan günleri) */
 function salesKasaOf(model: Model, month: string) {
-  return salesMonthKasa(month, model.settings.lafposGecisGunu, model.ds.lafposSales);
+  return salesMonthKasa(month, model.settings.asilposGecisGunu, model.ds.asilposSales);
 }
 
-/** POS cirosu kartının açıklaması: ModPOS ayında bugünkü metin; LafPOS (ya da geçiş) ayında gün sonlarının cirosu */
+/** POS cirosu kartının açıklaması: ModPOS ayında bugünkü metin; AsilPOS (ya da geçiş) ayında gün sonlarının cirosu */
 function posRevenueText(mk: MonthKasa): string {
   return mk.source === "modpos"
     ? "Patron (ModPOS) ciro raporu, KDV dahil: indirimler düşülmüş, ödenmez / ikram hariç. Bu ayın ürün satış raporu yüklenince kart ürün ürün net satışı gösterir."

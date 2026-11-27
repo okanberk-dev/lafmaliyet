@@ -22,8 +22,8 @@ import {
 } from "@/lib/cash-out-requests";
 import { amountOnlyRow, cashOutLabel, cashOutsTotal, ownerCategoryRow, ownerRowsAmountOnly, staffCategory, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
-import { staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { staffAsilposEntryClosed } from "@/lib/asilpos/cash-moves";
+import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
 import { okcHasFigures } from "@/lib/okc-z";
 import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
@@ -34,10 +34,10 @@ import { closedDaysBetween } from "@/server/closed-days";
 import { requestBranches } from "@/server/staff-requests/branch";
 import { cashOutsOn, staffCategoryIds } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
-import { kasaEvidence, lafposAutoReportOf } from "@/server/data/lafpos-day";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { kasaEvidence, asilposAutoReportOf } from "@/server/data/asilpos-day";
+import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { asilposBranchId } from "@/server/asilpos/branch";
 import { staffDayOpen } from "@/server/photo-read/rules";
 
 /*
@@ -94,7 +94,7 @@ export async function staffCashOutRequests(day: string, me: { id: number }): Pro
 
 /**
  * Raporun fotoğraflarında kaldırma isteği açılabilir mi (personelin kasa sayfası): "pending" bekleyen istek var (kimin
- * olursa), "blocked" raporun tek Z fotoğrafı ya da fotoğraftan farklı yazılan alan var (otomatik LafPOS gününde
+ * olursa), "blocked" raporun tek Z fotoğrafı ya da fotoğraftan farklı yazılan alan var (otomatik AsilPOS gününde
  * değil: readingBlocksRemoval), "ok" açılabilir. Yalnız
  * personelin açabildiği gün (bugün, dün); değilse boş.
  */
@@ -113,15 +113,15 @@ export async function photoRemovalStates(report: { id: number; date: string; bra
     evidence: await kasaEvidence(db, report.date, report.branchId),
   };
   const saved = savedFields(report);
-  // Otomatik LafPOS gününde okuma farkı (fotoğraf ↔ LafPOS) personelin düğmesini gizlemez: farkı ele verirdi
-  const lafposAuto = await lafposAutoReportOf(db, report.id);
+  // Otomatik AsilPOS gününde okuma farkı (fotoğraf ↔ AsilPOS) personelin düğmesini gizlemez: farkı ele verirdi
+  const asilposAuto = await asilposAutoReportOf(db, report.id);
   const out: Record<number, "ok" | "pending" | "blocked"> = {};
   for (const p of photos) {
     if (waiting.has(p.id)) out[p.id] = "pending";
     else if (photoKindRefusal(p.kind, counts)) out[p.id] = "blocked";
     else {
       const reading = await photoReadingOf(db, p.id, p.kind, report.date);
-      out[p.id] = reading && readingBlocksRemoval({ suspicious: suspiciousDiffs([reading], saved).length, staff: true, lafposAuto }) ? "blocked" : "ok";
+      out[p.id] = reading && readingBlocksRemoval({ suspicious: suspiciousDiffs([reading], saved).length, staff: true, asilposAuto }) ? "blocked" : "ok";
     }
   }
   return out;
@@ -133,11 +133,11 @@ export async function staffOldCashOutDays(now = new Date()): Promise<string[]> {
   if (!days.length) return [];
   // Kasanın şubesinin kapalı günleri (ve işletme geneli): öteki şubenin kapalı günü bu şubenin listesinden düşmez
   const till = await currentTillBranch();
-  const [closedDays, setting, lafposBranch] = await Promise.all([closedDaysBetween(days[days.length - 1], days[0], getDb(), till), lafposSwitchDayOf(getDb()), lafposBranchId()]);
+  const [closedDays, setting, asilposBranch] = await Promise.all([closedDaysBetween(days[days.length - 1], days[0], getDb(), till), asilposSwitchDayOf(getDb()), asilposBranchId()]);
   const closed = new Set(closedDays);
-  // LafPOS gününe personel satır eklemez (staffLafposEntryClosed; kapı staffCashOutGate da reddeder): kasadan çıkanlar LafPOS'tan
-  const switchDay = branchSwitchDay(setting, till, lafposBranch);
-  return days.filter((d) => !closed.has(d) && !staffLafposEntryClosed({ admin: false, branchId: till, lafposDay: isLafposDay(d, switchDay), lafposBranch }));
+  // AsilPOS gününe personel satır eklemez (staffAsilposEntryClosed; kapı staffCashOutGate da reddeder): kasadan çıkanlar AsilPOS'tan
+  const switchDay = branchSwitchDay(setting, till, asilposBranch);
+  return days.filter((d) => !closed.has(d) && !staffAsilposEntryClosed({ admin: false, branchId: till, asilposDay: isAsilposDay(d, switchDay), asilposBranch }));
 }
 
 // ---------------------------------------------------------------- Yöneticinin kartları (Onaylar › Kasa)

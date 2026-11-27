@@ -679,7 +679,7 @@ export function PanelAssistant({ userId, branch }: { userId: number; branch?: st
                   <div className="space-y-4 max-lg:space-y-5">
                     {/* Telefonda kısa (göz yormasın): iki cümle; ayrıntı masaüstünde ve bilgi tabanında */}
                     <p className="text-[14px] leading-6 text-ink-soft max-lg:hidden">
-                      Merhaba! LafPOS gün sonları ve günlük satışlar, kasa, vardiya, Tükendi, bekleyen işler, ciro, kâr, tedarikçi borçları, ödemeler ve panelin
+                      Merhaba! AsilPOS gün sonları ve günlük satışlar, kasa, vardiya, Tükendi, bekleyen işler, ciro, kâr, tedarikçi borçları, ödemeler ve panelin
                       nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım:
                       siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme, toplu ve riskli işleri yapmam; onlarda ekranın bağlantısını ve adımları veririm.
                     </p>

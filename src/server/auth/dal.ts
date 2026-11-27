@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
 import type { Role } from "@/lib/constants";
-import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/lafpos/kurulum";
+import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/asilpos/kurulum";
 import { BRANCH_ROLES, can, homeFor, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
 import { UserError } from "@/server/user-error";
@@ -188,8 +188,8 @@ export async function requireCan(cap: Capability): Promise<CurrentUser> {
 }
 
 /**
- * Ana yönetici (şube ekleme; docs/LAFPOS.md › Şube kurulumu): yönetici ve e-postası ana yöneticininki
- * (src/lib/lafpos/kurulum.ts `isAnaAdmin`). Değilse eylemde okunur hata (sayfa açılır, yalnız ekleme kapalıdır)
+ * Ana yönetici (şube ekleme; docs/ASILPOS.md › Şube kurulumu): yönetici ve e-postası ana yöneticininki
+ * (src/lib/asilpos/kurulum.ts `isAnaAdmin`). Değilse eylemde okunur hata (sayfa açılır, yalnız ekleme kapalıdır)
  */
 export async function requireAnaAdmin(): Promise<CurrentUser> {
   const user = await requireAdmin();

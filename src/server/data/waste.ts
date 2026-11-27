@@ -4,14 +4,14 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
-import { lafposListByKind, panelWasteCounts, type LafposZKinds } from "@/lib/lafpos/ikram";
+import { asilposListByKind, panelWasteCounts, type AsilposZKinds } from "@/lib/asilpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { asilposBranchId } from "@/server/asilpos/branch";
 import { UserError } from "@/server/user-error";
 
-import { loadDayLafposIkram } from "./lafpos-ikram";
+import { loadDayAsilposIkram } from "./asilpos-ikram";
 
 /**
  * Zayi / ikram için seçilebilen kalemler: aktif menü ürünleri (adet) ve aktif hammaddeler (sayım biriminde, yoksa
@@ -58,7 +58,7 @@ export interface WasteEntryDTO extends WasteLine {
   createdBy: number | null;
   createdByName: string;
   createdAt: string;
-  /** Kaydın şubesi: LafPOS günü yalnız LafPOS'un şubesinin ürün ikramını düşürür (panelWasteCounts) */
+  /** Kaydın şubesi: AsilPOS günü yalnız AsilPOS'un şubesinin ürün ikramını düşürür (panelWasteCounts) */
   branchId: string;
 }
 
@@ -91,17 +91,17 @@ export async function wasteEntriesBetween(from: string, to: string, branchId?: s
   }));
 }
 
-/** Günün LafPOS ikramı (kasa raporunun özeti; LafPOS günü değilse null) */
-export interface DayWasteLafpos {
-  /** O günün gün sonu geldi: ürün ikramı LafPOS'tan, paneldeki ürün ikramı sayılmaz */
+/** Günün AsilPOS ikramı (kasa raporunun özeti; AsilPOS günü değilse null) */
+export interface DayWasteAsilpos {
+  /** O günün gün sonu geldi: ürün ikramı AsilPOS'tan, paneldeki ürün ikramı sayılmaz */
   received: boolean;
-  /** LafPOS'un Z'sindeki ödenmez tutarı (yalnız yöneticinin e-postası) */
+  /** AsilPOS'un Z'sindeki ödenmez tutarı (yalnız yöneticinin e-postası) */
   offRevenue: number | null;
-  /** LafPOS'un ikram satırlarının (ödenmez dahil) menü değeri */
+  /** AsilPOS'un ikram satırlarının (ödenmez dahil) menü değeri */
   ikramValue: number;
-  /** LafPOS'ta zayi yazılan satırların menü değeri */
+  /** AsilPOS'ta zayi yazılan satırların menü değeri */
   zayiValue: number;
-  /** LafPOS'un listesinin tamamı (ikram + zayi): Z'deki ödenmez tutarı bunu kapsar (lafposIkramCheck) */
+  /** AsilPOS'un listesinin tamamı (ikram + zayi): Z'deki ödenmez tutarı bunu kapsar (asilposIkramCheck) */
   listValue: number;
   /** Panele bu güne girilmiş, sayılmayan ürün ikramı kaydı */
   notCounted: number;
@@ -109,31 +109,31 @@ export interface DayWasteLafpos {
   iptalValue?: number;
   /** Faz 2: hazırlanmamış iptallerin liste değeri ve kalem sayısı (bilgi: tüketim değil) */
   unprepared?: { count: number; value: number };
-  /** Faz 2: türe göre Z toplamları ve liste (lafposIkramCheck); eski LafPOS'ta z null */
-  byKind?: { z: LafposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
+  /** Faz 2: türe göre Z toplamları ve liste (asilposIkramCheck); eski AsilPOS'ta z null */
+  byKind?: { z: AsilposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
 }
 
 /**
  * Kasa raporu için günün zayi ve ikram özeti ve ikramın menü fiyatıyla değeri (kasanın ödenmez tutarıyla
- * karşılaştırılır; yalnız yöneticiye giden e-postada). LafPOS gününde gün sonu geldiyse ürün ikramı LafPOS'un ikram
- * listesinden, değeri LafPOS'un menü değerinden; listedeki "Zayi: …" satırları zayi özetine girer; paneldeki ürün
- * ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü boşken `lafpos` null, özet bugünkü gibi yalnız panelden.
+ * karşılaştırılır; yalnız yöneticiye giden e-postada). AsilPOS gününde gün sonu geldiyse ürün ikramı AsilPOS'un ikram
+ * listesinden, değeri AsilPOS'un menü değerinden; listedeki "Zayi: …" satırları zayi özetine girer; paneldeki ürün
+ * ikramı sayılmaz (`asilpos.notCounted`). Geçiş günü boşken `asilpos` null, özet bugünkü gibi yalnız panelden.
  */
-export async function dayWaste(date: string, branchId?: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
+export async function dayWaste(date: string, branchId?: string): Promise<DayWaste & { ikramValue: number; count: number; asilpos: DayWasteAsilpos | null }> {
   const db = getDb();
-  const [entries, prices, laf, lafposBranch] = await Promise.all([
+  const [entries, prices, laf, asilposBranch] = await Promise.all([
     wasteEntriesBetween(date, date, branchId),
     db.select({ id: s.products.id, price: s.products.price }).from(s.products),
-    loadDayLafposIkram(date, db, branchId),
-    lafposBranchId(db),
+    loadDayAsilposIkram(date, db, branchId),
+    asilposBranchId(db),
   ]);
   const price = new Map(prices.map((p) => [p.id, p.price]));
   const received = Boolean(laf?.received);
-  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>(), lafposBranch));
-  // LafPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
+  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>(), asilposBranch));
+  // AsilPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
   const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: l.kind, name: l.name, qty: l.qty, unit: "adet" })) : [];
   const lines = [...counted, ...lafLines];
-  // LafPOS'un listesi (ödenmez tutarı bunu kapsar) ile hazırlanmış iptaller (zayi tüketimi, ödenmez tutarında yok) ayrı
+  // AsilPOS'un listesi (ödenmez tutarı bunu kapsar) ile hazırlanmış iptaller (zayi tüketimi, ödenmez tutarında yok) ayrı
   const r2 = (v: number) => Math.round(v * 100) / 100;
   const valueOf = (kind: WasteKind) => r2(laf?.lines.filter((l) => l.kind === kind && !l.iptal).reduce((a, l) => a + l.menuValue, 0) ?? 0);
   const lafIkram = valueOf("ikram");
@@ -147,7 +147,7 @@ export async function dayWaste(date: string, branchId?: string): Promise<DayWast
     ikram: summarize(lines, "ikram"),
     ikramValue,
     count: lines.length,
-    lafpos: laf
+    asilpos: laf
       ? {
           received,
           offRevenue: laf.offRevenue,
@@ -155,9 +155,9 @@ export async function dayWaste(date: string, branchId?: string): Promise<DayWast
           zayiValue: lafZayi,
           listValue: Math.round((lafIkram + lafZayi) * 100) / 100,
           notCounted: entries.length - counted.length,
-          // Faz 2 alanları yalnız LafPOS onları gönderdiyse (eski LafPOS'un gününde yok)
+          // Faz 2 alanları yalnız AsilPOS onları gönderdiyse (eski AsilPOS'un gününde yok)
           ...(unprepared ? { iptalValue, unprepared: { count: unprepared.length, value: r2(unprepared.reduce((a, l) => a + l.listValue, 0)) } } : {}),
-          ...(laf.zByKind ? { byKind: { z: laf.zByKind, list: lafposListByKind(laf.lines) } } : {}),
+          ...(laf.zByKind ? { byKind: { z: laf.zByKind, list: asilposListByKind(laf.lines) } } : {}),
         }
       : null,
   };

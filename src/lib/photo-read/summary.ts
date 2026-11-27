@@ -8,7 +8,7 @@
 import { money } from "@/lib/format";
 
 import { printedAmount } from "./common";
-import { isLafposPaper, okcPaperView } from "./okc";
+import { isAsilposPaper, okcPaperView } from "./okc";
 import type { AmountRaw, KasaOkc } from "./schemas";
 
 const DOC_LABEL: Record<KasaOkc["documentType"], string> = {
@@ -39,14 +39,14 @@ function amountText(a: AmountRaw): string | null {
 
 /** Belgenin türü: Pavo'nun detaylı Z'si (Z + banka gün sonu tek fişte) ayrıca adlandırılır */
 export function okcDocumentLabel(raw: KasaOkc): string {
-  if (isLafposPaper(raw)) return raw.batches.length ? "LafPOS'un gün sonu kâğıdı (banka bölümü)" : "LafPOS'un gün sonu kâğıdı (mali Z değil)";
+  if (isAsilposPaper(raw)) return raw.batches.length ? "AsilPOS'un gün sonu kâğıdı (banka bölümü)" : "AsilPOS'un gün sonu kâğıdı (mali Z değil)";
   if (raw.documentType === "z_report" && raw.batches.length) return "Z raporu ve banka gün sonu (tek fişte)";
   return DOC_LABEL[raw.documentType];
 }
 
 /**
  * Yazarkasa / banka gün sonu fotoğrafının okunanı satır satır: belge, tarih, Z no, fiş sayısı, günün toplamı, ödemeler,
- * KDV dökümü, toplam KDV, batch'ler. LafPOS'un kendi kâğıdında yalnız banka kısmı (Z'si mali değildir; okcPaperView)
+ * KDV dökümü, toplam KDV, batch'ler. AsilPOS'un kendi kâğıdında yalnız banka kısmı (Z'si mali değildir; okcPaperView)
  */
 export function okcReadRows(read: KasaOkc): [string, string][] {
   const raw = okcPaperView(read);

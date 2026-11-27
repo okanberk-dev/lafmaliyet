@@ -22,9 +22,9 @@ import { CASH_OUT_NOTE_REQUIRED, cashOutNoteMissing, cashOutNoteOf, type CashOut
 import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
-import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
-import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { ASILPOS_STAFF_WRITE_TEXT } from "@/lib/asilpos/foto";
+import { unreceiptedCashOut } from "@/lib/asilpos/prefill";
+import { isAsilposDay } from "@/lib/asilpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
@@ -37,7 +37,7 @@ import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
 import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
-import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
+import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -188,35 +188,35 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 }
 
 /**
- * Gün LafPOS'un şubesinin LafPOS günü mü (geçiş gününden itibaren; LafPOS'un şubesi kütükten, lafposBranchId; onun geçiş
- * günü ayarın kendisidir). Personele kör kasa günüdür (src/lib/lafpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp
+ * Gün AsilPOS'un şubesinin AsilPOS günü mü (geçiş gününden itibaren; AsilPOS'un şubesi kütükten, asilposBranchId; onun geçiş
+ * günü ayarın kendisidir). Personele kör kasa günüdür (src/lib/asilpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp
  * metni reddedilir
  */
-export async function isLafposTillDay(db: Pick<DB, "select"> | CashTx, date: string, branchId: string): Promise<boolean> {
-  if (branchId !== (await lafposBranchId(db))) return false;
-  return isLafposDay(date, await lafposSwitchDay(db));
+export async function isAsilposTillDay(db: Pick<DB, "select"> | CashTx, date: string, branchId: string): Promise<boolean> {
+  if (branchId !== (await asilposBranchId(db))) return false;
+  return isAsilposDay(date, await asilposSwitchDay(db));
 }
 
 /**
- * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu ve Kör
- * kasa): LafPOS'un şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni
- * rapor girmez (gün sonundan önce de: girseydi otomasyon raporu "elle girildi" sayar, Z'si ve kasası LafPOS'tan
+ * Personelin AsilPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/ASILPOS.md › Gün sonu otomasyonu ve Kör
+ * kasa): AsilPOS'un şubesinde geçiş gününden itibaren rapor AsilPOS'un gün sonundan kendiliğinden yazılır. Personel yeni
+ * rapor girmez (gün sonundan önce de: girseydi otomasyon raporu "elle girildi" sayar, Z'si ve kasası AsilPOS'tan
  * yazılmazdı), otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil) ve yöneticinin elle girdiği raporu da
  * değiştirmez (kör kasa, bulgu 0: düzenleme sayılanı, açılışı ve farkı gösterirdi; yanıt da farkı söylerdi). Red metni;
  * yazılabilirse null
  */
-async function staffLafposRefusal(tx: CashTx, date: string, branchId: string, prev: CashReportRow | null): Promise<string | null> {
-  if (!(await isLafposTillDay(tx, date, branchId))) return null;
-  if (!prev) return LAFPOS_STAFF_WRITE_TEXT.fresh;
-  const [state] = await tx.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, prev.id)).limit(1);
-  return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : LAFPOS_STAFF_WRITE_TEXT.manual;
+async function staffAsilposRefusal(tx: CashTx, date: string, branchId: string, prev: CashReportRow | null): Promise<string | null> {
+  if (!(await isAsilposTillDay(tx, date, branchId))) return null;
+  if (!prev) return ASILPOS_STAFF_WRITE_TEXT.fresh;
+  const [state] = await tx.select({ autoValues: s.asilposDayEnds.autoValues }).from(s.asilposDayEnds).where(eq(s.asilposDayEnds.reportId, prev.id)).limit(1);
+  return state?.autoValues ? ASILPOS_STAFF_WRITE_TEXT.auto : ASILPOS_STAFF_WRITE_TEXT.manual;
 }
 
 /**
  * Personelin fişsiz çıkışı (denetim 25 Kasım 2026, bulgu 2): "Gün içinde çıkan" o günün (şubenin) kasadan çıkan
  * satırlarından fazlaysa "Neye çıktı" zorunlu (cashOutNoteMissing; form aynı kuralla). Yeni raporda ya da çıkış veya
- * açıklaması değiştiyse denetlenir (`prev`: kayıtlı hâl; dokunulmayan eski satır yeniden sorulmaz). Personel LafPOS
- * gününe raporu formdan yazmaz (staffLafposRefusal), bu yüzden LafPOS'un teslimi burada düşülmez. Çağıranlar:
+ * açıklaması değiştiyse denetlenir (`prev`: kayıtlı hâl; dokunulmayan eski satır yeniden sorulmaz). Personel AsilPOS
+ * gününe raporu formdan yazmaz (staffAsilposRefusal), bu yüzden AsilPOS'un teslimi burada düşülmez. Çağıranlar:
  * saveCashReport, proposeLateReport, proposeCashCorrection (yalnız personelde)
  */
 export async function assertStaffOutNote(
@@ -427,7 +427,7 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır
   // (geçmiş bir güne sonradan eklenen bugünden)
   const ids = [...new Set(o.photos ?? [])];
-  // LafPOS günü: sayım yokken eklenip bekleyen gün sonu fotoğrafları elle girilen bu rapora bağlanır (kaybolmaz)
+  // AsilPOS günü: sayım yokken eklenip bekleyen gün sonu fotoğrafları elle girilen bu rapora bağlanır (kaybolmaz)
   let okcLinked = !prev && (await adoptPendingDayPhotos(tx, row)) > 0;
   if (ids.length) {
     const linked = await tx.select({ kind: s.cashReportPhotos.kind }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
@@ -474,17 +474,17 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
  * dışı tahsilat 1 ₺'yi geçerse
  */
 /**
- * LafPOS gününün bekleyen gün sonu fotoğrafları (lafpos_day_ends.pending_photos: LafPOS sayımsız kapandı, rapor yokken
+ * AsilPOS gününün bekleyen gün sonu fotoğrafları (asilpos_day_ends.pending_photos: AsilPOS sayımsız kapandı, rapor yokken
  * personel ekledi) günün raporuna bağlanır ve bekleyen liste boşalır. Otomatik rapor kendi yolunda bağlar
- * (src/server/lafpos/foto.ts linkPendingPhotos); bu, rapor elle girildiğinde (formun kaydı ya da LafPOS'un sonraki
+ * (src/server/asilpos/foto.ts linkPendingPhotos); bu, rapor elle girildiğinde (formun kaydı ya da AsilPOS'un sonraki
  * gönderiminde elle girilmiş rapor) fotoğrafın sahipsiz kalmaması içindir. Sınırı aşan ya da bulunamayan fotoğraf
  * atlanır (kayıt düşmez). Bağlananların sayısı
  */
 export async function adoptPendingDayPhotos(tx: CashTx, row: CashReportRow, now = new Date()): Promise<number> {
   const [state] = await tx
-    .select({ pending: s.lafposDayEnds.pendingPhotos })
-    .from(s.lafposDayEnds)
-    .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)))
+    .select({ pending: s.asilposDayEnds.pendingPhotos })
+    .from(s.asilposDayEnds)
+    .where(and(eq(s.asilposDayEnds.date, row.date), eq(s.asilposDayEnds.branchId, row.branchId)))
     .for("update")
     .limit(1);
   if (!state?.pending.length) return 0;
@@ -504,9 +504,9 @@ export async function adoptPendingDayPhotos(tx: CashTx, row: CashReportRow, now 
     adopted++;
   }
   await tx
-    .update(s.lafposDayEnds)
+    .update(s.asilposDayEnds)
     .set({ pendingPhotos: [], updatedAt: now })
-    .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)));
+    .where(and(eq(s.asilposDayEnds.date, row.date), eq(s.asilposDayEnds.branchId, row.branchId)));
   return adopted;
 }
 
@@ -594,8 +594,8 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     await lockLateDay(tx, data.date, branchId);
     const prev = await lockCashReport(tx, data.date, branchId);
     if (me.role !== "admin") {
-      const lafpos = await staffLafposRefusal(tx, data.date, branchId, prev);
-      if (lafpos) throw new UserError(lafpos);
+      const asilpos = await staffAsilposRefusal(tx, data.date, branchId, prev);
+      if (asilpos) throw new UserError(asilpos);
       await assertStaffOutNote(tx, data.date, branchId, data, prev);
     }
     if (prev && me.role !== "admin") {

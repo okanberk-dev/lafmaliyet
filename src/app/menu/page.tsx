@@ -70,7 +70,7 @@ function MenuSkeleton() {
 async function MenuContent({ searchParams }: { searchParams: PageProps<"/menu">["searchParams"] }) {
   // Menü her istekte okunur (önizleme oturuma bağlı, yayında değilse yönlendirme): /api/menu gibi önce bağlantı
   // beklenir. Beklenmezse partialPrefetching açıkken içerik isteğin çalışma aşamasında (searchParams çözülünce, ilk
-  // veritabanı okumasından önce) çizilir; ayarların okuduğu LafPOS şubesi önbelleği (src/server/lafpos/branch.ts)
+  // veritabanı okumasından önce) çizilir; ayarların okuduğu AsilPOS şubesi önbelleği (src/server/asilpos/branch.ts)
   // orada saati okur ve Next her istekte "Date.now() while prerendering" hatası yazar
   await connection();
   const sp = await searchParams;

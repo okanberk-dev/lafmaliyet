@@ -13,7 +13,7 @@ import { UserError } from "@/server/actions/util";
 import { insertProduct } from "@/server/data/product-create";
 import { lockNewProducts, pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { getDb, schema as s } from "@/server/db";
-import { rematchPosSalesBySite } from "@/server/lafpos/rematch";
+import { rematchPosSalesBySite } from "@/server/asilpos/rematch";
 import { siteLinkSecret } from "@/server/site-link";
 
 import { applySiteList, fetchSiteMenu, linkColumns, loadLinkedRows, lockMenu, logApplied, readSiteSnapshot, SiteRequestError, type AppliedList } from "./sync";
@@ -72,7 +72,7 @@ async function fetchListOrFail(what: string): Promise<SiteList> {
 /**
  * Bağlantıları menü kilidi altında yazar (çağıran `lockMenu`'yu almıştır): yuvası boş ve kalemi sitede olan her
  * istek bağlanır, liste bütün bağlı satırlara uygulanır (yeni bağlanan sitenin fiyatını ve menü durumunu alır) ve bu
- * kalemle gelmiş ürünsüz LafPOS satırları ürüne bağlanır. Bağlama ve "Panelde aç ve bağla" ortak çekirdeği.
+ * kalemle gelmiş ürünsüz AsilPOS satırları ürüne bağlanır. Bağlama ve "Panelde aç ve bağla" ortak çekirdeği.
  */
 async function linkUnderLock(tx: Tx, list: SiteList, requests: readonly LinkRequest[], at: Date) {
   const items = new Map(list.items.map((i) => [i.id, i]));
@@ -133,7 +133,7 @@ async function linkUnderLock(tx: Tx, list: SiteList, requests: readonly LinkRequ
   // Sitenin değeri geçerli: liste bütün bağlı satırlara (yeni bağlananlar dahil) uygulanır
   const applied = await applySiteList(tx, list, at);
   if (!applied) throw new UserError("Sitenin menüsü bu sırada değişti; bağlantı kurulmadı. Tekrar dene.");
-  // Bu kalemle gelmiş ürünsüz LafPOS satırları yeniden gönderim olmadan ürüne bağlanır (denetim E-33)
+  // Bu kalemle gelmiş ürünsüz AsilPOS satırları yeniden gönderim olmadan ürüne bağlanır (denetim E-33)
   await rematchPosSalesBySite(
     tx,
     linked.map((l) => ({ productId: l.productId, siteMenuId: l.siteMenuId, slot: l.slot })),

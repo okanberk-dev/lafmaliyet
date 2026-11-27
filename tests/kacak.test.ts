@@ -22,7 +22,7 @@ function december(over: Partial<StockEstimateInput> = {}): StockEstimateInput {
   const days = Array.from({ length: 31 }, (_, i) => `2026-12-${String(i + 1).padStart(2, "0")}`);
   return {
     today: "2026-12-31",
-    lafposFrom: "2026-11-22",
+    asilposFrom: "2026-11-22",
     // 15 Aralık gün sonu gelmedi
     receivedDays: days.filter((d) => d !== "2026-12-15"),
     closedDays: [],
@@ -42,7 +42,7 @@ function december(over: Partial<StockEstimateInput> = {}): StockEstimateInput {
     purchases: [{ invoiceId: 1, ingredientId: SUT, date: "2026-12-05", qty: 20_000 }],
     sales: [{ date: "2026-12-10", posName: "LATTE M", productId: LATTE, productName: "Latte M", isService: false, qty: 100 }],
     panelWaste: [],
-    lafposWaste: [{ date: "2026-12-11", kind: "zayi", posName: "COOKIE", productId: null, qty: 2 }],
+    asilposWaste: [{ date: "2026-12-11", kind: "zayi", posName: "COOKIE", productId: null, qty: 2 }],
     recipe: [
       { productId: LATTE, ingredientId: SUT, qty: 200 },
       { productId: LATTE, ingredientId: KAHVE, qty: 18 },
@@ -104,13 +104,13 @@ test("rapora girmeyenler sayılır; eksik gün sonu ve bağlanmamış satır uya
   assert.equal(r.notCounted, 2, "Çekirdek ve bardak tahmini var ama Aralık'ta sayılmadı");
   assert.equal(r.noEstimate, 1, "Şurup hiç sayılmadı: tahmini yok");
   assert.deepEqual(r.missingDays, ["2026-12-15", "2026-12-31"], "tahminin bugün hariç saydığı ayın son günü de");
-  assert.equal(r.skippedLines, 1, "ürüne bağlanmamış LafPOS zayisi");
+  assert.equal(r.skippedLines, 1, "ürüne bağlanmamış AsilPOS zayisi");
   assert.deepEqual(r.skippedNames, ["COOKIE"]);
   assert.deepEqual(r.leaks, []);
 });
 
-test("LafPOS öncesi başlayan dönemde tahmin yok: kalem rapora girmez", () => {
-  const est = estimateStock(december({ lafposFrom: "2026-12-10" }));
+test("AsilPOS öncesi başlayan dönemde tahmin yok: kalem rapora girmez", () => {
+  const est = estimateStock(december({ asilposFrom: "2026-12-10" }));
   const r = leakReport("2026-12", est, [{ ingredientId: SUT, qty: 1 }], () => 1);
   assert.equal(r.lines.length, 0);
   assert.equal(r.noEstimate, 4);

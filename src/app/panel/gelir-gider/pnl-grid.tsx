@@ -683,7 +683,7 @@ export function PnlGrid({
   latestMonth,
   expectedDebts = NO_EXPECTED,
   yearNote = null,
-  lafposSwitch = null,
+  asilposSwitch = null,
   openDaysLocked = null,
   writeBranch = null,
 }: {
@@ -711,8 +711,8 @@ export function PnlGrid({
    * başlığın altındaki kısa yazı ve açıklaması. Hepsi toplanıyorsa null
    */
   yearNote?: { short: string; long: string } | null;
-  /** LafPOS'a geçiş günü (yalnız metinler: ayın kasası, src/lib/lafpos/kasa.ts; denetim E-39) */
-  lafposSwitch?: string | null;
+  /** AsilPOS'a geçiş günü (yalnız metinler: ayın kasası, src/lib/asilpos/kasa.ts; denetim E-39) */
+  asilposSwitch?: string | null;
   /** Açık gün yazılmıyorsa nedeni ("Tümü" birden çok şubenin toplamı; src/lib/branches.ts monthTotalsLocked) */
   openDaysLocked?: string | null;
   /**
@@ -1046,7 +1046,7 @@ export function PnlGrid({
         onMonthNote={setMonthNoteFor}
         onSave={savePlan}
         expectedDebts={expectedDebts}
-        lafposSwitch={lafposSwitch}
+        asilposSwitch={asilposSwitch}
         openDaysLocked={openDaysLocked}
       />
       <ExpectedDebtsNote months={visibleIdx.map((v) => v.m)} expected={expectedDebts} className="max-md:hidden" />

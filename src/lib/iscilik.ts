@@ -10,7 +10,7 @@
 //
 // Ciro KDV hariç (Gelir-gider'in oranlarıyla aynı): günün cirosu kasa satırından (KDV dahil, ödenmez hariç; Kıyas ve Genel
 // bakış'ın günlük cirosu) ayın KDV hariç / KDV dahil oranıyla çevrilir; ayın günlerinin toplamı Gelir-gider'in cirosudur.
-// Verisi olmayan gün (kasa raporu, LafPOS gün sonu ya da föy yok) sıfır sayılmaz: oran yalnız cirosu bilinen günlerden.
+// Verisi olmayan gün (kasa raporu, AsilPOS gün sonu ya da föy yok) sıfır sayılmaz: oran yalnız cirosu bilinen günlerden.
 
 import { addDays, monthShortTR } from "./reminders";
 

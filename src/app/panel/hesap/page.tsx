@@ -11,8 +11,8 @@ import { Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { twoFactorRequiredFor } from "@/lib/admin-security";
 import { ROLES } from "@/lib/constants";
-import { KURULUM_DURUM_ETIKET } from "@/lib/lafpos/kurulum";
-import { installForAccount } from "@/server/lafpos/kurulum";
+import { KURULUM_DURUM_ETIKET } from "@/lib/asilpos/kurulum";
+import { installForAccount } from "@/server/asilpos/kurulum";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { loadMyConnections } from "@/server/mcp/connections";
@@ -57,7 +57,7 @@ async function Account() {
         })
       : null,
   ]);
-  // LafPOS kurulumu (docs/LAFPOS.md › Şube kurulumu): şubenin son bağlantısı yalnız şubenin kendi hesabına (bağlantının
+  // AsilPOS kurulumu (docs/ASILPOS.md › Şube kurulumu): şubenin son bağlantısı yalnız şubenin kendi hesabına (bağlantının
   // gittiği adres, şubeye kilitli personel). Şubenin öbür personeli, müdür, muhasebeci ve yönetici görmez: bağlantıdaki
   // kod kasanın eşitleme anahtarını verir (installForAccount)
   const install = await installForAccount(getDb(), user).catch(() => null);
@@ -90,19 +90,19 @@ async function Account() {
         </div>
       </Card>
       {install ? (
-        <Card id="lafpos" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
+        <Card id="asilpos" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
           <CardHeader
             icon={<MonitorDown />}
-            title="LafPOS kurulumu"
-            description="Şubenizin kasa bilgisayarına LafPOS'u bu bağlantıyla kurun; kasa şubeye, gün sonuna ve uzaktan yönetime kendiliğinden bağlanır."
+            title="AsilPOS kurulumu"
+            description="Şubenizin kasa bilgisayarına AsilPOS'u bu bağlantıyla kurun; kasa şubeye, gün sonuna ve uzaktan yönetime kendiliğinden bağlanır."
           />
           <CardContent className="space-y-3 text-sm">
             <Badge tone={install.durum === "kuruldu" ? "green" : install.durum === "bekliyor" ? "blue" : "gray"}>{KURULUM_DURUM_ETIKET[install.durum]}</Badge>
             {install.link ? (
               <>
-                <p className="text-ink-soft">Bağlantıyı kasa bilgisayarında açın, inen dosyaya (LafPOS-Kur) çift tıklayın ve Windows izin sorunca Evet deyin. Tek kurulumluktur.</p>
+                <p className="text-ink-soft">Bağlantıyı kasa bilgisayarında açın, inen dosyaya (AsilPOS-Kur) çift tıklayın ve Windows izin sorunca Evet deyin. Tek kurulumluktur.</p>
                 <ButtonLink href={install.link} prefetch={false}>
-                  <Download className="size-4" aria-hidden="true" /> LafPOS&apos;u indir
+                  <Download className="size-4" aria-hidden="true" /> AsilPOS&apos;u indir
                 </ButtonLink>
               </>
             ) : (

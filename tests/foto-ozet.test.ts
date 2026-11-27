@@ -4,8 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { lafposPhotoCheck, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
-import { deviceCompareReport, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
+import { asilposPhotoCheck, type AsilposPhotoCheck } from "../src/lib/asilpos/foto";
+import { deviceCompareReport, renderPhotoMail } from "../src/lib/asilpos/gun-sonu";
 import { okcDocumentLabel, okcReadRows } from "../src/lib/photo-read/summary";
 import type { AmountRaw, KasaOkc } from "../src/lib/photo-read/schemas";
 import { emailPayload } from "../src/server/notify/resend-http";
@@ -71,9 +71,9 @@ test("Okunmayan rakam yazılmaz, güveni düşük rakam '(belirsiz)'; okunamayan
   ]);
 });
 
-test("LafPOS'un kendi kâğıdı: Z'si mali değildir, yalnız banka kısmı yazılır", () => {
+test("AsilPOS'un kendi kâğıdı: Z'si mali değildir, yalnız banka kısmı yazılır", () => {
   const paper = z({ title: "GÜN SONU · Z 31", dailyTotalLabel: "NET CİRO", fiscalMarks: { mfLogo: false, ekuNo: false, cumulativeLines: false, vatBlock: false } });
-  assert.match(okcDocumentLabel(paper), /LafPOS'un gün sonu kâğıdı/);
+  assert.match(okcDocumentLabel(paper), /AsilPOS'un gün sonu kâğıdı/);
   const t = plain(
     okcReadRows(paper)
       .map(([a, b]) => `${a}: ${b}`)
@@ -84,8 +84,8 @@ test("LafPOS'un kendi kâğıdı: Z'si mali değildir, yalnız banka kısmı yaz
 });
 
 test("Fotoğraf e-postası: uyumlu fotoğraf da gider; okunan bölümü, ekleyen ve ek satırı", () => {
-  const report = deviceCompareReport({ bankPos: null, okc: { provider: "pavo", zReport: false, docs: 4, cash: 390, card: 800, mealCard: 0, other: 0, total: 1_190, vat: [{ rate: 10, total: 1_190, vat: 108.18 }] } as never, lafposZNo: null });
-  const check: LafposPhotoCheck = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: z({ batches: [] }), error: null, source: "ai", model: "claude-haiku-5-5" }], bankPos: null, okc: null, report });
+  const report = deviceCompareReport({ bankPos: null, okc: { provider: "pavo", zReport: false, docs: 4, cash: 390, card: 800, mealCard: 0, other: 0, total: 1_190, vat: [{ rate: 10, total: 1_190, vat: 108.18 }] } as never, asilposZNo: null });
+  const check: AsilposPhotoCheck = asilposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: z({ batches: [] }), error: null, source: "ai", model: "claude-haiku-5-5" }], bankPos: null, okc: null, report });
   const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check, link: "https://x/panel/kasa", reads: [okcReadRows(z())], by: "Ayşe", attachments: 1 });
   const t = plain(mail.text);
   assert.match(t, /Ekleyen: Ayşe/);

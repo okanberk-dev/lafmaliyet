@@ -935,10 +935,10 @@ test("ekran metinleri: hakediş satırı, durum rozeti (en kötüsü), satışı
   assert.equal(sourceLabel({ source: "elle" }, "meal"), "Kanalın ekstresinden (elle)");
   assert.equal(sourceLabel({ source: "tek" }, "meal"), "Z'deki yemek kartı toplamı (tek kart)");
   assert.equal(sourceLabel({ source: "tek" }, "platform"), "Z'deki online (platformlar) toplamı (tek platform)");
-  assert.equal(sourceLabel({ source: "lafpos" }, "meal"), "LafPOS ödemelerinden");
+  assert.equal(sourceLabel({ source: "asilpos" }, "meal"), "AsilPOS ödemelerinden");
   // Markası belirsiz tutar artık tek kanala yazılmaz (23 Kasım 2026); ModPOS föyünde markası bulunan ödeme yazılır
-  assert.equal(sourceLabel({ source: "lafpos", amount: 1800, foy: 300 }, "meal"), "LafPOS ödemeleri ve ModPOS föyünden");
-  assert.equal(sourceLabel({ source: "lafpos", amount: 300, foy: 300 }, "platform"), "ModPOS föyünden");
+  assert.equal(sourceLabel({ source: "asilpos", amount: 1800, foy: 300 }, "meal"), "AsilPOS ödemeleri ve ModPOS föyünden");
+  assert.equal(sourceLabel({ source: "asilpos", amount: 300, foy: 300 }, "platform"), "ModPOS föyünden");
   assert.equal(ratePartsText(p), "Komisyon %3,0 · erken ödeme %3,2");
   assert.equal(ratePartsText(m), "Komisyon %4,0 · komisyon dışı ücret %2,4");
   assert.equal(plain(ratePartsText(unknown)), "Komisyon 279 ₺ · erken ödeme 300 ₺");

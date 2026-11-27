@@ -12,58 +12,58 @@ malzemesi tutarlılıkta iki kez düşülür. Form ikram seçilince bunu hatırl
 
 ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda görünmezler. Panele girilmeleri gerekir.
 
-## LafPOS'a geçildikten sonra: ürün ikramı LafPOS'tan (denetim E-38)
+## AsilPOS'a geçildikten sonra: ürün ikramı AsilPOS'tan (denetim E-38)
 
-Ayarlar › LafPOS › **LafPOS'a geçiş günü** seçilince ([LAFPOS.md](LAFPOS.md) › İkram) o günden itibaren ürün ikramı
-kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Her gün tek kaynak
-(`src/lib/lafpos/ikram.ts`). Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'da (ModPOS) ürün
+Ayarlar › AsilPOS › **AsilPOS'a geçiş günü** seçilince ([ASILPOS.md](ASILPOS.md) › İkram) o günden itibaren ürün ikramı
+kasada, AsilPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Her gün tek kaynak
+(`src/lib/asilpos/ikram.ts`). Geçiş günü yalnız AsilPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'da (ModPOS) ürün
 ikramı panelde girilmeye ve sayılmaya devam eder; Marina'nın gün sonu yalnız Marina'ya girilmiş ürün ikramını düşürür
-(kaydın şubesiyle; denetim 21 Kasım #5, [LAFPOS.md](LAFPOS.md) › Şubeler):
+(kaydın şubesiyle; denetim 21 Kasım #5, [ASILPOS.md](ASILPOS.md) › Şubeler):
 
-- **LafPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
-  aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine (adın yanında "LafPOS"), haftalık özete ve
+- **AsilPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
+  aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine (adın yanında "AsilPOS"), haftalık özete ve
   kasa raporunun özetine bir kez girer. O güne panelde girilmiş **ürün ikramı silinmez ama sayılmaz**: listede
-  "Sayılmıyor: LafPOS'taki ikram sayılıyor", ay özetinin altında "Panele girilen N ürün ikramı sayılmıyor". Ürüne
-  bağlanamayan LafPOS satırı tüketime girmez, ay özetinde sayılır (yöneticide "ürüne bağlı değil").
-- **Yeni ürün ikramı panele girilmez** (iki rol), LafPOS'un o günün sonu geldiyse ya da gün bugünse (gün sonu
-  bekleniyor): "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez. Burada hammadde ikramı ve zayi
+  "Sayılmıyor: AsilPOS'taki ikram sayılıyor", ay özetinin altında "Panele girilen N ürün ikramı sayılmıyor". Ürüne
+  bağlanamayan AsilPOS satırı tüketime girmez, ay özetinde sayılır (yöneticide "ürüne bağlı değil").
+- **Yeni ürün ikramı panele girilmez** (iki rol), AsilPOS'un o günün sonu geldiyse ya da gün bugünse (gün sonu
+  bekleniyor): "Ürün ikramı 10 Kasım'dan beri AsilPOS'ta işaretlenir, panele girilmez. Burada hammadde ikramı ve zayi
   girilir." Form İkram'da yalnız hammadde arar ("Hammadde" alanı) ve bunu mavi notla söyler. Geç kayıt isteği de
   reddedilir; geçiş günü ya da gün sonu istekten sonra geldiyse Onaylar'daki kart onay düğmesini göstermez:
   "… panele girilmez. Hammadde ikramı ve zayi Zayi & ikram'da girilir. Bu isteği reddedin." (sunucu da onaylamaz).
-- **Gün sonu gelmeyen geçmiş LafPOS günü** (kasa bilgisayarı bozuldu, gün hiç gönderilmedi): ürün ikramı panele girilir,
-  geç kayıt isteği onaylanır; o günün ikramı paneldekidir. Gün sonu sonradan gelirse LafPOS'unki sayılır, panelinki
+- **Gün sonu gelmeyen geçmiş AsilPOS günü** (kasa bilgisayarı bozuldu, gün hiç gönderilmedi): ürün ikramı panele girilir,
+  geç kayıt isteği onaylanır; o günün ikramı paneldekidir. Gün sonu sonradan gelirse AsilPOS'unki sayılır, panelinki
   "sayılmıyor" olur. Yazma kuralı okuma kuralıyla aynı (`productIkramClosed`, `panelWasteCounts`).
 - **Hammadde ikramı** (ör. personele süt) ve **zayi** panelde kalır, her zaman sayılır.
-- **LafPOS'ta zayi yazılan kalem** (kasada "Zayi yaz" / "Zayi kapat") aynı listede gelir, nedeni "Zayi: " ile başlar
-  (LafPOS `compReasonText`): **zayi** olarak sayılır, ikram değil (Tutarlılık'ın zayi sütunu, ay özetinin Zayi'si, kasa
+- **AsilPOS'ta zayi yazılan kalem** (kasada "Zayi yaz" / "Zayi kapat") aynı listede gelir, nedeni "Zayi: " ile başlar
+  (AsilPOS `compReasonText`): **zayi** olarak sayılır, ikram değil (Tutarlılık'ın zayi sütunu, ay özetinin Zayi'si, kasa
   özetinin zayi satırı). "Ödenmez: …" (personel yemeği, patron hesabı) ikramdır. Panelde de aynı gün aynı ürün zayi
-  girildiyse ikisi de sayılır, panel satırı "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kayıt silinmeli" der; Zayi formu
-  LafPOS gününde "LafPOS'ta “Zayi yaz” ile işaretlenen ürün gün sonuyla buraya gelir; panele ayrıca girmeyin" hatırlatır
-  (sahibin sorusu: ürün zayisi de gün sonu gelen günde yalnız LafPOS'tan mı sayılsın).
-- **Hazırlanmış iptal** (Faz 2, 23 Kasım 2026; [LAFPOS.md](LAFPOS.md) › Faz 2 alanları): LafPOS'ta bar ya da mutfak
+  girildiyse ikisi de sayılır, panel satırı "AsilPOS'ta da zayi yazıldı: aynı zayiyse bu kayıt silinmeli" der; Zayi formu
+  AsilPOS gününde "AsilPOS'ta “Zayi yaz” ile işaretlenen ürün gün sonuyla buraya gelir; panele ayrıca girmeyin" hatırlatır
+  (sahibin sorusu: ürün zayisi de gün sonu gelen günde yalnız AsilPOS'tan mı sayılsın).
+- **Hazırlanmış iptal** (Faz 2, 23 Kasım 2026; [ASILPOS.md](ASILPOS.md) › Faz 2 alanları): AsilPOS'ta bar ya da mutfak
   başladıktan (ya da hazır olduktan) sonra iptal edilen kalem malzemesi harcanmış, satılmamış kalemdir: gün sonundaki
   `iptal[]`'den **zayi** olarak gelir (neden "İptal (hazırlanmıştı)", yöneticide iptal nedeniyle), Tutarlılık'a, Tahmini
   stoğa ve gün listesine girer; `waste_entries`'e yazılmaz, ödenmez tutarına girmez. Hazırlanmamış iptal tüketim değildir,
-  yalnız kasa e-postasında ve Kasa gün görünümünde bilgi. LafPOS türü (`kind`) yolladığında ön ek yerine o okunur;
+  yalnız kasa e-postasında ve Kasa gün görünümünde bilgi. AsilPOS türü (`kind`) yolladığında ön ek yerine o okunur;
   ödenmezin kişi türü (personel, müşteri, patron) yöneticide parantezde.
-- **Gün listesi** LafPOS'un o günkü ikram ve zayi satırlarını salt okunur gösterir ("LafPOS'ta işaretlenen ikram ve
+- **Gün listesi** AsilPOS'un o günkü ikram ve zayi satırlarını salt okunur gösterir ("AsilPOS'ta işaretlenen ikram ve
   zayi"): personele ad ve adet; yöneticiye ayrıca nedeni ve menü değeri. Ürüne bağlanamayan satır yöneticide "ürüne
-  bağlı değil: tüketime girmez · Ayarlar › LafPOS'ta bağlayın" der (müdürde not kalır, bağlantı yok: Ayarlar
-  yöneticinin); Ayarlar › LafPOS'un "İkramda ürüne bağlanamayan POS adları" listesinden bağlanır (yalnız ikram edilen
-  kalem satış listesine düşmez). Bugünün gün sonu henüz gelmediyse "LafPOS'un bu günün sonu gelmedi; ikram ve zayi gün
+  bağlı değil: tüketime girmez · Ayarlar › AsilPOS'ta bağlayın" der (müdürde not kalır, bağlantı yok: Ayarlar
+  yöneticinin); Ayarlar › AsilPOS'un "İkramda ürüne bağlanamayan POS adları" listesinden bağlanır (yalnız ikram edilen
+  kalem satış listesine düşmez). Bugünün gün sonu henüz gelmediyse "AsilPOS'un bu günün sonu gelmedi; ikram ve zayi gün
   sonuyla gelir."; geçmiş günse ürün ikramının panele girilebileceğini söyler.
-- **Kasa e-postası** LafPOS gününde "Panelde kayıtlı ikram" yerine "LafPOS'taki ikram" (ve varsa "LafPOS'ta zayi
-  yazılan") yazar ve ModPOS'un uyarısı ("ödenmez tutarı panelde kayıtlı ikramdan fazla") yerine LafPOS'un iki rakamını
-  karşılaştırır: Z'deki ödenmez tutarı (LafPOS'ta zayi yazılanı da kapsar) ile listenin tamamının menü değeri ayrıysa
+- **Kasa e-postası** AsilPOS gününde "Panelde kayıtlı ikram" yerine "AsilPOS'taki ikram" (ve varsa "AsilPOS'ta zayi
+  yazılan") yazar ve ModPOS'un uyarısı ("ödenmez tutarı panelde kayıtlı ikramdan fazla") yerine AsilPOS'un iki rakamını
+  karşılaştırır: Z'deki ödenmez tutarı (AsilPOS'ta zayi yazılanı da kapsar) ile listenin tamamının menü değeri ayrıysa
   bilgi satırı (Z fazlaysa listeye girmeyen ödenmez satır, azsa listede kalmış iptal edilen adisyonun ikramı); panele
   girilip sayılmayan ürün ikramı varsa o da yazılır.
-- **Onaylar**'daki geç ikram kartı LafPOS'un gün sonu gelen gününde Z'nin ödenmez tutarını LafPOS'un ikram ve zayi
+- **Onaylar**'daki geç ikram kartı AsilPOS'un gün sonu gelen gününde Z'nin ödenmez tutarını AsilPOS'un ikram ve zayi
   listesiyle karşılaştırır (paneldeki kayıtla değil).
-- **Personelin metinleri** LafPOS gününde ürün ikramını anmaz: Bugün'ün Zayi & ikram satırı, Zayi'nin başlığı ve boş
-  listesi, Kasa'nın özeti "Atılan bir şey ya da hammadde ikramı olduysa … girin; ürün ikramı LafPOS'ta işaretlenir" der;
+- **Personelin metinleri** AsilPOS gününde ürün ikramını anmaz: Bugün'ün Zayi & ikram satırı, Zayi'nin başlığı ve boş
+  listesi, Kasa'nın özeti "Atılan bir şey ya da hammadde ikramı olduysa … girin; ürün ikramı AsilPOS'ta işaretlenir" der;
   personelin Yardım'ı aynı cümleyi koşullu yazar.
 - Ay özetindeki ödenmez tutarının etiketi ayın kasasına göre: "ModPOS ödenmez / ikram", geçiş ayında "Kasa ödenmez /
-  ikram", sonra "LafPOS ödenmez / ikram".
+  ikram", sonra "AsilPOS ödenmez / ikram".
 
 Geçiş günü boşken bunların hiçbiri yoktur: ekran, kayıt, Tutarlılık ve e-posta bugünkü gibi yalnız panelden çalışır.
 
@@ -151,10 +151,10 @@ Personel hiçbir yerde tutar görmez.
 | Yer | Ne olur |
 |-----|---------|
 | Tutarlılık (`/panel/tutarlilik`) | Her malzemenin sayım sapmasından kayıtlı zayi ve ikram düşülür. Satırda "zayi + ikram … · kalan …", özette "kayıtlı zayi + ikram … · açıklanamayan …" görünür. Sapma, kullanım ve fatura farkının kendisi değişmez |
-| Kasa raporu (`/panel/kasa`) | Günün zayi ve ikramı ekrana, e-postaya ve WhatsApp metnine eklenir. E-postada kayıtlı ikramın menü değeri, Z raporundaki ödenmez tutarıyla karşılaştırılır (LafPOS gününde LafPOS'un ikramı ve kendi ödenmez tutarı, yukarıda) |
+| Kasa raporu (`/panel/kasa`) | Günün zayi ve ikramı ekrana, e-postaya ve WhatsApp metnine eklenir. E-postada kayıtlı ikramın menü değeri, Z raporundaki ödenmez tutarıyla karşılaştırılır (AsilPOS gününde AsilPOS'un ikramı ve kendi ödenmez tutarı, yukarıda) |
 | Bugün (`/panel/bugun`, personel) | Günün kayıt sayısı ve özeti. Akşam (20:00'den sonra) kasa raporu gönderilmeden "Rapordan önce" der: özet rapora geçtiği için eksik kayıt rapordan önce girilir; rapor gönderilince tamam ([BUGUN.md](BUGUN.md)) |
 | Satışlar (`/panel/satislar`) | Ayın "Ödenmez / ikram" alanının altında panelde kayıtlı ikram ve menü değeri görünür; "Bunu yaz" ile alana yazılır. ModPOS'un rakamı esastır, kendiliğinden değişmez |
-| Yönetici ay özeti (`/panel/zayi`) | (Yalnız yönetici; müdürde yok.) Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, kasanın ödenmez tutarı ve en çok giden kalemler (geçiş gününden itibaren LafPOS'un ikramı da) |
+| Yönetici ay özeti (`/panel/zayi`) | (Yalnız yönetici; müdürde yok.) Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, kasanın ödenmez tutarı ve en çok giden kalemler (geçiş gününden itibaren AsilPOS'un ikramı da) |
 
 **Çift sayım yok.** Gelir-giderdeki mal maliyeti stok farkından gelir (geçen ay sayımı + alınan − bu ay sayımı). Zayi
 ve ikramın malzemesi bu tutarın zaten içindedir. Bu yüzden ayrıca gider yazılmaz; kayıtlar yalnız farkın nereye
@@ -164,12 +164,12 @@ Dosyalar:
 
 - `src/lib/waste.ts`, `src/lib/waste-requests.ts` (kipler, metinler, isteklerin yükü)
 - `src/lib/calc/engine.ts` (`recordedUsage`, `countedWaste`, `wasteCost`, `wasteSummary`)
-- `src/lib/lafpos/ikram.ts` (LafPOS'un ikramının kuralı ve metinleri), `src/server/data/lafpos-ikram.ts` (okuyucusu)
+- `src/lib/asilpos/ikram.ts` (AsilPOS'un ikramının kuralı ve metinleri), `src/server/data/asilpos-ikram.ts` (okuyucusu)
 - `src/lib/calc/insights.ts` (`consistency`)
 - `src/server/waste/core.ts` (doğrudan kayıt ve silme, istek, karar)
 - `src/server/actions/waste.ts`, `src/server/actions/waste-requests.ts`
 - `src/server/data/waste.ts`, `src/server/data/waste-requests.ts` (personelin okuyucuları beyaz listeyle, yöneticinin kartları)
 - `src/app/panel/zayi/`, `src/app/panel/onaylar/ops-section.tsx` ve `ops-cards.tsx`
 - Testler: `tests/zayi-ikram.test.ts`, `tests/zayi-istek.test.ts`, `tests/zayi-istek-db.test.ts`
-  (`ZAYI_ISTEK_TEST_DATABASE_URL`), `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts`
-  (`LAFPOS_TEST_DATABASE_URL`)
+  (`ZAYI_ISTEK_TEST_DATABASE_URL`), `tests/asilpos-ikram.test.ts`, `tests/asilpos-komisyon-ikram-db.test.ts`
+  (`ASILPOS_TEST_DATABASE_URL`)

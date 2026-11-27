@@ -30,8 +30,8 @@ Vergi matrahı mali belgeye dayanır. Ay ay sıra:
 2. **Yazarkasa mali Z** (Dalga 13): ayın her açık günü için yazarkasa Z'si (KDV dökümüyle) varsa oran oran KDV hariç
    matrah toplamı (`okcMonth(…).complete`, `byRate[].base`; tahmini döküm kullanılmaz) + laffogato.net. Rozet "mali
    belge · Z".
-3. **Yönetim verisi:** ikisi de yoksa kasa cirosu (Gelir-gider'deki ModPOS ya da LafPOS cirosu, KDV hariç) +
-   laffogato.net, rozeti "Yönetim verisi (ModPOS), mali belge değil" (geçiş ayında "ModPOS ve LafPOS"). O çeyrek
+3. **Yönetim verisi:** ikisi de yoksa kasa cirosu (Gelir-gider'deki ModPOS ya da AsilPOS cirosu, KDV hariç) +
+   laffogato.net, rozeti "Yönetim verisi (ModPOS), mali belge değil" (geçiş ayında "ModPOS ve AsilPOS"). O çeyrek
    Taslak'tır ve dışa aktarıma yazılmaz.
 
 laffogato.net: sitenin KDV hariç toplamından iadesi bekleyen karaoke KDV hariç düşülür (`refundPendingMinor` KDV dahil,
@@ -281,7 +281,7 @@ Diğer ekranlara dokunuşlar:
 - **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Muhasebeci › Vergi ayarları'nda şirket "ilk defa faaliyete
   başladı" seçilince; varsayılan uygulanmaz (vergi yüksek görünür).
 - **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur (kasa KDV'si gün gün yazarkasa
-  Z'sinden, LafPOS'un dökümünden ya da oranla: [NAKIT-PLANI.md](NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı). Yurt dışı hizmet profilli
+  Z'sinden, AsilPOS'un dökümünden ya da oranla: [NAKIT-PLANI.md](NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı). Yurt dışı hizmet profilli
   sabit giderin KDV-2'si ayrı satırdır; aynı ay nakit planının KDV tahmininde indirilecek KDV'ye eklenir (VG-04).
 - **Yerel vergiler (K23):** ÇTV ve ilan-reklam hesaplanmaz; hatırlatıcı yoksa takvimde tutarsız satır ("tutar
   belediyeden").

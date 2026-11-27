@@ -436,7 +436,7 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     assert.equal(m.sameDay.length, 1);
     assert.deepEqual(m.otherPending, [], "Tuzla'nın isteği Marina'nın kartında sayılmaz");
     assert.equal(m.ikramRecorded, 205);
-    assert.equal(m.ikramFromLafpos, false);
+    assert.equal(m.ikramFromAsilpos, false);
     // Tuzla: kendi raporu, kendi kaydı ve ikramı
     assert.deepEqual(t.branch, { id: "tuzla", name: "Tuzla" });
     assert.deepEqual(t.report, { exists: true, emailed: true, offRevenue: 450 });

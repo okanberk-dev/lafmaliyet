@@ -60,7 +60,7 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   Personel hesabının şubesi) ve ayrıca: `withBranchScope("hepsi" ya da başka şube, …)` ile açılan okumalar da
   (işletme geneli kartlar, şubeleri yan yana koyan yükleyiciler) şubesine daralır (`currentBranchScope`). Müdür öteki
   şubeyi hiçbir yoldan okuyamaz.
-- Fotoğrafta şube yok: müdür "admin" düzeyinde yazsa da kasa raporuna, kasadan çıkana ve LafPOS gün sonuna yalnız kendi
+- Fotoğrafta şube yok: müdür "admin" düzeyinde yazsa da kasa raporuna, kasadan çıkana ve AsilPOS gün sonuna yalnız kendi
   yüklediği fotoğrafı bağlar (öteki şubenin bağsız Z'sini kendi kaydına bağlayıp göremesin); onayladığı isteğin tuttuğu
   fotoğraf bağlanır (`src/lib/roles.ts` › `linksAnyPhoto`).
 - Tedarikçiler (cari) yöneticinin: tedarikçi ödemesine bağlı kasadan çıkan satırı müdüre de personel gibi kilitli
@@ -88,7 +88,7 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 - Yönetici ekranlarına bağlantı ona çizilmez (`openableHref`): Vardiya'da planı yazar ama hazır vardiyaların saatleri
   (Şube ayarları) ve yazarak doldurmanın anahtarı (Ayarlar) yöneticinin; bağlantıların yerinde "Saatleri yönetici
   değiştirir.", "Yönetici Ayarlar'dan açınca kullanılır." yazar, anahtarın teknik notu yok (`src/lib/vardiya.ts` ›
-  `shiftGridLinks`). Zayi & ikram'da LafPOS'un ürüne bağlanmamış satırının notu kalır, "Ayarlar › LafPOS'ta bağlayın"
+  `shiftGridLinks`). Zayi & ikram'da AsilPOS'un ürüne bağlanmamış satırının notu kalır, "Ayarlar › AsilPOS'ta bağlayın"
   bağlantısı gitmez.
 - Kasa e-postasının neden gitmediği (Resend anahtarı, alıcı listesi) yalnız yöneticinin: müdür "admin" DTO'sunu alsa
   da günün formunda, ayın penceresinde ve Onaylar'da onayladığı düzeltmenin yanıtında sabit metni görür ("E-posta
@@ -126,7 +126,7 @@ düğmeleri gizli.
   personel giderleri toplam olarak durur. Gelir-gider'in personel hücrelerinin ipucu ve uyarısı da (tablonun hücresi ve ay
   görünümü; istemciye giden veri) kişisiz: part-time satırında "1 part-time kişi: günlük ücret × Vardiya'daki çalışma günü
   + ek ödeme" (yöneticide "Ayşe: 10 gün × 1.500 ₺ + ek 2.000 ₺"), bağlantısız part-time uyarısı adsız kişi sayısıyla, yemek
-  kartını LafPOS gününe göre alanlar adsız ve günsüz ("2 kişi = 12.540 ₺"); tutarlar aynı. Metin motorda kurulur:
+  kartını AsilPOS gününe göre alanlar adsız ve günsüz ("2 kişi = 12.540 ₺"); tutarlar aynı. Metin motorda kurulur:
   `src/lib/calc/engine.ts` › `ModelOptions.personal` (varsayılan kapalı; `loadModel`, `createModel`), Gelir-gider
   `personal: can(rol, "maas")` ile açar. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı);
   e-postanın neden gitmediğini görmez, sabit metni görür (ham hata yalnız yöneticinin; `emailErrorFor`).
@@ -207,9 +207,9 @@ oturumları kapanır (oturum sürümü).
 - **Şube kurulumu e-postası** müdür ya da muhasebeci hesabının adresi olamaz (yöneticininki ve öteki şubenin
   personelininki de; `src/lib/branches.ts` › `branchEmailTaken`, `createBranch` ve `sendBranchInstall`): kurulum
   bağlantısı o adrese gider ve kasanın eşitleme anahtarını verir. Yalnız şubesiz ya da aynı şubedeki personel hesabı
-  şubenin panel hesabı sayılır ([LAFPOS.md](LAFPOS.md) › Şube kurulumu). **Hesabım › LafPOS kurulumu** kartını ve
+  şubenin panel hesabı sayılır ([ASILPOS.md](ASILPOS.md) › Şube kurulumu). **Hesabım › AsilPOS kurulumu** kartını ve
   içindeki indirme bağlantısını da yalnız o hesap görür (bağlantının gittiği adres, şubeye kilitli personel;
-  `src/lib/lafpos/kurulum.ts` › `isBranchAccount`, `src/server/lafpos/kurulum.ts` › `installForAccount`): şubenin öbür
+  `src/lib/asilpos/kurulum.ts` › `isBranchAccount`, `src/server/asilpos/kurulum.ts` › `installForAccount`): şubenin öbür
   personeli, müdürü, muhasebeci ve yönetici görmez.
 - **Saha kitleleri:** vardiya planının kişileri, kontrol listesi ve karaoke uyarılarının personel alıcıları müdür ve
   personel (`SHIFT_ROLES`); muhasebeci sahada değil.
@@ -231,7 +231,7 @@ oturumları kapanır (oturum sürümü).
 - `tests/gelir-gider-kisi-db.test.ts` (gerçek Postgres, `GELIR_GIDER_KISI_TEST_DATABASE_URL`; sayfanın kendisi oturumla):
   muhasebecinin Gelir-gider sayfasının hiçbir prop'unda part-time'ın adı, günlük ücreti ve eki ve bağlantısız kişinin
   adı yok, personel satırlarının tutarları yöneticininkiyle aynı; yöneticide aynı hücre kişi kişi. Motorun iki metni
-  `tests/personel-part-time.test.ts` ve `tests/personel-lafpos.test.ts`'te.
+  `tests/personel-part-time.test.ts` ve `tests/personel-asilpos.test.ts`'te.
 - `tests/foto-tarama-db.test.ts` (gerçek Postgres, `FOTO_TARAMA_TEST_DATABASE_URL`): muhasebecinin köşe ipucu isteği
   uçta ve çekirdekte "salt okunur" döner; yapay zekâya istek gitmez, `ai_calls`'a satır düşmez.
 - `tests/roller-db.test.ts` (gerçek Postgres, `ROLLER_TEST_DATABASE_URL`): kısıtlar; müdür öteki şubeyi okuyamaz, öteki

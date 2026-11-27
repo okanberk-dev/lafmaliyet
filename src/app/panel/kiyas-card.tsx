@@ -210,7 +210,7 @@ export function KiyasCard({ data, branchNames, narrow = false }: { data: KiyasSu
         description={
           <span className="inline-flex flex-wrap items-center gap-x-1.5">
             {scope} · KDV dahil, ödenmez / ikram hariç
-            <InfoTip text="Gün: bütün şubeler bugünün gün sonunu verdiyse bugün, yoksa dün. Ciro kasa raporundan (girilmemişse LafPOS gün sonu ya da ModPOS föyü), Genel bakış'ın günlük cirosuyla aynı. Satırdaki tutar günün ya da dönemin bilinen cirosu; yüzde şube şube ve gün gün eşlenerek, iki günü de bilinenlerle hesaplanır. Verisi olmayan gün (veri yok) sıfır sayılmaz. Kapalı işaretli ya da Z'si sıfır gün 'satış yok'; bir şubenin verisi yokken öteki kapalıysa 'veri yok'. Son 7 gün: 7 günün toplam cirosu." />
+            <InfoTip text="Gün: bütün şubeler bugünün gün sonunu verdiyse bugün, yoksa dün. Ciro kasa raporundan (girilmemişse AsilPOS gün sonu ya da ModPOS föyü), Genel bakış'ın günlük cirosuyla aynı. Satırdaki tutar günün ya da dönemin bilinen cirosu; yüzde şube şube ve gün gün eşlenerek, iki günü de bilinenlerle hesaplanır. Verisi olmayan gün (veri yok) sıfır sayılmaz. Kapalı işaretli ya da Z'si sıfır gün 'satış yok'; bir şubenin verisi yokken öteki kapalıysa 'veri yok'. Son 7 gün: 7 günün toplam cirosu." />
           </span>
         }
         actions={

@@ -22,7 +22,7 @@ import { handoverFirstDate, handoverLedger } from "@/server/data/handover-ledger
 export const metadata: Metadata = { title: "Teslim defteri" };
 
 const TITLE = "Teslim defteri";
-const DESCRIPTION = "Kasadan teslim edilen nakit ve kimin aldığı: kasa raporunun sayımdan sonra teslimi ve gün içindeki teslim satırları (LafPOS'tan gelenler dahil).";
+const DESCRIPTION = "Kasadan teslim edilen nakit ve kimin aldığı: kasa raporunun sayımdan sonra teslimi ve gün içindeki teslim satırları (AsilPOS'tan gelenler dahil).";
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
@@ -129,7 +129,7 @@ function LedgerRow({ row, branch }: { row: HandoverRow; branch: string | null })
       <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ink-mute">
         <span className={row.to ? "text-ink" : "text-warn"}>Kime: {row.to ?? "yazılmamış"}</span>
         <span>· Kaydeden: {row.by}</span>
-        <Badge tone={row.lafpos ? "blue" : "gray"}>{row.lafpos ? "LafPOS" : row.kind === "sayim" ? "Sayımdan sonra" : "Gün içinde"}</Badge>
+        <Badge tone={row.asilpos ? "blue" : "gray"}>{row.asilpos ? "AsilPOS" : row.kind === "sayim" ? "Sayımdan sonra" : "Gün içinde"}</Badge>
       </span>
     </li>
   );

@@ -1,10 +1,12 @@
 /**
- * Tarayıcı ölçümünün kâğıtları (docs/FOTOGRAF.md › Tarayıcının ölçümü): Pavo detaylı Z, LafPOS/Pavo gün sonu, ModPOS Z,
+ * Tarayıcı ölçümünün kâğıtları (docs/FOTOGRAF.md › Tarayıcının ölçümü): Pavo detaylı Z, AsilPOS/Pavo gün sonu, ModPOS Z,
  * banka batch fişi, market fişi (80 ve 58 mm; uzun rulo) ve A4 e-Arşiv fatura; ayrıca belge OLMAYAN nesneler (POS ekranı, tablo
  * açık dizüstü, telefon, koli, ürünler). Her kâğıt tohumlu üretilir: aynı tohum aynı HTML'i ve aynı bilinen metni verir.
  * HTML Playwright ile resme çevrilir (scripts/tarama-veri.ts); bilinen metin okunabilirlik ölçümünde kullanılır
  * (scripts/tarama-olc.ts). İçerik uydurmadır: gerçek işletme, kişi ya da banka yok.
  */
+
+import { ESKI_KAGIT_ADI } from "../../src/lib/asilpos/eski-adlar";
 
 export type KagitTuru = "pavo-z" | "pavo-gunsonu" | "modpos-z" | "banka-batch" | "market" | "market-58" | "market-uzun" | "fatura-a4";
 export const KAGIT_TURLERI: readonly KagitTuru[] = ["pavo-z", "pavo-gunsonu", "modpos-z", "banka-batch", "market", "market-58", "market-uzun", "fatura-a4"];
@@ -104,15 +106,15 @@ function pavoGunSonu(rnd: Rnd): Satir[] {
   const nakit = Math.round((brut - ind - iade) * (0.2 + rnd() * 0.25) * 4) / 4;
   s.push({ l: "NAKİT", r: tl(nakit) }, { l: "KART", r: tl(brut - ind - iade - nakit) }, { l: "FİŞ ADEDİ", r: String(ri(rnd, 70, 260)) });
   s.push({ l: "ORTALAMA FİŞ", r: tl(para(rnd, 90, 240)) }, { l: "KASA AÇILIŞ", r: tl(para(rnd, 500, 2000)) }, { l: "KASADAN ÇIKAN", r: tl(para(rnd, 0, 900)) });
-  s.push({ c: "LafPOS yönetim raporudur, mali Z değildir" }, { cizgi: true }, { c: "BANKA GÜN SONU · PAVO", kalin: true }, { l: "Bankalar", r: "Adet   Tutar" });
+  s.push({ c: "AsilPOS yönetim raporudur, mali Z değildir" }, { cizgi: true }, { c: "BANKA GÜN SONU · PAVO", kalin: true }, { l: "Bankalar", r: "Adet   Tutar" });
   let bt = 0;
   for (const b of ["ÖRNEKBANK", "DENEME BANKASI", "ÜÇÜNCÜ KATILIM"]) {
     const t = para(rnd, 800, 9000);
     bt += t;
     s.push({ l: b, r: `${ri(rnd, 8, 90)}   ${tl(t)}` });
   }
-  s.push({ l: "BANKA TOPLAMI", r: tl(bt), kalin: true }, { cizgi: true }, { c: "PAVO - LAFPOS KARŞILAŞTIRMA", kalin: true });
-  s.push({ l: "LafPOS kart", r: tl(bt) }, { l: "Pavo banka", r: tl(bt) }, { l: "Fark", r: "0,00" }, { bosluk: true });
+  s.push({ l: "BANKA TOPLAMI", r: tl(bt), kalin: true }, { cizgi: true }, { c: `PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`, kalin: true });
+  s.push({ l: "AsilPOS kart", r: tl(bt) }, { l: "Pavo banka", r: tl(bt) }, { l: "Fark", r: "0,00" }, { bosluk: true });
   return s;
 }
 

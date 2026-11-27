@@ -90,7 +90,7 @@ tutar).
 
 Proje → **Settings → Environment Variables**. Önizlemeler canlının veritabanını kullandığı sürece (§ 3) gizli değerler
 **yalnız Production**'a eklenir: `AUTH_SECRET`, `ADMIN_PASSWORD`, `CRON_SECRET`, `KARAOKE_SYNC_SECRET`,
-`LAFPOS_SYNC_SECRET`, `MODPOS_API_KEY`, `PARASUT_*`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`,
+`ASILPOS_SYNC_SECRET` (eski adı `LAFPOS_SYNC_SECRET`; ASILPOS_SYNC_SECRET önce), `MODPOS_API_KEY`, `PARASUT_*`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`,
 `CASH_REPORT_RECIPIENTS`. Önizlemeye giriş yapılamaz (`AUTH_SECRET` yok); bu bilerek böyle:
 
 - Aynı `AUTH_SECRET` önizlemede olsaydı incelenmemiş dal kodu canlının verisiyle gerçek oturum açardı.
@@ -112,7 +112,10 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
 | `KARAOKE_SYNC_SECRET` | (isteğe bağlı) laffogato.net ile karaoke **ve menü** bağlantısı: `openssl rand -base64 48`; **sitedeki değerle aynı** olmalı. Yoksa bağlantı kapalı: hızlı sayaç çalışır, ürünler yalnız panelde. Ayrıntı [KARAOKE.md](KARAOKE.md), [SITE-MENU.md](SITE-MENU.md) (bağlı ürünün fiyatı ve Satışta / Tükendi durumu iki yerde aynı) |
 | `LAFFOGATO_URL` | (isteğe bağlı) Sitenin adresi (karaoke ve menü); yoksa `https://laffogato.net` |
-| `LAFPOS_SYNC_SECRET` | (isteğe bağlı) LafPOS (kafenin kasası) bağlantısı: gün sonunu iter, ürün maliyetlerini, kasa zincirini (devir, gider kategorileri), ModPOS dönemini (şubenin geçiş gününden önceki ModPOS günleri ve ürün listesi; LafPOS Uzaktan'daki ModPOS günleri buradan gelir) ve personel bağlantısının listesini okur. `openssl rand -base64 48`; **LafPOS'taki `LAFMALIYET_SYNC_SECRET` ile aynı**, sitenin anahtarından (`KARAOKE_SYNC_SECRET`) ve sitenin kendi `LAFPOS_SYNC_SECRET`'ından ayrı; `KARAOKE_SYNC_SECRET`'la aynıysa bağlantı açılmaz. Yoksa altı uç da 503 döner: `POST /api/pos/gun`, `GET /api/panel/pos/urunler`, `GET /api/panel/pos/modpos-gunler`, `GET /api/panel/pos/devir`, `GET /api/panel/pos/gider-kategorileri` ve `GET /api/panel/pos/personel`. Açma sırası ve geçiş günü [LAFPOS.md](LAFPOS.md) › Açılış sırası |
+| `ASILPOS_SYNC_SECRET` | (isteğe bağlı; eski adı `LAFPOS_SYNC_SECRET` da okunur, ASILPOS_SYNC_SECRET önce) AsilPOS (kafenin kasası) bağlantısı: gün sonunu iter, ürün maliyetlerini, kasa zincirini (devir, gider kategorileri), ModPOS dönemini (şubenin geçiş gününden önceki ModPOS günleri ve ürün listesi; AsilPOS Uzaktan'daki ModPOS günleri buradan gelir) ve personel bağlantısının listesini okur. `openssl rand -base64 48`; **AsilPOS'taki `LAFMALIYET_SYNC_SECRET` ile aynı**, sitenin anahtarından (`KARAOKE_SYNC_SECRET`) ve sitenin kendi `LAFPOS_SYNC_SECRET`'ından ayrı (sitede eski adla kalır); `KARAOKE_SYNC_SECRET`'la aynıysa bağlantı açılmaz. Yoksa altı uç da 503 döner: `POST /api/pos/gun`, `GET /api/panel/pos/urunler`, `GET /api/panel/pos/modpos-gunler`, `GET /api/panel/pos/devir`, `GET /api/panel/pos/gider-kategorileri` ve `GET /api/panel/pos/personel`. Açma sırası ve geçiş günü [ASILPOS.md](ASILPOS.md) › Açılış sırası |
+| `ASILPOS_CLOUD_URL`, `ASILPOS_CLOUD_SECRET` | (isteğe bağlı; eski adları `LAFPOS_CLOUD_URL`, `LAFPOS_CLOUD_SECRET` da okunur, ASILPOS_CLOUD_* önce) AsilPOS Uzaktan'ın (Merkez, uzaktan yönetim) adresi ve anahtarı (en az 32 karakter): kurulumda ve `GET /api/panel/pos/baglanti` ile kasalara gider ([ASILPOS.md](ASILPOS.md) › Şube kurulumu) |
+| `ASILPOS_SITE_URL`, `ASILPOS_SITE_SECRET` | (isteğe bağlı; eski adları `LAFPOS_SITE_URL`, `LAFPOS_SITE_SECRET` da okunur, ASILPOS_SITE_* önce) Kasanın site bağlantısı (kasaya `LAFFOGATO_URL`, `LAFFOGATO_SYNC_SECRET` olarak gider; anahtar en az 32 karakter) |
+| `ASILPOS_KURUCU_URL` | (isteğe bağlı; eski adı `LAFPOS_KURUCU_URL` da okunur, ASILPOS_KURUCU_URL önce) Şube kurulumunun indirdiği genel kurucunun adresi; yoksa kanaldaki `AsilPOS-Kur.cmd`, kanal yayımlamıyorsa `LafPOS-Kur.cmd` |
 | `MODPOS_API_KEY` | (isteğe bağlı, **yalnız Production**) ModPOS'un (Gafdigi) Kasa Föyü API anahtarı (`sk_…`): panel her sabah dünün kasa föyünü çeker, yönetici Kasa'da raporla yan yana görür. Günde 2 istek hakkı var; anahtara IP kısıtı konmamalı (Vercel'in sabit IP'si yok). Yoksa bağlantı kapalı, hiçbir istek gitmez ([MODPOS-API.md](MODPOS-API.md)) |
 | `MODPOS_API_KEY_<ŞUBE>` | (isteğe bağlı, **yalnız Production**) Tuzla'dan başka ModPOS şubesinin anahtarı: `MODPOS_API_KEY_MARINA`. Şubenin anahtarı yoksa o şube çekilmez (Tuzla'nınkine düşülmez); başka şubeninkiyle aynı anahtar kullanılmaz ([MODPOS-API.md › Şubeler](MODPOS-API.md#1a-şubeler-16-kasım-2026)) |
 | `MODPOS_SUBELER` | (isteğe bağlı) ModPOS'taki şube adını panelin şubesine bağlar (`Sahil Şube=marina; Merkez=tuzla`): tek anahtar birden çok şubenin kasasını verir ve ad panelin şube adını içermezse |
@@ -123,7 +126,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `ALLOW_BRANCH_PRODUCTION` | (yalnız acil durumda, tek derleme için) `1`: `main` dışındaki bir dalın Production derlemesine bilerek izin verir; derleme günlüğüne uyarı yazılır. Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1` ile yalnız o derlemeye verilir (§ 7, "Production yalnız main'den") |
 | `SEED_ON_EMPTY` | (yalnız bilerek, tek derleme için) `1`: veritabanı boşsa derleme başlangıç verisini (maaşlar, kira, faturalar, satışlar) canlıda da yükler, günlüğe uyarı yazılır; `0`: yerelde de yüklemez. Yoksa canlı, önizleme ve bu bilgisayarda olmayan veritabanı yüklemez, yerel yükler (§ 5, "Boş veritabanı"). Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env SEED_ON_EMPTY=1` ile yalnız o derlemeye verilir; ayarda kalırsa yanlış adrese bağlanan bir derleme kişisel veriyi oraya yazar |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
-| `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
+| `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; AsilPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
 | `DB_QUOTA_MB` | (isteğe bağlı) Veritabanının kotası, MB: sabah işi boyutu buna göre ölçer, %70 ve %90'da zil ve e-postayla uyarır. Yoksa 512 (Neon ücretsiz planı); plan yükseltilince yeni kotayı yazın (ör. 10 GB için `10240`). [YEDEK.md](YEDEK.md) § 14 |
@@ -184,12 +187,12 @@ veritabanında `db:reset` sunucu adıyla onay ister, § 7); `npm run test:db` de
 doldurur. Dolu veritabanında hiçbir şey değişmez: veri varsa (hammadde tablosu boş değilse) tohum atlanır, yalnız
 eksik yönetici, şube ve hazır listeler bir kez eklenir.
 
-**Kodla okuma (OCR):** LafPOS gününün gün sonu fotoğrafı yapay zekâ yokken panelin içinde okunur (tesseract.js). Dil
+**Kodla okuma (OCR):** AsilPOS gününün gün sonu fotoğrafı yapay zekâ yokken panelin içinde okunur (tesseract.js). Dil
 verisi (`@tesseract.js-data/tur`) ve çekirdek (`tesseract.js-core`, WebAssembly) paketle gelir: ortam değişkeni yok, ağ
 isteği yok. `next.config.ts` bunları fotoğrafı okuyan iki yola (`/api/foto`, `/api/foto/[id]/oku`) ekler
 (`outputFileTracingIncludes`, `serverExternalPackages`). Denetim: yerelde `npx next build`, sonra
 `.next/server/app/api/foto/route.js.nft.json` içinde `tur.traineddata.gz` ve `tesseract-core-*lstm.wasm` geçmeli; canlıda
-ilk kodla okumada sunucu günlüğünde "[foto] kodla okuma" hatası yoksa çalışıyor ([FOTOGRAF.md](FOTOGRAF.md) › LafPOS
+ilk kodla okumada sunucu günlüğünde "[foto] kodla okuma" hatası yoksa çalışıyor ([FOTOGRAF.md](FOTOGRAF.md) › AsilPOS
 gününün fotoğrafı).
 
 Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. Bekçiyi içeren bir
@@ -237,8 +240,8 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
   zod 4 nesne şemalarını hızlandırmak için ilk ayrıştırmada `Function("")` dener; `src/instrumentation-client.ts`
   React canlanmadan önce zod'u `jitless` yapar, deneme hiç yapılmaz. Tarayıcı bileşeni (`"use client"`) `node:crypto`'ya
   ulaşan bir modülü içe aktarmaz: paketleyici sayfaya crypto-browserify (~0,5 MB) koyar, onunla gelen `Function(...)`
-  denemesi de ihlal ürettirir (sınır `tests/csp.test.ts`; ör. LafPOS anahtarının uzunluğu
-  `src/lib/lafpos/secret-rules.ts`'te, imza denetimi `request.ts`'te).
+  denemesi de ihlal ürettirir (sınır `tests/csp.test.ts`; ör. AsilPOS anahtarının uzunluğu
+  `src/lib/asilpos/secret-rules.ts`'te, imza denetimi `request.ts`'te).
 - **Neden nonce yok:** panel `cacheComponents` ve `partialPrefetching` ile önceden çizilmiş kabuklar sunar; Next'in CSP
   kılavuzuna göre nonce her sayfayı her istekte çizmeye zorlar ve önceden çizilmiş kabukla (PPR) bağdaşmaz. Next'in
   sayfaya gömdüğü satır içi betikler (RSC verisi) ve koyu tema betiği bu yüzden `'unsafe-inline'` ile çalışır; motion,
@@ -515,6 +518,16 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
     eklemeli; eski kod onlara dokunmaz. Satış tahmini 4 Kasım 2026'da kalktı: `special_days` (Özel günler) kullanılıyor,
     hava durumu isteği ve `WEATHER_CONTACT` artık yok.
+  - **asilpos_adi** (0098, ad değişikliği; [ASILPOS.md](ASILPOS.md) başı): yalnız genişletme, eski sürüm yeni şemada
+    çalışır (eski adlı görünümler, tetikleyiciler; saklanan değerler eski adla yazılır), Instant Rollback yapılabilir.
+    İki fark kalır:
+    - Yedek: 0098'den önceki sürüm kurulum kodlarının tablosunu yeni adıyla (`asilpos_installs`) tanımaz ve yedeğe
+      döker (özet ve mühürlü kod). Yeni sürümün derlemesi sürerken ve geri dönülmüş eski sürüm yayındayken **elle yedek
+      alınmaz**; o sırada alınmış (otomatik ya da elle) bir dosya paylaşılmaz. Geri yükleme bu tabloyu dosyada olsa da
+      yüklemez ([YEDEK.md](YEDEK.md) § 4).
+    - Kör kasa: yeni sürümün yazdığı otomatik kasa raporu notunda ürünün yeni adı geçer; geri dönülürse eski sürüm bu
+      notlardaki açılış cümlesini (beklenen açılış) personelden gizlemez. Yalnız yeni sürümün yazdığı günler; ileri
+      yayınla düzelir.
 - **Aynı anda iki canlı derleme (26 Kas 2026).** Migration bir danışma kilidi altında çalışır
   (`scripts/migrate.ts`): ikinci derleme `… Başka bir migration sürüyor (pid …); bitmesi bekleniyor, en çok 10 dk`
   yazar, öteki bitince uygulanmış migration'ları **kilidi aldıktan sonra** okur ve `✓ Veritabanı şeması güncel` der.
@@ -619,7 +632,7 @@ Panel Vercel'in ücretsiz **Hobby** planında çalışıyor (26 Eki 2026 denetim
   kaydedilmedi" gibi bir sorunun satırı ertesi gün yoktur: sorun bildirilince günlüğe hemen bakın. Uzun ömürlü olanlar:
   - Vercel › Observability'deki hata kümeleri (son 7 gün; aynı hatanın sayısı, ilk ve son görülüşü, yolu);
   - panelin kendi kayıtları: Ayarlar › Günlük işler (her cron çalışması ve adımları), işlem geçmişi, Paraşüt eşitleme
-    geçmişi, LafPOS ve site bağlantılarının durumu.
+    geçmişi, AsilPOS ve site bağlantılarının durumu.
 - **Log drain yok.** Günlükleri dışarıya (bir günlük servisine) akıtmak Hobby'de yok; Pro'da açılır.
 - **Hata kancası yok.** `src/instrumentation.ts` (Next'in `onRequestError` kancası) yazılmadı; hatalar yalnız günlüğe
   gider. Sonraki iş: kişisel veri taşımayan (yol, hata adı ve kodu; istek gövdesi, çerez ve e-posta yok) bir hata

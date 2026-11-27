@@ -9,6 +9,8 @@
  */
 
 /** Kartın geçerlilik süresi: bundan sonra Onayla hiçbir şey yazmaz ("süresi doldu") */
+import { ESKI_ETKI } from "@/lib/asilpos/eski-adlar";
+
 export const OP_TTL_MS = 10 * 60_000;
 /** Sonuç kartındaki "Geri al" bu kadar süre durur (katalogda geri alması tanımlı işlemlerde) */
 export const OP_UNDO_MS = 60 * 60_000;
@@ -16,8 +18,10 @@ export const OP_UNDO_MS = 60 * 60_000;
 /** Dış etki rozetleri: işlem panelin dışında neyi değiştirir */
 export const OP_EFFECTS = {
   site: "Site / QR menü",
-  lafpos: "LafPOS",
+  asilpos: "AsilPOS",
   modpos: "ModPOS kasası",
+  // Eski kartların etkisi (ad değişikliği; assistant_ops.preview ve cihazdaki sohbetler): aynı rozet
+  [ESKI_ETKI]: "AsilPOS",
   eposta: "E-posta",
   kasa: "Kasa raporu",
   gelirGider: "Gelir-gider",

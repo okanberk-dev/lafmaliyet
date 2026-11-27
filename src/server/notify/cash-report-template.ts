@@ -35,8 +35,8 @@ import {
 } from "@/lib/cash-report";
 import { button, C, callout, emailShell, esc, FONT, hero, section, TABLE, textRowHtml, type Row, type Tone } from "@/lib/email-kit";
 import { money } from "@/lib/format";
-import { lafposDiffsLine } from "@/lib/lafpos/diffs";
-import { lafposIkramCheck, type LafposZKinds } from "@/lib/lafpos/ikram";
+import { asilposDiffsLine } from "@/lib/asilpos/diffs";
+import { asilposIkramCheck, type AsilposZKinds } from "@/lib/asilpos/ikram";
 import { okcHasFigures, okcReconcile, type OkcReconcileLine } from "@/lib/okc-z";
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
@@ -100,12 +100,12 @@ export function renderCashReport(
     /** Panelde kayıtlı ikramın menü fiyatıyla değeri */
     ikramValue?: number | null;
     /**
-     * LafPOS gününde günün sonu geldiyse LafPOS'un ikramı (denetim E-38; src/lib/lafpos/ikram.ts): Z'deki ödenmez
+     * AsilPOS gününde günün sonu geldiyse AsilPOS'un ikramı (denetim E-38; src/lib/asilpos/ikram.ts): Z'deki ödenmez
      * tutarı, ikram ve zayi satırlarının menü değeri (listValue ikisinin toplamı; yoksa yalnız ikram) ve panele girilip
-     * sayılmayan ürün ikramı. Varsa ikram denetimi Z'yi listenin tamamıyla karşılaştırır (LafPOS'un ödenmez tutarı zayi
+     * sayılmayan ürün ikramı. Varsa ikram denetimi Z'yi listenin tamamıyla karşılaştırır (AsilPOS'un ödenmez tutarı zayi
      * yazılan kalemi de kapsar); yoksa (geçiş günü boş ya da gün sonu gelmedi) bugünkü gibi panelin ikramıyla
      */
-    lafposIkram?: {
+    asilposIkram?: {
       offRevenue: number | null;
       ikramValue: number;
       zayiValue?: number;
@@ -114,8 +114,8 @@ export function renderCashReport(
       /** Faz 2: hazırlanmış iptaller (zayi tüketimi) ve hazırlanmamışlar (bilgi) */
       iptalValue?: number;
       unprepared?: { count: number; value: number };
-      /** Faz 2: türe göre Z toplamları ve liste; varsa denetim tür tür (lafposIkramCheck) */
-      byKind?: { z: LafposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
+      /** Faz 2: türe göre Z toplamları ve liste; varsa denetim tür tür (asilposIkramCheck) */
+      byKind?: { z: AsilposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
     } | null;
     /**
      * laffogato.net'in o günkü online satışı ve karaoke ön ödemesi (bilgi; kasadan geçmez, kasa farkına girmez). Site
@@ -146,7 +146,7 @@ export function renderCashReport(
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
-  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
+  // AsilPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
   f = withCardExtra(f, meta.cardExtra, meta.offDevice, meta.kasa);
   const c = computeCash(f);
   const tone = RESULT[c.kind];
@@ -163,12 +163,12 @@ export function renderCashReport(
   // (§3.7); kart farkı computeCash'in kaynağıyla (D5; burada her zaman banka)
   const okc = okcHasFigures(f);
   const bankDiff = okc ? null : c.cardDiff;
-  // Günün kasası (geçiş gününden itibaren LafPOS; denetim E-39): karşılaştırma ve satır adları onun adıyla
+  // Günün kasası (geçiş gününden itibaren AsilPOS; denetim E-39): karşılaştırma ve satır adları onun adıyla
   const kasa = meta.kasa ?? "ModPOS";
   const cardWarning =
     bankDiff !== null && Math.abs(bankDiff) >= CASH_TOLERANCE ? `Banka POS ${kasa}'taki karttan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}.` : null;
 
-  const laf = meta.lafposIkram ?? null;
+  const laf = meta.asilposIkram ?? null;
   const zRows: Row[] = [
     { label: "Toplam satış", value: money(f.zTotal), strong: true },
     ...paymentLines(f).map((p) => ({ label: p.label, value: money(p.amount) })),
@@ -176,8 +176,8 @@ export function renderCashReport(
     ...(f.offRevenue ? [{ label: "Ödenmez / ikram (ciro dışı)", value: money(f.offRevenue) }] : []),
     ...(laf
       ? [
-          ...(laf.ikramValue ? [{ label: "LafPOS'taki ikram", value: money(laf.ikramValue), sub: "menü fiyatıyla" }] : []),
-          ...(laf.zayiValue ? [{ label: "LafPOS'ta zayi yazılan", value: money(laf.zayiValue), sub: "menü fiyatıyla" }] : []),
+          ...(laf.ikramValue ? [{ label: "AsilPOS'taki ikram", value: money(laf.ikramValue), sub: "menü fiyatıyla" }] : []),
+          ...(laf.zayiValue ? [{ label: "AsilPOS'ta zayi yazılan", value: money(laf.zayiValue), sub: "menü fiyatıyla" }] : []),
           // Faz 2: hazırlanmış iptal zayi tüketimidir; hazırlanmamış yalnız bilgi (ikisi de ödenmez tutarında yok)
           ...(laf.iptalValue ? [{ label: "İptal, hazırlanmıştı (zayi)", value: money(laf.iptalValue), sub: "liste fiyatıyla" }] : []),
           ...(laf.unprepared?.count ? [{ label: "İptal, hazırlanmamıştı", value: money(laf.unprepared.value), sub: `${laf.unprepared.count} kalem · tüketim değil` }] : []),
@@ -186,12 +186,12 @@ export function renderCashReport(
         ? [{ label: "Panelde kayıtlı ikram", value: money(meta.ikramValue), sub: "menü fiyatıyla" }]
         : []),
   ];
-  // LafPOS gününde ikram LafPOS'ta işaretlenir: personel paneli atlar, uyarı LafPOS'un Z'si ile ikram listesini
-  // karşılaştırır (ikisi de LafPOS'un; fark varsa bilgi), panele girilen ürün ikramı sayılmadığı söylenir
+  // AsilPOS gününde ikram AsilPOS'ta işaretlenir: personel paneli atlar, uyarı AsilPOS'un Z'si ile ikram listesini
+  // karşılaştırır (ikisi de AsilPOS'un; fark varsa bilgi), panele girilen ürün ikramı sayılmadığı söylenir
   const ikramWarning = laf
     ? [
-        laf.offRevenue !== null ? lafposIkramCheck(laf.offRevenue, laf.listValue ?? laf.ikramValue + (laf.zayiValue ?? 0), laf.byKind) : null,
-        laf.notCounted ? `Panele bu güne girilen ${laf.notCounted} ürün ikramı sayılmadı: ikram LafPOS'tan geliyor.` : null,
+        laf.offRevenue !== null ? asilposIkramCheck(laf.offRevenue, laf.listValue ?? laf.ikramValue + (laf.zayiValue ?? 0), laf.byKind) : null,
+        laf.notCounted ? `Panele bu güne girilen ${laf.notCounted} ürün ikramı sayılmadı: ikram AsilPOS'tan geliyor.` : null,
       ].filter((x): x is string => x !== null)
     : f.offRevenue !== null && meta.ikramValue != null && Math.abs(f.offRevenue - meta.ikramValue) >= CASH_TOLERANCE
       ? `${kasa}'un ödenmez tutarı panelde kayıtlı ikramdan ${money(Math.abs(f.offRevenue - meta.ikramValue))} ${f.offRevenue > meta.ikramValue ? "fazla" : "az"}: kaydı eksik ikram olabilir.`
@@ -220,7 +220,7 @@ export function renderCashReport(
       ? []
       : [
           { label: `${kasa} kart`, value: money(f.card) },
-          // Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok; LafPOS kartından düşülür (5.030 − 870 = 4.160)
+          // Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok; AsilPOS kartından düşülür (5.030 − 870 = 4.160)
           ...(meta.offDevice && meta.offDevice.card > 0 ? [{ label: OFF_DEVICE_CARD_LABEL, value: money(meta.offDevice.card) }] : []),
           { label: "Banka POS", value: money(f.bankPos) },
           // Fark bunu düşerek (G11): 10.150 − 150 = 10.000 okunur
@@ -239,9 +239,9 @@ export function renderCashReport(
   const unreceiptedWarning = meta.unreceipted
     ? `${unreceiptedText(meta.unreceipted)}${f.cashOutNote?.trim() ? `; neye çıktı: ${f.cashOutNote.trim()}` : "; neye çıktığı yazılmadı"}.`
     : null;
-  // LafPOS'un gün sonundan farklı yazılan (E-09; yalnız LafPOS günlerinde): bölümlerin üstünde turuncu kutu
-  const lafposLine = lafposDiffsLine(meta.lafposDiffs ?? []);
-  const lafposBox = lafposLine ? warnBox([lafposLine], 14) : "";
+  // AsilPOS'un gün sonundan farklı yazılan (E-09; yalnız AsilPOS günlerinde): bölümlerin üstünde turuncu kutu
+  const asilposLine = asilposDiffsLine(meta.asilposDiffs ?? []);
+  const asilposBox = asilposLine ? warnBox([asilposLine], 14) : "";
   // Düzeltilen raporda neyin değiştiği: bölümlerin üstünde turuncu kutu
   const changesBox = meta.revision > 1 && meta.changes?.length ? warnBox([`Değişen: ${changesText(meta.changes)}`], 14) : "";
   // Banka POS Z (yazarkasa) bölümü: kayıtlı raporun görünümüyle aynı satırlar (cash-summary.tsx), altında yöneticinin
@@ -279,7 +279,7 @@ export function renderCashReport(
       ]
     : [];
 
-  // Sıra: kim ve ne zaman, büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor yeşil), değişen ve LafPOS'tan farklı,
+  // Sıra: kim ve ne zaman, büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor yeşil), değişen ve AsilPOS'tan farklı,
   // Z, kasa, yazarkasa ya da kart, zayi ve ikram, laffogato.net, not, "Panelde aç"
   const sections = [
     block(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning, { top: 30 }),
@@ -300,7 +300,7 @@ export function renderCashReport(
       photoList ? `\n${metaLine(`Fotoğraflar panelde: ${photoList}`, { top: 4, size: 13 })}` : ""
     }${photoOk ? `\n${metaLine(`✓ ${photoOk}`, { top: 6, size: 13, color: C.goodInk, strong: true })}` : ""}${meta.approval ? `\n${metaLine(meta.approval, { top: 8, color: C.soft, strong: true })}` : ""}
 ${space(16)}${hero({ label: "Kasa", value: headline, sub: keepParts(`Olması gereken ${money(c.expectedCash)} · sayılan ${money(f.countedCash)}`), tone: tone.tone })}
-${changesBox}${lafposBox}
+${changesBox}${asilposBox}
 ${sections.join("\n")}
 ${button(link, "Panelde aç")}`,
     footer: "Bu e-posta kasa raporu alıcılarına gönderildi. Adresleri panelde Kasa raporu sayfasından değiştirebilirsiniz.",

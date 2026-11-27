@@ -76,7 +76,7 @@ ve `<foysuzGun>` kendi `<sube>`'siyle). Çekim her kasayı panelin şubesine ba�
 - Rapor ↔ föy karşılaştırması (zil, sabah e-postası, Bugün, Kasa) **(şube, gün)** iledir: "Tümü" seçiliyken Marina'nın
   raporu Tuzla'nın föyüyle karşılaştırılmaz. Tuzla'dan başka şubenin zil satırı kimliğinde ve adresinde şubeyi taşır
   (`/panel/kasa?gun=…&sube=marina`).
-- Ay rakamına yedekte (§6) "rapor > LafPOS > ModPOS" önceliği ve kesintisiz kısım şube içindedir: Tuzla'nın raporu
+- Ay rakamına yedekte (§6) "rapor > AsilPOS > ModPOS" önceliği ve kesintisiz kısım şube içindedir: Tuzla'nın raporu
   Marina'nın aynı günkü föyünü düşürmez.
 
 ## 2. Kota ve çekme sırası
@@ -108,9 +108,9 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Alınamayan gün** (bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler, geçmiş onda
   takılmaz, sıradaki eksik güne geçer; iki kez alınamayan gün kartta yazar. Yanıt 2xx ama okunamıyorsa (bozuk, çok
   büyük, yarıda kesik) çalışma durur: sorun büyük olasılıkla her günde aynıdır, ikinci hak harcanmaz.
-- **LafPOS'a geçiş gününden** itibaren Marina'nın föyü çekilmez (o günleri hiçbir yer okumaz); geçmiş yalnız ondan önceye
-  tamamlanır. Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'nın kasası ModPOS'ta kalır,
-  föyü her sabah çekilmeye devam eder (`branchSwitchDay`; denetim 21 Kasım #5, [LAFPOS.md](LAFPOS.md) › Şubeler).
+- **AsilPOS'a geçiş gününden** itibaren Marina'nın föyü çekilmez (o günleri hiçbir yer okumaz); geçmiş yalnız ondan önceye
+  tamamlanır. Geçiş günü yalnız AsilPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'nın kasası ModPOS'ta kalır,
+  föyü her sabah çekilmeye devam eder (`branchSwitchDay`; denetim 21 Kasım #5, [ASILPOS.md](ASILPOS.md) › Şubeler).
 - **Aynı anda tek çekim** (integration_state › `modpos.kira`, 90 sn): sabah işi iki kez tetiklenirse ya da **Bu günü
   çek** sabah işiyle çakışırsa ikincisi istek göndermez ("Başka bir ModPOS çekimi sürüyor"). Bu günü çek'in yanıtı yolda
   kaybolursa pencere kapanır ve sayfayı yenileyip kalan hakka bakmak önerilir (çekim yapılmış olabilir).
@@ -222,8 +222,8 @@ nakdine ve kasa farkına raporun açılışı eklenir; ModPOS bölümündeki nak
 Sayım girilmeden Z'si alınan günde ModPOS sayılanı 0 gönderir: tabloda "ModPOS'ta girilmedi" diye bilgidir, uyarı ve
 zil çıkmaz; sayılan 0 yalnız ModPOS'un beklenen nakdi de 0'sa gerçek sayımdır ve karşılaştırılır. Panelde API'den gelen
 her bilgi "ModPOS API" diye anılır (personelin ModPOS'tan yazdığı Z ile karışmasın). Gider ↔ gün içinde çıkan,
-nakit cari tahsilat ↔ gün içinde giren, olması gereken ve kasa farkı yalnız bilgidir. LafPOS'a geçiş gününden
-itibaren Marina'nın kasası LafPOS'tur: föy karşılaştırılmaz (Tuzla'nın raporu kendi föyüyle karşılaştırılmaya devam
+nakit cari tahsilat ↔ gün içinde giren, olması gereken ve kasa farkı yalnız bilgidir. AsilPOS'a geçiş gününden
+itibaren Marina'nın kasası AsilPOS'tur: föy karşılaştırılmaz (Tuzla'nın raporu kendi föyüyle karşılaştırılmaya devam
 eder). Kasası hâlâ açıkken alınmış föy (gün içinde **Bu günü çek**)
 karşılaştırılmaz: o anki tutarlardır, ModPOS bölümünde "Föy gün açıkken alındı" yazar, rozet ve zil çıkmaz; ertesi
 sabah kapanmış föy kendiliğinden gelir. Kasası açılmamış (föysüz) gün de kesinleşmeden karşılaştırılmaz.
@@ -235,15 +235,15 @@ başına ayarlar): kartın her şube bölümünde kendi anahtarı, Şube ayarlar
 (`settings › modposAyYedegi`) Tuzla'nındır; öbür şubeler "Tuzla ile aynı" başlar (bugünkü tek anahtar hiçbir şey
 yapmadan bütün föylere uygulanır). "Aynı" kapatılınca o anki değer şubeye kopyalanır; bağlı şubenin anahtarı Ayarlar'da
 salt okunur ve Şube ayarları'na götürür. Föy yalnız anahtarı açık şubenin föyüyse aya girer; hiçbir şubede açık değilse
-föy tablosu hiç okunmaz (`modposFallbackBranches`, `src/server/modpos/fallback.ts`). Açıkken kasa raporu (ve LafPOS gün sonu) olmayan
-günün **kapanmış** föyü ayın açık gün, ciro, ödenmez ve kart payına girer (LafPOS'un yedek satırıyla aynı kural, G6):
-gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. Marina'nın (LafPOS'un şubesi) föyü LafPOS'a geçiş
+föy tablosu hiç okunmaz (`modposFallbackBranches`, `src/server/modpos/fallback.ts`). Açıkken kasa raporu (ve AsilPOS gün sonu) olmayan
+günün **kapanmış** föyü ayın açık gün, ciro, ödenmez ve kart payına girer (AsilPOS'un yedek satırıyla aynı kural, G6):
+gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. Marina'nın (AsilPOS'un şubesi) föyü AsilPOS'a geçiş
 gününden önceki günler için, Tuzla'nınki (ModPOS'ta kalan şube) her gün (`modposTillRows`, `branchSwitchDay`). İndirim
 föyde olmadığı için o günlerin indirimi bilinmez. Elle yazılan ay bilgisi her zaman kazanır (yalnız föyden gelen ayda
 elle yazılan 0 da silinmez). Kapalıyken föy hiçbir hesaba girmez.
 
-Bu anahtar yalnız panelin ay rakamını yönetir. LafPOS'un ModPOS dönemi ucu (`GET /api/panel/pos/modpos-gunler`,
-[LAFPOS.md](LAFPOS.md) › ModPOS dönemi) Marina'nın raporsuz gününün kapanmış föyünü anahtar kapalıyken de gönderir
+Bu anahtar yalnız panelin ay rakamını yönetir. AsilPOS'un ModPOS dönemi ucu (`GET /api/panel/pos/modpos-gunler`,
+[ASILPOS.md](ASILPOS.md) › ModPOS dönemi) Marina'nın raporsuz gününün kapanmış föyünü anahtar kapalıyken de gönderir
 (`kaynak: "foy"`, indirim `null`). Aşağıdaki kesintisiz kısım kuralı da o uçta aranmaz (karar 23 Kasım 2026).
 
 Raporlar başlamadan önceki föyler yalnız **ilk rapora kesintisiz uzanan kısımla** sayılır: arada föyü olmayan gün varsa
@@ -296,7 +296,7 @@ yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok
 ## 9. Sonraya
 
 - **Komisyon & hakediş**: yemek kartı firmaları ve platformlar föyde ayrı (`MULTINET`, `PLUXEE`, `TRENDYOL_ONLINE`…);
-  kanal kanal satış föyden alınabilir (`modposChannels`, `src/lib/modpos/z.ts`). Kaynak sırası elle > lafpos > modpos
+  kanal kanal satış föyden alınabilir (`modposChannels`, `src/lib/modpos/z.ts`). Kaynak sırası elle > asilpos > modpos
   > tek olur.
 - **Kasa formunda "ModPOS'tan doldur"**: föyü saklanan günde (geç rapor, ertesi gün girilen rapor) form föyden
   dolabilir (`CashPrefill.source: "modpos"` hazır). Akşam kapanışta doldurmak günün ikinci hakkını harcar; kota

@@ -20,6 +20,7 @@ import {
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
 import type { AdoptPrev, LinkPrev } from "../../lib/cari/account";
 import { DEFAULT_BRANCH_ID, type BranchKind, type BranchPosSource } from "../../lib/branches";
+import { ESKI_KASA_KAYNAGI, KASA_YAZARI, OTOMATIK_YAZAR } from "../../lib/asilpos/eski-adlar";
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
@@ -38,8 +39,9 @@ import type {
   PosPayment,
   PosRefund,
   PosShiftCount,
-} from "../../lib/lafpos/day";
-import type { LafposPhotoCheck } from "../../lib/lafpos/foto";
+} from "../../lib/asilpos/day";
+import type { AsilposPhotoCheck } from "../../lib/asilpos/foto";
+import { photoCheckFromDb, photoCheckToDb } from "../../lib/asilpos/foto-kayit";
 import type { KasaFoyu } from "../../lib/modpos/foy";
 import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
@@ -165,6 +167,43 @@ export const settings = pgTable("settings", {
  * kararı, 4 Kasım 2026). Kimlik elle verilen kısa bir metindir (adreste ve çerezde geçer, veriye yazılır):
  * değişmez, kayıtlar ona bağlanır. Kurallar ve etiketler src/lib/branches.ts'te (saf, testli).
  */
+/**
+ * Kasa kaynağı sütunu (ad değişikliği, AsilPOS; plan A1): veritabanına AsilPOS'un eski değeri yazılır (ESKI_KASA_KAYNAGI;
+ * canlıdaki eski sürüm ve geri dönüş onu okur), okunurken yenisine ("asilpos") çevrilir. Karşılaştırmalar (eq, inArray)
+ * da çevrilir. CHECK iki değeri de kabul eder (migration 0098)
+ */
+const posSourceText = customType<{ data: BranchPosSource; driverData: string }>({
+  dataType: () => "text",
+  toDriver: (v) => (v === "asilpos" ? ESKI_KASA_KAYNAGI : v),
+  fromDriver: (v) => (v === ESKI_KASA_KAYNAGI ? "asilpos" : v) as BranchPosSource,
+});
+/**
+ * Kasanın yazdığı satırların yazar adı (kasa raporu, sürümü, kasadan çıkan ve harcama kaydı, işlem geçmişi; ad
+ * değişikliği, plan A1): veritabanına eski ad yazılır (OTOMATIK_YAZAR, KASA_YAZARI; canlıdaki eski sürüm ve geri dönüş
+ * onunla karşılaştırır), okunurken ekranda yeni ad görünür. Yalnız bu iki ad çevrilir; kişilerin adları olduğu gibi
+ */
+const AUTHOR_NEW: Readonly<Record<string, string>> = { [OTOMATIK_YAZAR]: "AsilPOS (otomatik)", [KASA_YAZARI]: "AsilPOS" };
+const AUTHOR_OLD: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(AUTHOR_NEW).map(([eski, yeni]) => [yeni, eski]));
+const authorText = customType<{ data: string; driverData: string }>({
+  dataType: () => "text",
+  toDriver: (v) => AUTHOR_OLD[v] ?? v,
+  fromDriver: (v) => AUTHOR_NEW[v] ?? v,
+});
+
+/**
+ * Gün sonu fotoğrafının karşılaştırması (asilpos_day_ends.photo_check; ad değişikliği, plan A1): satırlarda AsilPOS'taki
+ * değer eski adlı alanla yazılır (canlıdaki eski sürüm ve geri dönüş onu okur), okunurken yeni alana çevrilir
+ * (src/lib/asilpos/foto-kayit.ts). Sütun yine jsonb
+ */
+const photoCheckJson = customType<{ data: AsilposPhotoCheck; driverData: unknown }>({
+  dataType: () => "jsonb",
+  toDriver: (v) => JSON.stringify(photoCheckToDb(v)),
+  fromDriver: (v) => photoCheckFromDb(typeof v === "string" ? JSON.parse(v) : v),
+});
+
+/** CHECK'in kabul ettiği kasa kaynakları: yeni ad ve veritabanındaki eski ad */
+const POS_SOURCE_SQL = sql.raw(["modpos", ESKI_KASA_KAYNAGI, "asilpos", "yok"].map((v) => `'${v}'`).join(","));
+
 export const branches = pgTable(
   "branches",
   {
@@ -172,8 +211,8 @@ export const branches = pgTable(
     name: text("name").notNull(),
     /** "fiziksel" (şube) ya da "online" (laffogato.net kanalı) */
     kind: text("kind").$type<BranchKind>().notNull(),
-    /** Gün sonu hangi sistemden gelir: ModPOS, LafPOS ya da yok (online kanal) */
-    posSource: text("pos_source").$type<BranchPosSource>().notNull().default("yok"),
+    /** Gün sonu hangi sistemden gelir: ModPOS, AsilPOS ya da yok (online kanal) */
+    posSource: posSourceText("pos_source").notNull().default("yok"),
     active: boolean("active").notNull().default(true),
     /** Açılış günü (YYYY-MM-DD); boşsa "başından beri" (Tuzla) */
     openedOn: text("opened_on"),
@@ -191,7 +230,7 @@ export const branches = pgTable(
      */
     features: text("features").array().notNull().default(sql`'{siparis,garson,yemek_karti}'::text[]`),
     /**
-     * Şubenin e-postası (şube kurulumu, docs/LAFPOS.md › Şube kurulumu): şubenin panel hesabı bu adresle açılır, LafPOS
+     * Şubenin e-postası (şube kurulumu, docs/ASILPOS.md › Şube kurulumu): şubenin panel hesabı bu adresle açılır, AsilPOS
      * kurulum bağlantısı buraya gider. Boşsa kurulum bağlantısı gönderilmez (eski şubeler)
      */
     email: text("email"),
@@ -201,7 +240,7 @@ export const branches = pgTable(
   (t) => [
     index("branches_active_idx").on(t.active, t.sortOrder),
     check("branches_kind_ck", sql`${t.kind} in ('fiziksel','online')`),
-    check("branches_pos_source_ck", sql`${t.posSource} in ('modpos','lafpos','yok')`),
+    check("branches_pos_source_ck", sql`${t.posSource} in (${POS_SOURCE_SQL})`),
     // Online kanalın kasası olmaz, fiziksel şube kasasız kalmaz (src/lib/branches.ts branchSourceError)
     check(
       "branches_source_kind_ck",
@@ -210,15 +249,17 @@ export const branches = pgTable(
   ],
 );
 
-// ---------------------------------------------------------------- LafPOS şube kurulumu
+// ---------------------------------------------------------------- AsilPOS şube kurulumu
 /**
- * Şubeye özel LafPOS kurulum kodu (docs/LAFPOS.md › Şube kurulumu): indirme bağlantısında ve kurucunun içinde durur;
+ * Şubeye özel AsilPOS kurulum kodu (docs/ASILPOS.md › Şube kurulumu): indirme bağlantısında ve kurucunun içinde durur;
  * kasa ilk açılışta bir kez verir, karşılığında şubesini ve bağlantı bilgilerini alır. `tokenHash` (sha256) ile
  * bulunur; ham kod yalnız şube hesabına bağlantıyı yeniden göstermek için mühürlü durur (`tokenSealed`, secret-box
- * "lafpos-kurulum"). Kullanılınca (`usedAt`) ya da süresi dolunca bir daha geçmez; yenisi eskisini iptal eder
+ * KURULUM_SIFRE_AMACI, eski adla). Kullanılınca (`usedAt`) ya da süresi dolunca bir daha geçmez; yenisi eskisini iptal eder.
+ * Ad değişikliği (migration 0098): tablo eski adından taşındı, eski adla görünüm (view) kaldı (ESKI_TABLOLAR; canlıdaki
+ * eski sürüm onu okur ve yazar); görünüm temizlik PR'ında (A3) kalkar
  */
-export const lafposInstalls = pgTable(
-  "lafpos_installs",
+export const asilposInstalls = pgTable(
+  "asilpos_installs",
   {
     id: serial("id").primaryKey(),
     branchId: text("branch_id")
@@ -235,7 +276,7 @@ export const lafposInstalls = pgTable(
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (t) => [index("lafpos_installs_branch_idx").on(t.branchId, t.createdAt)],
+  (t) => [index("asilpos_installs_branch_idx").on(t.branchId, t.createdAt)],
 );
 
 // ---------------------------------------------------------------- Hammaddeler
@@ -983,7 +1024,8 @@ export const expenseEntries = pgTable(
     amount: doublePrecision("amount").notNull(),
     paymentMethod: text("payment_method", { enum: ["nakit", "kart", "havale", "diger"] }),
     note: text("note"),
-    createdBy: text("created_by"),
+    /** Yazan kişinin adı; kasadan gelen satırda AsilPOS (veritabanında eski adla, authorText) */
+    createdBy: authorText("created_by"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     /** Fişin fotoğrafı (kasadan çıkan satırıyla aynı fotoğraf) */
@@ -1074,7 +1116,7 @@ export const purchaseQuantities = pgTable(
 
 // ---------------------------------------------------------------- Tahmini stok (docs/STOK-TAHMINI.md)
 /**
- * Kritik stok eşiği, şube ve malzeme başına (bugün yalnız Marina: tahmin LafPOS'un şubesinindir). Miktar malzemenin
+ * Kritik stok eşiği, şube ve malzeme başına (bugün yalnız Marina: tahmin AsilPOS'un şubesinindir). Miktar malzemenin
  * kendi biriminde (gr, ml, adet, dilim): sayım birimi sonradan değişse de anlamı değişmez; ekran sayım biriminde
  * yazdırır. Tahmini stok eşiğe eşit ya da altındaysa Tahmini stok listesi, Genel bakış ve Bugün uyarır. Satır yoksa
  * eşik yoktur, uyarı da yok. Stok sayımı, değerleme ve mal maliyeti bunu okumaz.
@@ -1115,7 +1157,7 @@ export const activityLog = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    userName: text("user_name"),
+    userName: authorText("user_name"),
     /**
      * İşlemi yapan hesap (eski kayıtlarda ve "Sistem"de boş). Ad serbest metindir ve kişi kendi adını değiştirebilir:
      * İşlem geçmişi hesabın e-postasını da gösterir, başkasının adını alan kayıt sahibini taklit edemez
@@ -1635,7 +1677,7 @@ export const cashReports = pgTable(
     /** Kasa: açılış (dünden devir), gün içinde çıkan (harcama, teslim), akşam sayılan, sayımdan sonra teslim edilen */
     openingCash: doublePrecision("opening_cash").notNull().default(0),
     /**
-     * Gün içinde kasaya giren: nakit satış dışında çekmeceye konan (bozuk para, nakit tahsilat, nakit bahşiş; LafPOS'un
+     * Gün içinde kasaya giren: nakit satış dışında çekmeceye konan (bozuk para, nakit tahsilat, nakit bahşiş; AsilPOS'un
      * `cashIn`'i). Sonradan geldi: önceki raporlarda 0
      */
     cashIn: doublePrecision("cash_in").notNull().default(0),
@@ -1688,7 +1730,7 @@ export const cashReports = pgTable(
     note: text("note"),
     cashDiff: doublePrecision("cash_diff").notNull().default(0),
     submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
-    submittedByName: text("submitted_by_name").notNull(),
+    submittedByName: authorText("submitted_by_name").notNull(),
     /** Çekmeceyi sayan (formda seçilir, varsayılan gönderen) ve adı; eski raporlarda boş: gönderen saymış sayılır */
     countedBy: integer("counted_by").references(() => users.id, { onDelete: "set null" }),
     countedByName: text("counted_by_name"),
@@ -1724,7 +1766,7 @@ export const cashReportRevisions = pgTable(
     /** O sürümün alanları, kasa farkı ve sayan */
     data: jsonb("data").$type<CashRevisionData>().notNull(),
     submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
-    submittedByName: text("submitted_by_name").notNull(),
+    submittedByName: authorText("submitted_by_name").notNull(),
     /** O sürümün gönderildiği an (raporun o andaki updated_at'i) */
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
     /** Yerine yenisinin geldiği an */
@@ -1804,17 +1846,19 @@ export const cashOuts = pgTable(
     docType: text("doc_type", { enum: ["fis", "e_arsiv", "fatura", "yok"] }).notNull().default("yok"),
     photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdByName: text("created_by_name").notNull(),
+    createdByName: authorText("created_by_name").notNull(),
     /**
-     * LafPOS'un kasa hareketinin kimliği (ULID; Faz 3, docs/LAFPOS.md › Kasadan çıkanlar LafPOS'tan): satır LafPOS'tan
-     * geldi ya da elle girilmiş eşi LafPOS'a bağlandı. Tutar, tür ve gün LafPOS'undur (src/lib/lafpos/cash-moves.ts
-     * lafposCashOutChange); fotoğraf, yer, belge ve kategori panelden. Elle girilen satırda null
+     * AsilPOS'un kasa hareketinin kimliği (ULID; Faz 3, docs/ASILPOS.md › Kasadan çıkanlar AsilPOS'tan): satır AsilPOS'tan
+     * geldi ya da elle girilmiş eşi AsilPOS'a bağlandı. Tutar, tür ve gün AsilPOS'undur (src/lib/asilpos/cash-moves.ts
+     * asilposCashOutChange); fotoğraf, yer, belge ve kategori panelden. Elle girilen satırda null. Ad değişikliği
+     * (migration 0098): veritabanında eski adlı sütun da durur (ESKI_SUTUNLAR), tetikleyici ikisini eşit tutar; canlıdaki
+     * eski sürüm onu yazar. Eski sütun ve benzersiz dizini temizlik PR'ında (A3) kalkar
      */
-    lafposId: text("lafpos_id"),
+    asilposId: text("asilpos_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("cash_outs_date_idx").on(t.date), uniqueIndex("cash_outs_photo_uq").on(t.photoId), uniqueIndex("cash_outs_lafpos_uq").on(t.lafposId)],
+  (t) => [index("cash_outs_date_idx").on(t.date), uniqueIndex("cash_outs_photo_uq").on(t.photoId), uniqueIndex("cash_outs_asilpos_uq").on(t.asilposId)],
 );
 
 // ---------------------------------------------------------------- Zayi ve ikram
@@ -2548,14 +2592,14 @@ export const staffRequests = pgTable(
   ],
 );
 
-// ---------------------------------------------------------------- LafPOS (kafenin kasası)
+// ---------------------------------------------------------------- AsilPOS (kafenin kasası)
 /**
- * LafPOS'un günlük ürün satışı (docs/LAFPOS.md): gün sonunda gelen satış listesi, sales_lines'ın günlük karşılığı.
- * Geçiş gününden itibaren aylık maliyet modeline ay toplamı olarak girer (src/server/data/lafpos-sales.ts); aynı gün
+ * AsilPOS'un günlük ürün satışı (docs/ASILPOS.md): gün sonunda gelen satış listesi, sales_lines'ın günlük karşılığı.
+ * Geçiş gününden itibaren aylık maliyet modeline ay toplamı olarak girer (src/server/data/asilpos-sales.ts); aynı gün
  * yeniden gelirse (düzeltme) günün satırları tek işlemde silinip yenisi yazılır. Ürün önce sitenin kalemi ve boyuyla
  * (products.site_menu_id + site_menu_slot), yoksa POS eşleştirmesiyle (pos_mappings, posMatchKey) bulunur; bulunmazsa
  * boş kalır ve sonradan bağlanınca (site bağı ya da Satışlar'daki eşleştirme) yeniden gönderim olmadan dolar
- * (src/server/lafpos/rematch.ts).
+ * (src/server/asilpos/rematch.ts).
  */
 export const posDailySales = pgTable(
   "pos_daily_sales",
@@ -2564,10 +2608,10 @@ export const posDailySales = pgTable(
     /** İş günü (YYYY-MM-DD; 05:00 kuralı, Kasa raporuyla aynı) */
     date: text("date").notNull(),
     branchId: branchId(),
-    /** LafPOS'taki POS adı (posName ya da "AD BOY") */
+    /** AsilPOS'taki POS adı (posName ya da "AD BOY") */
     posName: text("pos_name").notNull(),
     productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
-    /** LafPOS'un gönderdiği sitenin kalemi ve boyu (yoksa null): ürün sonradan siteye bağlanınca satır bununla bulunur */
+    /** AsilPOS'un gönderdiği sitenin kalemi ve boyu (yoksa null): ürün sonradan siteye bağlanınca satır bununla bulunur */
     siteMenuId: text("site_menu_id"),
     slot: text("slot", { enum: ["M", "L"] }),
     qty: doublePrecision("qty").notNull(),
@@ -2575,7 +2619,7 @@ export const posDailySales = pgTable(
     revenue: doublePrecision("revenue").notNull(),
     /**
      * Satırın liste değeri, indirimden önce (TL, KDV dahil; Faz 2, 23 Kasım 2026): `revenue` indirimden sonradır, fark
-     * satırın indirim payı. Eski LafPOS göndermez: null
+     * satırın indirim payı. Eski AsilPOS göndermez: null
      */
     gross: doublePrecision("gross"),
     /** Birleşen satırda içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT; Faz 2) */
@@ -2583,14 +2627,15 @@ export const posDailySales = pgTable(
     /** Hizmet satırı (karaoke): ürün değil, reçetesi yok */
     isService: boolean("is_service").notNull().default(false),
     /**
-     * LafPOS'un gönderdiği hizmet işareti: satır her gün sonunda (düzeltme gönderimi dahil) HİZMET yazılır, eşleştirme
-     * onu değiştiremez (resolvePosLine). isService bunu ve HİZMET eşleştirmesini birlikte taşır
+     * AsilPOS'un gönderdiği hizmet işareti: satır her gün sonunda (düzeltme gönderimi dahil) HİZMET yazılır, eşleştirme
+     * onu değiştiremez (resolvePosLine). isService bunu ve HİZMET eşleştirmesini birlikte taşır. Ad değişikliği
+     * (migration 0098): eski adlı sütun da durur, tetikleyici ikisini eşit tutar (temizlik PR'ında kalkar)
      */
-    lafposService: boolean("lafpos_service").notNull().default(false),
+    asilposService: boolean("asilpos_service").notNull().default(false),
     /**
-     * Satılan parçaların dondurulan liste birim fiyatları (TL) ve adetleri (LafPOS `lines[].listPrices`, şube fiyatı;
+     * Satılan parçaların dondurulan liste birim fiyatları (TL) ve adetleri (AsilPOS `lines[].listPrices`, şube fiyatı;
      * 24 Kasım 2026). "Eski fiyattan satılanlar" ve fiyat değişikliğinin durumu buradan (src/lib/prices/branch.ts). Eski
-     * LafPOS ve hizmet satırı: null ("Bilinmiyor"; ciro / adetten çıkarılmaz)
+     * AsilPOS ve hizmet satırı: null ("Bilinmiyor"; ciro / adetten çıkarılmaz)
      */
     listPrices: jsonb("list_prices").$type<{ price: number; qty: number }[]>(),
     createdAt: createdAt(),
@@ -2599,7 +2644,7 @@ export const posDailySales = pgTable(
 );
 
 /**
- * LafPOS'un gün sonu özeti, gün başına bir satır (docs/LAFPOS.md): Z ve kasa alanları (Kasa raporunun "LafPOS'tan
+ * AsilPOS'un gün sonu özeti, gün başına bir satır (docs/ASILPOS.md): Z ve kasa alanları (Kasa raporunun "AsilPOS'tan
  * doldur"u), ödeme kanalları (komisyon anahtarlarıyla) ve ikramlar (menü değeri ve nedeni). Personele yalnız `z` gider.
  */
 export const posDayReports = pgTable(
@@ -2610,44 +2655,44 @@ export const posDayReports = pgTable(
     z: jsonb("z").$type<PosDayZ>().notNull(),
     payments: jsonb("payments").$type<PosPayment[]>().notNull(),
     ikram: jsonb("ikram").$type<PosIkram[]>().notNull(),
-    /** Banka POS (Pavo) karşılaştırması (src/lib/lafpos/day.ts bankPosSchema); gelmediyse null */
+    /** Banka POS (Pavo) karşılaştırması (src/lib/asilpos/day.ts bankPosSchema); gelmediyse null */
     bankPos: jsonb("bank_pos").$type<BankPos>(),
     /**
-     * Faz 2 (23 Kasım 2026; docs/LAFPOS.md › Faz 2 alanları): mali fişi yazarkasada kesilmeyen ödemeler, günün iptal edilen
-     * ödemeleri ve kalemleri. Son gövdeninkiler; eski LafPOS göndermez: null
+     * Faz 2 (23 Kasım 2026; docs/ASILPOS.md › Faz 2 alanları): mali fişi yazarkasada kesilmeyen ödemeler, günün iptal edilen
+     * ödemeleri ve kalemleri. Son gövdeninkiler; eski AsilPOS göndermez: null
      */
     offDevice: jsonb("off_device").$type<PosOffDevice>(),
     refunds: jsonb("refunds").$type<PosRefund[]>(),
     iptal: jsonb("iptal").$type<PosIptal[]>(),
     /**
-     * Günün son düzeltmesi (yeniden açılış ya da sayım; nedeniyle). LafPOS onu yalnız düzeltmeden sonraki ilk gövdeyle
+     * Günün son düzeltmesi (yeniden açılış ya da sayım; nedeniyle). AsilPOS onu yalnız düzeltmeden sonraki ilk gövdeyle
      * yollar: alanı taşımayan sonraki gönderim (Pavo sonucu) silmez. Düzeltilmemiş günde null
      */
     correction: jsonb("correction").$type<PosCorrection>(),
     /**
      * Faz 3: günün kasa hareketleri (harcama, teslim, giriş; son gövdeninkiler). Harcama ve teslim ayrıca "Kasadan
-     * çıkanlar"a satır olur (cash_outs.lafpos_id); giriş yalnız burada. Eski LafPOS göndermez ya da okunamadıysa null
+     * çıkanlar"a satır olur (cash_outs.asilpos_id); giriş yalnız burada. Eski AsilPOS göndermez ya da okunamadıysa null
      */
     cashMoves: jsonb("cash_moves").$type<PosCashMove[]>(),
     /**
-     * Gün sonu tam (24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): yazarkasanın cihaz belgelerinden rakamları (kasa
+     * Gün sonu tam (24 Kasım 2026; docs/ASILPOS.md › Gün sonu otomasyonu): yazarkasanın cihaz belgelerinden rakamları (kasa
      * raporunun yazarkasa alanları bundan), siparişsiz tahsilatlar, vardiya devri sayımları ve indirim satırları. Son
-     * gövdeninkiler; eski LafPOS göndermez ya da okunamadıysa null
+     * gövdeninkiler; eski AsilPOS göndermez ya da okunamadıysa null
      */
     okc: jsonb("okc").$type<PosOkc>(),
     collections: jsonb("collections").$type<PosCollection[]>(),
     shiftCounts: jsonb("shift_counts").$type<PosShiftCount[]>(),
     discountLines: jsonb("discount_lines").$type<PosDiscountLine[]>(),
-    /** LafPOS'un son kabul edilen gövdesinin gönderim sırası (1'den); eski LafPOS göndermez: null */
+    /** AsilPOS'un son kabul edilen gövdesinin gönderim sırası (1'den); eski AsilPOS göndermez: null */
     revision: integer("revision"),
     /**
-     * LM-4b (personel bağlantısı; docs/LAFPOS.md › Personel bağlantısı): o gün çalışanların lafmaliyet personel kimlikleri
-     * (`s:<staff.id>`, tekil, sayı sırasıyla; ad yok). Gövde alanı taşıdıysa yazılır, taşımayan gönderim (eski LafPOS ya da
+     * LM-4b (personel bağlantısı; docs/ASILPOS.md › Personel bağlantısı): o gün çalışanların lafmaliyet personel kimlikleri
+     * (`s:<staff.id>`, tekil, sayı sırasıyla; ad yok). Gövde alanı taşıdıysa yazılır, taşımayan gönderim (eski AsilPOS ya da
      * bağlı kullanıcı kalmadı) öncekini silmez. Hiç gelmediyse null: o günün çalışanları bilinmez (yemek kartı varsayılan
-     * günle; src/lib/lafpos/personel.ts lafposWorkedDays)
+     * günle; src/lib/asilpos/personel.ts asilposWorkedDays)
      */
     workedStaff: jsonb("worked_staff").$type<string[]>(),
-    /** Gönderen sistem ("lafpos") */
+    /** Gönderen sistem ("asilpos") */
     source: text("source").notNull(),
     /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
@@ -2656,12 +2701,12 @@ export const posDayReports = pgTable(
 );
 
 /**
- * LafPOS gün sonlarının sürüm geçmişi (23 Kasım 2026; docs/LAFPOS.md › Sürüm geçmişi): kabul edilen (200) HER gövdenin
+ * AsilPOS gün sonlarının sürüm geçmişi (23 Kasım 2026; docs/ASILPOS.md › Sürüm geçmişi): kabul edilen (200) HER gövdenin
  * okunmuş hâli, geliş sırasıyla. pos_day_reports günün son hâlidir (yeniden gönderim öncekinin yerine geçer); öncekiler
  * burada kalır: neyin ne zaman, hangi sırayla ve hangi düzeltmeyle geldiği. Yalnız eklenir, aynı işlemde (gün sonunun
- * danışma kilidi altında) yazılır; reddedilen gövde yazılmaz. Günün kaydını silmek (z_conflict'in çözümü, src/server/lafpos/
- * admin.ts removeLafposDay) geçmişi silmez: silinen Z'nin gövdeleri de denetim için kalır. Gövde kişisel veri taşımaz
- * (beyaz liste: src/lib/lafpos/day.ts)
+ * danışma kilidi altında) yazılır; reddedilen gövde yazılmaz. Günün kaydını silmek (z_conflict'in çözümü, src/server/asilpos/
+ * admin.ts removeAsilposDay) geçmişi silmez: silinen Z'nin gövdeleri de denetim için kalır. Gövde kişisel veri taşımaz
+ * (beyaz liste: src/lib/asilpos/day.ts)
  */
 export const posDayRevisions = pgTable(
   "pos_day_revisions",
@@ -2669,9 +2714,9 @@ export const posDayRevisions = pgTable(
     id: serial("id").primaryKey(),
     date: text("date").notNull(),
     branchId: branchId(),
-    /** LafPOS'un gönderim sırası (gövdenin `revision`'ı); eski LafPOS göndermez: null */
+    /** AsilPOS'un gönderim sırası (gövdenin `revision`'ı); eski AsilPOS göndermez: null */
     revision: integer("revision"),
-    /** Gövdenin LafPOS Z no'su (silinen Z'nin gövdeleri de kalır) */
+    /** Gövdenin AsilPOS Z no'su (silinen Z'nin gövdeleri de kalır) */
     zNo: integer("z_no").notNull(),
     /** Gövdenin düzeltmesi (yeniden açılış ya da sayım); yoksa null */
     correction: jsonb("correction").$type<PosCorrection>(),
@@ -2683,12 +2728,13 @@ export const posDayRevisions = pgTable(
 );
 
 /**
- * LafPOS gün sonunun otomasyonu, (gün, şube) başına bir satır (docs/LAFPOS.md › Gün sonu otomasyonu; src/server/lafpos/gun-sonu.ts):
+ * AsilPOS gün sonunun otomasyonu, (gün, şube) başına bir satır (docs/ASILPOS.md › Gün sonu otomasyonu; src/server/asilpos/gun-sonu.ts):
  * Kasa raporuna kendiliğinden yazılan rapor ve yazdığı değerler (elle düzeltilen alanı ezmemek için), eksik alanlar ve gün
  * sonu e-postasının durumu (aynı içerik iki kez gitmez; düzeltilen gün "düzeltildi" notuyla bir kez daha gider).
+ * Ad değişikliği (migration 0098): tablo eski adından taşındı, eski adla görünüm kaldı (canlıdaki eski sürüm yazar).
  */
-export const lafposDayEnds = pgTable(
-  "lafpos_day_ends",
+export const asilposDayEnds = pgTable(
+  "asilpos_day_ends",
   {
     date: text("date").notNull(),
     branchId: branchId(),
@@ -2698,17 +2744,17 @@ export const lafposDayEnds = pgTable(
     autoValues: jsonb("auto_values").$type<Record<string, unknown>>(),
     /**
      * Eksikler: cihaz boşlukları ("bankPos", "okc", "okcZNo"; sayım yoksa "countedCash") ve personelin gün sonu fotoğrafı
-     * eklenene kadar "photo" (src/lib/lafpos/gun-sonu.ts autoMissing)
+     * eklenene kadar "photo" (src/lib/asilpos/gun-sonu.ts autoMissing)
      */
     missing: jsonb("missing").$type<string[]>().notNull().default([]),
     /**
-     * Gün sonu fotoğrafının LafPOS'la karşılaştırması (src/lib/lafpos/foto.ts lafposPhotoCheck): fotoğraf eklenince ya da
-     * LafPOS yeniden gönderince yenilenir; yalnız yönetici görür. Fotoğraf yokken null
+     * Gün sonu fotoğrafının AsilPOS'la karşılaştırması (src/lib/asilpos/foto.ts asilposPhotoCheck): fotoğraf eklenince ya da
+     * AsilPOS yeniden gönderince yenilenir; yalnız yönetici görür. Fotoğraf yokken null
      */
-    photoCheck: jsonb("photo_check").$type<LafposPhotoCheck>(),
+    photoCheck: photoCheckJson("photo_check"),
     /**
-     * Rapor yokken (LafPOS'ta sayım yok) personelin eklediği gün sonu fotoğrafları: rapor yazılınca ona bağlanır
-     * (src/server/lafpos/foto.ts)
+     * Rapor yokken (AsilPOS'ta sayım yok) personelin eklediği gün sonu fotoğrafları: rapor yazılınca ona bağlanır
+     * (src/server/asilpos/foto.ts)
      */
     pendingPhotos: jsonb("pending_photos").$type<number[]>().notNull().default([]),
     /** Son işlenen gün sonunun içerik özeti (Z, ödemeler, ikram) */

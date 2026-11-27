@@ -23,10 +23,10 @@ test("Ayarlar › ModPOS API: kurulum talimatı her zaman görünen ⓘ'de deği
   assert.match(read("src/lib/modpos/status.ts"), /Environment Variables/);
 });
 
-test("Ayarlar › LafPOS (kasa): anahtar talimatı yok; geçiş günü seçildikten sonra 'ModPOS sayılır' cümlesi yok", () => {
-  const card = code("src/app/panel/ayarlar/lafpos-card.tsx");
-  assert.doesNotMatch(card, /LAFMALIYET_SYNC_SECRET|Açılış sırası|docs\/LAFPOS\.md/);
-  assert.match(card, /data\.switchDay\s*\?\s*"Kafenin kasası LafPOS her iş gününü kapanışta buraya gönderir\."/);
+test("Ayarlar › AsilPOS (kasa): anahtar talimatı yok; geçiş günü seçildikten sonra 'ModPOS sayılır' cümlesi yok", () => {
+  const card = code("src/app/panel/ayarlar/asilpos-card.tsx");
+  assert.doesNotMatch(card, /LAFMALIYET_SYNC_SECRET|Açılış sırası|docs\/ASILPOS\.md/);
+  assert.match(card, /data\.switchDay\s*\?\s*"Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir\."/);
 });
 
 test("Ayarlar › laffogato.net ve Yedek: bağlıyken imza ve belge yolu anlatılmaz", () => {

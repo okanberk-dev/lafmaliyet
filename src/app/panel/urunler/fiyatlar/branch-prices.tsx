@@ -71,7 +71,7 @@ export function BranchPrices({ ctx, branch, items, now }: { ctx: BranchPriceCont
         <CardHeader
           icon={<Store />}
           title={`${branch.name} fiyatları`}
-          description="Taban sitenin fiyatıdır (Tuzla ve kendi fiyatı olmayan her şube). Şube fiyatı bir andan itibaren geçerli olur; LafPOS o anda fiyatı siteden alır."
+          description="Taban sitenin fiyatıdır (Tuzla ve kendi fiyatı olmayan her şube). Şube fiyatı bir andan itibaren geçerli olur; AsilPOS o anda fiyatı siteden alır."
           meta={<span className="tabular">{planned ? `${num(planned)} planlanan değişiklik` : `${num(items.length)} kalem`}</span>}
         />
         <div className="px-5 pb-3">

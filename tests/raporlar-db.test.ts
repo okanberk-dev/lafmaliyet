@@ -1,6 +1,6 @@
 // Raporlar (docs/RAPORLAR.md) gerçek Postgres'te, oturum taklit edilerek: dört yükleyici canlı şemayla çalışır ve
 // rakamlar başka ekranlarınkiyle aynıdır (Şube karşılaştırma ve İşçilik / ciro'nun ayı = Gelir-gider'in şube görünümü;
-// fiş sayısı kasa raporlarından; kasa farkı kasayı sayana yazılır; LafPOS'a geçilmeden kaçak raporu yok).
+// fiş sayısı kasa raporlarından; kasa farkı kasayı sayana yazılır; AsilPOS'a geçilmeden kaçak raporu yok).
 //
 // RAPOR_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı): test
 // kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -56,8 +56,8 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
     const me = async () => ({ ...a, role: "admin" as const });
     stub(require.resolve("../src/server/auth/dal"), { requireUser: me, requireAdmin: me, ...dalCapabilities(me) });
 
-    // Marina (LafPOS'a geçilmedi: geçiş günü yok); Tuzla migration'la gelir
-    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "lafpos", sortOrder: 2 }).onConflictDoNothing();
+    // Marina (AsilPOS'a geçilmedi: geçiş günü yok); Tuzla migration'la gelir
+    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "asilpos", sortOrder: 2 }).onConflictDoNothing();
     // Tuzla: tam zamanlı Ali (hesabıyla), part-time Can (Vardiya adıyla), iki gün çağrıldı
     await db.insert(s.staff).values([
       { name: "Ali", branchId: "tuzla", netSalary: 30_000, userId: ali.id, sortOrder: 1 },
@@ -155,9 +155,9 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
     assert.ok(data.total, "iki şube: toplam satırı");
   });
 
-  test("Kaçak raporu: Marina LafPOS'a geçmeden rapor yok", async () => {
+  test("Kaçak raporu: Marina AsilPOS'a geçmeden rapor yok", async () => {
     const data = await leak.loadLeakReport(PREV);
-    assert.equal(data.state, "lafpos-yok");
+    assert.equal(data.state, "asilpos-yok");
     assert.equal(data.report, null);
     assert.equal((await leak.loadLeakReport(currentMonthTR())).state, "ay-bitmedi");
   });
@@ -176,13 +176,13 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
     assert.deepEqual(data.summary.recount.branches, [{ branchId: "tuzla", days: 1, changedDays: 1 }]);
   });
 
-  // En sonda: Marina'yı LafPOS'a geçirir (öteki testler geçişsiz Marina'yı bekler)
+  // En sonda: Marina'yı AsilPOS'a geçirir (öteki testler geçişsiz Marina'yı bekler)
   test("Kaçak raporu: ayın sayımı − ay sonu tahmini (önceki ayın sayımından), ay sonu fiyatıyla TL", async () => {
-    // Sabit aylar (geçiş günü LAFPOS_SWITCH_MIN'den önce olamaz): Marina 1 Kasım 2026'da LafPOS'a geçti, Kasım sonu sayımı
+    // Sabit aylar (geçiş günü ASILPOS_SWITCH_MIN'den önce olamaz): Marina 1 Kasım 2026'da AsilPOS'a geçti, Kasım sonu sayımı
     // Aralık'ın kaçak raporunun başlangıcı; rapor Ocak'ta okunur
     const [K0, K1] = ["2026-11", "2026-12"];
     const NOW = new Date("2027-01-10T12:00:00+03:00");
-    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: `${K0}-01` });
+    await db.insert(s.settings).values({ key: "asilposGecisGunu", value: `${K0}-01` });
     const [cat] = await db.insert(s.categories).values({ name: "Kahve" }).returning();
     // Süt: 1 LT 40 ₺ (0,04 ₺ / ml); Latte'de 200 ml
     const [sut] = await db.insert(s.ingredients).values({ name: "Süt", category: "Süt", unit: "ml", countUnit: "LT", packageSize: 1000, packagePrice: 40 }).returning();

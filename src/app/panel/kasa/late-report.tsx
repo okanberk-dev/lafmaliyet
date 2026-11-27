@@ -11,7 +11,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { diffKind, diffText, stampTR } from "@/lib/cash-report";
 import { money } from "@/lib/format";
-import type { LafposDay } from "@/lib/lafpos/prefill";
+import type { AsilposDay } from "@/lib/asilpos/prefill";
 import type { ReadingState } from "@/lib/photo-rules";
 import { shortDayTR } from "@/lib/cash-requests";
 import { dayLocativeTR, longDateTR, todayTR } from "@/lib/reminders";
@@ -41,8 +41,8 @@ export function LateReport({
   counters,
   photoUi,
   prevOkcZ = null,
-  lafpos = null,
-  lafposMode = false,
+  asilpos = null,
+  asilposMode = false,
   branchId = null,
 }: {
   date: string;
@@ -57,10 +57,10 @@ export function LateReport({
   photoUi: { storage: boolean; reading: ReadingState; admin: boolean; me: string };
   /** Önceki yazarkasa Z'si (yalnız gün ve numara; formun Z no denetimi) */
   prevOkcZ?: { date: string; zNo: string } | null;
-  /** LafPOS'un bu günün sonu (yalnız geçiş gününden sonra): form ondan dolar, fotoğraf gerekmez */
-  lafpos?: LafposDay | null;
-  /** Günün kasası LafPOS (gün sonu gelmediyse yazarkasa Z fotoğrafı istenir) */
-  lafposMode?: boolean;
+  /** AsilPOS'un bu günün sonu (yalnız geçiş gününden sonra): form ondan dolar, fotoğraf gerekmez */
+  asilpos?: AsilposDay | null;
+  /** Günün kasası AsilPOS (gün sonu gelmediyse yazarkasa Z fotoğrafı istenir) */
+  asilposMode?: boolean;
 }) {
   const pendingOwn = own?.status === "pending" ? own : null;
   const [editing, setEditing] = useState(!pendingOwn);
@@ -85,8 +85,8 @@ export function LateReport({
     />
   ) : null;
 
-  // Fotoğraf deposu yoksa geç rapor kanıtsız kalır; LafPOS'un gün sonu geldiyse kanıt odur (G8)
-  if (!photoUi.storage && !lafpos) {
+  // Fotoğraf deposu yoksa geç rapor kanıtsız kalır; AsilPOS'un gün sonu geldiyse kanıt odur (G8)
+  if (!photoUi.storage && !asilpos) {
     return (
       <Card>
         <CardHeader icon={<CalendarClock />} title={`${day} kasa raporu`} description="Geç rapor" />
@@ -142,7 +142,7 @@ export function LateReport({
               </Badge>
             </p>
             {pendingOwn.message ? <p className="break-words text-ink-soft">Neden: {pendingOwn.message}</p> : null}
-            <p className="text-ink-mute">{pendingOwn.photos.length || !lafpos ? `${pendingOwn.photos.length} fotoğraf eklendi` : "LafPOS gün sonuyla gönderildi; fotoğraf gerekmez"}</p>
+            <p className="text-ink-mute">{pendingOwn.photos.length || !asilpos ? `${pendingOwn.photos.length} fotoğraf eklendi` : "AsilPOS gün sonuyla gönderildi; fotoğraf gerekmez"}</p>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setEditing(true)} disabled={busy}>
                 <Pencil size={15} /> Düzenle
@@ -194,8 +194,8 @@ export function LateReport({
         onCancel={pendingOwn ? () => setEditing(false) : undefined}
         onSent={() => setEditing(false)}
         prevOkcZ={prevOkcZ}
-        lafpos={lafpos}
-        lafposMode={lafposMode}
+        asilpos={asilpos}
+        asilposMode={asilposMode}
       />
     </div>
   );
@@ -203,23 +203,23 @@ export function LateReport({
 
 /**
  * "Girilmemiş günler" (personelin kasa sayfası): dünden eski son 14 günün raporu girilmemiş günleri, çip başına gün.
- * Telefonda 4'ten fazla gün tek çipte toplanır, dokununca açılır. Kanıt günün kasasına göre (G8): LafPOS'un gün sonu
- * gelen günde (`lafpos`) fotoğraf gerekmez, çip fotoğraf deposu yokken de görünür; öteki günlerin çipi depo yoksa yok.
+ * Telefonda 4'ten fazla gün tek çipte toplanır, dokununca açılır. Kanıt günün kasasına göre (G8): AsilPOS'un gün sonu
+ * gelen günde (`asilpos`) fotoğraf gerekmez, çip fotoğraf deposu yokken de görünür; öteki günlerin çipi depo yoksa yok.
  */
-export function LateDaysCard({ days, storage }: { days: { date: string; state: "missing" | "pending" | "rejected"; lafpos?: boolean }[]; storage: boolean }) {
+export function LateDaysCard({ days, storage }: { days: { date: string; state: "missing" | "pending" | "rejected"; asilpos?: boolean }[]; storage: boolean }) {
   const [open, setOpen] = useState(false);
   if (!days.length) return null;
-  // Girilebilen günler: depo varsa hepsi, yoksa yalnız LafPOS gün sonu gelenler
-  const shown = storage ? days : days.filter((d) => d.lafpos);
+  // Girilebilen günler: depo varsa hepsi, yoksa yalnız AsilPOS gün sonu gelenler
+  const shown = storage ? days : days.filter((d) => d.asilpos);
   const hidden = days.length - shown.length;
   const collapse = shown.length > 4 && !open;
   const label = (d: (typeof days)[number]) => `${shortDayTR(d.date)}${d.state === "pending" ? " · onay bekliyor" : d.state === "rejected" ? " · reddedildi" : ""}`;
-  const lafposCount = days.filter((d) => d.lafpos).length;
-  const description = !lafposCount
+  const asilposCount = days.filter((d) => d.asilpos).length;
+  const description = !asilposCount
     ? "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer."
-    : lafposCount === days.length
-      ? "Kafe açıktıysa girin; LafPOS'un gün sonu geldiği için fotoğraf gerekmez. Yöneticinin onayıyla kayda geçer."
-      : "Kafe açıktıysa girin; LafPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde Z raporunun fotoğrafıyla. Yöneticinin onayıyla kayda geçer.";
+    : asilposCount === days.length
+      ? "Kafe açıktıysa girin; AsilPOS'un gün sonu geldiği için fotoğraf gerekmez. Yöneticinin onayıyla kayda geçer."
+      : "Kafe açıktıysa girin; AsilPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde Z raporunun fotoğrafıyla. Yöneticinin onayıyla kayda geçer.";
   return (
     <Card>
       <CardHeader icon={<CalendarClock />} title="Girilmemiş günler" description={description} />

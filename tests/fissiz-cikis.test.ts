@@ -11,7 +11,7 @@ import { reportAttention, reportFlags } from "../src/lib/cash-attention";
 import { cashOutNoteMissing, cashOutNoteOf } from "../src/lib/cash-outs";
 import { reportChecks } from "../src/lib/cash-report-checks";
 import { cashReportText, whatsappText, type CashReportFields } from "../src/lib/cash-report";
-import { unreceiptedCashOut } from "../src/lib/lafpos/prefill";
+import { unreceiptedCashOut } from "../src/lib/asilpos/prefill";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 
 const plain = (t: string) => t.replace(/ /g, " ");
@@ -42,16 +42,16 @@ const lines = [
 ];
 
 test("hesap: satırların toplamından fazlası fişsiz; 1 ₺ altı yok; satırlar fazlaysa fişsiz yok", () => {
-  assert.deepEqual(unreceiptedCashOut(650, lines, null), { total: 150, gap: 500, lafposHanded: null, unreceipted: 500 });
+  assert.deepEqual(unreceiptedCashOut(650, lines, null), { total: 150, gap: 500, asilposHanded: null, unreceipted: 500 });
   assert.equal(unreceiptedCashOut(150.5, lines, null).unreceipted, 0, "kuruş farkı fişsiz değil");
   assert.equal(unreceiptedCashOut(100, lines, null).unreceipted, 0, "satırlar fazla (fiş kasadan ödenmemiş): fişsiz değil");
   assert.equal(unreceiptedCashOut(500, [], null).unreceipted, 500, "satır yokken bütün tutar fişsiz");
 });
 
-test("hesap: LafPOS gününde Kasadan çıkanlar'a girilmemiş teslim fişsiz sayılmaz (E-35), kalanı sayılır", () => {
+test("hesap: AsilPOS gününde Kasadan çıkanlar'a girilmemiş teslim fişsiz sayılmaz (E-35), kalanı sayılır", () => {
   const till = { spent: 150, handed: 5_000 };
-  assert.deepEqual(unreceiptedCashOut(5_150, lines, till), { total: 150, gap: 5_000, lafposHanded: 5_000, unreceipted: 0 });
-  assert.deepEqual(unreceiptedCashOut(5_450, lines, till), { total: 150, gap: 5_300, lafposHanded: 5_000, unreceipted: 300 });
+  assert.deepEqual(unreceiptedCashOut(5_150, lines, till), { total: 150, gap: 5_000, asilposHanded: 5_000, unreceipted: 0 });
+  assert.deepEqual(unreceiptedCashOut(5_450, lines, till), { total: 150, gap: 5_300, asilposHanded: 5_000, unreceipted: 300 });
   // Teslim panele "Teslim" satırı olarak girildiyse beklenmez: fark yine fişsiz
   const withTeslim = [...lines, { kind: "teslim" as const, amount: 5_000, store: "patron", description: null }];
   assert.equal(unreceiptedCashOut(5_450, withTeslim, till).unreceipted, 300);

@@ -1,6 +1,6 @@
 // Şube fiyatı (LM-5) gerçek Postgres'te ve sitenin sahte ucuyla (laffogato.net'e gidilmez; saf kısım
 // tests/sube-fiyat.test.ts):
-// - LafPOS gün sonunun `lines[].listPrices`'ı pos_daily_sales.list_prices'a yazılır (eski LafPOS: null)
+// - AsilPOS gün sonunun `lines[].listPrices`'ı pos_daily_sales.list_prices'a yazılır (eski AsilPOS: null)
 // - menü çekmesi sitenin `branchPrices`'ını integration_state'e, `writes.branchPrice` duyurusunu duruma yazar
 // - şube fiyatı yazımı yalnız duyuru varken: tek kalem (M ve L tek gövdede), 409 stale (kopya sitenin satırlarıyla
 //   yenilenir), aynı yazımın yeniden gönderimi, anı gelmemiş satırın iptali, toplu yazım (kalem başına tek istek);
@@ -22,17 +22,17 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
-import { parsePosDay } from "../src/lib/lafpos/day";
+import { parsePosDay } from "../src/lib/asilpos/day";
 import type { SiteBranchPrice, SiteMenuItem } from "../src/lib/site-menu/schema";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { ASILPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.SUBE_FIYAT_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_sube_fiyat_${process.pid}`;
 const SECRET = "sube-fiyat-test-anahtari-gercek-degil-0123456789";
 const SITE = "http://site.test";
-const GOLDEN = () => readFileSync(join(process.cwd(), "tests/fixtures/lafpos-gun.golden.json"), "utf8");
+const GOLDEN = () => readFileSync(join(process.cwd(), "tests/fixtures/asilpos-gun.golden.json"), "utf8");
 
 describe("Şube fiyatı: veritabanında, sahte siteyle", { skip: !SERVER_URL && "SUBE_FIYAT_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
@@ -156,7 +156,7 @@ describe("Şube fiyatı: veritabanında, sahte siteyle", { skip: !SERVER_URL && 
   const panelPrices = async () => (await db.select({ id: s.products.id, price: s.products.price }).from(s.products)).map((p) => p.price).sort();
 
   test("gün sonu: listPrices pos_daily_sales.list_prices'a yazılır; hizmet satırında null", async () => {
-    const { storePosDay } = await import("../src/server/lafpos/ingest");
+    const { storePosDay } = await import("../src/server/asilpos/ingest");
     const parsed = parsePosDay(GOLDEN(), new Date("2026-10-28T12:00:00+03:00"));
     assert.ok(parsed.ok);
     const r = await storePosDay(db, parsed.data, new Date("2026-10-28T12:00:00+03:00"));
@@ -164,7 +164,7 @@ describe("Şube fiyatı: veritabanında, sahte siteyle", { skip: !SERVER_URL && 
     const lines = await db
       .select({ posName: s.posDailySales.posName, listPrices: s.posDailySales.listPrices })
       .from(s.posDailySales)
-      .where(and(eq(s.posDailySales.date, "2026-10-26"), eq(s.posDailySales.branchId, LAFPOS_SUBE)));
+      .where(and(eq(s.posDailySales.date, "2026-10-26"), eq(s.posDailySales.branchId, ASILPOS_SUBE)));
     const by = new Map(lines.map((l) => [l.posName, l.listPrices]));
     assert.deepEqual(by.get("LATTE MEDIUM"), [{ price: 195, qty: 3 }]);
     assert.deepEqual(by.get("ALTERNATIF SÜT"), [{ price: 0, qty: 1 }, { price: 25, qty: 2 }]);

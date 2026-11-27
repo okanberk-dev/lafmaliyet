@@ -1,6 +1,6 @@
 // Kasa raporu girişinin sade ve telefona uygun düzeni (ekran incelemesi, 24 Kasım 2026; docs/KASA-RAPORU.md › Ekranın
-// düzeni): personelin boş formu iPhone'da 6,7, yöneticinin LafPOS'tan dolu formu 12,6 ekrandı. Kurallar aynı kaldı;
-// burada düzenin ve metnin sözleşmesi denetlenir (iş kurallarının kendi testleri ayrı: son-kontrol, lafpos-kasa, …).
+// düzeni): personelin boş formu iPhone'da 6,7, yöneticinin AsilPOS'tan dolu formu 12,6 ekrandı. Kurallar aynı kaldı;
+// burada düzenin ve metnin sözleşmesi denetlenir (iş kurallarının kendi testleri ayrı: son-kontrol, asilpos-kasa, …).
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -14,8 +14,8 @@ import { Fold } from "../src/app/panel/kasa/fold";
 import { toastLayout } from "../src/components/ui/toast-layout";
 import { cardDiffLabel, reportAttention, reportFlags } from "../src/lib/cash-attention";
 import { cashOutNoteVisible } from "../src/lib/cash-outs";
-import { dayDetailNotes } from "../src/lib/lafpos/gun-ayrinti";
-import { LAFPOS_STAFF_NO_COUNT } from "../src/lib/lafpos/foto";
+import { dayDetailNotes } from "../src/lib/asilpos/gun-ayrinti";
+import { ASILPOS_STAFF_NO_COUNT } from "../src/lib/asilpos/foto";
 import { OKC_PHOTOS_TEXT, PHOTO_KIND_LABEL } from "../src/lib/photo-rules";
 
 const read = (p: string) => readFileSync(join(__dirname, "..", p), "utf8");
@@ -47,7 +47,7 @@ test("ModPOS Z: üç alan açık, seyrek alanlar katlı; geç raporda Z no zorun
   assert.doesNotMatch(form, /hint: "Multinet, Pluxee|hint: "Yemeksepeti, Getir|hintOf\("receipts", "isteğe bağlı"\)/);
 });
 
-test("Fiş fotoğrafları tek kartta; LafPOS gününde gün sonu geldiyse yazarkasa seçicisi formda yok (Gün sonu fotoğrafı kartında)", () => {
+test("Fiş fotoğrafları tek kartta; AsilPOS gününde gün sonu geldiyse yazarkasa seçicisi formda yok (Gün sonu fotoğrafı kartında)", () => {
   assert.match(form, /\{photosCard\}\n\s+<Card>\n\s+<CardHeader\n\s+icon=\{<ReceiptText \/>\}/, "fotoğraflar Z kartından önce");
   assert.equal(form.match(/<PhotoPicker\b/g)?.length, 1, "tek seçici yeri (bölüm başına çizilir)");
   assert.doesNotMatch(okc, /photoBlock/, "yazarkasa kartında seçici yok");
@@ -108,27 +108,27 @@ test("Gönderilmiş rapor: fark bir kez, döküm katlı (devir tutmuyorsa açık
   assert.match(saved, /Rapor dökümü<\/span> · Z \{money\(report\.zTotal\)\}/);
 });
 
-test("Sayfa: personelin LafPOS gününde fotoğraf kartı en üstte, sayımsız günde tek uyarı; ModPOS'ta zayi formdan önce", () => {
-  assert.match(page, /\{lafposState\.lafpos \? \(\n\s+<>\n\s+\{photoCard\}/);
+test("Sayfa: personelin AsilPOS gününde fotoğraf kartı en üstte, sayımsız günde tek uyarı; ModPOS'ta zayi formdan önce", () => {
+  assert.match(page, /\{asilposState\.asilpos \? \(\n\s+<>\n\s+\{photoCard\}/);
   assert.match(page, /\{report \? form : null\}\n\s+\{outsCard\}\n\s+\{wasteCard\}\n\s+\{report \? null : form\}/);
-  assert.doesNotMatch(page, /title="Kasa raporu LafPOS'tan gelecek" text=\{LAFPOS_NO_COUNT_TEXT\}/, "alt başlığı tekrarlamaz");
-  assert.doesNotMatch(LAFPOS_STAFF_NO_COUNT.title, /gelecek/);
+  assert.doesNotMatch(page, /title="Kasa raporu AsilPOS'tan gelecek" text=\{ASILPOS_NO_COUNT_TEXT\}/, "alt başlığı tekrarlamaz");
+  assert.doesNotMatch(ASILPOS_STAFF_NO_COUNT.title, /gelecek/);
   // Personelin fotoğraf kartında açıklama yok (alt başlık ve kartın satırı söyler)
-  assert.match(read("src/app/panel/kasa/lafpos-photo.tsx"), /description=\{admin \? \(/);
+  assert.match(read("src/app/panel/kasa/asilpos-photo.tsx"), /description=\{admin \? \(/);
   // Son 7 gün: iki satır, kısa tarih (dar sütunda dört satıra kırılıyordu)
   assert.match(page, /<span className="font-medium text-ink">\{shortDayTR\(r\.date\)\}<\/span>/);
   assert.doesNotMatch(page, /w-\[8\.5rem\]/);
 });
 
-test("Sayfa: yöneticinin gün görünümünde ay listesi ve ayarlar yok; Pavo ve LafPOS dökümü katlı, fark varsa açık", () => {
+test("Sayfa: yöneticinin gün görünümünde ay listesi ve ayarlar yok; Pavo ve AsilPOS dökümü katlı, fark varsa açık", () => {
   const admin = page.slice(page.indexOf("const ay = pick(sp.ay);"));
   assert.match(admin, /\{showForm \? \(\n\s+<>[\s\S]*?<\/>\n\s+\) : \(\n[^\n]*\n\s+<div className="grid gap-4 xl:grid-cols-\[minmax\(0,1fr\)_360px\]">\n\s+<div className="min-w-0">\n\s+<CashHistory/);
   assert.match(page, /<details open=\{\(pavo !== null && pavo !== "uyumlu"\) \|\| notes\.length > 0\}/);
-  assert.match(admin, /<DayDetails pavo=\{bankPos \? pavoView\(bankPos\)\.state : null\} lafpos=\{lafposDetail !== null\} notes=\{dayDetailNotes\(lafposDetail\)\}>/);
-  // Hassas işlem (LafPOS'un düzeltmesi, ödeme iptali) Pavo uyumluyken de katı açar ve özette görünür
+  assert.match(admin, /<DayDetails pavo=\{bankPos \? pavoView\(bankPos\)\.state : null\} asilpos=\{asilposDetail !== null\} notes=\{dayDetailNotes\(asilposDetail\)\}>/);
+  // Hassas işlem (AsilPOS'un düzeltmesi, ödeme iptali) Pavo uyumluyken de katı açar ve özette görünür
   assert.deepEqual(dayDetailNotes(null), []);
   assert.deepEqual(dayDetailNotes({ correction: null, refunds: [] }), []);
-  assert.deepEqual(dayDetailNotes({ correction: "Gün yeniden açıldı", refunds: [{ name: "Kart", amount: "120 ₺", reason: null }, { name: "Nakit", amount: "40 ₺", reason: "yanlış" }] }), ["LafPOS düzeltti", "2 ödeme iptali"]);
+  assert.deepEqual(dayDetailNotes({ correction: "Gün yeniden açıldı", refunds: [{ name: "Kart", amount: "120 ₺", reason: null }, { name: "Nakit", amount: "40 ₺", reason: "yanlış" }] }), ["AsilPOS düzeltti", "2 ödeme iptali"]);
   // Yöneticide gün sonu fotoğrafı formdan önce (Yazarkasa kartı fotoğrafın o karttan eklendiğini söyler); arada yalnız
   // kör sayımın kutusu (docs/KASA-RAPORU.md › Kör sayım)
   assert.match(admin, /\{outsCard\}\n(\s+\{\/\*[^\n]*\*\/\}\n)?\s+\{photoCard\}\n(\s+\{countCard\}\n)?\s+\{form\}/);
@@ -161,7 +161,7 @@ test("Gönderilmiş rapor: yöneticinin dikkat etmesi gerekenler (ay listesinin 
   assert.equal(Math.abs(cardOff.cardDiff ?? 0), 250, JSON.stringify(cardOff));
   assert.deepEqual(reportAttention(cardOff), [cardDiffLabel(cardOff.cardDiff!)]);
   assert.match(cardDiffLabel(-250), /^Kart −250/);
-  assert.deepEqual(reportAttention({ paymentsOff: false, cardDiff: null, okcOff: true }, { photoDiffs: 1, lafposDiffs: 2 }), ["Fotoğraftan farklı", "LafPOS'tan farklı", "Yazarkasa tutmuyor"]);
+  assert.deepEqual(reportAttention({ paymentsOff: false, cardDiff: null, okcOff: true }, { photoDiffs: 1, asilposDiffs: 2 }), ["Fotoğraftan farklı", "AsilPOS'tan farklı", "Yazarkasa tutmuyor"]);
   // Ay listesi aynı işlevden okur (iki yerde ayrı kural kalmadı)
   assert.match(read("src/app/panel/kasa/cash-history.tsx"), /reportFlags\(report, photos\[report\.id\]\?\.extras \?\? \{\}\)/);
 });
@@ -183,12 +183,12 @@ test("Gönderimde hata katlı alandaysa: hatalar hemen çizilir, kat açılır, 
 });
 
 test("Dil: ok ve eşit değil işareti yerine düz Türkçe", () => {
-  const photo = read("src/app/panel/kasa/lafpos-photo.tsx");
+  const photo = read("src/app/panel/kasa/asilpos-photo.tsx");
   const history = read("src/app/panel/kasa/cash-history.tsx");
-  for (const [name, src] of [["lafpos-photo", photo], ["cash-history", history]] as const) {
+  for (const [name, src] of [["asilpos-photo", photo], ["cash-history", history]] as const) {
     const ui = src.replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, "");
     assert.doesNotMatch(ui, /↔|≠/, name);
   }
-  assert.match(photo, /"Fiş LafPOS'la aynı"/);
+  assert.match(photo, /"Fiş AsilPOS'la aynı"/);
   assert.match(history, /Açılış devirden farklı/);
 });

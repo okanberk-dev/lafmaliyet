@@ -49,7 +49,7 @@ export const nameMatches = (text: string, q: string) => !q.trim() || foldName(te
 export const panelUrl = (base: string, path: string) => `${base}${path}`;
 
 /**
- * Ürün satış adetlerinin tek erişim yolu: aylık model (ModPOS listesi, geçiş gününden itibaren LafPOS'un ay toplamları);
+ * Ürün satış adetlerinin tek erişim yolu: aylık model (ModPOS listesi, geçiş gününden itibaren AsilPOS'un ay toplamları);
  * tarih aralığı gerekirse buraya eklenir (R18)
  */
 export interface SalesBasisFor {

@@ -187,13 +187,13 @@ export const OP_SPECS: readonly OpSpec[] = [
     label: "Tükendi kartı",
     title: "Ürünü Tükendi yap",
     description:
-      "Siteye bağlı bir menü ürününü sitede, uygulamada ve QR menüde 'Tükendi' yapmak için onay kartı hazırlar (M ve L birlikte). LafPOS kasası gün açıkken en geç 15 dakikada görür. Siteye bağlı olmayan üründe yapılamaz (Ürün kartı › Site menüsü).",
+      "Siteye bağlı bir menü ürününü sitede, uygulamada ve QR menüde 'Tükendi' yapmak için onay kartı hazırlar (M ve L birlikte). AsilPOS kasası gün açıkken en geç 15 dakikada görür. Siteye bağlı olmayan üründe yapılamaz (Ürün kartı › Site menüsü).",
   },
   {
     name: "urun_satisa_ac",
     label: "Satışa açma kartı",
     title: "Ürünü yeniden satışa aç",
-    description: "Tükendi görünen siteye bağlı bir ürünü yeniden satışa açmak için onay kartı hazırlar (sitede ve LafPOS'ta).",
+    description: "Tükendi görünen siteye bağlı bir ürünü yeniden satışa açmak için onay kartı hazırlar (sitede ve AsilPOS'ta).",
   },
   {
     name: "parasut_urun_bagla",
@@ -240,7 +240,7 @@ export const OP_SPECS: readonly OpSpec[] = [
     label: "Ürün fiyatı kartı",
     title: "Ürünün satış fiyatını değiştir",
     description:
-      "TEK bir ürünün (bir boyun) satış fiyatını değiştirmek için onay kartı hazırlar: eski → yeni fiyat, % fark, maliyet ve marj, siteye ve LafPOS'a etkisi. Siteye bağlı ürünün fiyatı önce sitede değişir. Kart TABAN fiyatı değiştirir (Tuzla ve kendi fiyatı olmayan şubeler): kendi şube fiyatı olan şubede (ör. Marina) fiyat değişmez, kart bunu ve planlı şube fiyatını gösterir. Kullanıcı bir şubenin fiyatını istiyorsa (\"Marina'da Latte 205 olsun\") kart açma; islem_rehberi ile Şube fiyatı ekranını göster. Toplu fiyat değişikliği yok.",
+      "TEK bir ürünün (bir boyun) satış fiyatını değiştirmek için onay kartı hazırlar: eski → yeni fiyat, % fark, maliyet ve marj, siteye ve AsilPOS'a etkisi. Siteye bağlı ürünün fiyatı önce sitede değişir. Kart TABAN fiyatı değiştirir (Tuzla ve kendi fiyatı olmayan şubeler): kendi şube fiyatı olan şubede (ör. Marina) fiyat değişmez, kart bunu ve planlı şube fiyatını gösterir. Kullanıcı bir şubenin fiyatını istiyorsa (\"Marina'da Latte 205 olsun\") kart açma; islem_rehberi ile Şube fiyatı ekranını göster. Toplu fiyat değişikliği yok.",
   },
   {
     name: "kasadan_cikan_ekle",

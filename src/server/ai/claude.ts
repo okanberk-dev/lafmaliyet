@@ -51,7 +51,7 @@ export interface AiSettings {
   /** Günde en çok okuma (0: hiç) */
   dailyCap: number;
   /**
-   * LafPOS gününün gün sonu fotoğrafını okuyan modeller (src/lib/photo-read/models.ts): önce ucuz, gerekirse bir kez güçlü.
+   * AsilPOS gününün gün sonu fotoğrafını okuyan modeller (src/lib/photo-read/models.ts): önce ucuz, gerekirse bir kez güçlü.
    * Kayıtta yoksa ya da bilinmeyen modelse sabitler (Claude Haiku 5.5 / Claude Opus 5.5)
    */
   photoModels: PhotoModels;

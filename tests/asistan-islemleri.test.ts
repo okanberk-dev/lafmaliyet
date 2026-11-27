@@ -41,7 +41,7 @@ const card = (over: Partial<OpCard> = {}): OpCard => ({
   branch: "Bütün şubeler (menü ortak)",
   day: "24 Kasım Salı 2026",
   lines: [{ label: "Satış fiyatı", from: "85 ₺", to: "90 ₺" }],
-  effects: ["site", "lafpos"],
+  effects: ["site", "asilpos"],
   undo: "Sonuç kartındaki Geri al eski fiyatı geri yazar.",
   undoable: true,
   warnings: [],

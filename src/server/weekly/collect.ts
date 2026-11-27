@@ -15,7 +15,7 @@ import { buildCommissionReport, commissionAlerts, groupOf, MEAL_LIMIT, rowOf, ty
 import { computeOccupancy, emptiestBlock, KARAOKE_ROOMS, periodBounds, resolvePeriod } from "@/lib/karaoke/occupancy";
 import { hourRangeLabel, insightLines, weekdayRange } from "@/lib/karaoke/occupancy-text";
 import { savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
-import { lafposBranchOf } from "@/lib/lafpos/switch";
+import { asilposBranchOf } from "@/lib/asilpos/switch";
 import { addDays, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
@@ -34,7 +34,7 @@ import { loadTillScopes } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
-import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadAsilposSwitchDay } from "@/server/asilpos/status";
 import { loadUpcoming } from "@/server/notify/digest";
 
 /*
@@ -123,7 +123,7 @@ const kasa: Collector = {
         return null;
       });
     // Kasa cirosu satırının kasa satırları raporlarla aynı anda okunur (süre sınırı kaynağın tamamı için)
-    const tillP = quiet(Promise.all([tillRows(), loadLafposSwitchDay()]), "ciro");
+    const tillP = quiet(Promise.all([tillRows(), loadAsilposSwitchDay()]), "ciro");
     const reports = await ctx.cashWeeks();
     const last = reports.filter((r) => inLastWeek(ctx.week, r.date));
     const [carry, late, photo] = await Promise.all([
@@ -157,7 +157,7 @@ const kasa: Collector = {
       revenue: dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue, payments: Math.round((r.cash + r.card + r.mealCard + r.online + r.other) * 100) / 100 }).revenue,
       cashDiff: r.cashDiff,
     }));
-    // Kasa cirosu satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından (raporu olmayan LafPOS günü gün sonundan) ve
+    // Kasa cirosu satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından (raporu olmayan AsilPOS günü gün sonundan) ve
     // aynı şube-gün eşlemesiyle (Kıyas kartı; bulgu 65): okunamazsa yalnız satır düşer
     const till = await tillP;
     const line = till
@@ -166,7 +166,7 @@ const kasa: Collector = {
           rows: till[0].filter((r) => r.date >= addDays(ctx.week.lastFrom, -28) && r.date <= ctx.week.lastTo),
           branches: tills.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
           switchDay: till[1],
-          lafposBranch: lafposBranchOf(all),
+          asilposBranch: asilposBranchOf(all),
         })
       : null;
     return { ...one(kasaItem({ week: ctx.week, reports: rows, carryMismatch: carry, lateEdits: late, photoDiffs: photo })), lines: line ? [line] : [] };
@@ -219,7 +219,7 @@ const kasaFiyat: Collector = {
   source: "kasa-fiyat",
   timeoutMs: 4_000,
   async run(ctx) {
-    // Bugünün kasaları: LafPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
+    // Bugünün kasaları: AsilPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
     const tills = await loadTillScopes();
     const [model, lists] = await Promise.all([ctx.model(), Promise.all(tills.map((t) => loadPosChecklist(t)))]);
     if (!lists.some((l) => l.length)) return {};
@@ -248,7 +248,7 @@ const kasaFiyat: Collector = {
 
 /**
  * Zayi ve ikram (kayıtlar): son beş haftanın malzeme maliyeti. Motorun saydığı kayıtlar: geçiş gününden itibaren
- * LafPOS'un ikramı da (o günlerde panele girilmiş ürün ikramı yerine; geçiş günü boşken yalnız panel)
+ * AsilPOS'un ikramı da (o günlerde panele girilmiş ürün ikramı yerine; geçiş günü boşken yalnız panel)
  */
 const zayi: Collector = {
   source: "zayi",

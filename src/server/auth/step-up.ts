@@ -20,9 +20,9 @@ import { createLimiter } from "./rate-limit";
 
 /**
  * İşlem geçmişindeki "Hatalı parola onayı (…)" satırının yeri. "Yedek": yedekten geri yükleme de aynı onayı kullanır;
- * "Claude bağlantısı": onay ekranında (/baglan) izin verirken; "LafPOS": Ayarlar'da bir günün LafPOS kaydını silerken
+ * "Claude bağlantısı": onay ekranında (/baglan) izin verirken; "AsilPOS": Ayarlar'da bir günün AsilPOS kaydını silerken
  */
-export type StepUpWhere = "Hesabım" | "Kullanıcılar" | "Yedek" | "Claude bağlantısı" | "LafPOS";
+export type StepUpWhere = "Hesabım" | "Kullanıcılar" | "Yedek" | "Claude bağlantısı" | "AsilPOS";
 
 /**
  * Kişi başına 15 dakikada 5 hata; bütün yerler aynı payı kullanır (açık kalmış bir oturumla her ekranda ayrı 5 tahmin
@@ -65,7 +65,7 @@ export async function requirePassword(me: CurrentUser, password: string, where: 
 const zConfirm: z.ZodType<StepUpConfirm | undefined> = z.object({ password: z.string().max(200, WRONG_PASSWORD) }).optional();
 
 /**
- * Kullanıcılar (ve Ayarlar'da LafPOS günü silme): kural onay istediğinde, bütün denetimlerden sonra ve ilk yazımdan önce
+ * Kullanıcılar (ve Ayarlar'da AsilPOS günü silme): kural onay istediğinde, bütün denetimlerden sonra ve ilk yazımdan önce
  * çağrılır. Onay yoksa STEP_UP_REQUIRED (istemci parola penceresini açıp aynı çağrıyı yineler), varsa parola Hesabım'la
  * aynı payla denenir.
  */

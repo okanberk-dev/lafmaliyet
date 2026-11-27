@@ -49,10 +49,10 @@ export type CashHistoryPhotos = Record<
     suspicious: PhotoDiff[];
     extras: CashReportExtras;
     /**
-     * LafPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): LafPOS'tan farklı, bekleniyor, okunamadı ya da
+     * AsilPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): AsilPOS'tan farklı, bekleniyor, okunamadı ya da
      * kodla okunup güvenle seçilmedi (yönetici baksın)
      */
-    lafposPhoto?: "fark" | "bekliyor" | "okunamadi" | "bakin" | null;
+    asilposPhoto?: "fark" | "bekliyor" | "okunamadi" | "bakin" | null;
   }
 >;
 
@@ -306,11 +306,11 @@ export function CashHistory({
                     {photos[report.id]?.photos.length ? <Camera size={14} className="text-ink-mute" aria-label="Fotoğraflı" role="img" /> : null}
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
-                    {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fiş LafPOS&apos;tan farklı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
+                    {photos[report.id]?.extras.asilposDiffs?.length ? <Badge tone="amber">AsilPOS&apos;tan farklı</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "fark" ? <Badge tone="amber">Fiş AsilPOS&apos;tan farklı</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış devirden farklı</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
@@ -377,7 +377,7 @@ export function CashHistory({
             carry={openCarry}
             next={openNext}
             modposDiffs={modposDays[open.date]?.diffs}
-            lafposDiffs={openPhotos?.extras.lafposDiffs}
+            asilposDiffs={openPhotos?.extras.asilposDiffs}
             unreceipted={openPhotos?.extras.unreceipted ?? null}
             photos={openPhotos?.photos ?? []}
             photoDiffs={openPhotos?.diffs ?? []}

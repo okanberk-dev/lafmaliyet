@@ -133,7 +133,7 @@ test("çekirdek: ürünler menü kilidi altında, sitenin fiyatıyla açılır v
   const order = ["await lockMenu(tx);", "newFromSiteTaken(", "insertProduct(tx, { name, size: r.size, categoryId: input.categoryId, price: r.price }", "linkUnderLock(", "if (linked.skipped.length || !linked.applied) throw new UserError("];
   for (let i = 1; i < order.length; i++) assert.ok(tx.indexOf(order[i - 1]) >= 0 && tx.indexOf(order[i - 1]) < tx.indexOf(order[i]), `${order[i - 1]} → ${order[i]}`);
   assert.match(create, /return \{ \.\.\.r, price: fromMinor\(minor\) \};/);
-  // Bağlama da aynı çekirdek: liste uygulanır, ürünsüz LafPOS satırları bağlanır
+  // Bağlama da aynı çekirdek: liste uygulanır, ürünsüz AsilPOS satırları bağlanır
   const linkProducts = link.slice(link.indexOf("export async function linkProducts"), link.indexOf("export interface NewFromSiteInput"));
   assert.match(linkProducts, /await lockMenu\(tx\);\s+return linkUnderLock\(tx, list, requests, at\);/);
   const core = link.slice(link.indexOf("async function linkUnderLock"), link.indexOf("async function logLinked"));
