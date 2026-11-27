@@ -11,6 +11,7 @@ import type { QuotaCheckResult } from "@/lib/db-quota";
 import { runAutoBackup } from "@/server/backup/auto";
 import { runQuotaCheck } from "@/server/db-quota/check";
 import { getDb } from "@/server/db";
+import { pruneErrorLog } from "@/server/errors/store";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
@@ -38,7 +39,7 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay ve
 // önceki iki ay: geç iadeler; salesMonthsToPull, docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
 // Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), saklama süresi dolan
-// mutabakat ekstrelerinin silinmesi (docs/MUTABAKAT.md), ayın son günü ay sonu
+// mutabakat ekstrelerinin silinmesi (docs/MUTABAKAT.md), hata kaydının 30 günden eski satırları (docs/HATA-KAYDI.md), ayın son günü ay sonu
 // stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Süresi dolan personel istekleri (kasadan
 // çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). Cuma–Pazar gelecek haftanın vardiyası yazılmamış
@@ -163,6 +164,17 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
+  // Hata kaydının saklama süresi (docs/HATA-KAYDI.md): 30 gündür görülmeyen satırlar ve 2000'i aşan en eskiler silinir,
+  // kaydın başlangıcı yoksa yazılır. En çok 3 sn, sonucu yalnız yanıtta (body.hatalar); iş adımı değil, aksarsa ertesi gün
+  const errorsTask = () =>
+    capped<number | "error" | "süre doldu">(
+      pruneErrorLog(getDb(), new Date()).catch((e: Error) => {
+        console.error("[hata kaydı] saklama süresi", e.message);
+        return "error" as const;
+      }),
+      Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
+      "süre doldu" as const,
+    );
   // Ay sonu stok sayımı bildirimi (ayın son günü, sayım tamamlanmadıysa): en çok 8 sn, kuyruğun 55 sn'sini aşmadan;
   // adım yalnız bildirim gönderilince yazılır
   const countTask = () =>
@@ -220,7 +232,7 @@ export async function GET(request: NextRequest) {
     );
   };
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat, muhasebe] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat, muhasebe, hatalar] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -238,6 +250,7 @@ export async function GET(request: NextRequest) {
       quotaP,
       reconTask(),
       muhasebeTask(),
+      errorsTask(),
     ]);
     const vardiyaResult = vardiyaStep(vardiya);
     const countResult = countStep(count);
@@ -262,7 +275,7 @@ export async function GET(request: NextRequest) {
       ...(quotaResult ? { quota: quotaResult } : {}),
       ...(muhasebeResult ? { muhasebe: muhasebeResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", mutabakat }, steps, weekly: weekly.status };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", hatalar, mutabakat }, steps, weekly: weekly.status };
   };
   // Paraşüt bitince çoğunlukla bitmiştir; adım yalnız anahtar varken yazılır
   const modpos = await modposP;
