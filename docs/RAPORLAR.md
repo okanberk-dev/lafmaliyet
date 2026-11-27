@@ -17,7 +17,7 @@ Dalga 2 (Şube karşılaştırma) ve Dalga 3'ün üç maddesi (İşçilik / ciro
 |---|---|
 | Kim görür | Yalnız yönetici (`requireAdmin`; `src/lib/roles.ts`'te personel yolu değil, `tests/roller.test.ts`). Personelin ağacında grup yok |
 | Menü | Kenar çubuğunda **Raporlar** grubu (Kâr & ödemeler'in ardından, Vergi'den önce); komut paletinde aynı sırada. Sekmeler gruptan türer (`SECTION_TABS.raporlar`): Şubeler · İşçilik · Kaçak · Kayıp önleme (sekme yalnız kısaltır) |
-| Şube seçimi | Soldaki seçici raporları **süzmez**: her açık fiziksel şube kendi görünümüyle okunur (Gelir-gider'de o şube seçiliyken görünenler). Şube seçiliyken ekran bunu söyler (`companyWideNote("raporlar")`). Kaçak raporu hep Marina'nındır |
+| Şube seçimi | Şube karşılaştırma ve İşçilik / ciro soldaki seçimi **süzmez**: her açık fiziksel şube kendi görünümüyle okunur (Gelir-gider'de o şube seçiliyken görünenler); şube seçiliyken ekran bunu söyler (`companyWideNote("raporlar")`; ayarı şube ayrımının 6. parçasında, "Şubeleri yan yana"). **Kayıp önleme** 27 Kasım 2026'dan beri seçimle okur (şube ayrımı, [SUBE.md](SUBE.md#şube-ayrımı-27-kasım-2026)): "Tümü"de açık fiziksel şubeler, tek şube seçiliyken yalnız o şube, online kanalda "Bu kanalın kasası ve stoğu yok". **Kaçak raporu** Marina'nındır: Marina ya da "Tümü" seçiliyken; başka şube seçiliyken "Bu şube için tahmini stok yok" |
 | Dönem | `?ay=YYYY-MM` (seçilen son ay; bu aydan sonrası bu aya çekilir), Şube karşılaştırma ve Kayıp önleme'de `?sure=1|3|6|12` (ay; varsayılan 3). `?sube=` kullanılmaz: o, seçicinin bağlantı parametresidir |
 | Süren ay | Rakamlar bugüne kadar (iş günü, 05:00 kuralı); giderler ve personel Gelir-gider gibi ayın geçen günleriyle |
 | Bilinmeyen | Girilmemiş ciro, fiş, ödenmez, indirim, iptal "—" ya da "veri yok"; toplamda sıfır sayılmaz, orana girmez |
@@ -107,7 +107,8 @@ TL = fark × malzemenin ay sonu birim maliyeti (Stok sayımı'nın fiyatı, `uni
 - "Kaçak olduğundan büyük görünebilir" uyarısı: dönemde AsilPOS gün sonu gelmeyen gün (ayın son günü dahil; o günlerin
   satışı düşülmedi) ya da ürüne bağlanmamış / reçetesi boş satış ve zayi satırı (tüketimi düşülmedi).
 - Durumlar: Marina AsilPOS'a geçmediyse rapor yok; ay bitmediyse yok (ay sonu sayımı ay bitince); seçilen ay Marina'da
-  sayılmadıysa "sayım yok" ve Stok sayımı'na bağlantı. Seçicide Marina'nın sayıldığı bitmiş aylar.
+  sayılmadıysa "sayım yok" ve Stok sayımı'na bağlantı; soldan Marina dışında bir şube seçiliyse "Bu şube için tahmini
+  stok yok" (`baska-sube`, ay seçicisi yok; şube ayrımı, 27 Kasım 2026). Seçicide Marina'nın sayıldığı bitmiş aylar.
 - **İlk rapor:** tahmin, AsilPOS satışlarının sayıldığı ilk günden sonra başlayan dönemde var. Marina 22 Kasım 2026'da
   AsilPOS'a geçtiği için Kasım sonu sayımı ilk başlangıçtır; ilk kaçak raporu **Aralık 2026** sonu sayımıyla çıkar.
 - Yalnız okur: stok sayımına, tahmine, FIFO'ya ve mal maliyetine yazmaz.

@@ -134,7 +134,12 @@ async function ExpensesContent() {
         branches={branches}
       />
       <div className="mt-6">
-        <InvestmentsClient rows={investments.map((i) => ({ id: i.id, name: i.name, amount: i.amount, date: i.date, note: i.note }))} total={totalInvestment} />
+        <InvestmentsClient
+          rows={investments.map((i) => ({ id: i.id, name: i.name, amount: i.amount, date: i.date, note: i.note }))}
+          total={totalInvestment}
+          // Şube seçiliyken "Firma geneli" (yatırımın şube sütunu parça 3'te; şube ayrımı)
+          companyWide={model.ds.branchView?.name ?? null}
+        />
       </div>
     </>
   );

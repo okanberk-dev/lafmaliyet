@@ -9,6 +9,7 @@ import { pumpHint } from "@/lib/recipe-pump";
 import { adminActor } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { currentBranchScope } from "@/server/branch-scope";
 import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposals } from "@/server/data/recipe-requests";
 
 import { countComplete, defaultCountMonth } from "../sayim/logic";
@@ -78,8 +79,9 @@ async function RecipeBookContent() {
   const [model, mine, pendingKinds, pendingMap, pendingNew] = await Promise.all([
     loadModel(),
     isAdmin ? Promise.resolve([]) : loadMyRequests(user.id),
-    isAdmin ? countPendingByKind() : Promise.resolve({ change: 0, new: 0 }),
-    isAdmin ? pendingByProduct() : Promise.resolve(new Map<number, number>()),
+    // Bekleyen öneriler önerenin şubesine göre (şube ayrımı; Onaylar'ın listesiyle aynı sayı)
+    isAdmin ? currentBranchScope().then((scope) => countPendingByKind(scope)) : Promise.resolve({ change: 0, new: 0 }),
+    isAdmin ? currentBranchScope().then((scope) => pendingByProduct(scope)) : Promise.resolve(new Map<number, number>()),
     isAdmin ? Promise.resolve([]) : pendingNewProposals(),
   ]);
   // Kartın "Önerin onayda" rozeti yalnız reçete değişikliğinden (yeni ürün önerisinin ürünü henüz yok)

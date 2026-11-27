@@ -17,7 +17,8 @@ import { allAssistantTools } from "./tool-defs";
  * (withBranchScope) çalışır.
  */
 export const ASSISTANT_TOOLS = allAssistantTools(TOOLS as unknown as readonly ToolDef[], {
-  unlinked: (limit) => unlinkedProducts(limit), // şube-ayrımı: parasut.eslenmemis
+  // Bekleyen ürünler seçili şubenin ve işletme genelinin faturalarından (Paraşüt ekranıyla aynı; şube ayrımı)
+  unlinked: async (limit) => unlinkedProducts(limit, await currentBranchScope()),
   ...assistantReads,
   plan: async (name, input, ctx) => {
     if (!ctx.user) throw new ToolInputError("Oturum bulunamadı.");

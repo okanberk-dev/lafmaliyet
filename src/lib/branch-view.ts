@@ -327,10 +327,8 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
   { id: "dataset.companyMonths", where: "src/server/data/dataset.ts#loadDataset", kind: "ortak-veri", reason: "İşletmenin günü: işletme geneli giderler Tümü'nün açık günüyle oranlanır" },
   { id: "dataset.companyWaterSales", where: "src/server/data/dataset.ts#companyWaterSales", kind: "ortak-veri", reason: "Su + buz litre fiyatı tek faturadan, bütün şubelerin litresine bölünür" },
   { id: "asistan.isletme-geneli", where: "src/server/assistant-ops/resolve.ts#expenseBranch", kind: "yazim", reason: "Okuma değil: asistanın yazdığı gider ve hatırlatıcının işletme geneli hedefi" },
-  // Sonraki parçalar (şube ayrımı 2–6)
-  { id: "parasut.eslenmemis", where: "src/server/data/today.ts#adminFacts; src/server/actions/notifications.ts#invoiceNotifications; src/server/ai/assistant/tools.ts#ASSISTANT_TOOLS; src/server/parasut/ai-match.ts#suggestNextBatch", kind: "bekliyor", part: 2, reason: "Eşlenmemiş Paraşüt ürünleri bütün faturalardan sayılıyor" },
-  { id: "kasa.zil-tumu", where: "src/server/bell/kasa.ts#staffTillsWaiting", kind: "bekliyor", part: 2, reason: "Online kanal seçiliyken de bütün kasaların raporu okunuyor" },
-  { id: "kayip-onleme", where: "src/server/data/kayip-onleme.ts#loadLossSummary", kind: "bekliyor", part: 2, reason: "Kayıp önleme raporunun modeli firmanın" },
+  // Sonraki parçalar (şube ayrımı 3–6; parça 2 kendi üç kaydını kapattı: eşlenmemiş Paraşüt ürünleri, kanal seçiliyken
+  // kasa zili, kayıp önleme)
   { id: "nakit.sayfa", where: "src/app/panel/hatirlaticilar/nakit/page.tsx#CashPlanContent; src/server/data/cash-plan.ts#loadCashPlan", kind: "bekliyor", area: "nakit", part: 4, reason: "Nakit planı bugün firmanın" },
   { id: "nakit.genel-bakis", where: "src/app/panel/page.tsx#DashboardContent", kind: "bekliyor", area: "nakit", part: 4, reason: "Genel bakış'ın nakit planı kartı bugün firmanın" },
   { id: "nakit.mcp", where: "src/server/mcp/tools.ts#odemeler", kind: "bekliyor", area: "nakit", part: 4, reason: "Bağlantının ödemeler aracındaki nakit planı bugün firmanın" },

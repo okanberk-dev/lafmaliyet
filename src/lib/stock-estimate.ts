@@ -33,6 +33,12 @@ import type { SiteSalesMonth } from "./site-sales/schema";
  */
 export const STOCK_ESTIMATE_BRANCH = LEGACY_POS_BRANCH_ID;
 
+/**
+ * Marina dışında bir şube seçiliyken tahminin ve kaçak raporunun yerindeki metin (şube ayrımı, 27 Kasım 2026; Kaçak
+ * raporu, panel asistanının stok_tahmini aracı)
+ */
+export const STOCK_ESTIMATE_OTHER_BRANCH = "Bu şube için tahmini stok yok";
+
 /** Ekranın adresi (Stok sayımı'nın alt ekranı: personel de açar, src/lib/roles.ts) */
 export const STOCK_ESTIMATE_PATH = "/panel/sayim/tahmini";
 

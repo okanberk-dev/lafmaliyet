@@ -8,9 +8,9 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { dateTR, locativeTR, monthLabel, num, pct, tl, tlUnit } from "@/lib/format";
+import { accusativeTR, dateTR, locativeTR, monthLabel, num, pct, tl, tlUnit } from "@/lib/format";
 import type { LeakLine, LeakReport } from "@/lib/kacak";
-import { stockQty } from "@/lib/stock-estimate";
+import { STOCK_ESTIMATE_OTHER_BRANCH, stockQty } from "@/lib/stock-estimate";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { monthParam } from "@/server/data/dataset";
@@ -85,6 +85,16 @@ async function LeakContent({ searchParams }: { searchParams: PageProps<"/panel/r
 }
 
 function LeakEmpty({ data }: { data: LeakData }) {
+  // Marina dışında bir şube seçili (şube ayrımı): kaçak raporu tahmini stoğun şubesinin
+  if (data.state === "baska-sube") {
+    return (
+      <EmptyState
+        icon={<PackageSearch />}
+        title={STOCK_ESTIMATE_OTHER_BRANCH}
+        description={`${data.selectedName ?? "Bu şube"} seçili. Kaçak raporu tahmini stokla çıkar; tahmini stok yalnız ${data.branchName} (AsilPOS) için hesaplanır. Soldan ${accusativeTR(data.branchName)} ya da Tümü'nü seçin.`}
+      />
+    );
+  }
   if (data.state === "asilpos-yok") {
     return (
       <EmptyState

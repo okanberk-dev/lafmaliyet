@@ -147,11 +147,15 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           })
       : null;
   const countedIdx = indexes((m) => yt.counted.includes(m));
-  // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
-  const expected = await loadExpectedDebtsInYear(year).catch((e) => {
-    console.error("[gelir-gider] faturası beklenen alımlar", e);
-    return {};
-  });
+  // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok.
+  // Şube seçiliyken satır yok (şube ayrımı, 27 Kasım 2026): cari kaydının şubesi yok (supplier_entries.branch_id
+  // gelene kadar), önceden Marina'nın Gelir-gider'inde Tuzla'nın beklenen alımları da görünüyordu
+  const expected = model.ds.branchView
+    ? {}
+    : await loadExpectedDebtsInYear(year).catch((e) => {
+        console.error("[gelir-gider] faturası beklenen alımlar", e);
+        return {};
+      });
   const defs = model.pnlRowDefs(months);
   const years = [...new Set([...known.map((k) => Number(k.slice(0, 4))), year])].sort();
 

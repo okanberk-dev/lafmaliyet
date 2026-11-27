@@ -59,12 +59,26 @@ export async function handoverLedger(month: string): Promise<HandoverRow[]> {
   ]);
 }
 
-/** Defterin ay seçicisi: teslimi olan ilk aydan bu aya (en eski kasa raporu ya da kasadan çıkan teslim) */
+/**
+ * Defterin ay seçicisi: teslimi olan ilk aydan bu aya (en eski kasa raporu ya da kasadan çıkan teslim). Seçili şubenin
+ * (şube ayrımı, 27 Kasım 2026; defterin satırları gibi): önceden ay seçici Tuzla'nın ilk teslim ayından başlıyordu,
+ * Marina seçiliyken boş aylar listeleniyordu
+ */
 export async function handoverFirstDate(): Promise<string | null> {
   const db = getDb();
   const [[r], [o]] = await Promise.all([
-    db.select({ date: s.cashReports.date }).from(s.cashReports).where(gt(s.cashReports.handedOver, 0)).orderBy(s.cashReports.date).limit(1),
-    db.select({ date: s.cashOuts.date }).from(s.cashOuts).where(and(eq(s.cashOuts.kind, "teslim"), isNotNull(s.cashOuts.date))).orderBy(s.cashOuts.date).limit(1),
+    db
+      .select({ date: s.cashReports.date })
+      .from(s.cashReports)
+      .where(and(gt(s.cashReports.handedOver, 0), await currentBranchWhere(s.cashReports.branchId)))
+      .orderBy(s.cashReports.date)
+      .limit(1),
+    db
+      .select({ date: s.cashOuts.date })
+      .from(s.cashOuts)
+      .where(and(eq(s.cashOuts.kind, "teslim"), isNotNull(s.cashOuts.date), await currentBranchWhere(s.cashOuts.branchId)))
+      .orderBy(s.cashOuts.date)
+      .limit(1),
   ]);
   const days = [r?.date, o?.date].filter((d): d is string => Boolean(d)).sort();
   return days[0] ?? null;

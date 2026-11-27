@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import { KasaText } from "@/components/panel/kasa-text";
 import { PageHeader } from "@/components/panel/page-header";
 import { PosChecklist } from "@/components/panel/pos-checklist";
-import { PageSkeleton } from "@/components/ui/misc";
+import { EmptyState, PageSkeleton } from "@/components/ui/misc";
+import { CHANNEL_NO_TILL } from "@/lib/branches";
 import { requireCan } from "@/server/auth/dal";
 import { loadMyPosMarks, loadStaffPosList } from "@/server/data/pos-staff";
 import { loadTillScopes } from "@/server/data/till-scope";
@@ -55,6 +56,7 @@ async function StaffPosContent() {
   );
   return (
     <div className="space-y-4">
+      {lists.length ? null : <EmptyState title={CHANNEL_NO_TILL} description="Kasadaki fiyatlar şubelerin kasasınındır; soldan bir şube seçin." />}
       {lists.map(({ scope, items, mine }) => (
         <PosChecklist key={scope.branchId} staff items={items} mine={mine} kasa={scope.kasa} branchId={scope.branchId} branchName={scope.name} />
       ))}

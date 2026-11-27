@@ -382,8 +382,11 @@ export async function pendingRequests(db: Tx, o: { kinds?: readonly StaffRequest
     .orderBy(asc(s.staffRequests.createdAt), asc(s.staffRequests.id));
 }
 
-/** Son `days` günde karara bağlananlar ve kapananlar, yeniden eskiye (yönetici, Onaylar › Son kararlar; kaldırılan türler yok) */
-export async function recentDecisions(db: Tx, daysBack = 30, now = new Date()) {
+/**
+ * Son `days` günde karara bağlananlar ve kapananlar, yeniden eskiye (yönetici, Onaylar › Son kararlar; kaldırılan türler
+ * yok). En çok `limit` satır (şube süzgeci sonradan uygulanırsa çağıran fazlasını okur)
+ */
+export async function recentDecisions(db: Tx, daysBack = 30, now = new Date(), limit = 40) {
   return db
     .select({
       id: s.staffRequests.id,
@@ -401,7 +404,7 @@ export async function recentDecisions(db: Tx, daysBack = 30, now = new Date()) {
     .from(s.staffRequests)
     .where(and(ne(s.staffRequests.status, "pending"), gt(s.staffRequests.updatedAt, new Date(now.getTime() - days(daysBack))), live()))
     .orderBy(desc(s.staffRequests.updatedAt), desc(s.staffRequests.id))
-    .limit(40);
+    .limit(limit);
 }
 
 /**

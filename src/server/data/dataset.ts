@@ -8,7 +8,7 @@ import { ALL_BRANCHES, branchPnlEntry, DEFAULT_BRANCH_ID, DEFAULT_POS_RATE, mont
 import { activeFromRange, createModel, currentMonthTR, type ModelOptions } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
-import { isReportRow, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
+import { isReportRow, pendingLateDays, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { countedRecords, redateLots } from "@/lib/closed-period";
@@ -28,6 +28,7 @@ import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadPosTills, loadSwitchDays } from "@/server/pos/tills";
+import { requestBranches } from "@/server/staff-requests/branch";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
@@ -179,11 +180,16 @@ async function readDataset(): Promise<Dataset> {
       .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY])),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
     tillRows(),
-    // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor"
+    // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor".
+    // Şubesiyle (şube ayrımı): her şubenin ayı yalnız kendi bekleyen günlerini söyler (requestBranches, requestInScope kuralı)
     db
-      .selectDistinct({ day: s.staffRequests.day })
+      .select({ id: s.staffRequests.id, kind: s.staffRequests.kind, subject: s.staffRequests.subject, payload: s.staffRequests.payload, day: s.staffRequests.day })
       .from(s.staffRequests)
-      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
+      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending")))
+      .then(async (rows) => {
+        const branchOf = await requestBranches(db, rows);
+        return rows.map((r) => ({ day: r.day, branchId: branchOf.get(r.id) ?? null }));
+      }),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
     // Şubesiyle (boş = işletme geneli): şubenin ayında yalnız kendi kapalı günleri ve işletme geneli sayılır (KP-05)
     db
@@ -280,15 +286,17 @@ async function readDataset(): Promise<Dataset> {
   // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu olan
   // ay da gelir. Kaynaklar (sources) ve kasanın değerleri (kasa) ekranlar için Month'ta taşınır. Eksik günler onay
   // bekleyen geç raporları ve kapalı işaretli günleri ayrı söyler
-  const lateDays = lateWaiting.flatMap((r) => (r.day ? [r.day] : []));
+  // Onay bekleyen geç raporun günü yalnız kendi şubesinin ayında (şube ayrımı); "Tümü"nün birleşik satırlarında hepsi
+  const lateDays = pendingLateDays(lateWaiting, branch?.id ?? null);
+  const lateDaysOf = (id: string) => pendingLateDays(lateWaiting, id);
   // Kapalı gün şubenin (docs/SUBE.md › Kapalı gün): şube görünümünde ve "Tümü"nün şube şube çözümünde yalnız o şubenin
   // ve işletme genelinin kapalı günleri (Tuzla'nın kapalı günü Marina'nın eksik gününü "kapalı" yapmaz); birleşik
   // satırlarda (bütün şubeler) herhangi bir şubenin işareti, raporlu gün hariç
   const scopeClosedRows = closedRows.filter((r) => closedRowApplies(r, branch?.id));
   const closedFor = (rows: typeof closedRows, reports: readonly TillRow[]) => closedDaysIn(rows, "2000-01-01", through, reports.filter(isReportRow).map((r) => r.date));
   const closedPast = closedFor(scopeClosedRows, reportRows);
-  const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast) =>
-    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, posFroms);
+  const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast, late: string[] = lateDays) =>
+    tillMonths(rows, through, undefined, late, closed, undefined, undefined, openedOn, posFroms);
   const entriesOf = (rows: typeof months): MonthEntry[] =>
     rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
   // "Tümü": her şube kendi elle yazılanı ve kasasıyla (açılış günüyle: tillOpenedOn) çözülür, sonra toplanır; bir şubenin
@@ -311,6 +319,8 @@ async function readDataset(): Promise<Dataset> {
           rowsOf([id]),
           tillOpenedOn(branches.find((b) => b.id === id)),
           closedFor(closedRows.filter((r) => closedRowApplies(r, id)), rowsOf([id])),
+          // Şubenin kendi bekleyen geç raporları (Tuzla'nın isteği Marina'nın eksik gününü "onay bekliyor" yapmaz)
+          lateDaysOf(id),
         ),
       })),
       monthsOf(rowsAll, openedOfFirst(rowsAll), closedAll),

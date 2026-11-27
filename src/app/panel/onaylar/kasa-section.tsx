@@ -24,12 +24,15 @@ export async function KasaRequests() {
   // Kategori seçicisi: müdüre personelin kategorileri (maaş, kira yöneticinin; sunucu da reddeder, writeCashOut). Kartlar
   // da müdüre yöneticinin kategorisinin adını taşımaz (kart tarayıcıya bütünüyle gider; cashOutCards)
   const allCategories = can(me.role, "kategori.tum");
-  const [cards, counters, categories] = await Promise.all([
+  const [cards, categories] = await Promise.all([
     loadCashRequestQueue(undefined, await currentBranchScope(), me.role !== "admin", allCategories),
-    cashCounters(),
     cashOutCategories(allCategories ? "admin" : "staff"),
   ]);
   if (!cards.length) return null;
+  // "Kasayı sayan" seçeneği kartın kasasınınki (şube ayrımı, 27 Kasım 2026; kasa formu gibi `cashCounters(şube)`): önceden
+  // Onaylar'ın geç rapor kartı bütün şubelerin personelini sunuyordu. Kasası bilinmeyen kartta (tek kasa) herkes
+  const lateBranches = [...new Set(cards.flatMap((c) => (c.kind === "kasa-gec" ? [c.branch?.id ?? ""] : [])))];
+  const counters = Object.fromEntries(await Promise.all(lateBranches.map(async (b) => [b, await cashCounters(b || undefined)] as const)));
   const siteSlots = Object.fromEntries(
     cards.flatMap((c) =>
       c.kind === "kapali-gun"

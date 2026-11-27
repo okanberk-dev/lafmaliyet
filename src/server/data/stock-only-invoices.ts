@@ -1,8 +1,10 @@
 import { and, count, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import type { DB } from "@/server/db";
 import * as s from "@/server/db/schema";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
@@ -82,11 +84,14 @@ export async function flagStockOnlyInvoices(db: DB, ids?: readonly number[]): Pr
     .returning({ id: s.invoices.id, supplier: s.invoices.supplier, invoiceNo: s.invoices.invoiceNo, date: s.invoices.date });
 }
 
-/** Kontrol bekleyen ve stoğa girip gelir-gidere girmeyen fatura sayısı (zil, Bugün) */
-export async function countStockOnlyReview(db: DB | Tx): Promise<number> {
+/**
+ * Kontrol bekleyen ve stoğa girip gelir-gidere girmeyen fatura sayısı (zil, Bugün). Tek şube seçiliyken yalnız o şubenin
+ * ve işletme genelinin faturaları (şube ayrımı, 27 Kasım 2026; `invoiceScopeWhere`); "Tümü"de hepsi
+ */
+export async function countStockOnlyReview(db: DB | Tx, scope: BranchScope = ALL_BRANCHES): Promise<number> {
   const [row] = await db
     .select({ n: count() })
     .from(s.invoices)
-    .where(and(eq(s.invoices.needsReview, true), stockOnlyWhere()));
+    .where(and(eq(s.invoices.needsReview, true), stockOnlyWhere(), invoiceScopeWhere(scope)));
   return row?.n ?? 0;
 }

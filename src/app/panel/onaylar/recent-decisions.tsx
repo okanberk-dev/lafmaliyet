@@ -4,8 +4,11 @@ import { Badge, type Tone } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { dateTimeTR } from "@/lib/format";
 import { KIND_LABEL, STATUS_LABEL, type StaffRequestStatus } from "@/lib/staff-requests";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
+import { requestsInScope } from "@/server/staff-requests/branch";
 import { recentDecisions } from "@/server/staff-requests/core";
 
 const TONE: Record<StaffRequestStatus, Tone> = {
@@ -23,11 +26,16 @@ const TONE: Record<StaffRequestStatus, Tone> = {
 /**
  * Onaylar › Son kararlar (docs/ONAYLAR.md): personel isteklerinin son 30 günü (kasa, zayi ve ikram, karaoke): tür, başlık,
  * isteyen, karar veren, not ve durum. Satırlar sabit sütunlardan (recentDecisions; ham yük yok; kaldırılan mal siparişi
- * taslakları gelmez). Liste boşsa bölüm çizilmez; reçete önerilerinin kararları reçete bölümünde.
+ * taslakları gelmez). Liste boşsa bölüm çizilmez; reçete önerilerinin kararları reçete bölümünde. Tek şube seçiliyken
+ * yalnız o şubenin ve şubesi bilinmeyen istekler (şube ayrımı, 27 Kasım 2026; bekleyen kartlar gibi `requestsInScope`):
+ * önceden Marina seçiliyken Tuzla'nın kararları da listedeydi. Süzgeçten sonra 40 satır kalsın diye fazlası okunur
  */
 export async function RecentDecisions() {
   await requireAdmin();
-  const rows = await recentDecisions(getDb(), 30);
+  const db = getDb();
+  const scope = await currentBranchScope();
+  const read = await recentDecisions(db, 30, new Date(), scope === ALL_BRANCHES ? 40 : 200);
+  const rows = (await requestsInScope(db, read, scope)).slice(0, 40);
   if (!rows.length) return null;
   return (
     <Card>

@@ -1,9 +1,33 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, gt, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { proposalGroupKey, type ProductSize, type ProposedProduct, type RequestKind, type RequestStatus } from "@/lib/recipe-change";
 import { getDb, schema as s, type DB } from "@/server/db";
+
+/**
+ * Reçete önerisinin şubesi önerenin hesabının şubesidir (şube ayrımı, 27 Kasım 2026; docs/SUBE.md › Şube ayrımı ›
+ * Ayarsız sızıntılar): tek şube seçiliyken yalnız o şubenin personelinin önerileri ve şubesi bilinmeyenler (şubesiz
+ * hesap, silinmiş hesap; `requestInScope` gibi: onay bekleyen iş gizlenmesin). Önerinin kendi şube sütunu yok; hesabın
+ * şubesi sonradan değişirse öneri yeni şubesinde görünür. "Tümü"de koşul yok. Önceden Marina
+ * seçiliyken Onaylar, Bugün, zil ve Reçete defteri Tuzla personelinin önerilerini de gösteriyordu
+ */
+export function proposerScopeWhere(scope: BranchScope): SQL | undefined {
+  if (scope === ALL_BRANCHES) return undefined;
+  const u = s.users;
+  const r = s.recipeChangeRequests;
+  // Hesap silinince öneren boşalır (on delete set null): şubesi bilinmez, her kapsamda görünür
+  return or(
+    isNull(r.requestedBy),
+    exists(
+      getDb()
+        .select({ one: sql`1` })
+        .from(u)
+        .where(and(eq(u.id, r.requestedBy), or(isNull(u.branchId), eq(u.branchId, scope)))),
+    ),
+  );
+}
 
 export interface RecipeRequestRow {
   id: number;
@@ -75,28 +99,37 @@ const select = () => getDb().select(columns).from(s.recipeChangeRequests).leftJo
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
 
-/** Onay bekleyen öneri sayısı, iki tür birlikte */
-export async function countPendingRequests(): Promise<number> {
-  const [row] = await getDb().select({ n: count() }).from(s.recipeChangeRequests).where(eq(s.recipeChangeRequests.status, "pending"));
+/** Onay bekleyen öneri sayısı, iki tür birlikte; `scope` verilirse önerenin şubesine göre (`proposerScopeWhere`) */
+export async function countPendingRequests(scope: BranchScope = ALL_BRANCHES): Promise<number> {
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(s.recipeChangeRequests)
+    .where(and(eq(s.recipeChangeRequests.status, "pending"), proposerScopeWhere(scope)));
   return row?.n ?? 0;
 }
 
-/** Onay bekleyenler türüne göre: reçete değişikliği ve yeni ürün önerisi (reçete defterindeki şerit) */
-export async function countPendingByKind(): Promise<Record<RequestKind, number>> {
+/** Onay bekleyenler türüne göre: reçete değişikliği ve yeni ürün önerisi (reçete defterindeki şerit); önerenin şubesine göre */
+export async function countPendingByKind(scope: BranchScope = ALL_BRANCHES): Promise<Record<RequestKind, number>> {
   const rows = await getDb()
     .select({ kind: s.recipeChangeRequests.kind, n: count() })
     .from(s.recipeChangeRequests)
-    .where(eq(s.recipeChangeRequests.status, "pending"))
+    .where(and(eq(s.recipeChangeRequests.status, "pending"), proposerScopeWhere(scope)))
     .groupBy(s.recipeChangeRequests.kind);
   return { change: rows.find((r) => r.kind === "change")?.n ?? 0, new: rows.find((r) => r.kind === "new")?.n ?? 0 };
 }
 
-/** Yönetici: bekleyenler (eskiden yeniye) ve son `days` günde karara bağlananlar (yeniden eskiye) */
-export async function loadReviewQueue(days = 30): Promise<{ pending: RecipeRequestRow[]; recent: RecipeRequestRow[] }> {
+/**
+ * Yönetici: bekleyenler (eskiden yeniye) ve son `days` günde karara bağlananlar (yeniden eskiye); `scope` verilirse
+ * önerenin şubesine göre (`proposerScopeWhere`)
+ */
+export async function loadReviewQueue(days = 30, scope: BranchScope = ALL_BRANCHES): Promise<{ pending: RecipeRequestRow[]; recent: RecipeRequestRow[] }> {
+  const inScope = proposerScopeWhere(scope);
   const [pending, recent] = await Promise.all([
-    select().where(eq(s.recipeChangeRequests.status, "pending")).orderBy(s.recipeChangeRequests.createdAt, s.recipeChangeRequests.id),
     select()
-      .where(and(inArray(s.recipeChangeRequests.status, ["approved", "rejected", "withdrawn"]), gt(s.recipeChangeRequests.updatedAt, daysAgo(days))))
+      .where(and(eq(s.recipeChangeRequests.status, "pending"), inScope))
+      .orderBy(s.recipeChangeRequests.createdAt, s.recipeChangeRequests.id),
+    select()
+      .where(and(inArray(s.recipeChangeRequests.status, ["approved", "rejected", "withdrawn"]), gt(s.recipeChangeRequests.updatedAt, daysAgo(days)), inScope))
       .orderBy(desc(s.recipeChangeRequests.updatedAt), s.recipeChangeRequests.id)
       .limit(40),
   ]);
@@ -118,12 +151,14 @@ export async function loadMyRequests(userId: number, days = 14): Promise<RecipeR
   return rows.map(toRow);
 }
 
-/** Ürün başına bekleyen değişiklik önerisi sayısı (yöneticinin reçete defterindeki rozet) */
-export async function pendingByProduct(): Promise<Map<number, number>> {
+/** Ürün başına bekleyen değişiklik önerisi sayısı (yöneticinin reçete defterindeki rozet); önerenin şubesine göre */
+export async function pendingByProduct(scope: BranchScope = ALL_BRANCHES): Promise<Map<number, number>> {
   const rows = await getDb()
     .select({ productId: s.recipeChangeRequests.productId, n: count() })
     .from(s.recipeChangeRequests)
-    .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "change"), isNotNull(s.recipeChangeRequests.productId)))
+    .where(
+      and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "change"), isNotNull(s.recipeChangeRequests.productId), proposerScopeWhere(scope)),
+    )
     .groupBy(s.recipeChangeRequests.productId);
   return new Map(rows.flatMap((r) => (r.productId === null ? [] : [[r.productId, r.n] as const])));
 }

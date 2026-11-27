@@ -122,9 +122,10 @@ geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubey
 
 **Raporlar** (26 Kasım 2026, [RAPORLAR.md](RAPORLAR.md)) de seçiciden bağımsızdır ama "Tümü"yle değil, **şube şube**
 okur: her açık fiziksel şube kendi görünümüyle (`loadModel({ scope: şube })`; Gelir-gider'de o şube seçiliyken görünen
-rakamlar), kasa satırları `withBranchScope(ALL_BRANCHES, …)` ile. Şube seçiliyken Şube karşılaştırma, İşçilik / ciro ve
-Kayıp önleme "soldaki seçim raporu süzmez" notunu gösterir (`companyWideNote("raporlar")`); Kaçak raporu hep Marina'nın
-(tahmini stoğun şubesi).
+rakamlar), kasa satırları `withBranchScope(ALL_BRANCHES, …)` ile. Şube seçiliyken Şube karşılaştırma ve İşçilik / ciro
+"soldaki seçim raporu süzmez" notunu gösterir (`companyWideNote("raporlar")`). **Kayıp önleme** 27 Kasım'dan beri seçimle
+okur, **Kaçak raporu** yalnız Marina ya da "Tümü" seçiliyken (tahmini stoğun şubesi; öbür şubede "Bu şube için tahmini
+stok yok"): [Şube ayrımı › Ayarsız sızıntılar](#ayarsız-sızıntılar-parça-2).
 
 **Komisyon & hakediş** (23 Kasım 2026, [KOMISYON.md](KOMISYON.md) › Şube): satış seçili şubenin kasa raporlarından,
 AsilPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
@@ -519,7 +520,8 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   sekmede seçici Marina'ya geçince açık kalan Tuzla formu Marina'ya yazıyordu. Kimliği göndermeyen eski sekme seçili
   kasaya yazar. Form anahtarı kasayı da taşır: seçici değişince yarım form öbür kasada kalmaz.
 - **Bugün'ün kasa satırları** ve **zil** aynı kasayı okur: "Tümü"de birden çok kasa açıkken her şube ayrı, değilse tek
-  kasa (`currentTillBranch`; online kanal seçiliyken Tuzla). Önceden Bugün online kanalda şubesiz okuyup `online`
+  kasa (`currentTillBranch`). Online kanal seçiliyken 27 Kasım'dan beri kasa satırı yok, Bugün "Bu kanalın kasası ve
+  stoğu yok" der ([Şube ayrımı › Ayarsız sızıntılar](#ayarsız-sızıntılar-parça-2); önceden Tuzla'nın kasası görünüyordu). Önceden Bugün online kanalda şubesiz okuyup `online`
   kasasında rapor arıyordu: dünün eksik raporu görünmüyor, girilmiş bugünkü rapor "Henüz girilmedi" kalıyordu; Kasa
   sayfası ve zil Tuzla'yı gösteriyordu (denetim 21 Kasım #26).
 - **Tek kasa okumaları** (`getCashReport`, `previousCarryOver`, `nextReportAfter`, `previousOkc`, `nextOkc`,
@@ -736,7 +738,8 @@ hedefi), `bekliyor` (sonraki parça kapatır). `tests/sube-ayrimi.test.ts`:
   her kimlik en az bir yerde kullanılır ve `where` dosyasında işareti durur (eskimiş kayıt kalmaz).
 - (b) Şubesi olan tabloların (`cashReports`, `invoices`, `reminders` …) `src/server/{data,bell,notify,ai,mcp,assistant-reads}`
   ve panel sayfalarındaki her `.from(s.X)` ifadesi kapsamla okur (`branchWhere`, `invoiceScopeWhere`, `requestInScope` …)
-  ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; 27 Kasım'da 104 ifade): sayı yalnız azalır.
+  ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; parça 1'de 104 ifade, parça 2'den sonra 97):
+  sayı yalnız azalır.
 - (c) Alanın ekranı çipini çizer (`<BranchViewChip area="…">`); "bu ekran firma geneli" notu yalnız hep firma geneli
   ekranlarda ve çipi henüz gelmemiş alanların ekranlarında (`BEKLEYEN_ALANLAR`).
 - (d) Saf kurallar: yöneticinin varsayılanı her alanda şube, kilitli hesap her alanda şube, tanınmayan tercih düşer.
@@ -745,12 +748,51 @@ Veritabanında: `tests/sube-gorunumu-db.test.ts` (yazım yalnız kendi satırın
 personel reddedilir; müdürde firma yazılı olsa da her alan şubesi ve okuma şubesine daralır). Saf kurallar ve ekran:
 `tests/sube-gorunumu.test.ts`.
 
+### Ayarsız sızıntılar (parça 2)
+
+Ayarı olmayan, bilerek de firma geneli olmayan okumalar: şube seçiliyken başka şubenin kaydını gösteriyorlardı. Hepsi artık
+seçimle okur ("Tümü"de değişen bir şey yok). Kural: şubesi bilinen kayıt yalnız kendi şubesinde, şubesi bilinmeyen kayıt
+(şubesiz hesabın önerisi, şubesi çözülemeyen istek) her şubede görünür, işletme geneli fatura her şubede.
+
+| Yer | Şube seçiliyken (önce → şimdi) |
+|---|---|
+| **Bugün** ve **zil**: kontrol bekleyen fatura, mal alışı sayılmayan fatura, Paraşüt'ten son 24 saatte gelen fatura, bağlanacak ürün | Bütün faturalar → şubenin ve işletme genelinin faturaları (`invoiceScopeWhere`; `countStockOnlyReview(db, kapsam)`, `countUnlinkedProducts(kapsam)`). Şubesi seçilmemiş fatura yalnız "Tümü"de sayılır (Faturalar'ın kuralı) |
+| **Zil**: "Paraşüt eşitlemesi başarısız" | Bütün hesapların son çalışması → şubenin Paraşüt hesabının (`latestParasutRun(db, [hesap])`); hesap başka şubeyle ortaksa başlık "(hesap geneli)" der |
+| **Zil**: ModPOS anahtarının uyarısı | Bütün şubelerin anahtarı → şubeninki (`modposKeyBell(kapsam)`) |
+| **Bugün** › Onaylar, **zil**, **Onaylar**, **Reçete defteri**: reçete önerileri | İşletme geneli → önerenin hesabının şubesi (`proposerScopeWhere`): o şubenin personelinin ve şubesiz hesapların önerileri. Onaylar'ın "öbür şubelerde N istek daha" sayısı öbür şubelerin önerilerini de sayar |
+| **Bugün** › Onaylar: personel istekleri | Bütün şubelerinki sayılıyordu (Onaylar'ın kartları zaten şubenindi) → şubenin (`pendingByKindInScope`) |
+| **Onaylar** › Son kararlar | Bütün şubeler → şubenin istekleri (`requestsInScope`) |
+| **Onaylar** › geç rapor kartının "Kasayı sayan"ı | Bütün kullanıcılar → kartın kasasını sayabilecekler (`cashCounters(şube)`, kasa formu gibi) |
+| **Hatırlatıcılarım** › Kime | Bütün kullanıcılar → şubenin ve şubesiz hesaplar (`assignablePeople(ben, kapsam)`) |
+| **Teslim defteri**'nin ay seçicisi | Bütün şubelerin ilk teslimi → şubenin (`handoverFirstDate`) |
+| **Kontrol listeleri** › Listeleri düzenle | Bütün listeler → şubenin ve bütün şubelerin listeleri (`scoped: true`) |
+| **Genel bakış** ve **Gelir-gider**'in ay bilgisi: "onay bekliyor" günleri | Bütün şubelerin bekleyen geç raporu → şubenin; "Tümü"de her şube kendi bekleyen günleriyle (`pendingLateDays`) |
+| **Paraşüt**: e-faturadan okunan kalemlerin sayısı, elle girilmiş eksi faturalar | Hesabın bütün faturaları → şubenin ve işletme genelinin. Panel asistanının "Paraşüt bekleyenleri" ve "AI ile öner" de Paraşüt ekranının listesini okur (kapsamla) |
+| **Panel asistanı**: AsilPOS durumu | Tuzla seçiliyken Marina'nın AsilPOS'u anlatılıyordu → "Bu şubede AsilPOS yok: Tuzla kasası ModPOS"; yanıt okunan şubenin adını taşır |
+| **Panel asistanı**: tahmini stok | Tuzla seçiliyken uyarıyla Marina'nın stoğu → "Bu şube için tahmini stok yok" |
+| **Panel asistanı**: gün sonu, günlük satış, vardiya (şube adı verilmezse) | Online kanal seçiliyken bütün şubeler → "Panelde laffogato.net (online kanal) seçili: … şubenin adını verin" |
+| **Kayıp önleme** | Soldaki seçimden bağımsız, firmanın modeliyle → seçili şubenin kasa raporu, kör sayım, zayi, AsilPOS günü, vardiya ve personeli, görünümün modeli; online kanalda "Bu kanalın kasası ve stoğu yok". "Bu ekran firma geneli" notu kalktı |
+| **Kaçak raporu** | Hep Marina'nın → Marina ya da "Tümü" seçiliyken; öbür şubede "Bu şube için tahmini stok yok" |
+| **Gelir-gider**: "Faturası beklenen alımlar" bilgi satırı | Firmanın cari kayıtları → şube seçiliyken satır yok (cari kaydının şubesi yok; `supplier_entries.branch_id` gelene kadar) |
+| **Sabit giderler** › Tek seferlik yatırımlar | Not yoktu → "Firma geneli" rozeti ve açıklaması (yatırımın şube sütunu parça 3'te) |
+
+**Online kanal** (laffogato.net) seçiliyken kanalın kasası, stoğu ve vardiyası yok (`selectedChannel`, metin
+`CHANNEL_NO_TILL`): Bugün kasa, sayım ve zayi satırları yerine tek satır "Bu kanalın kasası ve stoğu yok" (iki rolde,
+"Tümü'nü göster"); zilde kasa satırı ve vardiya hatırlatması yok; Kasaya işle ve Kasadaki fiyatlar boş liste ve aynı
+metin (`loadTillScopes` boş). Önceden kanal seçiliyken Tuzla'nın kasası (ya da bütün şubelerin vardiyası) görünüyordu.
+Kasa sayfasının formu kanalda yine Tuzla'yı açar (yazma kuralı, [Yazarken hangi şube](#yazarken-hangi-şube)).
+
+Kayıttan üç `bekliyor` satırı düştü (eşlenmemiş Paraşüt ürünleri, kanalda kasa zili, kayıp önleme): okumaları artık
+seçimle. Testler: `tests/sube-ayrimi-sizinti.test.ts` (saf kurallar ve kaynağın biçimi),
+`tests/sube-ayrimi-sizinti-db.test.ts` (gerçek Postgres: Tuzla'nın "IZ-TUZLA" işaretli kayıtları Marina seçiliyken
+Bugün, zil, Onaylar, Paraşüt listesi, kişi seçicisi, teslim defteri ve raporlarda görünmez; "Tümü"de görünür).
+
 ### Sıra
 
 | Parça | Ne | Durum |
 |---|---|---|
 | 1 | Altyapı: ayar, migration 0100, `areaScope`, eylem, çip, Hesabım kartı, kayıt ve tarama | Kuruldu (27 Kasım 2026) |
-| 2 | Ayarsız sızıntılar: Bugün ve zil sayıları, onaylar, kişi seçicileri, Paraşüt, asistan, kayıp önleme | Sırada |
+| 2 | Ayarsız sızıntılar: Bugün ve zil sayıları, onaylar, kişi seçicileri, Paraşüt, asistan, kayıp önleme | Kuruldu (27 Kasım 2026) |
 | 3 | Şube sütunu olmayan tablolar: `checklist_runs`, `activity_log`, `notification_log`, `investments` (migration 0101) | Sırada |
 | 4 | Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon | Sırada |
 | 5 | Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri | Sırada |

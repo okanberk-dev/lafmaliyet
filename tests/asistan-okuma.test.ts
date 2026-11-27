@@ -329,12 +329,14 @@ test("gun_sonu: 'Tümü'de şube şube (Tuzla ModPOS → kasa_raporlari); gelmey
   assert.match(today.json!.gunSonlari[0].not, /henüz gelmedi/);
 });
 
-test("readBranches: ad ya da kimlik, seçili fiziksel şube, 'Tümü' ve online kanalda bütün fiziksel şubeler", () => {
+test("readBranches: ad ya da kimlik, seçili fiziksel şube, 'Tümü'de bütün fiziksel şubeler; online kanalda ad ister", () => {
   assert.deepEqual(readBranches("marina", "tuzla", BRANCHES).map((b) => b.id), ["marina"]);
   assert.deepEqual(readBranches("MARİNA", "tuzla", BRANCHES).map((b) => b.id), ["marina"]);
   assert.deepEqual(readBranches(undefined, "tuzla", BRANCHES).map((b) => b.id), ["tuzla"]);
   assert.deepEqual(readBranches(undefined, ALL_BRANCHES, BRANCHES).map((b) => b.id), ["tuzla", "marina"]);
-  assert.deepEqual(readBranches(undefined, "online", BRANCHES).map((b) => b.id), ["tuzla", "marina"]);
+  // Şube ayrımı (27 Kasım 2026): kanal seçiliyken bütün şubeler okunmaz; ad verilirse o şube
+  assert.throws(() => readBranches(undefined, "online", BRANCHES), (e: unknown) => e instanceof ToolInputError && /online kanal\) seçili: kanalın kasası ve vardiyası yok/.test(e.message));
+  assert.deepEqual(readBranches("tuzla", "online", BRANCHES).map((b) => b.id), ["tuzla"]);
   assert.throws(() => readBranches("laffogato.net", "tuzla", BRANCHES), ToolInputError);
 });
 
@@ -446,13 +448,18 @@ test("bugun_ozeti ve bekleyen_isler: ekranın satırları ve bağlantıları; ha
   assert.equal(p.json!.basliklar[0].satirlar[0].onem, "acil");
 });
 
-test("stok_tahmini: kritikler yaklaşık ve birimiyle, malzeme ayrıntısı, Tuzla seçiliyken 'yalnız Marina', geçiş günü yoksa tahmin yok", async () => {
-  const tools = toolsOf(fakeDeps({ scope: "tuzla", calls: [] }));
+test("stok_tahmini: kritikler yaklaşık ve birimiyle, malzeme ayrıntısı, Tuzla seçiliyken tahmin yok, geçiş günü yoksa tahmin yok", async () => {
+  const tools = toolsOf(fakeDeps({ scope: "marina", calls: [] }));
   const { json } = await call(tools, "stok_tahmini");
   assert.equal(json!.kritikSayisi, 1);
   assert.equal(json!.malzemeler[0].malzeme, "Süt");
   assert.match(json!.malzemeler[0].tahmin, /^≈ 1,8 LT$/);
-  assert.match(json!.uyarilar.join(" "), /Tuzla seçili; tahmini stok yalnız Marina/);
+  // Şube ayrımı (27 Kasım 2026): Tuzla seçiliyken Marina'nın stoğu anlatılmaz
+  const tuzla = await call(toolsOf(fakeDeps({ scope: "tuzla", calls: [] })), "stok_tahmini");
+  assert.equal(tuzla.json!.tahmin, null);
+  assert.equal(tuzla.json!.sube, "Tuzla");
+  assert.match(tuzla.json!.not, /^Bu şube için tahmini stok yok: tahmini stok yalnız Marina/);
+  assert.equal(tuzla.json!.malzemeler, undefined);
   assert.match(json!.uyarilar.join(" "), /Gün sonu gelmeyen 1 gün/);
   assert.equal(json!.panelAdresi, "/panel/sayim/tahmini");
   // Kaç gün yeter, günlük kullanım ve önerilen eşik (öneri; eşiği yönetici kaydeder)

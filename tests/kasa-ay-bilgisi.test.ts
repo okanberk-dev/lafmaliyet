@@ -355,14 +355,16 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   const src = readFileSync(join(root, "src/server/data/dataset.ts"), "utf8");
   // Kasa raporları ve onay bekleyen geç raporların günleri okumaların sonunda (dalga 10: eksik gün "onay bekliyor")
   // (ardından yalnız kapalı dönemler: docs/DONEM-KAPANISI.md)
-  assert.match(src, /tillRows\(\),[\s\S]{0,400}?eq\(s\.staffRequests\.kind, "kasa-gec"\), eq\(s\.staffRequests\.status, "pending"\)\)\),\s*\/\/ Kapalı işaretli günler[\s\S]{0,400}?branchId: s\.specialDays\.branchId \}\)[\s\S]{0,80}?eq\(s\.specialDays\.kind, "kapali"\)\),\s*(\/\/[^\n]*\n\s*)?resolveBranchSetting\(CALENDAR_GROUP, scope, db\),\s*(\/\/[^\n]*\n\s*)*loadClosedPeriods\(db\)[^\n]*\n\s*\]\);/);
+  assert.match(src, /tillRows\(\),[\s\S]{0,800}?eq\(s\.staffRequests\.kind, "kasa-gec"\), eq\(s\.staffRequests\.status, "pending"\)\)\)[\s\S]{0,300}?requestBranches\(db, rows\)[\s\S]{0,200}?\}\),\s*\/\/ Kapalı işaretli günler[\s\S]{0,400}?branchId: s\.specialDays\.branchId \}\)[\s\S]{0,80}?eq\(s\.specialDays\.kind, "kapali"\)\),\s*(\/\/[^\n]*\n\s*)?resolveBranchSetting\(CALENDAR_GROUP, scope, db\),\s*(\/\/[^\n]*\n\s*)*loadClosedPeriods\(db\)[^\n]*\n\s*\]\);/);
   // cacheComponents: saat (businessDate) veritabanı okumalarından sonra okunur
   assert.ok(src.indexOf("const today = businessDate()") > src.indexOf("tillRows(),"));
   assert.match(src, /const through = addDays\(today, -1\)/);
   // Tek şube seçiliyken o şubenin satırları (açılış günüyle); "Tümü"de şube şube çözülüp toplanır (denetim 13 Kasım HM-02)
-  assert.match(src, /const lateDays = lateWaiting\.flatMap\(\(r\) => \(r\.day \? \[r\.day\] : \[\]\)\);/);
+  // Onay bekleyen geç rapor yalnız kendi şubesinin ayında (şube ayrımı, 27 Kasım 2026; pendingLateDays)
+  assert.match(src, /const lateDays = pendingLateDays\(lateWaiting, branch\?\.id \?\? null\);/);
+  assert.match(src, /const lateDaysOf = \(id: string\) => pendingLateDays\(lateWaiting, id\);/);
   // AsilPOS satışlarının ilk günüyle: AsilPOS günlerinin indirimi ayrı (TillMonth.asilposDiscounts; −90 ₺, 23 Kasım 2026)
-  assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, posFroms\)/);
+  assert.match(src, /tillMonths\(rows, through, undefined, late, closed, undefined, undefined, openedOn, posFroms\)/);
   assert.match(src, /const posFroms = \{ froms: sales\.asilposSales\?\.froms \?\? null, tills: posTills\.ids \};/);
   // "Tümü"nün çözümü allBranchMonths'ta (Faz 5: şube seçiliyken işletme geneli giderin günü için de, companyMonths)
   assert.match(src, /branch !== null \? resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\) : allBranchMonths\(months, till, closedPast\)/);
@@ -464,7 +466,8 @@ test("şube görünümü: yükleyici, Kasa'nın ay satırı ve geç rapor kartı
   assert.match(dataset, /const closedPast = closedFor\(scopeClosedRows, reportRows\);/, "ay bilgisi");
   assert.match(dataset, /resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\)/, "ay bilgisi: şubenin açılışıyla");
   // "Tümü"de her şube kendi açılış günüyle (Tümü'nün toplamında da açılış ayı yarım sayılmaz)
-  assert.match(dataset, /tills: monthsOf\(\s*rowsOf\(\[id\]\),\s*tillOpenedOn\(branches\.find\(\(b\) => b\.id === id\)\),\s*closedFor\(closedRows\.filter\(\(r\) => closedRowApplies\(r, id\)\), rowsOf\(\[id\]\)\),\s*\)/);
+  // ve kendi bekleyen geç raporlarıyla (şube ayrımı: Tuzla'nın isteği Marina'nın eksik gününü "onay bekliyor" yapmaz)
+  assert.match(dataset, /tills: monthsOf\(\s*rowsOf\(\[id\]\),\s*tillOpenedOn\(branches\.find\(\(b\) => b\.id === id\)\),\s*closedFor\(closedRows\.filter\(\(r\) => closedRowApplies\(r, id\)\), rowsOf\(\[id\]\)\),[\s\S]{0,160}?lateDaysOf\(id\),\s*\)/);
   const kasa = readFileSync(join(root, "src/app/panel/kasa/page.tsx"), "utf8");
   assert.match(kasa, /const opened = tillOpenedOn\(branchList\.find\(\(b\) => b\.id === tillScope\)\);/);
   assert.match(kasa, /firstEver \?\? undefined, firstModpos, opened, \{ froms: null, tills: posTillIds\(branchList\) \}\)\[0\]/);

@@ -1,7 +1,8 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gt, lte, max, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNull, lte, max, ne, or } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { addDays, todayTR } from "@/lib/reminders";
 import type { UserRepeat, UserSound } from "@/lib/user-reminders";
 import { getDb, schema as s } from "@/server/db";
@@ -80,12 +81,15 @@ export async function remindersMarker(userId: number): Promise<string> {
 
 /**
  * Yöneticinin hatırlatıcı kurabileceği kişiler: etkin kullanıcılar, kendisi hariç, ada göre. Yalnız kimlik ve ad
- * döner (e-posta ve rol bu ekrana girmez).
+ * döner (e-posta ve rol bu ekrana girmez). Tek şube seçiliyken (şube ayrımı, 27 Kasım 2026) yalnız o şubenin ve şubesi
+ * olmayan hesaplar (yöneticiler, şubesiz personel; kasa formunun "Kasayı sayan"ı gibi): önceden Marina seçiliyken
+ * Tuzla'nın personeli de listedeydi. "Tümü"de herkes
  */
-export async function assignablePeople(meId: number): Promise<{ id: number; name: string }[]> {
+export async function assignablePeople(meId: number, scope: BranchScope = ALL_BRANCHES): Promise<{ id: number; name: string }[]> {
+  const u = s.users;
   return getDb()
-    .select({ id: s.users.id, name: s.users.name })
-    .from(s.users)
-    .where(and(eq(s.users.active, true), ne(s.users.id, meId)))
-    .orderBy(asc(s.users.name));
+    .select({ id: u.id, name: u.name })
+    .from(u)
+    .where(and(eq(u.active, true), ne(u.id, meId), scope === ALL_BRANCHES ? undefined : or(isNull(u.branchId), eq(u.branchId, scope))))
+    .orderBy(asc(u.name));
 }

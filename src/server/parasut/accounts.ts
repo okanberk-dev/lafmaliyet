@@ -39,6 +39,12 @@ export async function parasutAccountOf(branchId: string | null, db: Reader = get
   return accountOfBranch(branchId, rows, branches);
 }
 
+/** Şubenin kullandığı hesabın bilgisi (kimlik, sahibi şubenin adı, hesabı kullanan şubeler); zil "hesap geneli"ni bundan yazar */
+export async function parasutAccountInfoOf(branchId: string | null, db: Reader = getDb()): Promise<ParasutAccountInfo | null> {
+  const [id, accounts] = await Promise.all([parasutAccountOf(branchId, db), loadParasutAccounts(db)]);
+  return accounts.find((a) => a.id === id) ?? null;
+}
+
 /** Panelin seçili şubesinin hesabı ("Tümü": varsayılan hesap) */
 export async function parasutAccountForScope(): Promise<string> {
   const scope = await currentBranchScope();

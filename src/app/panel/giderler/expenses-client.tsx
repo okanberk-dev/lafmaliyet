@@ -1500,7 +1500,11 @@ function periodText(date: string | null) {
   return MONTH_RE.test(date) ? monthLabel(date) : date;
 }
 
-export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: number }) {
+/**
+ * `companyWide`: şube seçiliyken seçili şubenin adı (şube ayrımı, 27 Kasım 2026): yatırımın henüz şubesi yok, liste
+ * bütün şubelerin; kartın başlığı bunu "Firma geneli" rozetiyle söyler (şube sütunu parça 3'te). "Tümü"de null
+ */
+export function InvestmentsClient({ rows, total, companyWide = null }: { rows: Investment[]; total: number; companyWide?: string | null }) {
   const [editing, setEditing] = useState<Investment | "new" | null>(null);
   const [deleting, setDeleting] = useState<Investment | null>(null);
   const [deletePending, setDeletePending] = useState(false);
@@ -1537,9 +1541,18 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
       <CardHeader
         icon={<PiggyBank />}
         title="Tek seferlik yatırımlar"
-        description="Bilgi amaçlı, aylık gidere dahil değil."
+        description={
+          companyWide
+            ? `Bilgi amaçlı, aylık gidere dahil değil. ${companyWide} seçili; yatırımın şubesi yok, liste bütün şubelerin.`
+            : "Bilgi amaçlı, aylık gidere dahil değil."
+        }
         meta={
           <>
+            {companyWide ? (
+              <Badge tone="gray" title="Yatırımın şubesi henüz tutulmuyor: liste bütün şubelerin">
+                Firma geneli
+              </Badge>
+            ) : null}
             <span className="font-medium text-ink tabular">Toplam {tl(total)}</span>
             <span>(KDV hariç)</span>
             <span className="text-ink-quiet">· {rows.length} kayıt</span>

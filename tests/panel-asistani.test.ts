@@ -204,7 +204,7 @@ test("istek: araçlar = Claude bağlantısının yedi aracı (aynı sıra, aynı
     assert.match(mcpSource, new RegExp(`name: "${name}",[\\s\\S]*?inputSchema: ${schemaName},`), name);
   }
   // Gerçek liste MCP'nin TOOLS'unu olduğu gibi kullanır (kopya yok)
-  assert.match(read("src/server/ai/assistant/tools.ts"), /allAssistantTools\(TOOLS as unknown as readonly ToolDef\[\], \{\s*unlinked: \(limit\) => unlinkedProducts\(limit\),/);
+  assert.match(read("src/server/ai/assistant/tools.ts"), /allAssistantTools\(TOOLS as unknown as readonly ToolDef\[\], \{\s*(\/\/[^\n]*\n\s*)?unlinked: async \(limit\) => unlinkedProducts\(limit, await currentBranchScope\(\)\),/);
   assert.match(mcpSource, new RegExp(`export const DESCRIPTION_TAIL = "${TOOL_TAIL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}";`));
 
   const params = toolParams(TOOLS);

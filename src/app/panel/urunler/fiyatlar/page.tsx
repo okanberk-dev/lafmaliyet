@@ -12,6 +12,7 @@ import { latestSalesMonth } from "@/lib/calc/insights";
 import { dateTimeTR, money } from "@/lib/format";
 import { salesBasis } from "@/lib/calc/price-loss";
 import type { KasaName } from "@/lib/asilpos/kasa";
+import { CHANNEL_NO_TILL } from "@/lib/branches";
 import type { BulkRow } from "@/lib/prices/bulk";
 import { todayTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
@@ -94,7 +95,8 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
   // Bugünün kasaları: AsilPOS gününde Kasaya işle'de yalnız siteye bağlı olmayan ürünler (denetim E-39). Kasa şube
   // başınadır (şube kapsamı A3): tek şubede onun kasası, "Tümü"de birden çok kasa açıkken her kasa ayrı liste
   const tills = await loadTillScopes();
-  const scope = tills[0];
+  // Online kanal seçiliyken kasa yok (boş liste; şube ayrımı): metinler ModPOS'a göre, Kasaya işle "Bu kanalın kasası ve stoğu yok" der
+  const scope = tills[0] ?? { kasa: "ModPOS" as KasaName };
   const pending = (await Promise.all(tills.map((t) => posPendingSummary(t)))).reduce((n, p) => n + p.count, 0);
   const options: { value: FiyatlarTab; label: string; href: string; count?: number }[] = [
     { value: "toplu", label: "Toplu değiştir", href: tabHref("toplu", tab === "toplu" ? bulkQuery(sp) : undefined) },
@@ -114,6 +116,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
       <>
         {header}
         <div className="space-y-4">
+          {tills.length ? null : <EmptyState title={CHANNEL_NO_TILL} description="Kasaya işle şubelerin kasasınındır; soldan bir şube ya da Tümü'nü seçin." />}
           {tills.map((t, i) => (
             <PosChecklist key={t.branchId} items={lists[i]} kasa={t.kasa} branchId={t.branchId} branchName={t.name} />
           ))}

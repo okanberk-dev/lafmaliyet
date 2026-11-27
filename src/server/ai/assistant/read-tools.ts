@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 
-import { ALL_BRANCHES, sortBranches, type BranchRow } from "@/lib/branches";
+import { ALL_BRANCHES, selectedChannel, sortBranches, type BranchRow } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { dateTimeTR } from "@/lib/format";
 import { pavoView } from "@/lib/asilpos/bank-pos";
@@ -22,7 +22,7 @@ import { compareDays, MISSING_LABEL } from "@/lib/asilpos/gun-sonu";
 import { clearedText, isUnverifiedAfterOk, ASILPOS_RESEND_HINT, asilposCardSummary, rejectionText, unverifiedText, type AsilposCardInput } from "@/lib/asilpos/status";
 import { isAsilposDay } from "@/lib/asilpos/switch";
 import { earliestSwitchDay, switchDayFor, type SwitchDays } from "@/lib/pos/tills";
-import { STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
+import { STOCK_ESTIMATE_BRANCH, STOCK_ESTIMATE_OTHER_BRANCH } from "@/lib/stock-estimate";
 import { checkRange, cleanName, foldName, r2, r2n, spanDays, ToolInputError } from "@/lib/mcp/answers/common";
 import { zGun, zLimit } from "@/lib/mcp/schemas";
 import { addDays } from "@/lib/reminders";
@@ -169,9 +169,14 @@ const weekdayOf = (d: string) => WEEKDAY[new Date(`${d}T12:00:00Z`).getUTCDay()]
 /** Panelin fiziksel şubeleri (kasası ve vardiyası olan), sıralı */
 const physical = (rows: readonly BranchRow[]) => sortBranches(rows.filter((b) => b.active && b.kind === "fiziksel"));
 
+/** Online kanal seçiliyken şube adı verilmeyen okuma (şube ayrımı, 27 Kasım 2026): kanalın kasası ve vardiyası yok */
+export const CHANNEL_READ_ERROR = (name: string, list: readonly BranchRow[]) =>
+  `Panelde ${name} (online kanal) seçili: kanalın kasası ve vardiyası yok. Şubenin adını verin (${list.map((b) => b.name).join(", ")}) ya da panelde Tümü'nü seçin.`;
+
 /**
- * Okunacak şubeler: verilen ad ya da kimlik (tek), yoksa seçili fiziksel şube, "Tümü"de (ya da online kanal seçiliyken)
- * bütün fiziksel şubeler. Bilinmeyen ad ToolInputError (şubelerin adlarıyla).
+ * Okunacak şubeler: verilen ad ya da kimlik (tek), yoksa seçili fiziksel şube, "Tümü"de bütün fiziksel şubeler. Online
+ * kanal seçiliyken ad verilmezse ToolInputError (şube ayrımı, 27 Kasım 2026: önceden kanal seçiliyken bütün şubeler
+ * okunuyordu). Bilinmeyen ad ToolInputError (şubelerin adlarıyla).
  */
 export function readBranches(raw: string | undefined, scope: string, rows: readonly BranchRow[]): BranchRow[] {
   const list = physical(rows);
@@ -181,6 +186,8 @@ export function readBranches(raw: string | undefined, scope: string, rows: reado
     if (!hit) throw new ToolInputError(`Şube bulunamadı: “${cleanName(raw, 40)}”. Şubeler: ${list.map((b) => b.name).join(", ")}.`);
     return [hit];
   }
+  const channel = selectedChannel(scope, rows);
+  if (channel) throw new ToolInputError(CHANNEL_READ_ERROR(channel.name, list));
   const chosen = scope !== ALL_BRANCHES ? list.find((b) => b.id === scope) : undefined;
   return chosen ? [chosen] : list;
 }
@@ -457,10 +464,19 @@ export function asilposDurumu(deps: ReadToolDeps): AssistantTool<typeof asilposD
     inputSchema: asilposDurumuInput,
     run: async (_args, ctx) => {
       requireAdmin(ctx);
+      // Seçili şubenin kasası AsilPOS değilse (ModPOS'taki şube, online kanal) başka şubenin AsilPOS'u okunmaz (şube
+      // ayrımı, 27 Kasım 2026: önceden Tuzla seçiliyken Marina'nın AsilPOS'u anlatılıyordu)
+      const { scope, rows } = await deps.branches();
+      const chosen = scope !== ALL_BRANCHES ? rows.find((b) => b.id === scope) : undefined;
+      if (chosen && chosen.posSource !== "asilpos") {
+        return { sube: chosen.name, durum: "AsilPOS yok", ozet: `Bu şubede AsilPOS yok: ${chosen.name} ${chosen.kind === "online" ? "bir online kanal, kasası yok" : "kasası ModPOS"}.` };
+      }
       const card = await deps.asilposCard();
       const s = asilposCardSummary(card);
+      const read = chosen ?? sortBranches(rows.filter((b) => b.active && b.posSource === "asilpos"))[0];
       const unverified = card.state.unverified && isUnverifiedAfterOk(card.state) ? unverifiedText(card.state.unverified) : null;
       return {
+        ...(read ? { sube: read.name } : {}),
         durum: s.badge,
         ozet: s.headline,
         ayrintilar: s.lines,
@@ -727,7 +743,11 @@ export function stokTahmini(deps: ReadToolDeps): AssistantTool<typeof stokTahmin
       const [data, { scope, rows }] = await Promise.all([deps.stock(), deps.branches()]);
       const uyarilar: string[] = [];
       const chosen = rows.find((b) => b.id === scope);
-      if (chosen && chosen.id !== STOCK_ESTIMATE_BRANCH) uyarilar.push(`Panelde ${chosen.name} seçili; tahmini stok yalnız Marina (AsilPOS) için hesaplanır.`);
+      // Başka şube seçiliyken Marina'nın tahmini verilmez (şube ayrımı, 27 Kasım 2026; Tahmini stok ekranı da öyle der):
+      // önceden yalnız uyarı yazılıp Marina'nın stoğu anlatılıyordu
+      if (chosen && chosen.id !== STOCK_ESTIMATE_BRANCH) {
+        return { tahmin: null, sube: chosen.name, not: `${STOCK_ESTIMATE_OTHER_BRANCH}: tahmini stok yalnız Marina (AsilPOS) için hesaplanır. Marina'yı ya da Tümü'nü seçin.` };
+      }
       if (!data) return { tahmin: null, not: "AsilPOS'a geçiş günü seçilmemiş: tahmini stok yok (yalnız AsilPOS'un gün sonlarıyla hesaplanır).", ...(uyarilar.length ? { uyarilar } : {}) };
       const e = data.estimate;
       let lines: StockEstimateLine[] = args.hepsi ? e.lines : e.critical;

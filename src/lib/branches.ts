@@ -177,6 +177,19 @@ export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sort
 }
 
 /**
+ * Seçim bir online kanal mı (şube ayrımı, 27 Kasım 2026; docs/SUBE.md › Şube ayrımı › Ayarsız sızıntılar): kanalın kasası,
+ * stoğu ve vardiyası yoktur. Kanal seçiliyken Bugün, zil ve kasa listeleri Tuzla'nın kasasını göstermez; "Bu kanalın
+ * kasası ve stoğu yok" der. Kanalın satırı; "Tümü", fiziksel şube ya da bilinmeyen kimlikte null
+ */
+export function selectedChannel<T extends Pick<BranchRow, "id" | "kind">>(scope: BranchScope, known: readonly T[]): T | null {
+  if (scope === ALL_BRANCHES) return null;
+  return known.find((b) => b.id === scope && b.kind === "online") ?? null;
+}
+
+/** Online kanal seçiliyken kasa ve stok satırlarının yerindeki tek metin (Bugün, Kasadaki fiyatlar) */
+export const CHANNEL_NO_TILL = "Bu kanalın kasası ve stoğu yok";
+
+/**
  * İşletme geneli ekranda gösterilen kasa satırları (Tedarikçiler'in işlenmemiş kasa ödemeleri; docs/SUBE.md › Ödemeler):
  * her satır kasasının adını (birden çok kasa açıkken, `namedTill`) ve seçili kapsamda olup olmadığını taşır. Tek şube
  * seçiliyken ekran yalnız o şubenin satırlarını gösterir, öbür şubelerinkini yalnız sayar ("Öbür şubede N satır daha");

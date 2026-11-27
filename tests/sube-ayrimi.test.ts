@@ -191,7 +191,6 @@ const BEKLEYEN_B: Record<string, number> = {
   "src/app/panel/giderler/page.tsx": 1,
   "src/app/panel/hammaddeler/page.tsx": 1,
   "src/app/panel/hatirlaticilar/page.tsx": 2,
-  "src/app/panel/parasut/page.tsx": 1,
   "src/server/data/asilpos-day-end.ts": 1,
   "src/server/data/asilpos-day.ts": 2,
   "src/server/data/asilpos-ikram.ts": 1,
@@ -206,20 +205,16 @@ const BEKLEYEN_B: Record<string, number> = {
   "src/server/data/checklists.ts": 1,
   "src/server/data/commission.ts": 2,
   "src/server/data/count-alerts.ts": 1,
-  "src/server/data/dataset.ts": 1,
   "src/server/data/expense-extras.ts": 1,
   "src/server/data/fixed-follow.ts": 1,
   "src/server/data/fixed-reminders.ts": 1,
-  "src/server/data/handover-ledger.ts": 2,
   "src/server/data/invoice-branch.ts": 4,
   "src/server/data/karaoke-requests.ts": 3,
-  "src/server/data/kayip-onleme.ts": 1,
   "src/server/data/pos-staff.ts": 1,
   "src/server/data/product-history.ts": 4,
   "src/server/data/staff-links.ts": 2,
-  "src/server/data/stock-only-invoices.ts": 2,
+  "src/server/data/stock-only-invoices.ts": 1,
   "src/server/data/suppliers.ts": 2,
-  "src/server/data/today.ts": 1,
   "src/server/data/waste-requests.ts": 7,
   "src/server/data/waste.ts": 1,
   "src/server/notify/checklist-alerts.ts": 1,
@@ -265,8 +260,8 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
 const BEKLEYEN_ALANLAR: readonly ViewArea[] = ["odemeler", "nakit", "vergi", "tutarlilik", "mutabakat", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"];
 /** Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır */
 const YALNIZ_FIRMA_SAYFALARI: readonly string[] = [];
-/** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme: parça 2 kapsamla okur) */
-const BEKLEYEN_NOT = ["src/app/panel/raporlar/kayip/page.tsx"];
+/** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme parça 2'de kapsamla okumaya geçti; boş) */
+const BEKLEYEN_NOT: string[] = [];
 
 const pageOf = (path: string) => `src/app${path}/page.tsx`;
 

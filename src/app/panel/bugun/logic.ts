@@ -3,6 +3,7 @@
 // ekranın kendiliğinden yenileneceği an. Olguları sunucu toplar (src/server/data/today.ts); yöneticiye ait olgular
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
+import { ALL_BRANCHES, BRANCH_PARAM, CHANNEL_NO_TILL } from "@/lib/branches";
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import {
   branchDayKey,
@@ -67,6 +68,7 @@ export type DayTaskKey =
   | "sayim-ek-fiyat"
   | "zayi"
   | "kasa"
+  | "kanal"
   | "sayim-son";
 
 export interface DayTask {
@@ -168,6 +170,12 @@ export interface DayFacts {
    * sayılacak kalem
    */
   stock: { month: string; counted: number; total: number; prevMonth: string; prevHasData: boolean; prevCounted: number; prevTotal: number } | null;
+  /**
+   * Seçim bir online kanal (şube ayrımı, 27 Kasım 2026): kanalın adı. Kanalın kasası, stoğu ve vardiyası yok; kasa ve
+   * sayım satırları yerine tek satır "Bu kanalın kasası ve stoğu yok" (`channelRow`). Önceden kanal seçiliyken Tuzla'nın
+   * kasası ve sayımı görünüyordu. Yoksa ya da null bugünkü gibi
+   */
+  channel?: string | null;
   // ---- Yalnız yönetici
   /** Günlük işlerin ciddi sorunları (ops'un sistem uyarıları, yalnız canlıda; systemIssues) */
   system?: { title: string; body: string }[] | null;
@@ -386,6 +394,8 @@ function ofTill(t: DayTask, b: Pick<CashTill, "id" | "name">): DayTask {
  * onay bekliyorsa tek satır)
  */
 const cashYesterday: Row = (f, c) => {
+  // Online kanal seçili: kasası yok (satır channelRow'da)
+  if (f.channel) return null;
   const tills = tillsOf(f);
   if (!tills) return cashYesterdayOf(f, c, f.cash);
   const out: DayTask[] = [];
@@ -491,6 +501,7 @@ export function eveningCashText(kasa: KasaName): string {
  * çok kasa açıkken yöneticiye şube başına
  */
 const cashToday: Row = (f, c) => {
+  if (f.channel) return null;
   const tills = tillsOf(f);
   if (tills) {
     return tills.flatMap((t) => {
@@ -534,6 +545,23 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
   const later = kasa === "AsilPOS" ? "Kapanışta AsilPOS'ta Günü kapat'a basılır; rapor AsilPOS'tan gelir." : "Kapanışta girilir: Z raporu ve kasa sayımı.";
   return { key: "kasa", title, status: "later", badge: "Akşam", detail: later, href: "/panel/kasa", action: "Kasa raporu" };
 }
+
+/**
+ * Online kanal seçiliyken kasa ve sayım satırlarının yerinde tek bilgi satırı (şube ayrımı, 27 Kasım 2026; iki rolde):
+ * kanalın kasası ve stoğu yok, bağlantı "Tümü"nü seçer (`?sube=hepsi`; seçici çereze benimsetir)
+ */
+const channelRow: Row = (f) => {
+  if (!f.channel) return null;
+  return {
+    key: "kanal",
+    title: `${f.channel}: kasa ve stok`,
+    status: "done",
+    badge: "Yok",
+    detail: `${CHANNEL_NO_TILL}: kasa raporu, sayım ve kasadaki fiyatlar şubelerde. Soldan bir şube ya da Tümü'nü seçin.`,
+    href: `/panel/bugun?${BRANCH_PARAM}=${ALL_BRANCHES}`,
+    action: "Tümü'nü göster",
+  };
+};
 
 // ---------------------------------------------------------------- Zayi (personel)
 
@@ -942,6 +970,7 @@ const ADMIN_ROWS: Row[] = [
   countExtrasPrice, // sayim-ek-fiyat
   checklistRows, // liste-{templateId} (açılış saatine göre)
   cashToday, // kasa
+  channelRow, // kanal
   countMonthEnd, // sayim-son
 ];
 
@@ -957,6 +986,7 @@ const STAFF_ROWS: Row[] = [
   posRow, // modpos
   wasteRow, // zayi
   cashToday, // kasa
+  channelRow, // kanal
   countMonthEnd, // sayim-son
 ];
 

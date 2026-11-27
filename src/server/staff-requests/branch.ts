@@ -5,7 +5,7 @@ import { and, eq, gt, inArray, isNull, notInArray, or } from "drizzle-orm";
 import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, requestInScope } from "@/lib/branches";
 import { cashSubjectBranch } from "@/lib/cash-requests";
 import { closedRequestBranch } from "@/lib/closed-days";
-import { RETIRED_REQUEST_KINDS } from "@/lib/staff-requests";
+import { RETIRED_REQUEST_KINDS, type StaffRequestKind } from "@/lib/staff-requests";
 import { karaokeBranchId } from "@/server/branches";
 import { schema as s, type DB } from "@/server/db";
 
@@ -114,6 +114,33 @@ export async function pendingOutOfScope(db: Reader, scope: BranchScope, now: Dat
   if (!rows.length) return 0;
   const branchOf = await requestBranches(db, rows);
   return rows.filter((x) => !requestInScope(branchOf.get(x.id) ?? null, scope)).length;
+}
+
+/**
+ * Türüne göre bekleyen istekler ve en eskisinin anı, seçili kapsamda (şube ayrımı, 27 Kasım 2026; Bugün'ün Onaylar
+ * satırı): "Tümü"de `countPendingByKind`'ın aynısı; tek şube seçiliyken yalnız o şubenin ve şubesi bilinmeyen istekler
+ * (`requestInScope`). Önceden Bugün'ün satırı Marina seçiliyken Tuzla'nın kasa isteklerini de sayıyordu, Onaylar ise
+ * yalnız Marina'nınkini gösteriyordu
+ */
+export async function pendingByKindInScope(db: Reader, scope: BranchScope, now: Date = new Date()): Promise<{ kind: StaffRequestKind; count: number; oldestAt: Date }[]> {
+  const r = s.staffRequests;
+  const rows = await db
+    .select({ id: r.id, kind: r.kind, subject: r.subject, payload: r.payload, createdAt: r.createdAt })
+    .from(r)
+    .where(and(eq(r.status, "pending"), or(isNull(r.expiresAt), gt(r.expiresAt, now)), notInArray(r.kind, [...RETIRED_REQUEST_KINDS])));
+  if (!rows.length) return [];
+  const branchOf = scope === ALL_BRANCHES ? null : await requestBranches(db, rows);
+  const byKind = new Map<StaffRequestKind, { kind: StaffRequestKind; count: number; oldestAt: Date }>();
+  for (const x of rows) {
+    if (branchOf && !requestInScope(branchOf.get(x.id) ?? null, scope)) continue;
+    const g = byKind.get(x.kind);
+    if (!g) byKind.set(x.kind, { kind: x.kind, count: 1, oldestAt: x.createdAt });
+    else {
+      g.count++;
+      if (x.createdAt < g.oldestAt) g.oldestAt = x.createdAt;
+    }
+  }
+  return [...byKind.values()];
 }
 
 /**

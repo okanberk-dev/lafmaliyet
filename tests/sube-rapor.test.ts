@@ -124,5 +124,8 @@ test("#27 Genel bakış: 'Yaklaşan ödemeler' ve gecikme satırı şube seçimi
   assert.match(src, /withBranchScope\(ALL_BRANCHES, \(\) => loadCashPlan\(m, upcoming\)\)/);
   assert.match(src, /const cari = upcoming \? cariAlerts\(upcoming\.cari\) : \[\];/);
   // Bugün'ün kartı da şubeyle
-  assert.match(read("src/server/data/today.ts"), /loadUpcoming\(undefined, \{ branch: await currentBranchScope\(\) \}\)/);
+  // Bugün'ün kartı da şubeyle (adminFacts'in kapsamı: şube ayrımı, 27 Kasım 2026)
+  const today = read("src/server/data/today.ts");
+  assert.match(today, /const scope = await currentBranchScope\(\);/);
+  assert.match(today, /loadUpcoming\(undefined, \{ branch: scope \}\)/);
 });

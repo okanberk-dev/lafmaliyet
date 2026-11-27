@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, lt, max, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, max, ne } from "drizzle-orm";
 
 import { CUT_OFF_MESSAGE, RUNS_KEEP_DAYS, STUCK_MS, type JobOutcome, type JobRunLite, type RunJobKey } from "@/lib/job-health";
 import { getDb, schema as s } from "@/server/db";
@@ -142,13 +142,16 @@ export async function lastParasutSyncOkAt(accounts?: readonly string[]): Promise
 /**
  * Günlük eşitlemenin (tedarikçi geçmişi hariç) son çalışması, zil ve sabah e-postasının "eşitleme başarısız" uyarısı
  * için. Şube başına Paraşüt hesabı: her hesabın son çalışmasına bakılır, birinin son çalışması hatalıysa o döner
- * (Tuzla'nın sonraki başarısı Marina'nın hatasını örtmesin); yoksa en yenisi
+ * (Tuzla'nın sonraki başarısı Marina'nın hatasını örtmesin); yoksa en yenisi. `accounts` verilirse yalnız o hesaplar
  */
-export async function latestParasutRun(db = getDb()): Promise<typeof s.parasutSyncRuns.$inferSelect | null> {
+export async function latestParasutRun(db = getDb(), accounts?: readonly string[]): Promise<typeof s.parasutSyncRuns.$inferSelect | null> {
+  // `accounts`: yalnız bu hesapların çalışmaları (zil tek şube seçiliyken şubenin hesabı; şube ayrımı, 27 Kasım 2026).
+  // Boş liste hiçbir hesap demek
+  if (accounts && !accounts.length) return null;
   const rows = await db
     .selectDistinctOn([s.parasutSyncRuns.account])
     .from(s.parasutSyncRuns)
-    .where(ne(s.parasutSyncRuns.trigger, "history"))
+    .where(and(ne(s.parasutSyncRuns.trigger, "history"), accounts ? inArray(s.parasutSyncRuns.account, [...accounts]) : undefined))
     .orderBy(s.parasutSyncRuns.account, desc(s.parasutSyncRuns.startedAt));
   const newest = [...rows].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
   return newest.find((r) => r.status === "error") ?? newest[0] ?? null;

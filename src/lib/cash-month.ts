@@ -621,6 +621,17 @@ export function monthRowEmpty(row: Omit<MonthEntry, "month">, hasTill: boolean):
 }
 
 /**
+ * Onay bekleyen geç kasa raporlarının günleri, şubesine göre (şube ayrımı, 27 Kasım 2026): `branchId` verilince yalnız o
+ * şubenin (isteğin şubesi `requestBranches`'tan; geç rapor isteği açanın kasası), null'da hepsi ("Tümü"nün birleşik
+ * satırları). Önceden Marina'nın ay bilgisi Tuzla'nın bekleyen geç raporunun gününü de "onay bekliyor" yazıyordu.
+ * Sıralı, tekrarsız
+ */
+export function pendingLateDays(rows: readonly { day: string | null; branchId: string | null }[], branchId: string | null): string[] {
+  const days = rows.flatMap((r) => (r.day && (branchId === null || r.branchId === branchId) ? [r.day] : []));
+  return [...new Set(days)].sort();
+}
+
+/**
  * Eksik günler: "5, 12, 20 Kasım"; fazlası "… ve 2 gün daha" (ay değişirse her gün kendi ayıyla). `pending`: geç raporu
  * onay bekleyen günler, "12 (onay bekliyor)"
  */
