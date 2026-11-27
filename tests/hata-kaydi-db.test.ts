@@ -118,7 +118,7 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal(r.message, "Fatura 13 bulunamadı: [e-posta]");
     assert.equal(r.path, "/panel/faturalar/13");
     assert.equal(r.digest, "222 111", "son kodlar, yeni önce");
-    assert.ok(!JSON.stringify(await rows()).includes("ornek.com"), "e-posta yazılmadı");
+    assert.doesNotMatch(JSON.stringify(await rows()), /ornek\.com/, "e-posta yazılmadı");
     assert.equal(await store.resolveErrors(db, [r.id], later), 1);
     assert.equal((await store.loadErrorLog(db)).openCount, 0);
     // Yeniden görülünce açılır, sayısı sürer
