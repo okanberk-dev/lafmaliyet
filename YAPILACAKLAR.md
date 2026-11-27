@@ -39,6 +39,20 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   döndürün; (3) bir şubenin e-postası müdür ya da muhasebeci hesabındaysa kurulum bağlantısı o adrese gitmez, başka adres
   yazılır.
 
+- **Hata kaydı** (P3; bu PR, 27 Kasım): sunucu hataları (Next'in `onRequestError` kancası), işlemlerin beklenmeyen
+  hataları (`attempt()`), tarayıcı hataları ve CSP ihlal raporları panelin veritabanında 30 gün; aynı hata tek satır
+  (sayısı, ilk ve son görülüşü, hata kodu). Ekran **Ayarlar › Hata kaydı** (yalnız yönetici; Çözüldü / Hepsi çözüldü).
+  Kişisel veri ve anahtar yazılmaz; kayıt isteği bekletmez ve bozamaz; günlük satır sınırı ve 2.000 satır tavanı. Göç
+  `0100_hata_kaydi`. docs/HATA-KAYDI.md. Sahibe söylenecek:
+  - Sunucuda hata olunca sabah e-postasının alıcılarına günde en çok bir "Panelde hata: …" e-postası gelir (yalnız
+    canlıda, e-posta açıkken); ayrıntı Ayarlar › Hata kaydı'nda. Kullanıcı "Bir şeyler ters gitti" ekranındaki hata
+    kodunu söylerse satır o kodla bulunur (satır son beş görülüşün kodunu tutar; kod her yayında değişir).
+  - **CSP_ENFORCE kararı artık kartta:** "uygulanabilir" (son 7 günde panelin kendi kodundan ihlal yok, kayıt en az 7
+    gündür tutuluyor) deyince Vercel'de `CSP_ENFORCE=1` eklenip yeniden yayınlanır; "henüz uygulanmasın" diyorsa önce
+    satırlar düzeltilir. Çözüldü işaretlemek 7 günlük bekleyişi kısaltmaz: son ihlalden 7 gün sonra karar yeşile döner.
+    Vercel günlüğüne bakmak gerekmez.
+  - Acil durumda kayıt `ERROR_LOG_DISABLED=1` ile kapatılır. Sentry eklenmedi (isteğe bağlı; hesap açılırsa ayrı iş,
+    docs/HATA-KAYDI.md § 7).
 - **Excel'den tam bağımsızlık** (P2; #164 ve bu PR, 26 Kasım): başlangıç verisi uygulamanın dışında
   (`tests/fixtures/baslangic/`; tohum betiği ve testler okur), canlıda boş veritabanına kendiliğinden yüklenmiyor,
   Excel çıkarma betiği kalktı; `npm audit` geliştirme araçları dahil 0 açık; başlangıç verisindeki kişi adları uydurma
@@ -84,16 +98,17 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   0094 (personel). Sahibe söylenecek: Ayarlar › Muhasebeci paketi'ne muhasebecinin adresi yazılmadıkça paket gitmez;
   Marina'nın online ay kaydı yayından sonra işletmeninkiyle bir kez karşılaştırılmalı (site şubeyi süzmüyorsa tahmin
   online tüketimi fazla düşer). Paraşüt güvenliği (aynı vergi no sorusu, POST + tek kullanımlık bağlantı, AsilPOS anahtarı hemen
-  geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); bir hafta Vercel günlüğünde `[csp]` satırı
-  çıkmazsa `CSP_ENFORCE=1` verilip yeniden yayınlanır.
+  geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); raporlar 27 Kasım'dan beri hata kaydında, karar
+  Ayarlar › Hata kaydı'nda (yukarıda).
 
 ## Devam eden (26 Kasım akşamı)
 
 - [ ] [Ladmin] Şube seçiliyken her ekranda yalnız o şubenin bilgisi ("Tümü"de şube şube); firma geneli ekranlar için sahibin kararı.
 
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
-- P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
-  rol × ekran duman testi).
+- P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
+  bulgu düzeltilecek, ikinci inceleme, sonra PR.
+- P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi, rol × ekran duman testi).
 - P5 Ayarlar ay bazlı + 2027 vergi kuralları (Ocak'tan önce); P6 Excel'den kalan sabit listeler (fatura / hammadde
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
@@ -109,8 +124,8 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
   Danger Zone › Change visibility › Private; açığa düşmüş anahtarlar yenilensin.
 - [ ] GitHub › Settings › Branches: main için "Tip · Lint · Test · Derleme" zorunlu olsun (kırmızı CI'yla birleştirme olmasın).
 - [ ] GitHub sırrı `ANTHROPIC_API_KEY`: sahip 27 Kasım'da anahtarı ekledi ama inceleme yine düşüyor; depo düzeyindeki sır 23 Ekim tarihli, yeni anahtarla güncellenmeli (kuruluş düzeyindeki sırrı gölgeler).
-- [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`; CSP bir
-  hafta temizse `CSP_ENFORCE=1`.
+- [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`;
+  Ayarlar › Hata kaydı "Güvenlik politikası uygulanabilir" deyince `CSP_ENFORCE=1`.
 - [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›
   Muhasebeci paketi); SGK işveren oranı kararı (%15,75 / %19,75); yedekten geri yükleme provası; dış sağlık izleyicisi.
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.

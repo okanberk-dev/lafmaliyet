@@ -1,4 +1,4 @@
-import { Building2, Database, Droplets, FileArchive, Globe, HardDriveDownload, History, Layers, LockKeyhole, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
+import { Bug, Building2, Database, Droplets, FileArchive, Globe, HardDriveDownload, History, Layers, LockKeyhole, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -27,6 +27,8 @@ export const SETTINGS_SECTIONS = [
   { id: "gecmis", label: "İşlem geçmişi", icon: History },
   // Zamanlanmış işlerin (Paraşüt eşitlemesi, sabah işi) son çalışması; uyarılar buraya getirir
   { id: "isler", label: "Günlük işler", icon: Timer },
+  // Panelde oluşan hatalar (sunucu, işlem, tarayıcı, CSP) ve güvenlik politikasının kararı (docs/HATA-KAYDI.md)
+  { id: "hatalar", label: "Hata kaydı", icon: Bug },
   // laffogato.net bağlantılarının durumu (karaoke, menü, siparişler, online satışlar) ve sitenin paneli
   { id: "site", label: "laffogato.net", icon: Globe },
   // Kafenin kasası AsilPOS: bağlantının durumu, son ret ve günü silme, AsilPOS'a geçiş günü (docs/ASILPOS.md)

@@ -29,6 +29,7 @@ import { sql } from "drizzle-orm";
 
 import { databaseTarget, databaseUrl } from "../src/lib/backup/format";
 import { createDb } from "../src/server/db";
+import { markErrorsSince } from "../src/server/errors/store";
 import { restartWatchOnDeploy } from "../src/server/jobs/watch";
 
 import { runMigrations } from "./migrate";
@@ -39,13 +40,15 @@ import { runSeed } from "./seed";
  * Günlük işlerin izlenmesi canlıya ilk çıkışta başlar (src/server/jobs/watch.ts): işler bu andan sonra hiç çalışmazsa
  * (CRON_SECRET doğru ama Vercel Cron tetiklemiyor) panel ertesi sabah "çalışmadı" der. İşler bir günden uzun süredir
  * kayıt yazmıyorsa (önceki derleme bozuldu ya da eski sürüme dönüldü, kayıt yazmayan kod çalıştı) izleme bu yayından
- * yeniden başlar. Yazılamazsa derleme durmaz.
+ * yeniden başlar. Hata kaydının başlangıcı da (yoksa) yazılır. Yazılamazsa derleme durmaz.
  */
 async function markJobsWatched(url: string | undefined) {
   if (!url) return;
   const db = createDb(url, 1);
   try {
     if (await restartWatchOnDeploy(db)) console.log("✓ Günlük işlerin izlenmesi bu yayından başlıyor");
+    // Hata kaydının başlangıcı (CSP kararı "en az 7 gündür kayıt var mı" diye bakar; docs/HATA-KAYDI.md): yalnız yoksa
+    await markErrorsSince(db);
   } catch (e) {
     console.warn("! Günlük işlerin izleme başlangıcı yazılamadı:", (e as Error).message);
   } finally {
