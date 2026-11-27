@@ -249,7 +249,7 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
     assert.doesNotMatch(read(file), /cashReportText/, file);
   }
   assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, \{ \.\.\.meta, branchName \}, "admin"\)/);
-  assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff"\);/);
+  assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff", opts\);/);
 
   // Düzeltilen rapor (sürüm 2): "Değişen" satırında yazarkasanın toplamı, KDV'si, fiş sayısı, yemek kartı ve diğeri
   // yalnız adıyla; Z no, nakit ve kart bloktaki gibi değeriyle. "Fotoğraftan farklı"da fiş sayısı da yalnız adıyla
@@ -315,7 +315,8 @@ test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 g
   assert.match(page, /next=\{blind \? null : next\}/);
   assert.match(page, /revisions=\{blind \? \[\] : revisions\}/);
   assert.match(page, /asilpos=\{blind && asilposState\.day \? blindAsilposDay\(asilposState\.day\) : asilposState\.day\}/);
-  assert.match(page, /const whatsapp = report && !blind/);
+  // WhatsApp metni kör günde sayımsız raporla ve sayımsız metinle (davranışı tests/whatsapp-kor.test.ts sınar)
+  assert.match(page, /if \(blind\) \{\s*const uncounted = blindReport\(report\);[\s\S]*?\{ blind: true \}/);
   assert.match(page, /cashReportsBetween\(addDays\(today, -6\), today\)\.then\(\(r\) => blindForStaff\(r, "staff"\)\)/);
   assert.match(page, /getCashReport\(date, "staff"\)\.then\(async \(r\) => \(r \? \(await blindForStaff\(\[r\], "staff"\)\)\[0\] : null\)\)/);
   assert.match(read("src/server/data/today.ts"), /cashReportsBetween\(c\.yesterday, c\.day\)\.then\(\(r\) => blindForStaff\(r, cashAudience\(user\.role\)\)\)/);

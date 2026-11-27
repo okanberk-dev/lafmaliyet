@@ -90,7 +90,7 @@ test("#2 e-postayı, WhatsApp metnini ve denemeyi kuran yollar raporun şubesini
   assert.match(email, /branch: namedTill\(branches, row\.branchId\)/);
   assert.match(email, /key: cashLogKey\(row\)/);
   const actions = read("src/server/actions/cash-report.ts");
-  assert.equal(actions.match(/whatsappText\([^)]*branchName/g)?.length, 2, "gönderim ve cashReportWhatsapp");
+  assert.equal(actions.match(/whatsappText\([^)]*branchName/g)?.length, 3, "gönderim ve cashReportWhatsapp (kör kasanın sayımsız metni ve öteki günler)");
   assert.match(actions, /renderCashReport\(sample, \{[^}]*branch \}\)/);
   assert.match(read("src/app/panel/kasa/page.tsx"), /branchName: view\.branch\?\.name \?\? null/);
   assert.match(read("src/app/panel/kasa/cash-history.tsx"), /branchName: branch\?\.name \?\? null/);
@@ -155,7 +155,7 @@ test("WhatsApp metni formun kasasının raporundan (24 Kasım şube kapsamı, pl
   const src = read("src/server/actions/cash-report.ts");
   const fn = src.slice(src.indexOf("export async function cashReportWhatsapp("));
   assert.match(fn, /export async function cashReportWhatsapp\(date: string, branchId\?: string \| null\)/);
-  // Arada yalnız kör kasanın reddi (bulgu 0: personele AsilPOS gününün metni verilmez)
-  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*(?:\/\/[^\n]*\n\s*)?if \(cashAudience\(me\.role\) !== "admin" && \(await isAsilposTillDay\(getDb\(\), d, till\)\)\) throw new UserError\(BLIND_TEXT\.whatsapp\);\s*const r = await getCashReport\(d, "staff", till\);/);
+  // Arada yalnız kör kasanın kararı (bulgu 0; 28 Kasım 2026'dan beri red değil, sayımsız metin: tests/whatsapp-kor.test.ts)
+  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*(?:\/\/[^\n]*\n\s*)*const blind = cashAudience\(me\.role\) !== "admin" && \(await isAsilposTillDay\(getDb\(\), d, till\)\);\s*const r = await getCashReport\(d, "staff", till\);/);
   assert.doesNotMatch(fn.slice(0, fn.indexOf("\n}\n")), /getCashReport\(d\)/, "şubesiz okuma kalmadı");
 });
