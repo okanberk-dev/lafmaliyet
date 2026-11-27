@@ -1,6 +1,8 @@
 import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/breakdown";
 import type { PnlMonthCalc, PnlRowDef } from "@/lib/calc/engine";
+import type { Role } from "@/lib/constants";
 import { monthLabel, num, tl } from "@/lib/format";
+import { openableHref } from "@/lib/roles";
 
 import type { GridSection } from "./pnl-grid";
 
@@ -37,10 +39,16 @@ const monthRevenue = (c: Pick<PnlMonthCalc, "revenueNet"> & Partial<Pick<PnlMont
  * Yıl cirosu kartının dökümü: ay ay ciro (KDV hariç; ModPOS + laffogato.net online satışı), takvim sırasıyla; aya
  * dokununca Satışlar'da o ay açılır. Kalemler kartın rakamını (cirosu girilmiş ayların KDV hariç cirosu toplamı,
  * yearTotals) tutar. Gideri, açık günü ya da online satışı olup POS cirosu girilmemiş aylar toplama girmeyen ayrı
- * bölümde. `calcs` bu aya kadarki aylar (sonrakiler sayfada kesilir).
+ * bölümde. `calcs` bu aya kadarki aylar (sonrakiler sayfada kesilir). `role` bakanın rolü: Satışlar'ı açamayan role
+ * (muhasebeci) aylar bağlantısızdır, "Satışlar'da ciro girilir" de denmez (src/lib/roles.ts › openableHref).
  */
-export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string[]): BreakdownGroup[] {
+export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string[], role: Role = "admin"): BreakdownGroup[] {
   const days = (c: RevenueMonthCalc) => (c.info?.openDays ? `${num(c.info.openDays)} açık gün` : null);
+  const link = (href: string) => {
+    const open = openableHref(role, href);
+    return open ? { href: open } : {};
+  };
+  const canEnter = openableHref(role, "/panel/satislar") !== null;
   // POS cirosu girilmemiş ay yıl toplamına girmez (yearTotals): online satışı olsa da bu bölümde, kâra girmeden
   const missing = calcs.filter((c) => c.revenueNet === null && (activeMonths.includes(c.month) || c.site));
   return [
@@ -59,7 +67,7 @@ export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string
             .filter(Boolean)
             .join(" · "),
           amount: monthRevenue(c),
-          href: `/panel/satislar?ay=${c.month}`,
+          ...link(`/panel/satislar?ay=${c.month}`),
           // Sıfır girilen ay da görünsün: cirosu girilmemiş aydan ayrı
           ...(monthRevenue(c) === 0 ? { display: tl(0) } : {}),
         })),
@@ -67,7 +75,7 @@ export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string
     {
       key: "girilmedi",
       label: "Cirosu girilmemiş aylar",
-      note: "Gideri, açık günü ya da online satışı var, POS cirosu yok: yıl toplamına ve kâra girmez. Aya dokununca Satışlar'da ciro girilir.",
+      note: `Gideri, açık günü ya da online satışı var, POS cirosu yok: yıl toplamına ve kâra girmez.${canEnter ? " Aya dokununca Satışlar'da ciro girilir." : ""}`,
       apart: true,
       noSubtotal: true,
       rows: missing.map((c) => ({
@@ -77,7 +85,7 @@ export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string
         amount: 0,
         display: "Girilmedi",
         tone: "warn" as const,
-        href: `/panel/satislar?ay=${c.month}#m-pos`,
+        ...link(`/panel/satislar?ay=${c.month}#m-pos`),
       })),
     },
   ];

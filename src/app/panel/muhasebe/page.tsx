@@ -89,7 +89,7 @@ async function AccountingContent({ searchParams }: { searchParams: PageProps<"/p
           <Card id="yardim" className="scroll-mt-20">
             <CardHeader icon={<HelpCircle />} title="Hesabınız" description="Muhasebeci hesabı salt okunurdur." />
             <CardContent className="space-y-2 text-sm text-pretty text-ink-soft">
-              <p>Bir kaydı düzeltmek gerekirse yöneticiye yazın; düğmelere basarsanız işlem &ldquo;salt okunur&rdquo; diye reddedilir.</p>
+              <p>Ekleme, düzeltme ve silme düğmeleri bu hesapta görünmez. Bir kaydı düzeltmek gerekirse yöneticiye yazın.</p>
               <p>Kişi başı maaş, personel belgeleri, ayarlar ve Paraşüt bağlantısı bu hesapta görünmez. Gelir-gider&apos;de personel giderleri toplam olarak durur.</p>
               <p>
                 İki adımlı doğrulamayı ve parolanızı Hesabım&apos;dan yönetirsiniz: iki adımlı isteğe bağlıdır, zorunluluk açıksa kurmadan paneli kullanamazsınız.

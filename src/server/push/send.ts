@@ -4,6 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { appUrl } from "@/server/auth/tokens";
 import { getDb, schema as s } from "@/server/db";
+import { reachableUser } from "@/server/notify/reachable";
 import { open, seal } from "@/server/secret-box";
 
 import { encryptPayload, generateVapidKeys, isPushEndpoint, publicKeyOf, vapidAuthorization, type VapidKeys } from "./webpush";
@@ -76,8 +77,9 @@ export interface PushResult {
 }
 
 /**
- * Aboneliklere bildirim gönderir: yalnız aktif kullanıcılar ve aboneliği alırken geçerli olan oturum sürümü hâlâ
- * geçerliyse (parola, rol ya da erişim değişince eski cihaza gitmez). `topic` aboneliğin tercihine bakar (karaoke /
+ * Aboneliklere bildirim gönderir: yalnız bildirim alabilen hesaplar (etkin ve şubesi kapalı müdür değil: panele giremeyen
+ * müdürün cihazına hiçbir konuda gitmez; src/server/notify/reachable.ts) ve aboneliği alırken geçerli olan oturum sürümü
+ * hâlâ geçerliyse (parola, rol ya da erişim değişince eski cihaza gitmez). `topic` aboneliğin tercihine bakar (karaoke /
  * sipariş / hatırlatıcı / onay; sipariş tercihi seçilmemişse personel cihazında açık, yöneticininkinde kapalı); "test"
  * herkese değil yalnız `userIds`'e gider. "approvals" (docs/ONAYLAR.md): yöneticiye personelin yeni açtığı istek
  * (src/server/staff-requests/push.ts); metinde tutar yok, etiket `istek-<id>`. "shifts" (docs/VARDIYA.md › Bildirimler):
@@ -95,7 +97,7 @@ export async function sendPush(
   // Vardiya bildirimi kişiye özeldir: alıcısız çağrı herkese gitmesin
   if (topic === "shifts" && !opts.userIds) return result;
   const db = getDb();
-  const conditions = [eq(s.users.active, true), eq(s.users.sessionVersion, s.pushSubscriptions.sessionVersion)];
+  const conditions = [reachableUser(), eq(s.users.sessionVersion, s.pushSubscriptions.sessionVersion)];
   if (topic === "karaoke") conditions.push(eq(s.pushSubscriptions.karaoke, true));
   if (topic === "orders") conditions.push(sql`coalesce(${s.pushSubscriptions.orders}, ${s.users.role} = 'staff')`);
   if (topic === "reminders") conditions.push(eq(s.pushSubscriptions.reminders, true));

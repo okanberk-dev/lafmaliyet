@@ -7,6 +7,8 @@ import { reminderPushText } from "@/lib/user-reminders";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
 
+import { reachableUser } from "./reachable";
+
 /**
  * Sabah özeti (günlük iş, /api/cron/gunluk): bugün ya da önceden kalmış açık kişisel hatırlatıcısı olan her kişinin
  * "sabah özeti" açık cihazlarına tek bildirim. Kimsenin hatırlatıcısı başkasına gitmez.
@@ -16,7 +18,8 @@ export async function pushReminderSummaries(today = todayTR()): Promise<{ users:
     .select({ userId: s.userReminders.userId, title: s.userReminders.title, dueTime: s.userReminders.dueTime, dueDate: s.userReminders.dueDate })
     .from(s.userReminders)
     .innerJoin(s.users, eq(s.users.id, s.userReminders.userId))
-    .where(and(eq(s.userReminders.active, true), lte(s.userReminders.dueDate, today), eq(s.users.active, true)))
+    // Bildirim alabilen hesaplar: pasif hesap ve şubesi kapalı müdür (panele giremez) özeti almaz
+    .where(and(eq(s.userReminders.active, true), lte(s.userReminders.dueDate, today), reachableUser()))
     .orderBy(asc(s.userReminders.dueDate), asc(s.userReminders.dueTime));
   const byUser = new Map<number, typeof rows>();
   for (const r of rows) byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r]);

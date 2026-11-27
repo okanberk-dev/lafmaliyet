@@ -9,7 +9,7 @@ import { redirect } from "next/navigation";
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
 import type { Role } from "@/lib/constants";
 import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/asilpos/kurulum";
-import { BRANCH_ROLES, can, homeFor, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
+import { BRANCH_ROLES, can, homeFor, managerWithoutBranch, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -90,14 +90,8 @@ async function readSessionUser(): Promise<SessionUser | null> {
   return { id: u.id, name: u.name, email: u.email, role: u.role, branchId, needsTwoFactor: needsTwoFactorSetup(u), totpEnabled: u.totpEnabled };
 }
 
-/**
- * Müdür şubesine kilitli olmak ZORUNDA (docs/ROLLER.md): şubesi yoksa (veritabanı kısıtı bunu zaten engeller) ya da şubesi
- * pasife alındıysa oturumu yok sayılır. Personelde şube pasife alınınca kilit kalkar ("Tümü"); müdürde kalkarsa öteki
- * şubeleri görürdü, o yüzden kapalı. Giriş de aynı kuralla reddedilir (src/server/actions/auth.ts).
- */
-export function managerWithoutBranch(u: { role: string; branchId: string | null; branchActive: boolean | null }): boolean {
-  return u.role === "manager" && (!u.branchId || u.branchActive !== true);
-}
+// Şubesi kapalı müdürün kuralı saf dosyada (src/lib/roles.ts): oturum, giriş ve bildirim aynı kuralı okur
+export { managerWithoutBranch };
 
 const toCurrent = ({ id, name, email, role, branchId }: SessionUser): CurrentUser => ({ id, name, email, role, branchId });
 

@@ -826,11 +826,15 @@ export function personnelExtraText(
   return `Bu ay${Math.abs(ratio - 1) > 1e-9 ? ` (${days} / ${dim} gün)` : ""}: ${parts.join(", ")}.`;
 }
 
-/** Banka POS komisyonunun bir şubesi (posCommission): kasa kartı varsa kart × oran, yoksa ciro × oran × banka kartı payı */
+/**
+ * Banka POS komisyonunun bir şubesi (posCommission), şubenin kendi görünümündeki tutarla: kasa kartı varsa kart × şubenin
+ * oranı (kuruşa yuvarlanır); yoksa eski formül, ciro × Ayarlar'daki oran × şubenin banka kartı payı (yuvarlanmaz)
+ */
 export interface PosCommissionPart {
   branchId: string | null;
   /** Kasa raporlarındaki banka kartı (KDV dahil, yemek kartı hariç); kasa kartı uygulanmıyorsa null */
   card: number | null;
+  /** Kasa kartı olan şubede şubenin POS oranı; olmayanda Ayarlar'daki eski genel oran */
   rate: number;
   amount: number;
 }
@@ -1299,12 +1303,23 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
   const kasaCardOf = (m: Month): number | null =>
     m.sources?.posRevenue === "kasa" && m.sources.cardShare !== "manual" && typeof m.kasa?.till.card === "number" ? m.kasa.till.card : null;
   /**
+   * Kasa kartı olmayan şube-ayının banka POS komisyonu, eski formülle: ciro × Ayarlar'daki komisyon oranı × o ayın banka
+   * kartı payı. Kuruşa yuvarlanmaz (Excel'le uyum; tests/calc.test.ts). Tek şube görünümünün tutarı da budur
+   */
+  const legacyPosOf = (m: Month | undefined): number => (m?.posRevenue ?? 0) * st.komisyon * bankShareOfInfo(m).rate;
+  /**
    * Banka POS komisyonu, tek fonksiyon (hesap sözleşmesi §10; 23 Kasım 2026): Σ şube (banka kartı × şubenin POS oranı).
    * Yemek kartının komisyonu kendi faturasıyla (Komisyon giderleri), banka kartına girmez. Gelir-gider'in
    * `commission:pos` hücresi bu tutardır, Satışlar onu satırlara ciro payıyla dağıtır: iki sayfa aynı rakamı gösterir.
-   * "Tümü"de şube şube (Month.byBranch); şubenin kasa kartı yoksa (elle yazılmış ciro) o şube ciro × oran × banka kartı
-   * payıyla. Ayın hiçbir şubesinde kasa kartı yoksa null: eski formüller (Satışlar satır × komisyon × kartlı oran,
-   * Gelir-gider ciro × komisyon × banka kartı payı; tests/calc.test.ts)
+   *
+   * "Tümü" şube görünümlerinin TOPLAMIDIR (denetim 28 Kasım 2026; tests/kart-komisyonu-tumu.test.ts): şube şube
+   * (Month.byBranch), her şube kendi görünümündeki tutarla. Kasa kartı olan şube kart × kendi oranı (kuruşa yuvarlanır);
+   * kasa kartı olmayan şube (elle yazılmış ciro) eski formülle (`legacyPosOf`, yuvarlanmaz): kendi görünümünde de öyle
+   * okunur. Önceden kartsız şube "Tümü"de şubenin oranıyla, kendi görünümünde Ayarlar'daki oranla sayılıyordu: iki tutar
+   * tutmuyordu. Toplam: kuruşa yuvarlanmış kart tutarları + yuvarlanmamış eski formül tutarları.
+   *
+   * Ayın hiçbir şubesinde kasa kartı yoksa null: eski formüller (Satışlar satır × komisyon × kartlı oran; Gelir-gider
+   * `legacyPos`: "Tümü"de yine şube şube)
    */
   function posCommission(month: string): PosCommission | null {
     const info = monthInfo.get(month);
@@ -1312,13 +1327,28 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     const entries: [string | null, Month][] = info.byBranch ? Object.entries(info.byBranch) : [[ds.branchView?.id ?? null, info]];
     if (!entries.some(([, m]) => kasaCardOf(m) !== null)) return null;
     const parts = entries.flatMap(([branchId, m]): PosCommissionPart[] => {
-      const rate = posRateOf(branchId);
       const card = kasaCardOf(m);
-      if (card !== null) return [{ branchId, card, rate, amount: kurus(card * rate) }];
+      if (card !== null) {
+        const rate = posRateOf(branchId);
+        return [{ branchId, card, rate, amount: kurus(card * rate) }];
+      }
       if (!((m.posRevenue ?? 0) > 0)) return [];
-      return [{ branchId, card: null, rate, amount: kurus((m.posRevenue ?? 0) * rate * bankShareOfInfo(m).rate) }];
+      return [{ branchId, card: null, rate: st.komisyon, amount: legacyPosOf(m) }];
     });
-    return { amount: kurus(parts.reduce((a, p) => a + p.amount, 0)), parts };
+    const sum = (list: PosCommissionPart[]) => list.reduce((a, p) => a + p.amount, 0);
+    const cards = kurus(sum(parts.filter((p) => p.card !== null)));
+    const legacy = parts.filter((p) => p.card === null);
+    return { amount: legacy.length ? cards + sum(legacy) : cards, parts };
+  }
+  /**
+   * Kasa kartı hiçbir şubede olmayan ayın Gelir-gider tutarı (eski formül). "Tümü"de şube şube toplanır: her şubenin
+   * cirosu kendi banka kartı payıyla. Önceden toplam ciroya tek pay uygulanıyordu (ciro ağırlıklı ortalama; kartlı oranı
+   * yalnız bir şube yazdıysa onunki): Tümü şubelerin toplamını vermiyordu. Şube kırılımı olmayan veride (tek şube
+   * görünümü, ilk aktarım) ayın kendi cirosu ve payı
+   */
+  function legacyPos(month: string): number {
+    const info = monthInfo.get(month);
+    return info?.byBranch ? Object.values(info.byBranch).reduce((a, m) => a + legacyPosOf(m), 0) : legacyPosOf(info);
   }
   /** Şubenin adı (komisyonun açıklaması); kütükte yoksa kimliği */
   const branchNameOf = (id: string | null) => (id === null ? null : (branchRateById.get(id)?.name ?? (ds.branchView?.id === id ? ds.branchView.name : id)));
@@ -3013,9 +3043,10 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     // Komisyonlar. Banka POS komisyonu yalnız banka kartı payıyla (yemek kartınınki aşağıda kendi faturalarıyla; E-43)
     const revenue = info?.posRevenue ?? null;
     const bank = bankShareOf(month);
-    // Kasa kartı olan ayda Σ şube (kart × şubenin oranı), Satışlar'la aynı (posCommission); yoksa eski formül
+    // Kasa kartı olan ayda Σ şube (kart × şubenin oranı), Satışlar'la aynı (posCommission); yoksa eski formül. İkisi de
+    // "Tümü"de şube şube: Tümü şube görünümlerinin toplamıdır
     const pos = posCommission(month);
-    sections.komisyon += auto("commission:pos", pos ? pos.amount : (revenue ?? 0) * st.komisyon * bank.rate);
+    sections.komisyon += auto("commission:pos", pos ? pos.amount : legacyPos(month));
     const commBySupplier = new Map<string, number>();
     const commInvs = invs.filter((i) => i.category === COMMISSION_CATEGORY);
     for (const inv of commInvs) {

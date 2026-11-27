@@ -20,7 +20,7 @@ import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { periodKasa } from "@/lib/asilpos/kasa";
-import { can } from "@/lib/roles";
+import { can, isReadOnly, openableHref } from "@/lib/roles";
 import { periodSalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
@@ -39,6 +39,11 @@ import { SiteSalesCard, type SiteSalesCardData } from "./site-sales-card";
 export const metadata: Metadata = { title: "Gelir-gider" };
 
 const DESCRIPTION = "Ay ay gelir, gider ve kâr / zarar (KDV hariç); su faturası gibi tutarları yazın.";
+/**
+ * Salt okunur hesabın (muhasebeci; docs/ROLLER.md) ve yükleme iskeletinin açıklaması: tutar yazmayı önermez. Rol okunana
+ * kadar iki rolün ortak cümlesi çizilir (Kasa raporu'ndaki gibi en dar olan)
+ */
+const READ_ONLY_DESCRIPTION = "Ay ay gelir, gider ve kâr / zarar (KDV hariç).";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE = "Aylık gelir-gider tablosu (KDV hariç). Mal alışları faturalardan, sabit giderler ayın gün oranıyla otomatik gelir.";
 
@@ -66,7 +71,8 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/gelir-gider" title="Gelir-gider" description={DESCRIPTION} more={MORE} />
+          {/* Rol okunana kadar en dar başlık (iki rolün açtığı ekran): yazmayı önermeyen açıklama, muhasebecinin bağlamı */}
+          <PageHeader path="/panel/gelir-gider" role="accountant" title="Gelir-gider" description={READ_ONLY_DESCRIPTION} />
           <PageSkeleton rows={14} />
         </>
       }
@@ -77,8 +83,11 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
 }
 
 async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/gelir-gider">["searchParams"] }) {
-  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  // Yönetici ve muhasebeci (docs/ROLLER.md). Muhasebeci salt okur: tablo ona girilebilir hücre, ay notu, "Siteden yenile"
+  // ve açamayacağı ekrana (Satışlar, Stok sayımı, Maaşlar, Sabit giderler, Tedarikçiler) bağlantı çizmez (isReadOnly,
+  // openableHref); sunucu eylemleri ayrıca reddeder
   const viewer = await requireCan("muhasebe.oku");
+  const readOnly = isReadOnly(viewer.role);
   // Personel hücrelerinin kişi kişi metni (part-time'ın adı, günü, günlük ücreti; yemek kartının AsilPOS'lularının adı)
   // yalnız maaşı görenin: muhasebeci personel giderlerini toplam olarak görür (docs/ROLLER.md › Muhasebeci). Hücreler
   // istemciye (PnlGrid, ay görünümü) ipucu ve uyarısıyla gider, metin motorda kişisiz kurulur
@@ -148,6 +157,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         console.error("[gelir-gider] faturası beklenen alımlar", e);
         return {};
       });
+  // Tutar herkese; tedarikçinin sayfasına bağlantı yalnız orayı açabilene (Tedarikçiler muhasebeciye kapalı)
+  const expectedShown = Object.fromEntries(Object.entries(expected).map(([m, e]) => [m, { ...e, href: e.href ? openableHref(viewer.role, e.href) : null }]));
   const defs = model.pnlRowDefs(months);
   const years = [...new Set([...known.map((k) => Number(k.slice(0, 4))), year])].sort();
 
@@ -280,9 +291,12 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     revenue: revenueBreakdown(
       throughIdx.map((i) => calcs[i]),
       activeMonths,
+      viewer.role,
     ),
   };
   // Yıl kartlarının notu: toplama girmeyen aylar ve sayımı olmayan aylar (tablo bu ayları yine gösterir)
+  // "Sayım gir" Stok sayımı'na götürür: yalnız orayı açabilene (muhasebeciye kapalı; uyarının kendisi kalır)
+  const countHref = yt.uncounted.length ? openableHref(viewer.role, `/panel/sayim?ay=${yt.uncounted[yt.uncounted.length - 1]}`) : null;
   const yearNotes = [
     ...yt.missingRevenue.map(missingRevenueText),
     ...(yt.uncounted.length ? [`Ay sonu sayımı yok: ${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}`] : []),
@@ -292,8 +306,9 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     <>
       <PageHeader
         path="/panel/gelir-gider"
+        role={viewer.role}
         title="Gelir-gider"
-        description={DESCRIPTION}
+        description={readOnly ? READ_ONLY_DESCRIPTION : DESCRIPTION}
         more={MORE}
         meta={<SalesSourceLine source={periodSalesSource(sourceMonths, model.settings.asilposGecisGunu, model.ds.asilposSales)} />}
         actions={
@@ -315,7 +330,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       <div id="kar-zarar" className="mb-6 grid scroll-mt-20 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${year} cirosu`}
-          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür (HİZMET işaretli satırlar, karaoke odası: ${pct(model.ds.settings.kdvHizmet, 0)}); laffogato.net online satışları (KDV hariç) eklenir. Yıl kartlarına bu aya kadar, POS cirosu girilmiş aylar girer (Genel bakış ve Claude da aynı kuralla). Aya dokununca Satışlar'da o ay açılır.`}
+          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür (HİZMET işaretli satırlar, karaoke odası: ${pct(model.ds.settings.kdvHizmet, 0)}); laffogato.net online satışları (KDV hariç) eklenir. Yıl kartlarına bu aya kadar, POS cirosu girilmiş aylar girer (Genel bakış ve Claude da aynı kuralla).${openableHref(viewer.role, "/panel/satislar") ? " Aya dokununca Satışlar'da o ay açılır." : ""}`}
           groups={breakdown.revenue}
           total={revenueNet}
           totalLabel="Ciro (KDV hariç)"
@@ -402,7 +417,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           risk="para"
           className="-mt-2 mb-4"
           title={`${yt.uncounted.map((m) => monthLabel(m)).join(", ")} sayımı yok: mal maliyeti tahmini`}
-          action={<NoticeLink href={`/panel/sayim?ay=${yt.uncounted[yt.uncounted.length - 1]}`}>Sayım gir</NoticeLink>}
+          action={countHref ? <NoticeLink href={countHref}>Sayım gir</NoticeLink> : undefined}
         >
           {`${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}.`}
         </Notice>
@@ -417,7 +432,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       {/* Online satış işletmenin cirosudur: fiziksel şube seçiliyken kart yok (docs/SUBE.md) */}
       {model.ds.branchView?.kind === "fiziksel" ? null : (
         <div className="mb-6">
-          <SiteSalesCard data={siteCard} />
+          <SiteSalesCard data={siteCard} readOnly={readOnly} />
         </div>
       )}
       {/* Yıl değişince tablo yeniden kurulur: "Aktif aylar / 12 ay" seçimi o yılın verisine göre baştan belirlenir */}
@@ -435,10 +450,11 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         currentMonth={model.currentMonth}
         strip={strip}
         latestMonth={latestMonth}
-        expectedDebts={expected}
+        expectedDebts={expectedShown}
         asilposSwitch={model.settings.asilposGecisGunu}
         openDaysLocked={monthWrite.lock}
         writeBranch={monthWrite.branch}
+        role={viewer.role}
         yearNote={
           yt.counted.length < activeMonths.length
             ? { short: `cirosu girilmiş ${yt.counted.length} ay`, long: [`${year} yılı: bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay (yıl kartları gibi)`, ...yearNotes].join(". ") }

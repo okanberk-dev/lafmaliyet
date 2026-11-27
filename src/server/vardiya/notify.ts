@@ -12,6 +12,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { renderShiftChange } from "@/server/notify/vardiya-template";
+import { reachableUser } from "@/server/notify/reachable";
 import { sendPush } from "@/server/push/send";
 
 import { shiftBranches } from "./store";
@@ -49,8 +50,9 @@ export interface ShiftNoticeRun {
 }
 
 /**
- * Değişiklikleri kişi kişi gönderir (kişi başına tek bildirim; etkin olmayan hesaba ve muhasebeciye gitmez: muhasebeci
- * vardiyada çalışmaz, docs/ROLLER.md › Saha kitleleri). Kişiler kaydın denetiminden geçmiştir (store.ts › shiftAccounts)
+ * Değişiklikleri kişi kişi gönderir (kişi başına tek bildirim; etkin olmayan hesaba, şubesi kapalı müdüre ve muhasebeciye
+ * gitmez: muhasebeci vardiyada çalışmaz, docs/ROLLER.md › Saha kitleleri; kapalı şubenin müdürü panele giremez,
+ * src/server/notify/reachable.ts). Kişiler kaydın denetiminden geçmiştir (store.ts › shiftAccounts)
  */
 export async function sendShiftChangeNotices(db: DB, changes: readonly ShiftChange[], branch: { id: string; name: string }): Promise<ShiftNoticeRun> {
   const run: ShiftNoticeRun = { pushed: 0, emailed: 0, skipped: 0, failed: 0 };
@@ -61,7 +63,7 @@ export async function sendShiftChangeNotices(db: DB, changes: readonly ShiftChan
     db
       .select({ id: s.users.id, name: s.users.name, email: s.users.email })
       .from(s.users)
-      .where(and(inArray(s.users.id, [...byUser.keys()]), eq(s.users.active, true), ne(s.users.role, "accountant"))),
+      .where(and(inArray(s.users.id, [...byUser.keys()]), reachableUser(), ne(s.users.role, "accountant"))),
     listBranches(db),
   ]);
   const manyBranches = branches.filter((b) => b.active).length > 1;

@@ -20,6 +20,22 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   Yöneticinin metni ve Tuzla (ModPOS) günü bayt bayt aynı (altın metinle sınandı; `tests/whatsapp-kor.test.ts`,
   `tests/roller-db.test.ts`). docs/ASILPOS.md › Kör kasa.
 
+- **Denetimin küçük hataları (bu PR, 28 Kasım)**: denetimin beş bulgusu, her biri kendi testiyle.
+  - Satış yapıştırma: özet satırı deseni doğrusal zamanda (ReDoS). "toplam 111…1x" gibi bir ad süreyi her rakamda ikiye
+    katlıyordu (40 rakam saatler); desen sunucuda da çalışır (İçe aktar, dosya yükleme, Genel bakış). Ad temizliği de
+    uzun hücrede karesel süre almaz (`tests/satis-ozet-redos.test.ts`).
+  - Muhasebeci ekranlarında yazma düğmesi ve açamayacağı ekrana bağlantı görmez: Faturalar, Gelir-gider, Aylık
+    harcamalar ve Kasa raporu salt okunur çizilir (`src/lib/roles.ts` › `isReadOnly`, `openableHref`; docs/ROLLER.md ›
+    Muhasebeci; `tests/muhasebeci-salt-okunur.test.ts`, `tests/muhasebeci-ekran-db.test.ts`).
+  - Yükleme iskeleti rol okunmadan yönetici sekmelerini çizmez: İşçilik / ciro'da müdür Raporlar'ın, Aylık
+    harcamalar'da muhasebeci Giderler'in sekmelerini bir an görüyordu (`tests/yukleme-iskeleti-rol.test.ts` bütün
+    sayfaları tarar).
+  - Şubesi kapalı müdür bildirim almaz: panele giremeyen müdüre Web Push ve e-posta gitmeye devam ediyordu
+    (`src/server/notify/reachable.ts`; docs/BILDIRIMLER.md › Alıcılar ve hesaplar;
+    `tests/kapali-sube-mudur-bildirim-db.test.ts`).
+  - "Tümü"de kart (banka POS) komisyonu şube görünümlerinin toplamı: kasa kartı olmayan aylarda toplam ciroya tek oran
+    uygulanıyordu (docs/KOMISYON.md; `tests/kart-komisyonu-tumu.test.ts`).
+- **Site Next.js 16.4.6** (laffogato #303, 28 Kasım): sitenin açıklı sürümü (16.3.8) güncellendi.
 - **Vergi bölümü kaldırıldı** (bu PR, 27 Kasım; sahibin kararı: vergiyi muhasebeci yürütüyor, "veriler silinmesin"):
   kenar çubuğundaki **Vergi, KDV, SGK** grubu ve dört ekranı (Özet, Vergi kârı, Demirbaş, Muhasebeci / Kurallar), vergi
   modülü (`src/lib/tax`), eylemleri, matrah, vergi kârı, geçici ve kurumlar vergisi, beyanlar (KDV, muhtasar), vergi
@@ -189,6 +205,18 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - 27 Kasım gece sırası: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md) › "27 Kasım gece: durum ve sıra". Yeni: özel günler
   bölümünün kaldırılması; kullanan ve satılacak işletmeler için ekranların sadeleştirilmesi; sitenin altyapı güncellemesi ve
   e-Arşiv girişi (10 Aralık'tan önce).
+- **Sitenin e-Arşiv'i Paraşüt OAuth'a geçmeli; SON TARİH 10 Aralık** (eski şifreli giriş o gün duruyor). Sahibin kararı
+  (28 Kasım): şimdilik sıradan çıktı. Şart: bağlantı şube başına olacak, her şube kendi Paraşüt hesabını kendisi
+  ekleyebilecek, biri ötekini düşürmeyecek. DevHub uygulaması açıldı.
+- **Kasada gerçek açılış** (sahibin isteği, 28 Kasım): önce ladmin kullanıcı adı ve şifresi, sonra hangi şubenin
+  açılacağı; şube zaten kuruluysa "emin misin / başka şube" sorusu.
+- **Asıl yöneticinin şube ve kasa yetkisi baştan sona.** Bugün yalnız şube açma ve kurulum gönderme asıl yöneticide.
+  Şube kapatma ve silme, kasa kaynağı (posSource), kasa anahtarını döndürme ve geçiş günü her yöneticide; asıl
+  yöneticinin hesabını (e-posta, parola, rol) başka yönetici değiştirebiliyor; kapatılan şubenin kurulum kodu geçerli
+  kalıyor; kasası olan şubeye ikinci kurulumda uyarı yok.
+- **Kasa: "Kurulumu yap" fiş yazıcısını da bulup denetebilsin** (sahibin isteği).
+- **Kasa deposunun PR'ları:** #192 Token sürücüsünün sessiz kurulumu, #193 müşteri ekranında çeviri balonu, yenileme
+  simgesi PR'ı.
 ## Sahibin tarafında (kod değil)
 
 - [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira ve fatura rakamları taşıyor; kişi adları

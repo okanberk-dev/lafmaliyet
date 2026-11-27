@@ -3,8 +3,9 @@
 // personel, sabit giderler, satışlar (ciro, POS komisyonunun kartlı satış oranı; denetim E-30). Testleri: tests/gelir-gider-baglanti.test.ts
 
 import { shiftMonth } from "@/lib/calc/engine";
-import { COMMISSION_CATEGORY } from "@/lib/constants";
+import { COMMISSION_CATEGORY, type Role } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
+import { openableHref } from "@/lib/roles";
 
 export interface RowLink {
   href: string;
@@ -54,4 +55,13 @@ export function rowLink(key: string, month: string, o: { value?: number | null; 
   if (key.startsWith("personnel:")) return { href: "/panel/personel", label: "Maaşlar", scope: "row" };
   if (key.startsWith("fixed:")) return { href: "/panel/giderler", label: "Sabit giderler", scope: "row" };
   return null;
+}
+
+/**
+ * Bağlantı, bakanın rolü hedef ekranı açabiliyorsa kendisi; açamıyorsa null (src/lib/roles.ts › openableHref). Tablo ve
+ * ay görünümü `rowLink`'i bundan geçirir: muhasebeciye Faturalar ve Aylık harcamalar kalır; Satışlar, Stok sayımı,
+ * Maaşlar ve Sabit giderler ona kapalıdır (tıklasa ana ekranına dönerdi).
+ */
+export function rowLinkFor(role: Role, link: RowLink | null): RowLink | null {
+  return link && openableHref(role, link.href) ? link : null;
 }

@@ -32,14 +32,18 @@ const UNDO_MS = 10_000;
  * (faturası başka adla var ya da kafenin gideri değil). Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır
  * kendiliğinden kalkar. Aylık harcamalar'a yazılmış satırın faturası sonradan gelirse (iki kez sayılıyor) aynı kartta
  * "Gider kaydını sil" ve "Ayrı alım" (inceleme D2); fatura o satırdan açıldıysa ("Faturalar'a ekle") yalnız "Gider kaydını
- * sil": fatura başka bir alımın olamaz. Yalnız yönetici görür.
+ * sil": fatura başka bir alımın olamaz. Yönetici görür; salt okunur hesap (muhasebeci, `readOnly`) satırları eylemsiz
+ * görür: hangi alımın faturasının beklendiğini okur, düğme çizilmez.
  */
 export function CashOutInvoicesCard({
   rows,
   duplicates = [],
   categories,
   onAddInvoice,
+  readOnly = false,
 }: {
+  /** Salt okunur hesap: satırlar bilgi olarak, eylem düğmeleri ve kategori seçimi yok */
+  readOnly?: boolean;
   rows: PendingCashOut[];
   /** Aylık harcamalar'a yazılmış, faturası sonradan gelmiş satırlar */
   duplicates?: CashOutDuplicateSource[];
@@ -222,24 +226,26 @@ export function CashOutInvoicesCard({
                   </div>
                   <span className="shrink-0 text-[15px] font-semibold text-ink tabular">{money(r.amount)}</span>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[3.25rem]">
-                  <Button size="sm" disabled={pending} onClick={() => dropExpense(r)} className="max-sm:w-full">
-                    <Trash2 size={15} /> Gider kaydını sil
-                  </Button>
-                  {/* Fatura bu satırdan açıldıysa ("Faturalar'a ekle") başka bir alımın olamaz: sunucu da reddeder */}
-                  {r.adopted ? null : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pending}
-                      onClick={() => dismiss(r, true)}
-                      title="Fatura başka bir alımın: gider kaydı kalsın, satır listeden çıksın"
-                      className="max-sm:w-full sm:ml-auto"
-                    >
-                      <X size={15} /> Ayrı alım
+                {readOnly ? null : (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[3.25rem]">
+                    <Button size="sm" disabled={pending} onClick={() => dropExpense(r)} className="max-sm:w-full">
+                      <Trash2 size={15} /> Gider kaydını sil
                     </Button>
-                  )}
-                </div>
+                    {/* Fatura bu satırdan açıldıysa ("Faturalar'a ekle") başka bir alımın olamaz: sunucu da reddeder */}
+                    {r.adopted ? null : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={() => dismiss(r, true)}
+                        title="Fatura başka bir alımın: gider kaydı kalsın, satır listeden çıksın"
+                        className="max-sm:w-full sm:ml-auto"
+                      >
+                        <X size={15} /> Ayrı alım
+                      </Button>
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -287,52 +293,63 @@ export function CashOutInvoicesCard({
                 </div>
                 <span className="shrink-0 text-[15px] font-semibold text-ink tabular">{money(r.amount)}</span>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[3.25rem]">
-                <Button size="sm" disabled={pending} onClick={() => onAddInvoice(r)} className="max-sm:w-full">
-                  <FilePlus2 size={15} /> Faturalar&apos;a ekle
-                </Button>
-                <div className="flex min-w-0 items-center gap-2 max-sm:w-full">
-                  <label htmlFor={`kasa-kat-${r.id}`} className="sr-only">
-                    Aylık harcamalar kategorisi
-                  </label>
-                  <Select
-                    id={`kasa-kat-${r.id}`}
-                    value={value}
-                    onChange={(e) => setChosen((c) => ({ ...c, [r.id]: e.target.value }))}
-                    className="h-8 min-w-0 flex-1 text-[13px] sm:w-52 sm:flex-none"
+              {readOnly ? null : (
+                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[3.25rem]">
+                  <Button size="sm" disabled={pending} onClick={() => onAddInvoice(r)} className="max-sm:w-full">
+                    <FilePlus2 size={15} /> Faturalar&apos;a ekle
+                  </Button>
+                  <div className="flex min-w-0 items-center gap-2 max-sm:w-full">
+                    <label htmlFor={`kasa-kat-${r.id}`} className="sr-only">
+                      Aylık harcamalar kategorisi
+                    </label>
+                    <Select
+                      id={`kasa-kat-${r.id}`}
+                      value={value}
+                      onChange={(e) => setChosen((c) => ({ ...c, [r.id]: e.target.value }))}
+                      className="h-8 min-w-0 flex-1 text-[13px] sm:w-52 sm:flex-none"
+                    >
+                      <option value="">Kategori seçin</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button size="sm" variant="secondary" disabled={pending} onClick={() => toExpenses(r)} className="shrink-0 text-ink">
+                      <WalletCards size={15} /> <span className="max-sm:hidden">Aylık harcamalar&apos;a yaz</span>
+                      <span className="sm:hidden">Harcamaya yaz</span>
+                    </Button>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={pending}
+                    onClick={() => dismiss(r)}
+                    title="Faturası Faturalar'da başka adla ya da tutarla varsa, ya da kafenin gideri değilse"
+                    className="max-sm:w-full sm:ml-auto"
                   >
-                    <option value="">Kategori seçin</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button size="sm" variant="secondary" disabled={pending} onClick={() => toExpenses(r)} className="shrink-0 text-ink">
-                    <WalletCards size={15} /> <span className="max-sm:hidden">Aylık harcamalar&apos;a yaz</span>
-                    <span className="sm:hidden">Harcamaya yaz</span>
+                    <X size={15} /> Listeden çıkar
                   </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={pending}
-                  onClick={() => dismiss(r)}
-                  title="Faturası Faturalar'da başka adla ya da tutarla varsa, ya da kafenin gideri değilse"
-                  className="max-sm:w-full sm:ml-auto"
-                >
-                  <X size={15} /> Listeden çıkar
-                </Button>
-              </div>
+              )}
             </li>
           );
         })}
       </ul>
       <p className="flex items-start gap-2 border-t border-line px-4 py-3 text-xs leading-5 text-ink-mute sm:px-5">
         <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-        Faturası Paraşüt&apos;e düşecekse (e-fatura ya da muhasebecinin girdiği e-Arşiv) beklemeniz yeter: aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince
-        satır kendiliğinden kalkar. Şirket adına kesilmiş e-Arşiv&apos;i Faturalar&apos;a ekleyin; Aylık harcamalar&apos;a yazılan alımın faturası sonra
-        gelirse burada &quot;iki kez sayılıyor&quot; diye çıkar.
+        {readOnly ? (
+          <>
+            Faturası Paraşüt&apos;e düşünce (e-fatura ya da Paraşüt&apos;e girilen e-Arşiv) satır kendiliğinden kalkar: aynı mağazadan ±7 gün, ±1 ₺ içindeki
+            fatura eşleşir. Öbür satırları yönetici Faturalar&apos;a ekler ya da Aylık harcamalar&apos;a yazar.
+          </>
+        ) : (
+          <>
+            Faturası Paraşüt&apos;e düşecekse (e-fatura ya da muhasebecinin girdiği e-Arşiv) beklemeniz yeter: aynı mağazadan ±7 gün, ±1 ₺ içinde fatura
+            gelince satır kendiliğinden kalkar. Şirket adına kesilmiş e-Arşiv&apos;i Faturalar&apos;a ekleyin; Aylık harcamalar&apos;a yazılan alımın faturası
+            sonra gelirse burada &quot;iki kez sayılıyor&quot; diye çıkar.
+          </>
+        )}
       </p>
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Card>

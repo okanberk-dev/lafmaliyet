@@ -134,9 +134,20 @@ const PREVIEW_BOX = "rounded-2xl bg-panel ring-1 ring-line sm:h-[min(62vh,40rem)
  *
  * Belge bir kez indirilir (fetch): yanıt JSON hatasıysa metni gösterilir; başarılıysa önizleme bu kopyadan
  * (blob adresi) çizilir. Sunucu her yanıtta X-Frame-Options: DENY gönderdiği için /api adresi çerçeve içinde
- * açılamazdı; aynı kopya "Paylaş"ta dosya olarak da kullanılır.
+ * açılamazdı; aynı kopya "Paylaş"ta dosya olarak da kullanılır. Salt okunur hesapta (`readOnly`, muhasebeci) belge açılır,
+ * indirilir ve paylaşılır; dosya eklenmez ve silinmez.
  */
-export function DocumentSheet({ invoice, documents, onClose }: { invoice: InvoiceRow; documents: DocumentMeta[]; onClose: () => void }) {
+export function DocumentSheet({
+  invoice,
+  documents,
+  onClose,
+  readOnly = false,
+}: {
+  invoice: InvoiceRow;
+  documents: DocumentMeta[];
+  onClose: () => void;
+  readOnly?: boolean;
+}) {
   const phone = useIsPhone();
   const router = useRouter();
   const base = splitSupplier(invoice.supplier).base;
@@ -276,7 +287,9 @@ export function DocumentSheet({ invoice, documents, onClose }: { invoice: Invoic
           <Paperclip size={22} />
         </span>
         <p className="text-[15px] font-medium text-ink">Bu faturanın belgesi yok</p>
-        <p className="max-w-xs text-sm text-pretty text-ink-mute">Kâğıt faturanın fotoğrafını çekin ya da PDF&apos;ini ekleyin; burada saklanır, istediğinizde açıp paylaşırsınız.</p>
+        <p className="max-w-xs text-sm text-pretty text-ink-mute">
+          {readOnly ? "Belge eklenince burada açılır." : "Kâğıt faturanın fotoğrafını çekin ya da PDF'ini ekleyin; burada saklanır, istediğinizde açıp paylaşırsınız."}
+        </p>
       </div>
     );
   } else if (!view) {
@@ -397,7 +410,7 @@ export function DocumentSheet({ invoice, documents, onClose }: { invoice: Invoic
                           <span className="block truncate text-xs text-ink-mute tabular">{e.sub}</span>
                         </span>
                       </button>
-                      {e.deletable ? (
+                      {e.deletable && !readOnly ? (
                         <IconButton label={`${e.label} dosyasını sil`} tone="danger" onClick={() => setDeleting(e)}>
                           <Trash2 size={15} />
                         </IconButton>
@@ -408,14 +421,16 @@ export function DocumentSheet({ invoice, documents, onClose }: { invoice: Invoic
               </ul>
             </section>
           ) : null}
-          <section aria-labelledby="belge-ekle" className="space-y-2">
-            <h3 id="belge-ekle" className="text-[13px] font-medium text-ink-soft">
-              {docs.length || ready ? "Başka dosya ekle" : "Belge ekle"}
-            </h3>
-            <DocumentPicker onPick={(f) => void onPick(f)} disabled={up.busy} />
-            <UploadStatus phase={up.phase} />
-            <p className="text-xs leading-5 text-ink-mute">PDF ya da fotoğraf, en çok 4 MB. Büyük fotoğraflar yüklenmeden önce küçültülür.</p>
-          </section>
+          {readOnly ? null : (
+            <section aria-labelledby="belge-ekle" className="space-y-2">
+              <h3 id="belge-ekle" className="text-[13px] font-medium text-ink-soft">
+                {docs.length || ready ? "Başka dosya ekle" : "Belge ekle"}
+              </h3>
+              <DocumentPicker onPick={(f) => void onPick(f)} disabled={up.busy} />
+              <UploadStatus phase={up.phase} />
+              <p className="text-xs leading-5 text-ink-mute">PDF ya da fotoğraf, en çok 4 MB. Büyük fotoğraflar yüklenmeden önce küçültülür.</p>
+            </section>
+          )}
         </div>
       </div>
       <ConfirmDialog

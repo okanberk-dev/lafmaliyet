@@ -48,11 +48,47 @@ function fold(s: string): string {
     .trim();
 }
 
+// Aşağıdaki üç yardımcı düzenli ifade yerine elle tarar: `\([^)]*\)`, `[:=*.\-–]+\s*$` ve `["']+$` uzun bir hücrede
+// (kapanmayan parantezler, ortada uzun işaret ya da tırnak dizisi) her konumdan yeniden tarayıp karesel süre alıyordu;
+// dosya yüklemede hücrenin uzunluğu sınırsız. Sonuç aynı, süre doğrusal.
+
+/** Parantez içi açıklamaları boşluğa çevirir ("toplam (kdv dahil)" → "toplam  "); kapanmayan parantez yerinde kalır */
+function dropParens(s: string): string {
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = s.indexOf("(", from);
+    const close = open < 0 ? -1 : s.indexOf(")", open + 1);
+    if (close < 0) return out + s.slice(from);
+    out += `${s.slice(from, open)} `;
+    from = close + 1;
+  }
+}
+
+const TRAILING_MARKS = ":=*.-–";
+
+/** Sondaki ":" "=" "*" "." "-" "–" dizisini, ardındaki boşlukla birlikte atar ("toplam: " → "toplam") */
+function dropTrailingMarks(s: string): string {
+  const end = s.trimEnd().length;
+  let cut = end;
+  while (cut > 0 && TRAILING_MARKS.includes(s[cut - 1])) cut--;
+  return cut < end ? s.slice(0, cut) : s;
+}
+
+const isQuote = (ch: string) => ch === '"' || ch === "'";
+
+/** Baştaki ve sondaki tırnakları atar */
+function stripQuotes(s: string): string {
+  let from = 0;
+  let to = s.length;
+  while (from < to && isQuote(s[from])) from++;
+  while (to > from && isQuote(s[to - 1])) to--;
+  return s.slice(from, to);
+}
+
 /** Parantez içi açıklamayı ve sondaki ":" / "=" işaretini atar */
 function bareLabel(name: string): string {
-  return fold(name)
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/[:=*.\-–]+\s*$/g, "")
+  return dropTrailingMarks(dropParens(fold(name)))
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -71,14 +107,14 @@ export function isHeaderName(name: string): boolean {
 const HEADER_WORDS = /\b(adet|miktar|tutar|ciro|fiyat|quantity|qty|amount|total)\b/;
 
 function cleanName(s: string): string {
-  return s.replace(/^["']+|["']+$/g, "").replace(/\s+/g, " ").trim();
+  return stripQuotes(s).replace(/\s+/g, " ").trim();
 }
 
 /** Hücredeki sayı: "12", "1.250,50", "1250.5 ₺", "5 adet" */
 function cellNumber(c: unknown): number | null {
   if (typeof c === "number") return Number.isFinite(c) ? c : null;
   if (typeof c !== "string") return null;
-  const t = c.replace(/^["']+|["']+$/g, "").replace(/\b(adet|ad\.?|pcs)\b/gi, "").trim();
+  const t = stripQuotes(c).replace(/\b(adet|ad\.?|pcs)\b/gi, "").trim();
   if (!t || /%/.test(t)) return null;
   return parseNumberTR(t);
 }
@@ -148,11 +184,15 @@ function rowFromCells(cells: unknown[], layout: SalesLayout | null = null): { ki
 // Sekme / noktalı virgül / iki boşluk yoksa: "Ad 12 2.400" ya da "Ad, 12, 1.250,50" (adet tam sayı kabul edilir)
 const TAIL_RE = /^(.+?)[\s,;]+(-?\d{1,3}(?:\.\d{3})+|-?\d+)\s*(?:adet)?[\s,;]+(-?[\d.]*\d(?:,\d+)?)\s*(?:₺|tl)?$/i;
 
+// Ayraçsız satır deseni uzun satırda karesel süre alır (ad her konumda yeniden denenir). Ürün adı en çok 160 karakter
+// (içe aktarmanın sınırı); bundan uzun satır zaten yüklenemez, desene sokulmaz.
+const TAIL_MAX_LINE = 400;
+
 function splitLine(line: string): string[] {
   if (line.includes("\t")) return line.split("\t");
   if (line.includes(";")) return line.split(";");
   if (/\S\s{2,}\S/.test(line)) return line.split(/\s{2,}/);
-  const m = TAIL_RE.exec(line);
+  const m = line.length <= TAIL_MAX_LINE ? TAIL_RE.exec(line) : null;
   if (m) return [m[1], m[2], m[3]];
   return line.split(",");
 }

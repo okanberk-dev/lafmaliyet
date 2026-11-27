@@ -10,6 +10,7 @@ import { fixedMonthly, monthOfDate, shiftMonth } from "@/lib/calc/engine";
 import { panelGroupOf } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES, type Role } from "@/lib/constants";
 import { EXPENSE_SHARED, sortBranches, tillBranches } from "@/lib/branches";
+import { isReadOnly, openableHref } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -28,13 +29,19 @@ const DESCRIPTION = "Her ay değişen ve faturasız giderler: reklam, influencer
 const MORE =
   "Her ay farklı olan (reklam, influencer) ve fatura dışı (nakit alım, bakım) giderler. Girdiğiniz tutar o ayın gelir-giderine ve Genel bakış'taki “Para nereye gitti”ye kendiliğinden yansır.";
 
-function Header({ actions, role = "admin" }: { actions?: React.ReactNode; role?: Role }) {
+/**
+ * `role` zorunlu (varsayılanı yok): yükleme iskeleti ekranı açan rollerin en darını (muhasebeci) verir, içerik kişinin
+ * rolünü. Varsayılan "yönetici" iken iskelet Giderler'in yönetici sekmelerini (Sabit giderler, Maaşlar, Avanslar,
+ * Belgeler) muhasebeciye de çiziyordu
+ */
+function Header({ actions, role }: { actions?: React.ReactNode; role: Role }) {
   return (
     <PageHeader
       path="/panel/harcamalar"
       title="Aylık harcamalar"
       description={DESCRIPTION}
-      more={MORE}
+      // "Girdiğiniz tutar…" yazan kişiye söylenir: salt okunur hesapta yok
+      more={isReadOnly(role) ? undefined : MORE}
       role={role}
       // Muhasebecide sekme yok: Giderler & maaşlar'ın öteki sekmeleri (sabit giderler, maaşlar) ona kapalı
       tabs={<SectionTabs section="giderler" current="/panel/harcamalar" role={role} />}
@@ -48,7 +55,8 @@ export default function ExpensesMonthPage({ searchParams }: PageProps<"/panel/ha
     <Suspense
       fallback={
         <>
-          <Header />
+          {/* Rol henüz bilinmiyor: iki rolün de gördüğü başlık; yöneticinin sekmeleri içerik gelince eklenir */}
+          <Header role="accountant" />
           <PageSkeleton rows={8} />
         </>
       }
@@ -62,7 +70,8 @@ export default function ExpensesMonthPage({ searchParams }: PageProps<"/panel/ha
 const MAPPABLE = INVOICE_CATEGORIES.filter((c) => !GOODS_CATEGORIES.includes(c) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c));
 
 async function Content({ searchParams }: { searchParams: PageProps<"/panel/harcamalar">["searchParams"] }) {
-  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  // Yönetici ve muhasebeci (docs/ROLLER.md). Muhasebeci salt okur: ekran ona ekleme formu, düzenleme ve kategori
+  // düğmesi, açamayacağı ekrana (Tedarikçiler) bağlantı çizmez (isReadOnly, openableHref); sunucu eylemleri ayrıca reddeder
   const viewer = await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const model = await loadModel();
@@ -125,7 +134,9 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         vat: x?.vat ?? null,
         cashOutId: x?.cashOutId ?? null,
         cashOutDate: x?.cashOutDate ?? null,
-        cari: x?.cariCardId ? { name: x.cariName ?? "", href: cariHref.get(x.cariCardId) ? `/panel/tedarikciler/${cariHref.get(x.cariCardId)}?sekme=hareketler` : null } : null,
+        cari: x?.cariCardId
+          ? { name: x.cariName ?? "", href: cariHref.get(x.cariCardId) ? openableHref(viewer.role, `/panel/tedarikciler/${cariHref.get(x.cariCardId)}?sekme=hareketler`) : null }
+          : null,
         branchId: e.branchId ?? null,
         shared: Boolean(branchView) && (e.branchId ?? null) === null,
       };
@@ -173,6 +184,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         branches={branches}
         branchName={model.ds.branchView?.name ?? null}
         sharedHidden={sharedHidden}
+        role={viewer.role}
       />
     </>
   );
