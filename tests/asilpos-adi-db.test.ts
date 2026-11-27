@@ -141,9 +141,9 @@ describe("AsilPOS ad değişikliği: veritabanında", { skip: !URL && "ASILPOS_A
     try {
       await db.delete(s.integrationState).where(inArray(s.integrationState.key, [DURUM_ANAHTARI, "asilpos"]));
       await db.insert(s.integrationState).values({ key: DURUM_ANAHTARI, value: { lastOk: { at: "2026-11-27T00:00:00.000Z", date: "2026-11-26", zNo: 1, lines: 0, counted: true } } });
-      assert.equal((await status.readAsilposState(db)).lastOk?.date, "2026-11-26", "eski adlı satır");
+      assert.equal((await status.readAsilposState(db, "marina")).lastOk?.date, "2026-11-26", "eski adlı satır");
       await db.insert(s.integrationState).values({ key: "asilpos", value: { lastOk: { at: "2026-11-27T00:00:00.000Z", date: "2026-11-27", zNo: 2, lines: 0, counted: true } } });
-      assert.equal((await status.readAsilposState(db)).lastOk?.date, "2026-11-27", "yeni adlı satır önce");
+      assert.equal((await status.readAsilposState(db, "marina")).lastOk?.date, "2026-11-27", "yeni adlı satır önce");
     } finally {
       await db.delete(s.integrationState).where(inArray(s.integrationState.key, [DURUM_ANAHTARI, "asilpos"]));
       if (keep.length) await db.insert(s.integrationState).values(keep);

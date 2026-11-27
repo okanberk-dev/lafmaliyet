@@ -694,6 +694,13 @@
       "when": 1795744165958,
       "tag": "0098_asilpos_adi",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795748380705,
+      "tag": "0099_pos_cok_sube",
+      "breakpoints": true
     }
   ]
 }

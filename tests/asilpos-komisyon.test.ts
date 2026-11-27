@@ -12,6 +12,7 @@ import { asilposChannel } from "../src/lib/commission/channels";
 import {
   buildCommissionReport,
   commissionAlerts,
+  commissionScopeDays,
   groupOf,
   asilposMonth,
   rowOf,
@@ -365,4 +366,53 @@ test("faturası olan ama AsilPOS'ta ödemesi olmayan kart: satış bilinmez, ned
   const e = must(rowOf(r, "edenred", "2026-11"));
   assert.equal(e.sales, null);
   assert.equal(plain(e.salesReason), "Satış bilinmiyor: AsilPOS'ta bu ay Edenred ödemesi yok. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.");
+});
+
+test("çok şube (inceleme 27 Kasım): iki kasanın aynı eksik günü \"N gün\" metninde bir kez; kayıtlı gün takvim günü", () => {
+  // Marina ve Kadıköy 1 Kasım'dan AsilPOS'ta; ikisinin de gün sonu 1–20 Kasım (21–30 Kasım ikisinde de yok), Kadıköy'ün
+  // 25 Kasım kasa raporu var (yedek). Eskiden günler kasa başına yazılırdı: 21–30 iki kez, "kayıtlı" 40 gün
+  const both = (branchId: string) => lafDays("2026-11-01", "2026-11-20").map((d) => ({ ...d, branchId }));
+  const input = fx({
+    till: [...till("2026-10-01", "2026-10-31"), { date: "2026-11-25", mealCard: 80, online: 40, branchId: "kadikoy" }],
+    asilpos: { switchDay: "2026-11-01", switchDays: { marina: "2026-11-01", kadikoy: "2026-11-01" }, days: [...both("marina"), ...both("kadikoy")] },
+  });
+  const lm = asilposMonth(input, "2026-11")!;
+  assert.deepEqual(lm.fallback, ["2026-11-25"]);
+  assert.deepEqual(lm.missing, eachDay("2026-11-21", "2026-11-30"), "Marina'nın 25'i de eksik: gün bir kez");
+  assert.equal(lm.days, 40, "gün sonları kasa başına");
+  assert.equal(lm.covered, 21, "takvim günü: 1–20 ve yedekli 25");
+  const r = buildCommissionReport(input);
+  const g = groupOf(r, "meal", "2026-11")!;
+  assert.equal(g.missing.length, 10);
+  assert.equal(g.reportDays, 21);
+  assert.equal(must(rowOf(r, "multinet", "2026-11")).flags.find((f) => f.key === "kasa-eksik")?.text, "10 gün AsilPOS gün sonu yok; satış eksik kaldıysa oran yüksek görünür.");
+});
+
+test("çok şube (inceleme 27 Kasım): geçiş günü sonra olan kasa kendi geçiş ayına dek föyün markasıyla (tek kanala yığılmaz, \"Tümü\"yle aynı)", () => {
+  // Marina 22 Kasım'da, Kadıköy 10 Aralık'ta AsilPOS'a geçer; Tuzla ModPOS'ta
+  const days = { marina: "2026-11-22", kadikoy: "2026-12-10" };
+  assert.deepEqual(commissionScopeDays(days, "kadikoy"), { asilpos: "2026-12-10", modpos: "2026-11-22" }, "Kasım'da Kadıköy ModPOS'ta: föyün kuralı");
+  assert.deepEqual(commissionScopeDays(days, "tuzla"), { asilpos: null, modpos: "2026-11-22" });
+  assert.deepEqual(commissionScopeDays(days, "marina"), { asilpos: "2026-11-22", modpos: null });
+  assert.deepEqual(commissionScopeDays(days, "hepsi"), { asilpos: "2026-11-22", modpos: null });
+  assert.deepEqual(commissionScopeDays({ marina: "2026-11-22", kadikoy: "2026-11-25" }, "kadikoy"), { asilpos: "2026-11-25", modpos: null }, "aynı ayda geçen kasa: AsilPOS ayı kazanır");
+  // Kadıköy seçiliyken: Kasım'ın Z'si (her gün yemek kartı 200) Multinet'e `tek` yazılmaz; föyde markası olan kanalına
+  const kadikoyTill = [...till("2026-10-01", "2026-10-31"), ...till("2026-11-01", "2026-11-30", { mealCard: 200, online: 0 })].map((r) => ({ ...r, branchId: "kadikoy" }));
+  const scope = commissionScopeDays(days, "kadikoy");
+  const kadikoy = (o: Partial<CommissionInput> = {}) =>
+    fx({
+      till: kadikoyTill,
+      invoices: [inv("Multinet Up", "2026-11-30", 10)],
+      asilpos: { switchDay: scope.asilpos!, switchDays: { kadikoy: scope.asilpos }, days: [] },
+      modposScope: scope.modpos ? { switchDay: scope.modpos } : null,
+      ...o,
+    });
+  const r = buildCommissionReport(kadikoy());
+  assert.equal(must(rowOf(r, "multinet", "2026-11")).sales, null, "eskiden 6.000 ₺ `tek`");
+  assert.deepEqual(groupOf(r, "meal", "2026-11")!.unbranded, { amount: 6000, pre: 0, modpos: 6000, loose: 0, fallback: 0 });
+  // Eski kapsamla (modposScope yok) aynı ay `tek` yazılırdı: şubelerin payı işletmenin faturasını aşardı
+  assert.deepEqual(must(rowOf(buildCommissionReport(kadikoy({ modposScope: null })), "multinet", "2026-11")).sales, { amount: 6000, source: "tek" });
+  // Föyde markası olan kısım kanalına
+  const brands = eachDay("2026-11-01", "2026-11-30").map((date) => ({ date, branchId: "kadikoy", byChannel: { multinet: 50 } }));
+  assert.deepEqual(must(rowOf(buildCommissionReport(kadikoy({ modposBrands: brands })), "multinet", "2026-11")).sales, { amount: 1500, source: "asilpos", foy: 1500 });
 });

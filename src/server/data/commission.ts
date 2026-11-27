@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, gte, inArray, min } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, min, or } from "drizzle-orm";
 
 import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
@@ -38,7 +38,8 @@ import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings"
 import { listBranches } from "@/server/branches";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
-import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
+import { scopeSwitchDays, type SwitchDays } from "@/lib/pos/tills";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { loadModposSheets } from "@/server/modpos/store";
 import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-template";
 
@@ -141,8 +142,8 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       .select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo, branchId: s.specialDays.branchId })
       .from(s.specialDays)
       .where(and(eq(s.specialDays.kind, "kapali"), gte(s.specialDays.dateTo, fromDay))),
-    // AsilPOS'a geçiş günü (yoksa AsilPOS okunmaz)
-    asilposSwitchDay(db),
+    // Kasa başına AsilPOS'a geçiş günü (çok şube; yoksa AsilPOS okunmaz)
+    loadSwitchDays(db),
     // Seçili şubenin açılışı: sonradan açılan şubenin açılış ayı "kasa raporları ay ortasında başladı" sayılmaz
     branchOnly
       ? db.select({ id: s.branches.id, openedOn: s.branches.openedOn }).from(s.branches).where(eq(s.branches.id, branchOnly)).limit(1)
@@ -150,16 +151,18 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     // Kanalların ödeme süresi: hakediş işletmenin, seçiciden bağımsız (şubelerin en kısa süresi; businessPayDays)
     loadBusinessPayDays(db),
   ]);
-  // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken AsilPOS hiç okunmaz, Z'si geçiş ayından
-  // itibaren föyün markasıyla (modposScope)
-  const asilposBranch = await asilposBranchId(db);
-  const { asilpos: switchDay, modpos: modposFrom } = commissionScopeDays(switchRow, scope, asilposBranch);
+  // Geçiş günleri görünümün kasalarınınki (çok şube): kasası ModPOS olan şube (Tuzla) seçiliyken AsilPOS hiç okunmaz, Z'si
+  // kasaların en erken geçiş ayından itibaren föyün markasıyla (modposScope); geçiş günü sonra olan kasa seçiliyken kendi
+  // geçiş ayına dek öyle, sonra AsilPOS'tan. "Tümü"de her kasa kendi geçiş gününden
+  const switchDays = scopeSwitchDays(switchRow, scope);
+  const { asilpos: switchDay, modpos: modposFrom } = commissionScopeDays(switchRow, scope);
   const asilposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
-  // Föyün markası geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır)
-  const brandsFrom = switchDay ?? modposFrom;
+  // Föyün markası ilk geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır): iki gün de
+  // varsa erkeni
+  const brandsFrom = switchDay && modposFrom ? (modposFrom < switchDay ? modposFrom : switchDay) : (switchDay ?? modposFrom);
   const brandsStart = brandsFrom ? (`${brandsFrom.slice(0, 7)}-01` > fromDay ? `${brandsFrom.slice(0, 7)}-01` : fromDay) : null;
   const [asilposDays, modposBrands] = await Promise.all([
-    asilposFrom ? loadAsilposPaymentDays(asilposFrom, scope) : Promise.resolve([]),
+    asilposFrom ? loadAsilposPaymentDays(switchDays, fromDay, scope) : Promise.resolve([]),
     brandsStart ? loadModposBrands(brandsStart, today) : Promise.resolve([]),
   ]);
   // Hafif yol: faturadaki adı bir kanala bağlanmayan fatura varsa kartların adları da aranır (Kanalı bulunamayan
@@ -185,11 +188,10 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     ),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
     settings: channelSettings,
-    asilpos: switchDay ? { switchDay, days: asilposDays } : null,
+    asilpos: switchDay ? { switchDay, switchDays, days: asilposDays } : null,
     ...(modposBrands.length ? { modposBrands } : {}),
     ...(branchOnly ? { openedOn: tillOpenedOn(branchRow[0] ?? null) } : {}),
     ...(modposFrom ? { modposScope: { switchDay: modposFrom } } : {}),
-    asilposBranch,
   };
 }
 
@@ -216,16 +218,24 @@ async function loadModposBrands(from: string, to: string): Promise<ModposBrandDa
 const paymentsSchema = posDaySchema.shape.payments;
 
 /**
- * AsilPOS'un `from` gününden itibaren gelen gün sonları: Z'deki yemek kartı ve online, ödeme türleri (kanalı
- * asilposChannel ile tanınır, tanınmayan null). Özeti okunamayan gün atlanır (gelmemiş sayılır); ödemeleri okunamayan
- * günün Z'si sayılır, ödemeleri boş. Yalnız yönetici okur (zil ve ekran); ikram ve satır okunmaz.
+ * AsilPOS kasalarının gelen gün sonları, her kasanın kendi geçiş gününden (ve `from`'dan) itibaren (çok şube; R1: kasası
+ * ModPOS olan şubenin deneme günü okunmaz): Z'deki yemek kartı ve online, ödeme türleri (kanalı asilposChannel ile tanınır,
+ * tanınmayan null). Özeti okunamayan gün atlanır (gelmemiş sayılır); ödemeleri okunamayan günün Z'si sayılır, ödemeleri
+ * boş. Yalnız yönetici okur (zil ve ekran); ikram ve satır okunmaz.
  */
-async function loadAsilposPaymentDays(from: string, scope: string): Promise<AsilposDayIn[]> {
+async function loadAsilposPaymentDays(switchDays: SwitchDays, from: string, scope: string): Promise<AsilposDayIn[]> {
+  const tills = Object.entries(switchDays).filter((e): e is [string, string] => e[1] !== null);
+  if (!tills.length) return [];
   const rows = await getDb()
-    .select({ date: s.posDayReports.date, z: s.posDayReports.z, payments: s.posDayReports.payments })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, payments: s.posDayReports.payments })
     .from(s.posDayReports)
-    .where(andWhere(gte(s.posDayReports.date, from), branchWhere(s.posDayReports.branchId, scope)))
-    .orderBy(asc(s.posDayReports.date));
+    .where(
+      andWhere(
+        or(...tills.map(([id, sd]) => and(eq(s.posDayReports.branchId, id), gte(s.posDayReports.date, sd > from ? sd : from)))),
+        branchWhere(s.posDayReports.branchId, scope),
+      ),
+    )
+    .orderBy(asc(s.posDayReports.date), asc(s.posDayReports.branchId));
   const out: AsilposDayIn[] = [];
   for (const r of rows) {
     const z = posZSchema.safeParse(r.z);
@@ -233,6 +243,7 @@ async function loadAsilposPaymentDays(from: string, scope: string): Promise<Asil
     const payments = paymentsSchema.safeParse(r.payments);
     out.push({
       date: r.date,
+      branchId: r.branchId,
       mealCard: z.data.mealCard,
       online: z.data.online,
       payments: payments.success ? payments.data.map((p) => ({ name: p.name, zField: p.zField, channel: asilposChannel(p.channel), rawChannel: p.channel, amount: p.amount })) : [],

@@ -31,28 +31,40 @@ export interface AsilposBranchData {
   /** Kullanılan anahtar nereden ("panel", "ortam"); yoksa null */
   source: "panel" | "ortam" | null;
   /** Kullanılan anahtarın sorunu (yok, kısa, sitenin anahtarıyla aynı); null: bağlantı açık */
-  problem: "missing" | "short" | "same_as_site" | null;
+  problem: "missing" | "short" | "same_as_site" | "same_as_other_branch" | null;
   /** Ortamda anahtarın okunduğu değişkenin adı (sahip yeni adı eklemediyse eski adı; src/lib/asilpos/env.ts posEnvName) */
   envName: string;
   /** Kütükte kasa kaynağı hâlâ ModPOS (AsilPOS'un şubesi geri düşüşle bu şube; föyün yedek çekimi sürüyor) */
   sourceModpos: boolean;
+  /** Şubenin günleri sayılıyor mu (kasası AsilPOS: posTillIds); değilse yalnız kurulum yapılmış, günleri deneme */
+  till: boolean;
+  /**
+   * Eski tek kasalı kurulumun şubesi mi (Marina, LEGACY_POS_BRANCH_ID): yalnız onda paneldeki anahtar yokken ortamdaki
+   * kullanılır (src/server/asilpos/branch.ts readKeys). Öbür şubede anahtar silinirse kasa bağlantısız kalır
+   */
+  legacy: boolean;
 }
 
 const PROBLEM_TEXT = {
   missing: "Anahtar yok: AsilPOS'un gönderdiği gün sonları reddedilir",
   short: "Sunucudaki anahtar 32 karakterden kısa: bağlantı kapalı",
   same_as_site: "Sunucudaki anahtar sitenin anahtarıyla aynı: bağlantı kapalı",
+  same_as_other_branch: "Anahtar başka bir şubenin AsilPOS anahtarıyla aynı: bağlantı kapalı, yeni anahtar kaydedin",
 } as const;
 
 // Teknik adlar yalnız `tech`'te (ekran gövdesinde geliştirici sözcüğü yok; tests/uyari-goc.test.ts)
 const secretTech = (envName: string) => `Panelde saklanan anahtar sunucudaki ${envName}'ın önüne geçer; AsilPOS'ta LAFMALIYET_SYNC_SECRET aynı olmalı.`; // tech-metni
 
+/** Anahtar silinince ne olur: Marina'da sunucudaki eski anahtar, öbür şubede kasa bağlantısız kalır */
+const dropText = (legacy: boolean) => (legacy ? "Sunucudaki anahtar kullanılır." : "Bu şubenin kasası bağlantısız kalır: yeni anahtar kaydedin ya da kurulum kodu gönderin.");
+
 /**
- * Şube ayarları › AsilPOS (şube ayarı SUBE_AYAR_GRUBU; docs/SUBE.md › Şube başına ayarlar): yalnız kasası AsilPOS olan şubede.
- * Geçiş günü Ayarlar › AsilPOS'ta değişir (denetimleri orada); burada yalnız gösterilir. Anahtar panelde şifreli saklanabilir:
- * ortamdaki ASILPOS_SYNC_SECRET'ın önüne geçer, AsilPOS'taki LAFMALIYET_SYNC_SECRET ile aynı olmalıdır. Saklanan anahtar
- * bir daha gösterilmez; yalnız "kayıtlı" der, değiştirilir ya da silinir. "Diğer şubeyle aynı" yok: AsilPOS en çok bir
- * şubenin kasasıdır.
+ * Şube ayarları › AsilPOS (şube ayarı SUBE_AYAR_GRUBU; docs/SUBE.md › Şube başına ayarlar): kasası AsilPOS olan ya da
+ * AsilPOS kurulumu yapılmış şubede. Geçiş günü Ayarlar › AsilPOS'ta değişir (denetimleri orada); burada yalnız gösterilir.
+ * Anahtar panelde şifreli saklanır, AsilPOS'taki LAFMALIYET_SYNC_SECRET ile aynı olmalıdır; her şubenin kasası kendi
+ * anahtarını kullanır (çok şube). Ortamdaki ASILPOS_SYNC_SECRET yalnız eski kurulumun şubesine (Marina) hizmet eder,
+ * onun da saklanan anahtarı yokken (`legacy`); öbür şubede anahtar silinirse kasa bağlantısız kalır. Saklanan anahtar bir
+ * daha gösterilmez; yalnız "kayıtlı" der, değiştirilir ya da silinir. "Diğer şubeyle aynı" yok: anahtar şubeyi tanıtır.
  */
 export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
   const [secret, setSecret] = useState("");
@@ -72,7 +84,7 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
     setSecret("");
     setAsk(null);
     toast.success(res.data.saved ? "AsilPOS anahtarı kaydedildi" : "Paneldeki AsilPOS anahtarı silindi", {
-      description: res.data.saved ? "AsilPOS'taki bağlantı anahtarı da aynı olmalı." : "Sunucudaki anahtar kullanılır.",
+      description: res.data.saved ? "AsilPOS'taki bağlantı anahtarı da aynı olmalı." : dropText(data.legacy),
     });
     return null;
   }
@@ -99,7 +111,11 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
             tone="neutral"
             size="sm"
             title="Kasa kaynağı Şubeler'de hâlâ ModPOS"
-            text="AsilPOS'un gün sonları yine bu şubeye yazılır; ModPOS föyü yalnız yedektir, geçiş gününden sonra hesaba girmez."
+            text={
+              data.till
+                ? "AsilPOS'un gün sonları yine bu şubeye yazılır; ModPOS föyü yalnız yedektir, geçiş gününden sonra hesaba girmez."
+                : "AsilPOS'un gün sonları saklanır ama hiçbir hesaba girmez (deneme). Şubeler'de kasa kaynağı AsilPOS olunca geçiş gününden itibaren sayılır."
+            }
           />
         ) : null}
         <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -113,7 +129,7 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
             tone="warn"
             size="sm"
             title="Paneldeki anahtar açılamıyor"
-            text="Sunucunun şifreleme anahtarı değişmiş olabilir; anahtarı yeniden girin. O zamana dek sunucudaki anahtar kullanılır."
+            text={`Sunucunun şifreleme anahtarı değişmiş olabilir; anahtarı yeniden girin. ${data.legacy ? "O zamana dek sunucudaki anahtar kullanılır." : "O zamana dek bu şubenin kasasının istekleri reddedilir."}`}
             tech="AUTH_SECRET değişti"
           />
         ) : null}
@@ -134,7 +150,16 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
             aria-invalid={short ? true : undefined}
           />
         </Field>
-        <Notice tone="neutral" size="sm" title="Anahtar nereden okunur" text="Panelde saklanan anahtar sunucudakinin önüne geçer; silinirse sunucudaki kullanılır." tech={secretTech(data.envName)} />
+        {data.legacy ? (
+          <Notice tone="neutral" size="sm" title="Anahtar nereden okunur" text="Panelde saklanan anahtar sunucudakinin önüne geçer; silinirse sunucudaki kullanılır." tech={secretTech(data.envName)} />
+        ) : (
+          <Notice
+            tone="neutral"
+            size="sm"
+            title="Anahtar nereden okunur"
+            text="Yalnız burada saklanan anahtar kullanılır. Silinirse kasa bağlantısız kalır: yeni anahtar ya da kurulum kodu gerekir."
+          />
+        )}
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setAsk("save")} disabled={!secret.trim() || short} className="max-sm:w-full">
             Kaydet
@@ -152,7 +177,9 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
           description={
             ask === "save"
               ? "Kaydedince AsilPOS'un istekleri bu anahtarla denetlenir; AsilPOS'taki bağlantı anahtarı aynı değilse gün sonları reddedilir. Parolanızla onaylayın."
-              : "Bundan sonra sunucudaki anahtar kullanılır; o yoksa AsilPOS'un istekleri reddedilir. Parolanızla onaylayın."
+              : data.legacy
+                ? "Bundan sonra sunucudaki anahtar kullanılır; o yoksa AsilPOS'un istekleri reddedilir. Parolanızla onaylayın."
+                : "Bu şubenin kasasının istekleri reddedilir (bağlantısız kalır); yeni anahtar ya da kurulum kodu gerekir. Parolanızla onaylayın."
           }
           confirmLabel={ask === "save" ? "Kaydet" : "Sil"}
           danger={ask === "drop"}
@@ -165,8 +192,8 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
 }
 
 /**
- * Kasa kaynağı başka şubeye geçtikten sonra eski şubede kalan, panelde saklanmış AsilPOS anahtarı: kullanılmaz ama kaynak
- * geri dönerse yine ortamdakinin önüne geçerdi. Burada yalnız silinir (parolayla); yeni anahtar AsilPOS'un şubesinde
+ * Kasası artık AsilPOS olmayan (ve kurulumu olmayan) şubede kalan, panelde saklanmış AsilPOS anahtarı: kullanılmaz ama
+ * kasa kaynağı AsilPOS'a dönerse yine geçerli olurdu. Burada yalnız silinir (parolayla); öbür şubelerin anahtarları değişmez
  */
 export function AsilposOldSecretCard({ branchId }: { branchId: string }) {
   const [open, setOpen] = useState(false);
@@ -181,7 +208,7 @@ export function AsilposOldSecretCard({ branchId }: { branchId: string }) {
       {open ? (
         <ConfirmPasswordDialog
           title="Eski AsilPOS anahtarı silinsin mi?"
-          description="Anahtar bu şubeden silinir; AsilPOS'un bugünkü şubesinin anahtarı değişmez. Parolanızla onaylayın."
+          description="Anahtar bu şubeden silinir; öbür şubelerin AsilPOS anahtarları değişmez. Parolanızla onaylayın."
           confirmLabel="Sil"
           danger
           onClose={() => setOpen(false)}

@@ -1,6 +1,9 @@
 import { shiftMonth } from "@/lib/reminders";
 
-import { isAsilposBranch, isAsilposDay, ASILPOS_BRANCH_ID } from "./switch";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
+
+import { isAsilposDay } from "./switch";
 
 /*
  * AsilPOS personel bağlantısının lafmaliyet tarafı (LM-4b, 24 Kasım 2026; CONTRACT §3, sahibin kararı 2: "ladmin'de
@@ -110,15 +113,15 @@ export interface WorkedStaffAnswer {
 }
 
 /**
- * Gövdedeki kimliklerin sınıfı. Satırın şubesi AsilPOS'un şubesi (`asilposBranch`, sunucu asilposBranchId ile verir; yoksa
- * ASILPOS_BRANCH_ID) ve aralığı günün ayını tutuyorsa sayılan; satır başka şubedeyse otherBranch; yoksa ya da aralık
- * dışındaysa unknown. Sıra gövdeninki (tekil, sayı sırasıyla)
+ * Gövdedeki kimliklerin sınıfı. Satırın şubesi kasanın şubesi (`tillBranch`: gün sonunu gönderen kasanın, anahtarından;
+ * çok şube) ve aralığı günün ayını tutuyorsa sayılan; satır başka şubedeyse otherBranch; yoksa ya da aralık dışındaysa
+ * unknown. Sıra gövdeninki (tekil, sayı sırasıyla)
  */
 export function classifyWorkedStaff(
   refs: readonly string[],
   rows: ReadonlyMap<number, { branchId: string; startMonth: string | null; endMonth: string | null }>,
   date: string,
-  asilposBranch: string = ASILPOS_BRANCH_ID,
+  tillBranch: string,
 ): WorkedStaffAnswer {
   const out: WorkedStaffAnswer = { counted: [], unknown: [], otherBranch: [] };
   const month = date.slice(0, 7);
@@ -126,7 +129,7 @@ export function classifyWorkedStaff(
     const id = staffIdOfRef(ref);
     const r = id === null ? undefined : rows.get(id);
     if (!r) out.unknown.push(ref);
-    else if (r.branchId !== asilposBranch) out.otherBranch.push(ref);
+    else if (r.branchId !== tillBranch) out.otherBranch.push(ref);
     else if (inRange(r, month)) out.counted.push(ref);
     else out.unknown.push(ref);
   }
@@ -140,10 +143,10 @@ export function classifyWorkedStaff(
  * (pos_day_reports.worked_staff; gövde alanı taşımadıysa null). Veri kümesi okur (src/server/data/dataset.ts)
  */
 export interface AsilposWorked {
-  switchDay: string;
-  /** Günlerin şubesi: AsilPOS'un şubesi (veri kümesi kütükten türetir); verilmezse geri düşüş değeri */
-  branchId?: string;
-  days: { date: string; refs: string[] | null }[];
+  /** Kasa başına geçiş günü (çok şube; yalnız okunan kasalar) */
+  switchDays: SwitchDays;
+  /** Kasaların sayılan günleri, şubesiyle */
+  days: { branchId: string; date: string; refs: string[] | null }[];
 }
 
 /**
@@ -151,9 +154,12 @@ export interface AsilposWorked {
  * var ve HER biri çalışan listesini taşıyor); yoksa null
  */
 function coveredDays(worked: AsilposWorked | null | undefined, staff: { branchId?: string | null }, month: string): { date: string; refs: string[] }[] | null {
-  if (!worked || !isAsilposBranch(staff.branchId, worked.branchId)) return null;
-  if (!isAsilposDay(`${month}-01`, worked.switchDay)) return null;
-  const days = worked.days.filter((d) => d.date.slice(0, 7) === month && isAsilposDay(d.date, worked.switchDay));
+  // Kişinin şubesinin kasası (çok şube): kasası AsilPOS olmayan şubede geçiş günü yok
+  const switchDay = worked ? switchDayFor(worked.switchDays, staff.branchId) : null;
+  if (!worked || switchDay === null) return null;
+  if (!isAsilposDay(`${month}-01`, switchDay)) return null;
+  const branch = staff.branchId ?? DEFAULT_BRANCH_ID;
+  const days = worked.days.filter((d) => d.branchId === branch && d.date.slice(0, 7) === month && isAsilposDay(d.date, switchDay));
   if (!days.length || days.some((d) => d.refs === null)) return null;
   return days as { date: string; refs: string[] }[];
 }

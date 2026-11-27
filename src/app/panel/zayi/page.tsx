@@ -12,7 +12,8 @@ import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
-import { ASILPOS_IKRAM_TEXT, asilposReasonText, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/asilpos/ikram";
+import { ASILPOS_IKRAM_TEXT, asilposReasonText, ikramTillDays, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/asilpos/ikram";
+import { tillDayKey } from "@/lib/pos/tills";
 import { monthSource } from "@/lib/asilpos/switch";
 import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
@@ -165,7 +166,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           unmatched: admin && l.productId === null && !l.isService,
           service: admin && l.isService,
         })),
-        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([date]), laf.branchId)).map((e) => e.id) : [],
+        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([tillDayKey(laf.branchId, date)]))).map((e) => e.id) : [],
         // Paneldeki ürün zayisi, aynı gün aynı ürün AsilPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
         maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && asilposZayi.has(e.productId)).map((e) => e.id),
         branchName: laf.branchName,
@@ -245,7 +246,8 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
   const end = addDays(`${shiftMonth(month, 1)}-01`, -1);
   const [model, entries] = await Promise.all([loadModel(), wasteEntriesBetween(`${month}-01`, end)]);
   const sum = model.wasteSummary(month);
-  const asilposDays = new Set(model.ds.asilposIkram?.days ?? []);
+  // Gün sonu gelen (şube, gün) anahtarları (çok şube: kayıt yalnız kendi kasasının günü geldiyse düşer)
+  const asilposDays = ikramTillDays(model.ds.asilposIkram);
   // Kalem başına: adet / miktar ve malzeme maliyeti (ürün: reçetenin malzeme toplamı, fire payı olmadan)
   const rows = new Map<string, { kind: WasteKind; asilpos: boolean; name: string; unit: string; qty: number; cost: number; count: number }>();
   const add = (key: string, base: { kind: WasteKind; asilpos: boolean; name: string; unit: string }, qty: number, cost: number) => {
@@ -256,7 +258,7 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
     rows.set(key, r);
   };
   for (const e of entries) {
-    if (!panelWasteCounts(e, asilposDays, model.ds.asilposBranch)) continue;
+    if (!panelWasteCounts(e, asilposDays)) continue;
     add(`${e.kind}|${e.name}|${e.unit}`, { kind: e.kind, asilpos: false, name: e.name, unit: e.unit }, e.qty, model.wasteCost(e));
   }
   for (const w of model.countedWaste) {

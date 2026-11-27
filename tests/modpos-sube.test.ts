@@ -285,7 +285,7 @@ test("kaynak: çekim şubenin anahtarı, hakkı, kirası ve günleriyle; föy ay
   assert.match(sync, /loadBranchSwitchDay\(branchId, db\),/);
   assert.match(sync, /planFoyDays\(\{ now, from, have, left, until: switchDay, failed \}\)/);
   assert.match(sync, /fetchKasaFoyu\(day, \{ now, timeoutMs: remaining - 1_000, fetchImpl: o\.fetchImpl, env, branchId \}\)/);
-  assert.match(sync, /const split = splitFoyByBranch\(r\.foy, \{ own: branchId, resolve, keyed \}\);/);
+  assert.match(sync, /const split = splitFoyByBranch\(r\.foy, \{ own: branchId, resolve, keyed, modposIds: new Set\(b\.peers\) \}\);/);
   assert.match(sync, /const stored = await storeFoy\(db, split\.parts\.get\(branchId\)!, now, r\.raw, branchId\);/);
   assert.match(sync, /for \(const \[id, part\] of split\.parts\) if \(id !== branchId\) await storeFoy\(db, part, now, null, id\);/);
   assert.match(sync, /if \(modposKeyProblem\(env, branchId, peers\) === "shared"\) \{/);
@@ -330,18 +330,18 @@ test("rapor yalnız kendi şubesinin föyüyle karşılaştırılır: Marina'nı
   const tuzla = { day, branchId: "tuzla", foy: sample(day), revision: 1 };
   // Marina'nın aynı günkü raporu bambaşka rakamlarla; Marina'nın föyü yok
   const marina = { ...sameReport(day, "marina"), zTotal: 5000, cash: 5000, card: 0, receipts: 20 };
-  assert.deepEqual(modposMismatches([marina], [tuzla], null), [], "Tuzla'nın föyü Marina'nın raporuna uygulanmaz");
+  assert.deepEqual(modposMismatches([marina], [tuzla], {}), [], "Tuzla'nın föyü Marina'nın raporuna uygulanmaz");
   // Tuzla'nın raporu kendi föyüyle aynı; şubesiz eski rapor Tuzla'nındır
-  assert.deepEqual(modposMismatches([sameReport(day, "tuzla"), sameReport(day)], [tuzla], null), []);
+  assert.deepEqual(modposMismatches([sameReport(day, "tuzla"), sameReport(day)], [tuzla], {}), []);
   // Marina'nın föyü gelince Marina'nın raporu onunla karşılaştırılır
   const marinaSheet = { day, branchId: "marina", foy: sample(day), revision: 1 };
-  const m = modposMismatches([marina, sameReport(day, "tuzla")], [tuzla, marinaSheet], null);
+  const m = modposMismatches([marina, sameReport(day, "tuzla")], [tuzla, marinaSheet], {});
   assert.equal(m.length, 1);
   assert.equal(m[0].report.branchId, "marina");
   assert.equal(m[0].sheet, marinaSheet);
-  assert.deepEqual([...modposMismatchDates([marina], [tuzla, marinaSheet], null)], [day]);
+  assert.deepEqual([...modposMismatchDates([marina], [tuzla, marinaSheet], {})], [day]);
   // Bugün'ün şube şube işaretleri (şube, gün) anahtarıyla
-  assert.deepEqual([...modposMismatchBranchDays([marina, sameReport(day, "tuzla")], [tuzla, marinaSheet], null)], [`marina:${day}`]);
+  assert.deepEqual([...modposMismatchBranchDays([marina, sameReport(day, "tuzla")], [tuzla, marinaSheet], {})], [`marina:${day}`]);
   // Sabah e-postası: birden çok kasada şubenin adıyla, verilmezse bugünkü metin
   assert.match(modposMismatchDigestText(day, m[0].diffs, "Marina"), /^Kasa raporu ModPOS API'den farklı \(Marina\)\. 1\sKasım · /);
   assert.match(modposMismatchDigestText(day, m[0].diffs), /^Kasa raporu ModPOS API'den farklı\. 1\sKasım · /);
@@ -358,31 +358,31 @@ test("AsilPOS'a geçiş günü yalnız Marina'nın kasasını keser: Tuzla'nın 
   const tuzla = { ...sameReport(day, "tuzla"), cash: 8190 };
   const branchless = { ...sameReport(day), cash: 8190 };
   // Tuzla ModPOS'ta: farkı görünür (şubesiz eski rapor da Tuzla'nındır, Tuzla'nın föyüyle); Marina AsilPOS'ta: atlanır
-  const m = modposMismatches([marina, tuzla, branchless], [marinaSheet, tuzlaSheet], switchDay);
+  const m = modposMismatches([marina, tuzla, branchless], [marinaSheet, tuzlaSheet], { marina: switchDay });
   assert.deepEqual(
     m.map((x) => x.report.branchId ?? null),
     ["tuzla", null],
   );
   assert.equal(m[1].sheet, tuzlaSheet, "şubesiz rapor Tuzla'nın föyüyle");
-  assert.deepEqual([...modposMismatchBranchDays([marina, tuzla], [marinaSheet, tuzlaSheet], switchDay)], [`tuzla:${day}`]);
+  assert.deepEqual([...modposMismatchBranchDays([marina, tuzla], [marinaSheet, tuzlaSheet], { marina: switchDay })], [`tuzla:${day}`]);
   // Geçiş gününden önce ikisi de karşılaştırılır
   const before = "2026-11-30";
   const sheets = [
     { day: before, branchId: "marina", foy: sample(before), revision: 1 },
     { day: before, branchId: "tuzla", foy: sample(before), revision: 1 },
   ];
-  assert.equal(modposMismatches([{ ...marina, date: before }, { ...tuzla, date: before }], sheets, switchDay).length, 2);
+  assert.equal(modposMismatches([{ ...marina, date: before }, { ...tuzla, date: before }], sheets, { marina: switchDay }).length, 2);
 });
 
 test("zilin satırı: Tuzla'nın kimliği ve adresi değişmedi; öteki şubenin kimliğinde ve adresinde şube", () => {
   const day = "2026-11-01";
   const sheet = { day, foy: sample(day), revision: 2 };
-  const diffs = modposMismatches([{ ...sameReport(day, "marina"), cash: 8190 }], [{ ...sheet, branchId: "marina" }], null)[0];
+  const diffs = modposMismatches([{ ...sameReport(day, "marina"), cash: 8190 }], [{ ...sheet, branchId: "marina" }], {})[0];
   const bell = modposMismatchBell(diffs, "Marina");
   assert.equal(bell.id, "kasa-modpos-2026-11-01-marina-r1-s2");
   assert.equal(bell.href, "/panel/kasa?gun=2026-11-01&sube=marina");
   assert.match(bell.body, /^Marina · 1 Kasım/);
-  const t = modposMismatches([{ ...sameReport(day, "tuzla"), cash: 8190 }], [{ ...sheet, branchId: "tuzla" }], null)[0];
+  const t = modposMismatches([{ ...sameReport(day, "tuzla"), cash: 8190 }], [{ ...sheet, branchId: "tuzla" }], {})[0];
   assert.deepEqual([modposMismatchBell(t).id, modposMismatchBell(t).href], ["kasa-modpos-2026-11-01-r1-s2", "/panel/kasa?gun=2026-11-01"]);
 });
 
@@ -393,8 +393,8 @@ test("kaynak: Kasa ekranı föyü ekrandaki raporun şubesinden; günden güne l
   assert.match(day, /const b = branchId \?\? sube;/);
   assert.match(day, /out\.get\(modposPairKey\(b, date\)\)/);
   // Geçiş günü günün kasasının şubesine göre (denetim 21 Kasım #5): Marina'nın föyü geçiş gününden sonra da okunur
-  assert.match(day, /if \(isAsilposDay\(date, branchSwitchDay\(switchDay, sube, asilposBranch\)\)\) return NO_MODPOS;/);
-  assert.match(day, /return isAsilposDay\(date, branchSwitchDay\(switchDay, b, asilposBranch\)\) \? NO_MODPOS/);
+  assert.match(day, /if \(isAsilposDay\(date, switchDayFor\(switchDays, sube\)\)\) return NO_MODPOS;/);
+  assert.match(day, /return isAsilposDay\(date, switchDayFor\(switchDays, b\)\) \? NO_MODPOS/);
   assert.match(day, /for \(const sheet of await loadModposSheets\(from, to, db\)\)/, "aralık geçiş gününe kırpılmaz");
   // Raporun DTO'su şubesini taşır
   assert.match(read("src/server/data/cash-reports.ts"), /id: r\.id,\n\s+branchId: r\.branchId,/);

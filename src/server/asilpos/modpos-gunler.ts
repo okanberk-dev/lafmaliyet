@@ -14,7 +14,7 @@ import {
 } from "@/lib/asilpos/modpos-gunler";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId, loadBranchSwitchDay } from "./branch";
+import { loadBranchSwitchDay } from "./branch";
 import { loadModposSheets } from "@/server/modpos/store";
 
 import type { EndpointResult } from "./ingest";
@@ -92,11 +92,11 @@ export async function loadModposDays(db: DB, sube: string): Promise<ModposDaysDa
  * sonra), 400 `{ error: "invalid", field: "sube" }`, 401, 409 `{ error: "wrong_branch", sube, expected }`, 503.
  */
 export async function serveModposDays(
-  input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date },
+  input: { secret: string | null; branchId: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date },
   load: (sube: string) => Promise<ModposDaysData> = (sube) => loadModposDays(getDb(), sube),
 ): Promise<EndpointResult> {
-  // Beklenen şube kütükten (kasa kaynağı AsilPOS olan şube, yoksa Marina; önbellekli)
-  const check = checkModposDaysRequest({ ...input, now: (input.now ?? new Date()).getTime(), expected: await asilposBranchId() });
+  // Beklenen şube anahtarın şubesi (çok şube; imzanın tuttuğu anahtar)
+  const check = checkModposDaysRequest({ ...input, now: (input.now ?? new Date()).getTime(), expected: input.branchId });
   if (!check.ok) return { status: check.status, body: check.body };
   const data = await load(check.sube);
   return { status: 200, body: { version: ASILPOS_VERSION, now: (input.now ?? new Date()).toISOString(), sube: check.sube, ...data } };

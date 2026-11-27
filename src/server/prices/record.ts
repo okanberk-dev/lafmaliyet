@@ -6,10 +6,9 @@ import { tillPriceManual } from "@/lib/asilpos/kasa";
 import type { PriceChange } from "@/lib/prices/history";
 import { posAfterPriceChange } from "@/lib/prices/pos";
 import { toMinor } from "@/lib/site-menu/slot";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
+import { asilposSwitchDaysOf } from "@/server/data/asilpos-ikram";
 import { branchTill } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
 
 /**
  * Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md). Satış fiyatını yazan her yol bunu fiyatla aynı
@@ -48,7 +47,7 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
       .select({ branchId: s.posStale.branchId, stalePrice: s.posStale.stalePrice, since: s.posStale.staleSince })
       .from(s.posStale)
       .where(eq(s.posStale.productId, c.productId));
-    const [switchDay, asilposBranch] = await Promise.all([asilposSwitchDayOf(tx), asilposBranchId(tx)]);
+    const switchDays = await asilposSwitchDaysOf(tx);
     for (const till of tills) {
       const cur = current.find((x) => x.branchId === till.id) ?? null;
       const next = posAfterPriceChange({ stalePrice: cur?.stalePrice ?? null, since: cur?.since ?? null }, c.before, c.after, at);
@@ -64,7 +63,7 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
           .where(where);
       }
       // Geçiş günü yalnız siteye bağlı üründe okunur (bağlı olmayanın fiyatı kasada her zaman elle değişir)
-      if (next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(branchTill(switchDay, till.id, at, [], asilposBranch), true))) posPending = true;
+      if (next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(branchTill(switchDays, till.id, at, []), true))) posPending = true;
     }
   }
   await tx.insert(s.productPrices).values({

@@ -42,8 +42,7 @@ import { adoptPendingDayPhotos, lockCashReport, lockLateDay, okcServerColumns, t
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { loadPosTills, switchDayOf } from "@/server/pos/tills";
 import { APP_URL } from "@/server/notify/digest-template";
 import { activeDigestRecipients, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
@@ -55,7 +54,7 @@ import { supersede } from "@/server/staff-requests/core";
 import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, pendingPhotoCheck, photoCheckOf, photoMailParts, refreshDayPhotoCheck } from "./foto";
 
 /*
- * AsilPOS gün sonunun otomasyonu (docs/ASILPOS.md › Gün sonu otomasyonu): AsilPOS'un şubesinin (Marina; kütükten türetilir, asilposBranchId)
+ * AsilPOS gün sonunun otomasyonu (docs/ASILPOS.md › Gün sonu otomasyonu): her AsilPOS kasasının (şubenin; çok şube)
  * gün sonu geçiş gününden itibaren gelince
  *
  * 1. Kasa raporu kendiliğinden yazılır (rapor yoksa; AsilPOS'ta sayım yoksa yazılmaz, uydurulmaz). Düzeltme gelince
@@ -226,11 +225,11 @@ async function waitsForPavo(db: DB, date: string, branchId: string, day: StoredD
 }
 
 /**
- * Gün AsilPOS'un şubesinin AsilPOS günü mü (geçiş günü seçili ve gün ondan önce değil). AsilPOS'un şubesinin geçiş günü
- * ayarın kendisidir (branchSwitchDay; şube asilposBranchId), bu dosyanın her işi o şubenin günüdür
+ * Gün bu kasanın sayılan AsilPOS günü mü: şubenin kasası AsilPOS, geçiş günü seçili ve gün ondan önce değil (çok şube: her
+ * kasanın kendi geçiş günü). Bu dosyanın her işi tek bir kasanın (şubenin) günüdür
  */
-export async function isCountedAsilposDay(db: DB, date: string): Promise<boolean> {
-  return isAsilposDay(date, await loadAsilposSwitchDay(db));
+export async function isCountedAsilposDay(db: DB, date: string, branchId: string): Promise<boolean> {
+  return isAsilposDay(date, await switchDayOf(branchId, db));
 }
 
 async function ensureState(tx: CashTx, date: string, branchId: string) {
@@ -250,9 +249,8 @@ async function ensureState(tx: CashTx, date: string, branchId: string) {
  * değişmemiş alanlar düzeltmeyle güncellenir (önceki sürüm geçmişe); başka biri girdiyse ("human") Z'ye, kasaya ve nota
  * dokunulmaz, yalnız boş cihaz alanları (Banka POS, yazarkasa) dolar (fillHumanDevice).
  */
-export async function writeAutoReport(db: DB, date: string, now = new Date()): Promise<AutoReportResult> {
-  const branchId = await asilposBranchId(db);
-  if (!(await isCountedAsilposDay(db, date))) return "skipped";
+export async function writeAutoReport(db: DB, date: string, branchId: string, now = new Date()): Promise<AutoReportResult> {
+  if (!(await isCountedAsilposDay(db, date, branchId))) return "skipped";
   return db.transaction(async (tx) => {
     await lockLateDay(tx, date, branchId);
     const day = await loadStoredDay(tx, date, branchId);
@@ -535,8 +533,7 @@ const staffMailKey = (branchId: string, date: string, kind: StaffMailKind) => `$
  * false) kayıt yeniden denenir. Başarılı kayıt ezilmez: aynı anahtarla yarışan ikinci gönderim (Resend 409) düşse de
  * ilk "gitti" kaydı kalır ve "same" döner
  */
-export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), opts?: SendOptions & { retryOnly?: boolean }): Promise<StaffEmailResult> {
-  const branchId = await asilposBranchId(db);
+export async function sendStaffDayEnd(db: DB, date: string, branchId: string, now = new Date(), opts?: SendOptions & { retryOnly?: boolean }): Promise<StaffEmailResult> {
   if (date < addDays(businessDate(now), -1)) return "skipped";
   const cash = await loadCashSettings(branchId, db);
   // Çalışanların adresleri personelin kendisi: yöneticinin listesindeki gibi personel adresi düşürülmez
@@ -582,9 +579,8 @@ export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), op
  * Pavo'nun sonucu bekleniyorsa "waiting" (waitsForPavo). Başarısızsa hata kaydedilir; bir sonraki tetik (düzeltme ya da
  * günlük iş) yeniden dener. Sayımsız giden günün ilk sayımlı e-postası "düzeltildi" değil "kasa sayıldı" der.
  */
-export async function sendDayEndEmail(db: DB, date: string, report: ReportState, now = new Date(), opts?: DayEndOptions): Promise<DayEndEmailResult> {
-  const branchId = await asilposBranchId(db);
-  const switchDay = await loadAsilposSwitchDay(db);
+export async function sendDayEndEmail(db: DB, date: string, branchId: string, report: ReportState, now = new Date(), opts?: DayEndOptions): Promise<DayEndEmailResult> {
+  const switchDay = await switchDayOf(branchId, db);
   if (!isAsilposDay(date, switchDay)) return "skipped";
   const day = await loadStoredDay(db, date, branchId);
   if (!day) return "skipped";
@@ -709,9 +705,8 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
  * gitmediyse beklenir ("waiting"): karşılaştırma gün sonu e-postasının içinde gider. Aynı karşılaştırma bir kez gider.
  * Düşerse günlük iş yeniden dener. Hata alanı gün sonu e-postasınınkine yazılmaz (yalnız bildirim kaydında).
  */
-export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PavoEmailResult> {
-  const branchId = await asilposBranchId(db);
-  if (!isAsilposDay(date, await loadAsilposSwitchDay(db))) return "skipped";
+export async function sendPavoEmail(db: DB, date: string, branchId: string, now = new Date(), opts?: SendOptions): Promise<PavoEmailResult> {
+  if (!isAsilposDay(date, await switchDayOf(branchId, db))) return "skipped";
   const day = await loadStoredDay(db, date, branchId);
   if (!day?.bankPos) return "skipped";
   const hash = bankPosHash(day.bankPos);
@@ -781,9 +776,8 @@ export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts
  * Fotoğraf eklenince (attachAsilposDayPhoto, after) ve günlük işte (runAsilposDayEnd) çağrılır; düşerse günlük iş yeniden
  * dener. Elle girilmiş raporun fotoğrafı bu yoldan geçmez (raporun kendi e-postası)
  */
-export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PhotoEmailResult> {
-  const branchId = await asilposBranchId(db);
-  if (!isAsilposDay(date, await loadAsilposSwitchDay(db))) return "skipped";
+export async function sendPhotoEmail(db: DB, date: string, branchId: string, now = new Date(), opts?: SendOptions): Promise<PhotoEmailResult> {
+  if (!isAsilposDay(date, await switchDayOf(branchId, db))) return "skipped";
   const [st] = await db
     .select({
       emailedHash: s.asilposDayEnds.emailedHash,
@@ -863,12 +857,11 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
 }
 
 /** Raporun e-postadaki durumu: otomatik yazımın sonucundan ve kayıttan */
-async function reportStateOf(db: DB, date: string, auto: AutoReportResult): Promise<ReportState> {
+async function reportStateOf(db: DB, date: string, branchId: string, auto: AutoReportResult): Promise<ReportState> {
   if (auto === "written") return "auto";
   if (auto === "updated") return "updated";
   if (auto === "human") return "human";
   if (auto === "no-count") return "no-count";
-  const branchId = await asilposBranchId(db);
   const [st] = await db
     .select({ reportId: s.asilposDayEnds.reportId, autoValues: s.asilposDayEnds.autoValues })
     .from(s.asilposDayEnds)
@@ -883,17 +876,19 @@ async function reportStateOf(db: DB, date: string, auto: AutoReportResult): Prom
 }
 
 /**
- * Bir günün otomasyonu: önce rapor, sonra e-posta. Rapor yazılamazsa (beklenmeyen hata) e-posta yine denenir. Hata
- * fırlatmaz: sonuçları döner (after() ve günlük iş için)
+ * Bir kasanın bir gününün otomasyonu (çok şube: `branchId` kasanın şubesi): önce rapor, sonra e-posta. Rapor yazılamazsa
+ * (beklenmeyen hata) e-posta yine denenir. Hata fırlatmaz: sonuçları döner (after() ve günlük iş için)
  */
 export async function runAsilposDayEnd(
   db: DB,
   date: string,
+  branchId: string,
   now = new Date(),
   opts?: DayEndOptions,
   recheck?: StrongRecheckDeps,
 ): Promise<{
   date: string;
+  branchId: string;
   report: AutoReportResult | "error";
   email: DayEndEmailResult | "error";
   pavo: PavoEmailResult | "error";
@@ -904,9 +899,9 @@ export async function runAsilposDayEnd(
   let report: AutoReportResult | "error";
   let error: string | undefined;
   try {
-    report = await writeAutoReport(db, date, now);
+    report = await writeAutoReport(db, date, branchId, now);
   } catch (e) {
-    console.error("[asilpos] gün sonu raporu yazılamadı:", date, e);
+    console.error("[asilpos] gün sonu raporu yazılamadı:", branchId, date, e);
     report = "error";
     error = e instanceof Error ? e.message : String(e);
   }
@@ -914,14 +909,14 @@ export async function runAsilposDayEnd(
   // (strongRecheckDayPhotos); düşerse kayıtlı karşılaştırma kalır
   if (report === "written" || report === "updated" || report === "unchanged") {
     try {
-      if ((await strongRecheckDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, await asilposBranchId(db), now);
+      if ((await strongRecheckDayPhotos(db, date, branchId, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, branchId, now);
     } catch (e) {
       console.error("[asilpos] gün sonu fotoğrafının güçlü okuması:", date, e instanceof Error ? e.message : e);
     }
   }
   let email: DayEndEmailResult | "error";
   try {
-    email = report === "skipped" ? "skipped" : await sendDayEndEmail(db, date, await reportStateOf(db, date, report === "error" ? "skipped" : report), now, opts);
+    email = report === "skipped" ? "skipped" : await sendDayEndEmail(db, date, branchId, await reportStateOf(db, date, branchId, report === "error" ? "skipped" : report), now, opts);
   } catch (e) {
     console.error("[asilpos] gün sonu e-postası gönderilemedi:", date, e);
     email = "error";
@@ -930,7 +925,7 @@ export async function runAsilposDayEnd(
   // Pavo karşılaştırması: gün sonu e-postası gittiyse ve karşılaştırma onunla gitmediyse kısa e-posta
   let pavo: PavoEmailResult | "error";
   try {
-    pavo = report === "skipped" || email === "error" ? "skipped" : await sendPavoEmail(db, date, now, opts);
+    pavo = report === "skipped" || email === "error" ? "skipped" : await sendPavoEmail(db, date, branchId, now, opts);
   } catch (e) {
     console.error("[asilpos] Pavo e-postası gönderilemedi:", date, e);
     pavo = "error";
@@ -940,7 +935,7 @@ export async function runAsilposDayEnd(
   // Pavo e-postalarından SONRA (onları geciktirmez), Z raporu e-postasından önce; süreye sığmayan adım atlanır
   if (report !== "skipped") {
     try {
-      if ((await readUnreadDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, await asilposBranchId(db), now);
+      if ((await readUnreadDayPhotos(db, date, branchId, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, branchId, now);
     } catch (e) {
       console.error("[asilpos] okunmamış gün sonu fotoğrafı:", date, e instanceof Error ? e.message : e);
     }
@@ -948,7 +943,7 @@ export async function runAsilposDayEnd(
   // Z raporu: gün sonu e-postasından sonra eklenen fotoğrafın karşılaştırması ve okunanları (gitmediyse)
   let photo: PhotoEmailResult | "error";
   try {
-    photo = report === "skipped" || email === "error" ? "skipped" : await sendPhotoEmail(db, date, now, opts);
+    photo = report === "skipped" || email === "error" ? "skipped" : await sendPhotoEmail(db, date, branchId, now, opts);
   } catch (e) {
     console.error("[asilpos] fotoğraf e-postası gönderilemedi:", date, e);
     photo = "error";
@@ -959,12 +954,12 @@ export async function runAsilposDayEnd(
   // çalışanlar "alındı"yı ya da "kasa sayılmadı"yı alır. Pavo beklenirken gitmez (yöneticininkiyle gider)
   let staff: StaffEmailResult | "error";
   try {
-    staff = report === "skipped" || email === "waiting" ? "skipped" : await sendStaffDayEnd(db, date, now, { ...opts, retryOnly: email === "same" || email === "busy" });
+    staff = report === "skipped" || email === "waiting" ? "skipped" : await sendStaffDayEnd(db, date, branchId, now, { ...opts, retryOnly: email === "same" || email === "busy" });
   } catch (e) {
     console.error("[asilpos] çalışanların gün sonu e-postası:", date, e);
     staff = "error";
   }
-  return { date, report, email, pavo, photo, staff, ...(error ? { error } : {}) };
+  return { date, branchId, report, email, pavo, photo, staff, ...(error ? { error } : {}) };
 }
 
 /** Bu sunucu örneğinde canlı yoklamanın bekleyen gün sonuna son baktığı an (ms) */
@@ -986,32 +981,35 @@ export function claimAsilposWaitPoll(nowMs: number = Date.now()): boolean {
  * gitmemiş hâldeyse (içerik özeti gönderilenden farklı, gönderimi düşmemiş, başka gönderim sürmüyor ya da işareti bayat) ve
  * geleli PAVO_WAIT_MS geçtiyse o günün otomasyonu çalışır. İki durum: Pavo'yu bekleyen gün (AsilPOS günü yeniden göndermedi)
  * ve gönderimi yarıda kalan gün (işlev süresi doldu, `sending_at` kaldı). Düşen gönderim (email_error) sabah işine kalır:
- * her yoklamada yeniden denenmez. Bekleyen gün yoksa tek sorgu
+ * her yoklamada yeniden denenmez. Bekleyen gün yoksa tek sorgu (çok şube: bütün kasaların günleri, her biri kendi geçiş
+ * günüyle; kasası AsilPOS olmayan şubenin günü deneme, işlenmez)
  */
 export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: SendOptions): Promise<Awaited<ReturnType<typeof runAsilposDayEnd>>[]> {
   const today = businessDate(now);
-  const [branchId, switchDay] = await Promise.all([asilposBranchId(db), loadAsilposSwitchDay(db)]);
+  const { switchDays, active } = await loadPosTills(db);
+  const tills = active.filter((id) => switchDays[id]);
+  if (!tills.length) return [];
   const stale = new Date(now.getTime() - SENDING_STALE_MS);
   const rows = await db
-    .select({ date: s.posDayReports.date, emailedHash: s.asilposDayEnds.emailedHash, emailError: s.asilposDayEnds.emailError, sendingAt: s.asilposDayEnds.sendingAt })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, emailedHash: s.asilposDayEnds.emailedHash, emailError: s.asilposDayEnds.emailError, sendingAt: s.asilposDayEnds.sendingAt })
     .from(s.posDayReports)
     .leftJoin(s.asilposDayEnds, and(eq(s.asilposDayEnds.date, s.posDayReports.date), eq(s.asilposDayEnds.branchId, s.posDayReports.branchId)))
     .where(
       and(
-        eq(s.posDayReports.branchId, branchId),
+        inArray(s.posDayReports.branchId, tills),
         gte(s.posDayReports.date, addDays(today, -1)),
         lte(s.posDayReports.date, today),
         lte(s.posDayReports.receivedAt, new Date(now.getTime() - PAVO_WAIT_MS)),
       ),
     )
-    .orderBy(s.posDayReports.date);
+    .orderBy(s.posDayReports.date, s.posDayReports.branchId);
   const out: Awaited<ReturnType<typeof runAsilposDayEnd>>[] = [];
   for (const r of rows) {
     // Düşen gönderim (email_error) sabahki işe kalır: her yoklamada yeniden denenmez. Süren gönderime dokunulmaz
-    if (r.emailError || !isAsilposDay(r.date, switchDay) || (r.sendingAt && r.sendingAt > stale)) continue;
-    const day = await loadStoredDay(db, r.date, branchId);
+    if (r.emailError || !isAsilposDay(r.date, switchDays[r.branchId] ?? null) || (r.sendingAt && r.sendingAt > stale)) continue;
+    const day = await loadStoredDay(db, r.date, r.branchId);
     if (!day || r.emailedHash === day.hash) continue;
-    out.push(await runAsilposDayEnd(db, r.date, now, opts));
+    out.push(await runAsilposDayEnd(db, r.date, r.branchId, now, opts));
   }
   return out;
 }
@@ -1030,11 +1028,11 @@ const SETTLE_POLL_MS = 3_000;
 export async function settlePavoWait(
   db: DB,
   date: string,
+  branchId: string,
   o: { deadlineAt: number; pollMs?: number; nowMs?: () => number; sleep?: (ms: number) => Promise<void> },
 ): Promise<"arrived" | "done" | Awaited<ReturnType<typeof runAsilposDayEnd>>> {
   const nowMs = o.nowMs ?? Date.now;
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const branchId = await asilposBranchId(db);
   const sendBy = o.deadlineAt - SETTLE_SEND_MARGIN_MS;
   const check = async () => {
     const [row] = await db
@@ -1055,7 +1053,7 @@ export async function settlePavoWait(
     if (seen) return seen;
   }
   // Gönderimin son anı gerçek saatle (Resend onu Date.now()'la karşılaştırır); `nowMs` yalnız testte sahte
-  return runAsilposDayEnd(db, date, new Date(nowMs()), { deadlineAt: Date.now() + (o.deadlineAt - nowMs()), noPavoWait: true });
+  return runAsilposDayEnd(db, date, branchId, new Date(nowMs()), { deadlineAt: Date.now() + (o.deadlineAt - nowMs()), noPavoWait: true });
 }
 
 /** Sabah işinde yeni güne başlamak için son ana (`deadlineAt`) en az bu kadar kalmalı (rapor ve bir e-posta denemesi; ms) */
@@ -1074,22 +1072,29 @@ export const CATCH_UP_MIN_MS = 2_000;
  * Kasa zinciri: yeni gün önce yazıldığından raporunun devir denetimi (açılış ↔ önceki raporun devri, notta) ondan sonra
  * yazılan eski günü görmemiş olabilir. Bu çalışmada bir gün yazıldıysa (ya da düzeltildiyse), en eskisinden sonra ve
  * ondan önce işlenen günlerin (yazılan, düzeltilen ya da değişmeyen; ör. yalnız e-postası düşmüş dünkü gün) raporu eskiden
- * yeniye bir kez daha hesaplanır (writeAutoReport); devir değişmediyse hiçbir şey yazılmaz, ertesi çalışma da yazmaz
+ * yeniye bir kez daha hesaplanır (writeAutoReport); devir değişmediyse hiçbir şey yazılmaz, ertesi çalışma da yazmaz.
+ *
+ * Çok şube (27 Kasım 2026): bütün AsilPOS kasaları aynı çalışmada, her biri kendi geçiş günü ve geriye bakışıyla; sıra
+ * kasalar arasında ortak (bekleyen en yeni gün önce, hangi kasanınsa), süre de ortak. Devrin yeniden hesabı kasa başına
+ * (zincir şubenin kendi raporları). `left`: başlanamayan günler, `<şube>:<gün>`
  */
 export async function catchUpAsilposDayEnds(
   db: DB,
   now = new Date(),
   opts?: SendOptions,
 ): Promise<{ status: "off" | "ok" | "error"; days: Awaited<ReturnType<typeof runAsilposDayEnd>>[]; left: string[] }> {
-  // AsilPOS'un şubesinin geçiş günü ayarın kendisidir (branchSwitchDay)
-  const [switchDay, branchId] = await Promise.all([loadAsilposSwitchDay(db), asilposBranchId(db)]);
-  if (switchDay === null) return { status: "off", days: [], left: [] };
+  const { switchDays, active } = await loadPosTills(db);
+  const tills = active.filter((id) => switchDays[id]);
+  if (!tills.length) return { status: "off", days: [], left: [] };
   const today = businessDate(now);
   const lookback = addDays(today, -DAY_END_LOOKBACK_DAYS);
-  const from = switchDay > lookback ? switchDay : lookback;
+  // Her kasanın alt sınırı kendi geçiş günü (geriye bakıştan önce değil): öteki kasanın günü buna göre sayılmaz
+  const fromOf = (id: string) => (switchDays[id]! > lookback ? switchDays[id]! : lookback);
+  const earliest = tills.map(fromOf).reduce((a, b) => (b < a ? b : a));
   const rows = await db
     .select({
       date: s.posDayReports.date,
+      branchId: s.posDayReports.branchId,
       z: s.posDayReports.z,
       payments: s.posDayReports.payments,
       ikram: s.posDayReports.ikram,
@@ -1099,36 +1104,41 @@ export async function catchUpAsilposDayEnds(
     })
     .from(s.posDayReports)
     .leftJoin(s.asilposDayEnds, and(eq(s.asilposDayEnds.date, s.posDayReports.date), eq(s.asilposDayEnds.branchId, s.posDayReports.branchId)))
-    .where(and(eq(s.posDayReports.branchId, branchId), gte(s.posDayReports.date, from), lte(s.posDayReports.date, today)));
-  const order = catchUpOrder(rows.map((r) => ({ date: r.date, pending: dayEndPending(r.seen ? r : null, dayHash({ z: r.z, payments: r.payments, ikram: r.ikram })) })));
+    .where(and(inArray(s.posDayReports.branchId, tills), gte(s.posDayReports.date, earliest), lte(s.posDayReports.date, today)));
+  const order = catchUpOrder(
+    rows
+      .filter((r) => r.date >= fromOf(r.branchId))
+      .map((r) => ({ date: r.date, branchId: r.branchId, pending: dayEndPending(r.seen ? r : null, dayHash({ z: r.z, payments: r.payments, ikram: r.ikram })) })),
+  );
   const deadlineAt = opts?.deadlineAt;
   const timeLeft = () => deadlineAt === undefined || deadlineAt - Date.now() >= CATCH_UP_MIN_MS;
   const days: Awaited<ReturnType<typeof runAsilposDayEnd>>[] = [];
   const left: string[] = [];
   for (const d of order.filter((x) => x.pending)) {
-    if (timeLeft()) days.push(await runAsilposDayEnd(db, d.date, now, opts));
-    else left.push(d.date);
+    if (timeLeft()) days.push(await runAsilposDayEnd(db, d.date, d.branchId, now, opts));
+    else left.push(tills.length > 1 ? `${d.branchId}:${d.date}` : d.date);
   }
-  // Devir yalnız önceki raporun sayım ve teslimine bakar: yazılan ya da düzeltilen en eski günden sonra bu çalışmada
-  // ondan önce işlenen her gün (yazılan, düzeltilen ve değişmeyen; ör. e-postası düşmüş dünkü gün) yeniden hesaplanır
-  const wrote = days.filter((d) => d.report === "written" || d.report === "updated").map((d) => d.date).sort();
-  const redo = wrote.length
-    ? days
-        .filter((d) => d.date > wrote[0] && (d.report === "written" || d.report === "updated" || d.report === "unchanged"))
-        .map((d) => d.date)
-        .sort()
-    : [];
-  for (const date of redo) {
+  // Devir yalnız önceki raporun sayım ve teslimine bakar: kasa başına, yazılan ya da düzeltilen en eski günden sonra bu
+  // çalışmada ondan önce işlenen her gün (yazılan, düzeltilen ve değişmeyen; ör. e-postası düşmüş dünkü gün) yeniden hesaplanır
+  const redo: { date: string; branchId: string }[] = [];
+  for (const id of tills) {
+    const own = days.filter((d) => d.branchId === id);
+    const wrote = own.filter((d) => d.report === "written" || d.report === "updated").map((d) => d.date).sort();
+    if (!wrote.length) continue;
+    for (const d of own) if (d.date > wrote[0] && (d.report === "written" || d.report === "updated" || d.report === "unchanged")) redo.push({ date: d.date, branchId: id });
+  }
+  redo.sort((a, b) => a.date.localeCompare(b.date) || a.branchId.localeCompare(b.branchId));
+  for (const { date, branchId } of redo) {
     if (!timeLeft()) break;
     try {
-      await writeAutoReport(db, date, now);
+      await writeAutoReport(db, date, branchId, now);
     } catch (e) {
-      console.error("[asilpos] gün sonu raporunun devri yeniden hesaplanamadı:", date, e);
+      console.error("[asilpos] gün sonu raporunun devri yeniden hesaplanamadı:", branchId, date, e);
     }
   }
   for (const d of order.filter((x) => !x.pending)) {
     if (!timeLeft()) break;
-    days.push(await runAsilposDayEnd(db, d.date, now, opts));
+    days.push(await runAsilposDayEnd(db, d.date, d.branchId, now, opts));
   }
   const failed = (d: (typeof days)[number]) =>
     d.report === "error" || d.email === "error" || d.email === "failed" || d.pavo === "error" || d.pavo === "failed" || d.photo === "error" || d.photo === "failed" || d.staff === "error" || d.staff === "failed";

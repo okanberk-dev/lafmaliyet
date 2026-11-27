@@ -4,7 +4,7 @@ import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
 import { POS_DAY_MAX_BYTES } from "@/lib/asilpos/day";
 import { getDb } from "@/server/db";
 import { runAsilposDayEnd, settlePavoWait } from "@/server/asilpos/gun-sonu";
-import { asilposRequestSecret, asilposSecret } from "@/server/asilpos/ingest";
+import { posKeysConfigured, posRequestCaller } from "@/server/asilpos/ingest";
 import { handlePosDay, noteUnverified } from "@/server/asilpos/status";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -15,7 +15,8 @@ export const maxDuration = 60;
 /**
  * AsilPOS'un gün sonu (docs/ASILPOS.md): kafedeki kasa internetten erişilemediği için her iş gününü kapanışta (ve
  * düzeltmede yeniden) buraya iter; aynı gün aynı Z no ile öncekinin yerine geçer. İmza laffogato.net bağlantısınınki
- * gibi, anahtarı ASILPOS_SYNC_SECRET. Anahtar yoksa 503, gövde 256 KB'tan büyükse 413, imza tutmazsa 401 (ayrıntı
+ * gibi, anahtarı kasanın şubesinin anahtarı (çok şube: her kasanın kendi anahtarı, şube anahtardan bulunur; eski tek kasalı
+ * kurulumda ASILPOS_SYNC_SECRET). Hiçbir kasanın anahtarı yoksa 503, gövde 256 KB'tan büyükse 413, imza tutmazsa 401 (ayrıntı
  * verilmez), gövde sözleşmeye uymazsa 400 `{ error: "invalid", field }`, o güne başka bir Z ile yazılmış özet varsa
  * 409 `{ error: "z_conflict", date, zNo }` (hiçbir şey yazılmaz), kasa başka şubeye ayarlıysa 409 `{ error:
  * "wrong_branch", sube, expected }`; yazılınca 200 `{ ok: true, date, lines, matched, unmatched, counted, switchDay }`
@@ -28,20 +29,22 @@ export async function POST(request: NextRequest) {
   // İşlevin süresi (maxDuration) isteğin başından sayılır: after()'ın son anı da buradan (Vercel 60. saniyede keser)
   const start = Date.now();
   await connection();
-  // Ön süzgeç (önbellekli): anahtar yoksa gövde okunmaz
-  if (!(await asilposSecret())) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
+  // Ön süzgeç (önbellekli): hiçbir kasanın anahtarı yoksa gövde okunmaz
+  if (!(await posKeysConfigured())) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
   const length = Number(request.headers.get("content-length") ?? 0);
   if (length > POS_DAY_MAX_BYTES) {
     await noteUnverified(getDb(), 413);
     return Response.json({ error: "too_large" }, { status: 413, headers: NO_STORE });
   }
   const body = await request.text();
-  // İmza önbellekteki anahtarla tutarsa anahtar veritabanından yeniden okunur: döndürülen eski anahtar geçmez
-  const secret = await asilposRequestSecret(request, body);
-  if (!secret) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
+  // Kasanın şubesi anahtardan (çok şube): imza hangi şubenin anahtarıyla tutuyorsa gün o şubenin. İmza önbellekteki
+  // anahtarla tutarsa anahtarlar veritabanından yeniden okunur: döndürülen eski anahtar geçmez
+  const caller = await posRequestCaller(request, body);
+  if (!caller.secret) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
+  const branchId = caller.branchId;
   try {
     const r = await handlePosDay(getDb(), {
-      secret,
+      ...caller,
       url: new URL(request.url),
       body,
       timestamp: request.headers.get(TIMESTAMP_HEADER),
@@ -49,18 +52,18 @@ export async function POST(request: NextRequest) {
     });
     // Sayılan AsilPOS günü (geçiş gününden itibaren, AsilPOS'un şubesi): Kasa raporu ve gün sonu e-postası yanıttan sonra
     // (docs/ASILPOS.md › Gün sonu otomasyonu). Kasa e-postayı beklemez; başarısızsa günlük iş yeniden dener
-    if (r.status === 200 && r.body.counted === true && typeof r.body.date === "string") {
+    if (r.status === 200 && r.body.counted === true && typeof r.body.date === "string" && branchId !== null) {
       // Tarih gövdeden gelir (biçimi denetlendi: YYYY-AA-GG); günlük satırlarına satır sonu taşıyamasın
       const date = r.body.date.replace(/[\r\n]/g, "");
       // Pavo'yu bekleyen gün (ilk gönderim, karşılaştırma birazdan gelecek) bu istekte biter: sonuç süre içinde gelmezse
       // e-posta Pavo'suz gider (settlePavoWait). Gece başka tetik yok; e-posta sabaha kalmaz
       after(async () => {
         const deadlineAt = start + 50_000;
-        const x = await runAsilposDayEnd(getDb(), date, new Date(), { deadlineAt });
+        const x = await runAsilposDayEnd(getDb(), date, branchId, new Date(), { deadlineAt });
         console.info("[asilpos] gün sonu otomasyonu", x);
         if (x.email !== "waiting") return;
         try {
-          console.info("[asilpos] Pavo beklemesi", await settlePavoWait(getDb(), date, { deadlineAt }));
+          console.info("[asilpos] Pavo beklemesi", await settlePavoWait(getDb(), date, branchId, { deadlineAt }));
         } catch (e) {
           console.error("[asilpos] Pavo beklemesi bitirilemedi:", e);
         }

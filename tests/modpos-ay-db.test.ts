@@ -191,7 +191,7 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     const now = new Date("2026-10-06T12:00:00+03:00");
     const day = parsePosDay(JSON.stringify(body), now);
     assert.ok(day.ok, "gövde geçerli");
-    assert.equal((await ingest.storePosDay(db, day.data, now)).ok, true);
+    assert.equal((await ingest.storePosDay(db, day.data, now, "marina")).ok, true);
     await report("2026-10-03", 9_000, ASILPOS_SUBE);
     // 2 Ekim'in föyü yok: ilk rapordan (3 Ekim) önceki föy kesintisiz değil, 1 Ekim sayılmaz
     assert.deepEqual(days(await reports.tillRows(db)), [

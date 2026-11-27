@@ -75,7 +75,7 @@ test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube ba
   assert.match(queue, /same\(op\.data\) && lateBranch\(op\.data\) === sube/);
   assert.match(queue, /const model = models\.get\(sube\)!;/);
   assert.match(queue, /ikramValueOf\(model, p\.date\)/);
-  assert.match(queue, /const asilposDays = new Set\(model\.ds\.asilposIkram\?\.days \?\? \[\]\);/);
+  assert.match(queue, /const asilposDays = ikramTillDays\(model\.ds\.asilposIkram\);/);
   // Onaylar: yöneticinin seçimiyle kurulan model değil, şubenin modeli (istek başına şube başına bir kez)
   assert.match(read("src/server/data/model-once.ts"), /export const loadBranchModelOnce = cache\(\(branchId: string\) => loadModel\(\{ scope: branchId \}\)\);/);
   const section = read("src/app/panel/onaylar/ops-section.tsx");

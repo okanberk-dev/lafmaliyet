@@ -54,7 +54,7 @@ import {
 import { ASILPOS_STAFF_ENTRY_LINE, staffAsilposEntryClosed } from "@/lib/asilpos/cash-moves";
 import { countAttention, countLines, lockOf } from "@/lib/kor-sayim";
 import { BLIND_TEXT, blindAsilposDay, blindReport, staffBlindDay, staffBlindView } from "@/lib/asilpos/kor-kasa";
-import { asilposBranchOf } from "@/lib/asilpos/switch";
+import { LEGACY_POS_BRANCH_ID, posTillIds } from "@/lib/pos/tills";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { ALL_BRANCHES, branchScopeLabel, sortBranches, tillBranches } from "@/lib/branches";
@@ -98,7 +98,8 @@ import {
   type CashReportDTO,
 } from "@/server/data/cash-reports";
 import { loadKasaAsilpos, loadKasaAsilposDays, loadAsilposBankPos, loadAsilposDayDetail } from "@/server/data/asilpos-day";
-import { asilposBranchId, staffBlindOn } from "@/server/asilpos/branch";
+import { staffBlindOn } from "@/server/asilpos/branch";
+import { loadPosTillIds } from "@/server/pos/tills";
 import { asilposAutoReport, asilposPhotoBadges, asilposPhotoState, type AsilposPhotoState } from "@/server/asilpos/foto";
 import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
@@ -204,14 +205,11 @@ async function staffAsilposDescription(searchParams: PageProps<"/panel/kasa">["s
   const state = await asilposPhotoState(getDb(), date, till, "staff").catch(() => null);
   if (state) return staffAsilposDescriptionOf(state);
   // Gün sonundan önce: rapor AsilPOS'tan gelecek (formun yerindeki bilgiyle aynı kural)
-  const [kasa, report, asilposBranch] = await Promise.all([
-    loadKasaAsilpos(date, getDb(), till).catch(() => NO_ASILPOS),
-    getCashReport(date, "staff", till).then(Boolean).catch(() => true),
-    asilposBranchId().catch(() => undefined),
-  ]);
-  if (staffBeforeAsilposDayEnd({ admin: false, branchId: till, asilposDay: kasa.asilpos, dayEnd: kasa.day !== null, hasReport: report, asilposBranch })) return ASILPOS_STAFF_BEFORE_DAY_END_DESCRIPTION;
+  // kasa.asilpos: günün kasanın kendi şubesinin AsilPOS günü olup olmadığı (çok şube; loadKasaAsilpos şubenin geçiş günüyle)
+  const [kasa, report] = await Promise.all([loadKasaAsilpos(date, getDb(), till).catch(() => NO_ASILPOS), getCashReport(date, "staff", till).then(Boolean).catch(() => true)]);
+  if (staffBeforeAsilposDayEnd({ admin: false, asilposDay: kasa.asilpos, dayEnd: kasa.day !== null, hasReport: report })) return ASILPOS_STAFF_BEFORE_DAY_END_DESCRIPTION;
   // Raporu elle girilmiş kör gün (yönetici gün sonundan önce girdi): "kasadaki nakdi sayın ve buraya girin" denmez
-  return report && staffBlindDay({ admin: false, branchId: till, asilposDay: kasa.asilpos, asilposBranch }) ? BLIND_TEXT.description : null;
+  return report && staffBlindDay({ admin: false, asilposDay: kasa.asilpos }) ? BLIND_TEXT.description : null;
 }
 /** AsilPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_ASILPOS = { asilpos: false, day: null } as const;
@@ -378,8 +376,10 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     // Günün kasası ve AsilPOS'un bu günün sonu ("AsilPOS'tan doldur", docs/ASILPOS.md): yalnız geçiş gününden sonraki
     // günlerde; okunamazsa (null) form ModPOS'a göre açılır, bant görünmez; kör kasa kapalı kalır (staffBlindView)
     showForm ? loadKasaAsilpos(date).catch(() => null) : Promise.resolve(NO_ASILPOS),
-    // AsilPOS'un şubesi (kütükten, asilposBranchId; okunamazsa geri düşüş değeri)
-    asilposBranchId().catch(() => undefined),
+    // AsilPOS kasaları (kütükten; okunamazsa null: eski kurulumun şubesi kasa sayılır, kör kasa kapalı kalır)
+    loadPosTillIds()
+      .then((t) => t.ids)
+      .catch(() => null),
   ]);
   const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
@@ -400,7 +400,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // istekler, WhatsApp metni ve AsilPOS'un açılış / sayım alanları hiç gitmez; rapor salt okunur. AsilPOS okuması düşerse
   // kapalı kalır: AsilPOS'un şubesinin kasasında personele kör (staffBlindView)
   const asilposState = asilposRead ?? NO_ASILPOS;
-  const blind = staffBlindView({ admin, branchId: view.till, asilposDay: asilposRead ? asilposRead.asilpos : null, asilposBranch });
+  const blind = staffBlindView({ admin, till: tillIdsOf(asilposBranch, view.till), asilposDay: asilposRead ? asilposRead.asilpos : null });
   const shownReport = report && blind ? blindReport(report) : report;
   // Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım): personel kilidi alır (sayım kilitlenmeden fark çizilmez), yönetici
   // sayım geçmişini ve uyarıyı görür. AsilPOS'un kör gününde yok (sayım AsilPOS'ta). "Kime" seçicisinin yöneticileri
@@ -486,7 +486,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const photoUi = { storage: storage.available, reading: ai.state, admin, me: user.name };
   // AsilPOS gününde personel Kasa sayfasından kasadan çıkan ve zayi / ikram eklemez (sahibin kararı, 24 Kasım 2026): harcama
   // AsilPOS'un kasa hareketlerinden, ikram / zayi / iptal gün sonundan gelir. Yönetici ekler; sunucu personelin eklemesini reddeder
-  const entryClosed = staffAsilposEntryClosed({ admin, branchId: view.till, asilposDay: asilposState.asilpos, asilposBranch });
+  const entryClosed = staffAsilposEntryClosed({ admin, asilposDay: asilposState.asilpos });
   // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır). Tek satır,
   // personelde formdan ÖNCE: metni "kasa raporundan önce girin" derken kart Gönder'in altında duruyordu (inceleme).
   // AsilPOS gününde personelin satırı yok (Kasadan çıkanlar kartı söyler), yalnız gelenler
@@ -649,7 +649,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const waitingAsilpos = asilposPhoto !== null && !report;
   // AsilPOS gününde gün sonu henüz gelmedi (son denetim, 24 Kasım 2026): personel rakam girmez, rapor AsilPOS'tan gelir.
   // Yönetici formu görür (AsilPOS göndermezse yedek); sunucu da personelin yazımını reddeder (saveCashReport)
-  const beforeDayEnd = staffBeforeAsilposDayEnd({ admin, branchId: view.till, asilposDay: asilposState.asilpos, dayEnd: asilposState.day !== null, hasReport: Boolean(report), asilposBranch });
+  const beforeDayEnd = staffBeforeAsilposDayEnd({ admin, asilposDay: asilposState.asilpos, dayEnd: asilposState.day !== null, hasReport: Boolean(report) });
   if (!admin) {
     return (
       <div className="space-y-4">
@@ -780,7 +780,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     resolveMonth(
       month,
       entry ?? undefined,
-      tillMonths([...monthReports, ...monthAsilpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos, opened, undefined, asilposBranchOf(branchList))[0],
+      tillMonths([...monthReports, ...monthAsilpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos, opened, { froms: null, tills: posTillIds(branchList) })[0],
     ),
   );
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin", undefined, user.role));
@@ -952,6 +952,11 @@ function DayDetails({ pavo, asilpos, notes, children }: { pavo: "uyumlu" | "fark
   );
 }
 
+/** Şubenin kasası AsilPOS mu (kör kasanın okuma düşünce kararı); kasalar okunamadıysa eski kurulumun şubesi */
+function tillIdsOf(ids: readonly string[] | null, branchId: string): boolean {
+  return ids ? ids.includes(branchId) : branchId === LEGACY_POS_BRANCH_ID;
+}
+
 /**
  * Personelin geç kasa raporu (`/panel/kasa?gun=D`, dünden eski, raporu girilmemiş son 14 gün; docs/KASA-RAPORU.md ›
  * Geç rapor): kendi isteği ya da formu, açılış önerisi zincirin önceki halkasından (rapor ya da bekleyen geç rapor).
@@ -969,11 +974,13 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
     previousOkc(date),
     // AsilPOS gününde Z AsilPOS'un gün sonundan dolar, fotoğraf gerekmez; gelmediyse yazarkasa Z'si (G8)
     loadKasaAsilpos(date).catch(() => NO_ASILPOS),
-    asilposBranchId().catch(() => undefined),
+    loadPosTillIds()
+      .then((t) => t.ids)
+      .catch(() => null),
   ]);
   // Kör kasa (bulgu 0): önceki halka AsilPOS'un kör günüyse devri (sayılan − teslim) personele gitmez; açılışı kendisi
   // yazar, yönetici onayda devirle karşılaştırır. Okunamazsa AsilPOS'un şubesinde gizli (kapalı)
-  const prevBlind = chain.prev ? await staffBlindOn(chain.prev.date, view.till).catch(() => staffBlindView({ admin: false, branchId: view.till, asilposDay: null, asilposBranch })) : false;
+  const prevBlind = chain.prev ? await staffBlindOn(chain.prev.date, view.till).catch(() => staffBlindView({ admin: false, till: tillIdsOf(asilposBranch, view.till), asilposDay: null })) : false;
   const storage = photoStorage();
   const yesterday = addDays(today, -1);
   return (
@@ -1007,7 +1014,7 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
         <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />
         <div className="space-y-2 px-5 pb-5 text-sm">
           {/* AsilPOS gününde ikram / zayi gün sonundan gelir (staffAsilposEntryClosed; kasanın günüyle aynı kural) */}
-          {staffAsilposEntryClosed({ admin: false, branchId: view.till, asilposDay: asilposState.asilpos, asilposBranch }) ? (
+          {staffAsilposEntryClosed({ admin: false, asilposDay: asilposState.asilpos }) ? (
             <p className="text-[13px] text-ink-mute">{ASILPOS_STAFF_ENTRY_LINE}</p>
           ) : (
             <>

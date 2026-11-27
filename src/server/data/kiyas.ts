@@ -3,7 +3,6 @@ import "server-only";
 import { and, gte, lte } from "drizzle-orm";
 
 import { ALL_BRANCHES } from "@/lib/branches";
-import { asilposBranchOf } from "@/lib/asilpos/switch";
 import type { TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { kiyasSummary, type KiyasSummary } from "@/lib/kiyas";
@@ -14,7 +13,7 @@ import { listBranches } from "@/server/branches";
 import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 /** Okunan geçmiş: geçen ayın 1'ine kadar yeter (en çok 62 gün); biraz pay */
 const LOOKBACK_DAYS = 70;
@@ -37,7 +36,7 @@ export async function loadKiyas(till?: readonly TillRow[] | null, now: Date = ne
 
   const [rows, switchDay, reports, closed] = await Promise.all([
     till ? Promise.resolve(till) : tillRows(db),
-    loadAsilposSwitchDay(db),
+    loadSwitchDays(db),
     db
       .select({ branchId: s.cashReports.branchId, date: s.cashReports.date, receipts: s.cashReports.receipts })
       .from(s.cashReports)
@@ -51,8 +50,7 @@ export async function loadKiyas(till?: readonly TillRow[] | null, now: Date = ne
     rows: recent,
     branches: branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
     today,
-    switchDay,
-    asilposBranch: asilposBranchOf(all),
+    switchDays: switchDay,
     receipts: new Map(reports.map((r) => [`${r.branchId}|${r.date}`, r.receipts])),
     isClosed: (branchId, date) => closedBy.get(branchId)?.has(date) ?? false,
   });

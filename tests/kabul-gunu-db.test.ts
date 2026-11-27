@@ -127,10 +127,10 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + AsilPOS 22 Kasım)", { ski
     const ingest = await import("../src/server/asilpos/ingest");
     const raw = kabul();
     const h = signedHeaders(SECRET, "POST", GUN, raw, PUSHED.getTime());
-    const res = await ingest.receivePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, PUSHED);
+    const res = await ingest.receivePosDay(db, { branchId: "marina", secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, PUSHED);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const gunSonu = await import("../src/server/asilpos/gun-sonu");
-    assert.equal(await gunSonu.writeAutoReport(db, S, PUSHED), "written");
+    assert.equal(await gunSonu.writeAutoReport(db, S, "marina", PUSHED), "written");
     mock.timers.enable({ apis: ["Date"], now: new Date(NOW) });
   });
 
@@ -230,7 +230,7 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + AsilPOS 22 Kasım)", { ski
     assert.equal((await db.select().from(s.posDayRevisions).where(eq(s.posDayRevisions.date, S))).length, 1, "sürüm geçmişi");
     // Hazırlanmış iptaller (6 parça, 1.270,00) zayi olarak tüketime; hazırlanmamışlar (6 parça, 1.125,00) bilgi
     const ikram = await import("../src/server/data/asilpos-ikram");
-    const data = await ikram.loadAsilposIkram(db, S, { from: S, to: S }, ASILPOS_SUBE);
+    const data = await ikram.loadAsilposIkram(db, { [ASILPOS_SUBE]: S }, { from: S, to: S }, ASILPOS_SUBE);
     const iptal = data.lines.filter((l) => l.iptal);
     assert.deepEqual([iptal.length, r2(iptal.reduce((a, l) => a + l.menuValue, 0)), iptal.every((l) => l.kind === "zayi")], [6, 1_270, true]);
     const model = await inMarina(() => dataset.loadModel());
@@ -274,16 +274,16 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + AsilPOS 22 Kasım)", { ski
     const devir = await import("../src/server/asilpos/devir");
     const status = await import("../src/server/asilpos/status");
     const kasa = await import("../src/server/data/asilpos-day");
-    assert.deepEqual(await devir.asilposNextOpening(db, S), { amount: 1_279.5, source: "kasa_raporu" }, "otomatik rapor: sayılan − teslim");
+    assert.deepEqual(await devir.asilposNextOpening(db, S, "marina"), { amount: 1_279.5, source: "kasa_raporu" }, "otomatik rapor: sayılan − teslim");
     // Aynı gün yeniden gelir (ör. Pavo sonucu): yanıt aynı devri söyler, harcama ikinci kez yazılmaz
     const raw = kabul();
     const h = signedHeaders(SECRET, "POST", GUN, raw, PUSHED.getTime());
-    const again = await status.handlePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, PUSHED);
+    const again = await status.handlePosDay(db, { branchId: "marina", secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, PUSHED);
     assert.equal(again.status, 200, JSON.stringify(again.body));
     assert.deepEqual([again.body.counted, again.body.nextOpening], [true, { amount: 1_279.5, source: "kasa_raporu" }]);
     const devirUrl = new URL(`https://ladmin.laffogato.net/api/panel/pos/devir?date=${S}`);
     const g = signedHeaders(SECRET, "GET", devirUrl, "", PUSHED.getTime());
-    assert.deepEqual(await devir.servePosDevir(db, { secret: SECRET, url: devirUrl, timestamp: g["x-laf-timestamp"], signature: g["x-laf-signature"], now: PUSHED }), {
+    assert.deepEqual(await devir.servePosDevir(db, { branchId: "marina", secret: SECRET, url: devirUrl, timestamp: g["x-laf-timestamp"], signature: g["x-laf-signature"], now: PUSHED }), {
       status: 200,
       body: { version: 1, date: S, nextOpening: { amount: 1_279.5, source: "kasa_raporu" } },
     });

@@ -30,7 +30,6 @@ import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients"
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { attachAsilposDayPhotoCore, refreshDayPhotoCheck, setAsilposBankPosCore } from "@/server/asilpos/foto";
-import { asilposBranchId } from "@/server/asilpos/branch";
 import { sendPhotoEmail } from "@/server/asilpos/gun-sonu";
 import { readUnreadDayPhotos } from "@/server/photo-read/asilpos";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -210,11 +209,11 @@ export async function attachAsilposDayPhoto(input: z.input<typeof asilposPhotoSc
     after(async () => {
       const db = getDb();
       try {
-        if ((await readUnreadDayPhotos(db, data.date, { deadlineAt })) > 0) await refreshDayPhotoCheck(db, data.date, data.branchId);
+        if ((await readUnreadDayPhotos(db, data.date, data.branchId, { deadlineAt })) > 0) await refreshDayPhotoCheck(db, data.date, data.branchId);
       } catch (e) {
         console.error("[asilpos] okunmamış gün sonu fotoğrafı", data.date, e instanceof Error ? e.message : e);
       }
-      await sendPhotoEmail(db, data.date).catch((e) => console.error("[asilpos] fotoğraf e-postası", data.date, e));
+      await sendPhotoEmail(db, data.date, data.branchId).catch((e) => console.error("[asilpos] fotoğraf e-postası", data.date, e));
     });
     refresh();
     return res;
@@ -275,6 +274,8 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     const staff = parseEmails(data.staffRecipients ?? "");
     if (staff.invalid.length) throw new UserError(`Geçersiz çalışan e-postası: ${staff.invalid.slice(0, 3).join(", ")}`);
     if (staff.valid.length > 20) throw new UserError("Çalışan listesine en çok 20 adres girilebilir");
+    // Çalışan listesi şubenin AsilPOS kasasınındır (çok şube): şubesiz (eski sekme) kayıt hangi kasanın olduğunu bilemez
+    if (staffGiven && !branchId) throw new UserError("Çalışan listesinin şubesi bilinmiyor; sayfayı yenileyip yeniden kaydedin");
     const branches = await listBranches();
     // Birden çok kasa açıkken işlem geçmişinde ayarın şubesi
     const branchName = branchId && tillBranches(branches).length > 1 ? (namedTill(branches, branchId)?.name ?? branchId) : null;
@@ -292,10 +293,9 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
       await logSetting(tx, me, "Kasa raporu alıcıları", branchName ? `${branchName} · ${what}` : what);
     });
     refresh();
-    // Şubesiz (eski sekme) kayıtta alıcılar varsayılan şubenin, çalışan listesi AsilPOS'un şubesinin (saveCashSettings)
+    // Şubesiz (eski sekme) kayıtta alıcılar varsayılan şubenin (çalışan listesi şubesiz yazılmaz)
     const now = await loadCashSettings(branchId ?? DEFAULT_BRANCH_ID);
-    const staffNow = branchId || !staffGiven ? now : await loadCashSettings(await asilposBranchId());
-    return { recipients: now.recipients, whatsapp: now.whatsapp, staffRecipients: staffNow.staffRecipients ?? [] };
+    return { recipients: now.recipients, whatsapp: now.whatsapp, staffRecipients: now.staffRecipients ?? [] };
   });
 }
 

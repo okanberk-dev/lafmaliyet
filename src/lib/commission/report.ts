@@ -19,7 +19,7 @@ import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { partialStart, type TillOpening } from "@/lib/cash-month";
 import { MONTH_NAMES } from "@/lib/constants";
 import { money, pct } from "@/lib/format";
-import { isAsilposBranch, scopeSwitchDay } from "@/lib/asilpos/switch";
+import { earliestSwitchDay, isCountedPosDay, LEGACY_POS_BRANCH_ID, scopeSwitchDay, switchDayFor, tillDayKey, type SwitchDays } from "@/lib/pos/tills";
 import { addDays, dayLocativeTR, dayMonthTR, daysBetween, monthEnd, monthLocativeTR, shiftMonth } from "@/lib/reminders";
 import type { DigestBox } from "@/server/notify/digest-template";
 
@@ -71,6 +71,8 @@ export interface AsilposPaymentIn {
 /** AsilPOS'un bir iş günü (yalnız geçiş gününden sonraki günler): Z'deki yemek kartı ve online, ödeme türleri */
 export interface AsilposDayIn {
   date: string;
+  /** Günün kasasının şubesi (çok şube); verilmezse tek kasanın */
+  branchId?: string;
   mealCard: number;
   online: number;
   payments: AsilposPaymentIn[];
@@ -169,7 +171,13 @@ export interface CommissionInput {
    * sonları; yoksa (varsayılan) yok: rapor bugünkü gibi yalnız kasa raporlarından. Geçiş gününden önceki AsilPOS günleri
    * (deneme) buraya hiç girmez
    */
-  asilpos?: { switchDay: string; days: AsilposDayIn[] } | null;
+  asilpos?: {
+    /** Kasaların en erken geçiş günü */
+    switchDay: string;
+    /** Kasa başına geçiş günü (çok şube); verilmezse tek kasa (`asilposBranch`) bu geçiş günüyle */
+    switchDays?: SwitchDays;
+    days: AsilposDayIn[];
+  } | null;
   /** ModPOS föylerinin markalı ödemeleri (yalnız AsilPOS'un girdiği aylarda okunur; yoksa markası bilinmez) */
   modposBrands?: ModposBrandDay[];
   /**
@@ -179,24 +187,35 @@ export interface CommissionInput {
    */
   openedOn?: TillOpening;
   /**
-   * ModPOS'ta kalan şube seçiliyken (Tuzla; geçiş günü AsilPOS'un şubesinin, commissionScopeDays) geçiş günü: o günün
-   * ayından itibaren şubenin Z'sindeki yemek kartı ve online tek kanala yazılmaz ("Tümü"yle aynı kural): föyde markası
-   * bulunan kısım kanalına (modposBrands), kalan "Marka belirsiz". "Tümü"de, AsilPOS'un şubesinde ve geçiş günü yokken yok
+   * Seçili şubenin kasası o ayda ModPOS'tayken (Tuzla; ya da geçiş günü sonra olan kasa, kendi geçiş ayından önce)
+   * kasaların en erken geçiş günü (commissionScopeDays): o günün ayından itibaren şubenin Z'sindeki yemek kartı ve online
+   * tek kanala yazılmaz ("Tümü"yle aynı kural): föyde markası bulunan kısım kanalına (modposBrands), kalan "Marka
+   * belirsiz". AsilPOS'un girdiği ayda (asilposMonth) o kazanır. "Tümü"de, ilk kasanın şubesinde ve geçiş günü yokken yok
    */
   modposScope?: { switchDay: string } | null;
-  /** AsilPOS'un şubesi (kütükten türetilmiş, asilposBranchId); verilmezse geri düşüş değeri */
+  /** Tek kasalı girdinin şubesi (`asilpos.switchDays` verilmezse; yoksa eski kurulumun şubesi) */
   asilposBranch?: string;
+}
+
+/** Girdinin kasaları ve geçiş günleri (çok şube; eski tek kasalı girdi tek kasaya çevrilir) */
+function tillsOf(input: Pick<CommissionInput, "asilpos" | "asilposBranch">): SwitchDays {
+  if (!input.asilpos) return {};
+  return input.asilpos.switchDays ?? { [input.asilposBranch ?? LEGACY_POS_BRANCH_ID]: input.asilpos.switchDay };
 }
 
 /**
  * Komisyonun kapsama göre geçiş günleri (src/server/data/commission.ts loadCommissionInput): `asilpos` AsilPOS'un gün
- * sonlarının okunduğu geçiş günü ("Tümü" ve AsilPOS'un şubesi; scopeSwitchDay), `modpos` ModPOS'ta kalan şube seçiliyken
- * geçiş günü (CommissionInput.modposScope: o ayın başından itibaren Z tek kanala yığılmaz). Geçiş günü yoksa ikisi de null.
- * `asilposBranch`: AsilPOS'un şubesi (verilmezse geri düşüş değeri)
+ * sonlarının okunduğu geçiş günü ("Tümü"de kasaların en erkeni, kasası AsilPOS olan şube seçiliyken onunki;
+ * scopeSwitchDay), `modpos` kasaların en erken geçiş günü, seçili şubenin kasası o ayda henüz ModPOS'taysa
+ * (CommissionInput.modposScope: o ayın başından itibaren Z tek kanala yığılmaz, föyde markası olan kanalına). ModPOS'ta
+ * kalan şube (Tuzla), geçiş günü olmayan kasa ve geçiş günü sonra olan kasa (çok şube, inceleme 27 Kasım: kendi geçiş
+ * ayına dek "Tümü"deki gibi föyün markasıyla; kendi geçiş ayından itibaren `asilpos` kazanır). Geçiş günü yoksa ikisi
+ * de null
  */
-export function commissionScopeDays(switchDay: string | null, scope: string, asilposBranch?: string): { asilpos: string | null; modpos: string | null } {
-  const asilpos = scopeSwitchDay(switchDay, scope, asilposBranch);
-  return { asilpos, modpos: switchDay && !asilpos ? switchDay : null };
+export function commissionScopeDays(switchDays: SwitchDays, scope: string): { asilpos: string | null; modpos: string | null } {
+  const asilpos = scopeSwitchDay(switchDays, scope);
+  const first = earliestSwitchDay(switchDays);
+  return { asilpos, modpos: first && (!asilpos || first.slice(0, 7) < asilpos.slice(0, 7)) ? first : null };
 }
 
 // ---------------------------------------------------------------- Çıktı
@@ -533,13 +552,18 @@ export interface AsilposMonth {
   pre: ChannelTill | null;
   /** Geçiş gününden önceki (kapalı olmayan) günlerin hiç kasa raporu yok: o günlerin satışı bilinmez */
   preUnknown: boolean;
-  /** Gün sonu gelen günler */
+  /** Gün sonu gelen günler (kasa başına; iki kasanın aynı günü iki) */
   days: number;
-  /** Gün sonu gelmemiş, kasa raporu olan günler */
+  /**
+   * Gün sonu ya da yedeği (kasa raporu) olan takvim günleri: iki kasanın aynı günü bir (asilposTill `reportDays`; kasa
+   * raporu kuralının günleriyle aynı ölçü)
+   */
+  covered: number;
+  /** Bir kasanın gün sonu gelmemiş, kasa raporu olan günleri (takvim günü, tekil, sıralı) */
   fallback: string[];
-  /** Gün sonu da kasa raporu da olmayan günler (kapalı işaretliler hariç) */
+  /** Bir kasanın gün sonu da kasa raporu da olmayan günleri (kapalı işaretliler hariç; takvim günü, tekil, sıralı) */
   missing: string[];
-  /** Kapalı işaretli, gün sonu ve raporu olmayan günler */
+  /** Kapalı işaretli, gün sonu ve raporu olmayan günler (tekil, sıralı) */
   closed: string[];
   meal: AsilposGroupMonth;
   platform: AsilposGroupMonth;
@@ -567,31 +591,50 @@ export function asilposMonth(
   input: Pick<CommissionInput, "asilpos" | "till" | "through" | "firstReport" | "closed" | "modposBrands" | "openedOn" | "asilposBranch">,
   month: string,
 ): AsilposMonth | null {
-  const S = input.asilpos?.switchDay ?? null;
+  // Çok şube: her kasa kendi geçiş gününden itibaren; ayın AsilPOS kısmı kasaların en erken geçiş gününden başlar
+  const tills = tillsOf(input);
+  const S = earliestSwitchDay(tills);
   if (!S) return null;
   const start = `${month}-01`;
   const end = monthEnd(start);
   if (S > end) return null;
   const from = S > start ? S : start;
-  const days = (input.asilpos?.days ?? []).filter((d) => d.date >= from && d.date <= end).sort((a, b) => a.date.localeCompare(b.date));
+  const sole = Object.keys(tills)[0];
+  const branchOfDay = (d: AsilposDayIn) => d.branchId ?? sole;
+  const counted = (branchId: string | null | undefined, date: string) => isCountedPosDay(tills, branchId, date);
+  const days = (input.asilpos?.days ?? [])
+    .filter((d) => d.date >= from && d.date <= end && counted(branchOfDay(d), d.date))
+    .sort((a, b) => a.date.localeCompare(b.date) || branchOfDay(a).localeCompare(branchOfDay(b)));
   if (!days.length && from > input.through) return null;
   const closedDays = input.closed ?? [];
   const shut = new Set(closedDays);
   const inMonth = input.till.filter((r) => r.date >= from && r.date <= end);
-  // Gün sonunun yedeği yalnız AsilPOS'un şubesinin raporu; ModPOS'ta kalan şubenin raporu ayrıca, kasa raporu kuralıyla
-  const reports = new Map(inMonth.filter((r) => isAsilposBranch(r.branchId, input.asilposBranch)).map((r) => [r.date, r]));
-  const modposRows = inMonth.filter((r) => !isAsilposBranch(r.branchId, input.asilposBranch));
+  // Gün sonunun yedeği yalnız kasanın kendi raporu, kendi geçiş gününden itibaren ((şube, gün) anahtarlı); öteki raporlar
+  // (ModPOS'taki şube ya da geçişi henüz gelmemiş kasa) ayrıca, kasa raporu kuralıyla
+  const reports = new Map(inMonth.filter((r) => counted(r.branchId, r.date)).map((r) => [tillDayKey(r.branchId, r.date), r]));
+  const modposRows = inMonth.filter((r) => !counted(r.branchId, r.date));
   const modpos = modposRows.length ? { meal: r2(modposRows.reduce((a, r) => a + r.mealCard, 0)), online: r2(modposRows.reduce((a, r) => a + r.online, 0)) } : null;
-  const have = new Set(days.map((d) => d.date));
-  const lastSeen = [input.through, days.at(-1)?.date ?? from, ...reports.keys()].reduce((a, b) => (b > a ? b : a));
+  const have = new Set(days.map((d) => tillDayKey(branchOfDay(d), d.date)));
+  const lastSeen = [input.through, days.at(-1)?.date ?? from, ...[...reports.values()].map((r) => r.date)].reduce((a, b) => (b > a ? b : a));
   const to = lastSeen < end ? lastSeen : end;
-  const fallback: string[] = [];
-  const missing: string[] = [];
-  const closed: string[] = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) {
-    if (have.has(d)) continue;
-    (reports.has(d) ? fallback : shut.has(d) ? closed : missing).push(d);
+  // Günler takvim günü olarak tekil (çok şube, inceleme 27 Kasım): iki kasanın aynı eksik günü "N gün" metninde bir kez
+  const fallback = new Set<string>();
+  const fallbackKeys: string[] = [];
+  const missing = new Set<string>();
+  const closed = new Set<string>();
+  for (const till of Object.keys(tills)) {
+    const sd = switchDayFor(tills, till);
+    if (sd === null || sd > end) continue;
+    for (let d = sd > from ? sd : from; d <= to; d = addDays(d, 1)) {
+      const key = tillDayKey(till, d);
+      if (have.has(key)) continue;
+      if (reports.has(key)) {
+        fallback.add(d);
+        fallbackKeys.push(key);
+      } else (shut.has(d) ? closed : missing).add(d);
+    }
   }
+  const covered = new Set([...days.map((d) => d.date), ...fallback]).size;
   const groups: Record<ChannelKind, { byChannel: Partial<Record<ChannelKey, number>>; total: number; unassigned: number; loose: Map<string, AsilposGroupMonth["loose"][number]> }> = {
     meal: { byChannel: {}, total: 0, unassigned: 0, loose: new Map() },
     platform: { byChannel: {}, total: 0, unassigned: 0, loose: new Map() },
@@ -613,8 +656,8 @@ export function asilposMonth(
       }
     }
   }
-  for (const d of fallback) {
-    const r = reports.get(d)!;
+  for (const k of fallbackKeys) {
+    const r = reports.get(k)!;
     groups.meal.total += r.mealCard;
     groups.meal.unassigned += r.mealCard;
     groups.platform.total += r.online;
@@ -648,7 +691,21 @@ export function asilposMonth(
       }
     }
   }
-  return { from, pre, preUnknown, days: days.length, fallback, missing, closed, meal: done(groups.meal), platform: done(groups.platform), modpos, branded };
+  const sorted = (set: Set<string>) => [...set].sort();
+  return {
+    from,
+    pre,
+    preUnknown,
+    days: days.length,
+    covered,
+    fallback: sorted(fallback),
+    missing: sorted(missing),
+    closed: sorted(closed),
+    meal: done(groups.meal),
+    platform: done(groups.platform),
+    modpos,
+    branded,
+  };
 }
 
 /**
@@ -734,7 +791,7 @@ function asilposTill(lm: AsilposMonth): ChannelTill {
   return {
     meal: r2((pre?.meal ?? 0) + lm.meal.total + (lm.modpos?.meal ?? 0)),
     online: r2((pre?.online ?? 0) + lm.platform.total + (lm.modpos?.online ?? 0)),
-    reportDays: (pre?.reportDays ?? 0) + lm.days + lm.fallback.length,
+    reportDays: (pre?.reportDays ?? 0) + lm.covered,
     missing: [...(pre?.missing ?? []), ...lm.missing],
     closed: [...(pre?.closed ?? []), ...lm.closed],
     // Toplam ayın bir kısmı: kasa raporları geçiş ayında geç başladı ya da geçiş gününden önce hiç yok
@@ -918,7 +975,8 @@ function asilposSales(def: Pick<ChannelDef, "key" | "label" | "kind">, lm: Asilp
   }
   // Eksik kalmış olabilecek: gün sonu gelmemiş (raporlu ya da raporsuz) günler, raporsuz günler, kanalsız ödeme ve Z'de
   // markası belirsiz tutar (hiçbiri kanala yazılmaz)
-  const noAsilpos = lm.missing.length + lm.fallback.length;
+  // Takvim günü olarak: bir kasanın raporlu, öbürünün raporsuz aynı günü bir kez
+  const noAsilpos = new Set([...lm.missing, ...lm.fallback]).size;
   const parts = [
     noAsilpos ? `${noAsilpos} gün AsilPOS gün sonu yok` : null,
     pre?.missing.length ? `${pre.missing.length} gün kasa raporu yok` : null,

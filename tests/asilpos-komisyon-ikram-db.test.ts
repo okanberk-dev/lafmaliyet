@@ -122,7 +122,7 @@ describe("AsilPOS'un kanalları komisyona, ikramı tüketime: veritabanında", {
     };
     const parsed = parsePosDay(JSON.stringify(body), NOW);
     assert.ok(parsed.ok, "gövde geçerli");
-    const r = await ingest.storePosDay(db, parsed.data, NOW);
+    const r = await ingest.storePosDay(db, parsed.data, NOW, "marina");
     assert.equal(r.ok, true);
   };
   /** Paneldeki zayi / ikram kaydı; şube verilmezse AsilPOS'un şubesinde (Marina) */
@@ -470,15 +470,15 @@ describe("AsilPOS'un kanalları komisyona, ikramı tüketime: veritabanında", {
   asilposTest("E-38: ikramda ürüne bağlanamayan ad Ayarlar › AsilPOS'ta listelenir (geçiş gününden itibaren); bağlanınca düşer", async () => {
     await push("2026-11-11", 13);
     // Geçiş günü boşken ikram hiçbir hesaba girmez: liste de boş
-    const none = await status.loadAsilposCard(db, NOW);
+    const none = await status.loadAsilposCard(db, "marina", NOW);
     assert.deepEqual([none.unmatchedIkram, none.unmatchedIkramCount], [[], 0]);
     await setSwitch(S);
-    const card = await status.loadAsilposCard(db, NOW);
+    const card = await status.loadAsilposCard(db, "marina", NOW);
     assert.deepEqual(card.unmatched, [], "satış satırının hepsi bağlı");
     assert.deepEqual(card.unmatchedIkram, [{ posName: "PUMPKIN CHAI", qty: 1, days: 1 }]);
     // Bağlanınca (POS adı hafızası) okuma anında çözülür: listeden düşer, ikram tüketime girer
     await db.insert(s.posMappings).values({ posName: "PUMPKIN CHAI", productId: ids.mocha, isService: false });
-    assert.equal((await status.loadAsilposCard(db, NOW)).unmatchedIkramCount, 0);
+    assert.equal((await status.loadAsilposCard(db, "marina", NOW)).unmatchedIkramCount, 0);
     assert.equal((await dataset.loadDataset()).asilposIkram?.lines.find((l) => l.posName === "PUMPKIN CHAI")?.productId, ids.mocha);
   });
 

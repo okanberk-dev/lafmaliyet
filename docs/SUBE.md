@@ -10,7 +10,7 @@ Sahibin kararları (4 Kasım 2026):
 |---|---|
 | Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi". **24 Kasım 2026:** şube fiyatı yapıldı (sitede satır, panelde Fiyatlar › Şube fiyatı ve Toplu değiştir › Şube, AsilPOS siteden alır; [FIYATLAR.md › Şube fiyatı](FIYATLAR.md#şube-fiyatı-24-kasım-2026)) |
 | Panel | **Tek panel** (`ladmin.laffogato.net`) + üstte şube / kanal seçici |
-| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina AsilPOS'a geçer, Tuzla ModPOS'ta kalır. AsilPOS'un şubesi kütükte kasa kaynağı AsilPOS olan şube, yoksa Marina (`asilposBranchOf`; 25 Kasım 2026); geçiş gününden sonra sayılan AsilPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
+| Marina'nın kasası | **AsilPOS** (22 Kasım 2026'dan beri; Tuzla ModPOS'ta kalır). **23 ve 27 Kasım 2026:** Marina'da ModPOS tamamen bitti (ModPOS dönemi 13–21 Kasım 2026); göç 0099 kasa kaynağını AsilPOS yaptı, föyü çekilmez. **27 Kasım 2026, çok şube:** her fiziksel şubenin kendi AsilPOS kasası olabilir (kendi geçiş günü, anahtarı, gün sonu, kasa e-postası, komisyonu ve durumu; [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-çok-şube-27-kasım-2026)) |
 | Bugüne kadarki veri | Hepsi **Tuzla**'ya |
 
 ## Kütük
@@ -22,7 +22,7 @@ Sahibin kararları (4 Kasım 2026):
 | `id` | Kısa kimlik (`tuzla`, `marina`, `online`); adreste, çerezde ve kayıtlarda geçer. **Eklendikten sonra değişmez** |
 | `name` | Ekranda görünen ad ("Marina", "laffogato.net") |
 | `kind` | `fiziksel` (şube) ya da `online` (kanal) |
-| `pos_source` | Gün sonu nereden gelir: `modpos`, `asilpos` ya da `yok` (online). AsilPOS'un şubesi buradan türetilir (en çok bir şube; yoksa Marina, [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-denetim-21-kasım-5)) |
+| `pos_source` | Gün sonu nereden gelir: `modpos`, `asilpos` ya da `yok` (online). AsilPOS kasaları buradan (kasa kaynağı AsilPOS olan fiziksel şubeler, birden çok olabilir; hiç yoksa Marina, [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-çok-şube-27-kasım-2026)). Veritabanında AsilPOS'un eski değeriyle yazılır |
 | `active` | Kapalı şube seçicide ve toplamlarda görünmez; kayıtları durur |
 | `opened_on` | Açılış günü; boşsa "başından beri" (Tuzla). Şube görünümünde açılış ayı "kasa raporları ay ortasında başladı" sayılmaz: ilk rapor açılış gününde ya da öncesindeyse ay tamdır; sonradan açılan şubede boşsa ilk raporu açılıştır ([KASA-RAPORU.md › Ay bilgisine aktarım](KASA-RAPORU.md#ay-bilgisine-aktarım)) |
 | `sort_order` | Seçicideki ve listedeki sıra |
@@ -38,11 +38,10 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 - **Online kanalın kasası olmaz**, fiziksel şube kasasız kalmaz (`branches_source_kind_ck`).
 - **Tuzla ve laffogato.net** silinemez, kapatılamaz, türü değişmez: panelin ciroyu bölmesi bunlara bağlı.
 - **Son açık şube** kapatılamaz (online kanal "açık şube" sayılmaz).
-- **AsilPOS en çok bir şubenin kasası** (`asilposSourceError`, `src/lib/asilpos/switch.ts`): başka bir açık şubenin kaynağı
-  AsilPOS'ken ikinci şube AsilPOS'a geçirilemez; önce öbürünün kaynağı değiştirilir. AsilPOS'un şubesi geri düşüşle Marina
-  olduğunda da (kütükte kaynağı ModPOS) Marina geçiş günü ya da kayıtlı AsilPOS günü taşıyorsa Tuzla ya da yeni şube AsilPOS
-  yapılamaz ("AsilPOS günleri Marina şubesine yazılıyor"): kaydedilseydi AsilPOS'un şubesi sessizce taşınır, Marina'nın
-  AsilPOS günleri ay rakamından ve komisyondan düşer, kasası 409 alırdı. Marina'nın kendisi AsilPOS yapılabilir.
+- **Her şubenin kendi AsilPOS kasası olabilir** (sahibin kararı, 27 Kasım 2026; tek şube engeli kalktı). Kasası AsilPOS
+  olan şube ModPOS'a dönerken şube AsilPOS'u kullanıyorsa (geçiş günü ya da kayıtlı AsilPOS günü) onay istenir;
+  onaylanınca şubenin geçiş günü silinir, AsilPOS günleri saklanır ama hiçbir hesaba girmez (`posOffConfirmText`,
+  `src/lib/pos/tills.ts`; `updateBranch`).
 - Verisi olan şube **silinmez**, yalnız kapatılır.
 
 ## Ekran
@@ -388,15 +387,15 @@ yazma `src/server/branch-settings.ts`.
     gibi. Kanallar kartı iki ekranda aynı bileşen (`ChannelSettingsCard`), seçili şubenin kendi sürelerini düzenler;
     kartın kaydı kartın şubesine, bağlı şubeye yazılmaz. Kart yemek kartı özelliği açık şubede (ya da başka şube bu
     şubenin sürelerini kullanıyorsa: "X şubesinde düzenle" boş sayfaya çıkmasın; ModPOS kartı da öyle).
-  - **AsilPOS**: geçiş günü yalnız AsilPOS'un şubesinin değeri (`asilposSwitchDay`, `src/server/asilpos/branch.ts`; panelin
-    geçiş gününü okuyan her yer buna iner, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`). Ayarlar ›
-    AsilPOS geçiş gününü bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez, o şube kendi gününü
-    alır. Anahtar panelde şifreli saklanabilir: ortamdakinin önüne geçer (`asilposSecret`; imzalı uçlar için önbellekli,
-    kayıtta düşer; önbellek ön süzgeç: imza tutunca anahtar veritabanından yeniden okunur, döndürülen eski anahtar başka
-    sunucu örneğinde de hemen geçmez, [ASILPOS.md](ASILPOS.md); veritabanı okunamazsa uç 503), tarayıcıya, işlem
-    geçmişine ve yedeğe gitmez. Kaydetme ve silme
-    yöneticinin parolasıyla (anahtar gün sonu yazımlarının güven kökü). Kart AsilPOS'un (türetilmiş) şubesinde: bugünkü
-    kurulumda kütükte kaynağı ModPOS olsa da Marina'da ("Kasa kaynağı Şubeler'de hâlâ ModPOS" notuyla); geçiş günü orada
+  - **AsilPOS**: her kasanın (şubenin) kendi geçiş günü ve anahtarı (çok şube, 27 Kasım 2026; okuyucu
+    `src/server/pos/tills.ts` `loadPosTills` / `switchDayOf`, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`).
+    Ayarlar › AsilPOS geçiş gününü o şubenin bölümünden bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü
+    ona geçmez. Anahtar şubeyi tanıtır: panel isteğin şubesini imzanın tuttuğu anahtardan bulur (`resolvePosCaller`);
+    iki şubenin anahtarı aynı olamaz, ortamdaki anahtar yalnız Marina'nın ve yalnız Marina'nın saklanan anahtarı yokken.
+    Anahtarlar önbellekli (kayıtta düşer; önbellek ön süzgeç: imza tutunca anahtarlar veritabanından yeniden okunur,
+    döndürülen eski anahtar başka sunucu örneğinde de hemen geçmez, [ASILPOS.md](ASILPOS.md); veritabanı okunamazsa uç
+    503), tarayıcıya, işlem geçmişine ve yedeğe gitmez. Kaydetme ve silme yöneticinin parolasıyla (anahtar gün sonu
+    yazımlarının güven kökü). Kart kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şubede; geçiş günü orada
     gösterilir, Ayarlar › AsilPOS'ta değişir. Ayarlar › AsilPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır.
     Kasa kaynağı başka şubeye geçerse eski şubede kalan anahtar o şubenin sayfasından silinir ("Eski AsilPOS anahtarı").
     Kütükte AsilPOS'un şubesi yoksa (tek şubeli eski kurulum) geçiş günü eski genel kayda yazılır, okuyan da oradan okur.
@@ -587,17 +586,17 @@ başlığı şubenin adı). Hangi şubenin kasasının ne olduğu kütükten: As
 kaynağı ModPOS olan şubeler (hiç yoksa Tuzla). Bugünkü veride Marina'nın kaynağı ModPOS'sa ModPOS kartı Marina'da da
 bölümüyle görünür (föyün yedek çekimi); kaynak AsilPOS yapılınca satıra iner. Tek şubeli kurulumda kartlar bugünkü gibi.
 
-## AsilPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
+## AsilPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026; çok şube 27 Kasım 2026)
 
-AsilPOS 21 Kasım 2026'dan beri Marina'da kurulu (gün sonunu Marina'ya yazar); Ayarlar › AsilPOS'taki geçiş günü yalnız
-**Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/asilpos/switch.ts`; canlıda 22 Kasım 2026). 25 Kasım 2026'dan
-beri AsilPOS'un şubesi sabit değil, kütükten türetilir (kasa kaynağı AsilPOS olan şube, yoksa Marina). Tuzla'nın kasası
-ModPOS'ta kalır: föyü çekilir, Kasa raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da
-bugünkü gibidir. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026; ModPOS dönemi 13–21 Kasım): föyün yedek
-çekimi sürerse geçiş gününden sonraki günü saklanır ama sayılmaz. Ay ekranları Tuzla seçiliyken
-geçiş gününü yok sayar, "Tümü"de iki şubenin satırlarını şube şube ayırır. Marina'nın gün sonu Kasa raporuna
-kendiliğinden yazılır ve e-postası gider ([ASILPOS.md › Gün sonu otomasyonu](ASILPOS.md#gün-sonu-otomasyonu-22-kasım-2026)). Ayrıntı:
-[ASILPOS.md › Şubeler](ASILPOS.md#şubeler-denetim-21-kasım-5).
+Her AsilPOS kasasının kendi geçiş günü vardır (`switchDayFor`, `src/lib/pos/tills.ts`): bir şubenin günü yalnız şubenin
+kasası AsilPOS ise ve gün o şubenin geçiş gününden önce değilse sayılır; kasası ModPOS olan şubenin AsilPOS'tan gelen
+günü (deneme) hiçbir hesaba girmez. Marina 22 Kasım 2026'dan beri AsilPOS'ta (göç 0099 kasa kaynağını AsilPOS yaptı;
+Marina'nın ModPOS dönemi 13–21 Kasım 2026, saklı föyü o günler için sayılmaya devam eder, föyü artık çekilmez). Tuzla'nın
+kasası ModPOS'ta kalır: föyü çekilir, Kasa raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar
+Tuzla'da bugünkü gibidir. Ay ekranları kasası ModPOS olan şube seçiliyken AsilPOS'u okumaz, "Tümü"de her kasayı kendi
+geçiş gününden okur ve şubelerin satırlarını şube şube ayırır (iki kasanın aynı günü çift sayılmaz). Her kasanın gün sonu
+Kasa raporuna kendiliğinden yazılır ve e-postası gider ([ASILPOS.md › Gün sonu otomasyonu](ASILPOS.md#gün-sonu-otomasyonu-22-kasım-2026)).
+Ayrıntı: [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-çok-şube-27-kasım-2026).
 
 ## Personel hesabının şubesi (16 Kasım 2026)
 
@@ -679,12 +678,14 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   değiştirirdi, ayrı alan ister), komisyon takibinin başladığı gün (`komisyon.since`; hakediş işletmenin, bilerek ortak).
   Ekran "Şimdilik bütün şubelerde ortak" kartında adıyla yazar. Komisyonun şube başına süresi işletmenin hakedişine
   "en kısası" kuralıyla girer; hakedişi şube payına bölmek faturanın şubesi bilinince.
-- **AsilPOS'un şubesi** kütükten türetildi (yukarıda, [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-denetim-21-kasım-5)) ve
-  Ayarlar'daki kasa kartları seçime göre (yukarıda, "Ayarlar'da kasa kartları"). Kalanlar: **iki şube birden AsilPOS'ta**
-  (gün sonu otomasyonu, sabah işi ve Ayarlar kartı tek şubeye göre; ikinci şube şimdilik kaydedilmez), `stok_tahmini`
-  özelliği (`STOCK_ESTIMATE_BRANCH` Marina; tahmin AsilPOS'un şubesi değilse kendiliğinden kapanır), **kasa kaynağı
-  değişince** eski şubenin kayıtlı AsilPOS günleri yerinde kalır (taşınmaz, sayılmaz), AsilPOS kasası da kendi `sube`
-  ayarıyla değiştirilmelidir.
+- **Çok şubeli AsilPOS kuruldu** (27 Kasım 2026, [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-çok-şube-27-kasım-2026)): her
+  şubenin kendi kasası, geçiş günü, anahtarı, gün sonu otomasyonu ve durumu; Ayarlar'daki AsilPOS kartı seçili şubenin
+  bölümünü, "Tümü"de her kasanın bölümünü gösterir. Kalanlar: `stok_tahmini` yalnız Marina'nın (`STOCK_ESTIMATE_BRANCH`;
+  başka şube seçiliyken "<şube> için tahmin yok"), **kasa kaynağı değişince** eski şubenin kayıtlı AsilPOS günleri
+  yerinde kalır (taşınmaz, sayılmaz), kasayı başka şubeye taşımak yeni kurulum kodu ister (anahtar şubeyi tanıtır).
+  "Tümü"de iki kasanın son günleri farklıysa süren ayın satış dönemi en geç gelen günle biter (ModPOS listelerinin
+  ortak dönemi gibi en kısasıyla kesilmez). **Şube kapsamı D** ("şube seçiliyken her ekranda yalnız o şubenin bilgisi")
+  ayrı iştir.
 - **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
   şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.
 - **Faturanın şubesi** kuruldu (25 Kasım 2026, aşağıda): şubenin faturası Gelir-gider'de şubenin harcama hücresinde.

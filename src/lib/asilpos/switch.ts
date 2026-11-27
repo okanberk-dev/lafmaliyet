@@ -1,5 +1,5 @@
-import { ALL_BRANCHES, type BranchRow, DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { isCalendarDay, ASILPOS_SWITCH_MIN, readAsilposSwitchDay } from "@/lib/constants";
+import { genitive } from "@/lib/recipe-change";
 import { addDays, dayMonthTR, daysBetween, shiftMonth } from "@/lib/reminders";
 
 /**
@@ -7,9 +7,9 @@ import { addDays, dayMonthTR, daysBetween, shiftMonth } from "@/lib/reminders";
  * başlandığı ilk iş günü (YYYY-MM-DD, 05:00 kuralı). Boşken (null) her şey bugünkü gibi ModPOS'a göre çalışır: AsilPOS'un
  * gönderdiği günler saklanır ama hiçbir hesaba, ekrana, göreve, e-postaya ya da ön doldurmaya girmez (yalnız Ayarlar'daki
  * AsilPOS kartında "deneme" olarak görünür; sahibin 26 Ekim kararı). Doluyken o günden itibaren kaynak AsilPOS'tur. Ayar
- * değişince hiçbir kayıt yazılmaz ya da silinmez, yalnız okuyanlar değişir. Geçiş günü yalnız AsilPOS'un kurulu olduğu
- * şubenin kasasınındır (ASILPOS_BRANCH_ID, branchSwitchDay): öteki şubeler ModPOS'ta kalır. Geçiş gününü okuyan her yer bu
- * dosyanın yardımcılarından geçer (saf; testleri tests/asilpos.test.ts).
+ * değişince hiçbir kayıt yazılmaz ya da silinmez, yalnız okuyanlar değişir. Geçiş günü şubenin kendi kasasınındır (her
+ * AsilPOS kasasının kendi günü; src/lib/pos/tills.ts switchDayFor): ModPOS'taki şube etkilenmez. Geçiş gününü okuyan her
+ * yer bu dosyanın ve src/lib/pos/tills.ts'in yardımcılarından geçer (saf; testleri tests/asilpos.test.ts).
  */
 
 /** Ayarın anahtarı (settings tablosu; Settings tipinde aynı adla) */
@@ -36,88 +36,13 @@ export function isAsilposDay(day: string, switchDay: string | null): boolean {
 }
 
 /**
- * AsilPOS'un kurulu olduğu şubenin GERİ DÜŞÜŞ değeri (docs/ASILPOS.md › Şubeler): **Marina** (sahibin kararı, 21 Kasım
- * 2026: önce Marina AsilPOS'a geçer, Tuzla ModPOS'ta kalır). Şube artık kütükten türetilir (`asilposBranchOf`: kasa
- * kaynağı AsilPOS olan etkin fiziksel şube; şube kapsamı B6); kütükte AsilPOS kasalı şube yoksa (bugünkü kurulumda Marina'nın
- * kasa kaynağı hâlâ ModPOS olabilir, föyün yedek çekimi için) bu değer kullanılır, yani davranış bugünküyle aynı kalır.
- * Sunucu türetilmiş değeri `asilposBranchId` (src/server/asilpos/branch.ts) ile okur; saf yardımcılar onu son parametre
- * olarak alır, verilmezse bu sabite düşer.
- *
- * AsilPOS gün sonunu yalnız bu şubeye yazar (src/server/asilpos/ingest.ts; kasanın gönderdiği `sube` buna eşit değilse
- * gün reddedilir) ve geçiş günü yalnız bu şubenin kasasınındır. Öteki şubelerin kasası ModPOS kalır: föyü çekilir, Kasa
- * raporu ModPOS'a göre açılır, ürün listesi sayılır, panelde girilen ürün ikramı sayılır. Marina'da ModPOS bir daha
- * kullanılmaz (sahip, 23 Kasım 2026): Marina'nın ModPOS dönemi yalnız 13–21 Kasım 2026'dır, geçiş gününden önce sayılan
- * odur, sonra yalnız AsilPOS'un günü sayılır. Föyün yedek çekimi sürerse (şubenin kasa kaynağı Ayarlar › Şubeler'de hâlâ
- * ModPOS) geçiş gününden sonraki günü saklanır ama hiçbir hesaba girmez. Şubesi verilmeyen eski kayıtlar Tuzla'nındır.
+ * Şubeler (docs/ASILPOS.md › Şubeler; sahibin kararı, 27 Kasım 2026): her fiziksel şubenin kendi AsilPOS kasası olabilir.
+ * Kasanın şubesi kütükten, geçiş günü şubenin kendi ayarından, anahtarı da şubenin kendisinin; kural ve harita
+ * src/lib/pos/tills.ts'te (SwitchDays, switchDayFor, isCountedPosDay). Marina 21 Kasım 2026'dan beri AsilPOS'ta, ModPOS'u
+ * tamamen bitti (Marina'nın ModPOS dönemi yalnız 13–21 Kasım 2026); Tuzla ModPOS'ta kalır: föyü çekilir, Kasa raporu
+ * ModPOS'a göre açılır, ürün listesi ve panelde girilen ürün ikramı sayılır. Şubesi verilmeyen eski kayıtlar Tuzla'nındır.
  */
-export const ASILPOS_BRANCH_ID = "marina";
-
-/** AsilPOS'un şubesini türetmek için kütüğün gereken alanları */
-export type AsilposBranchRow = Pick<BranchRow, "id" | "kind" | "posSource" | "active">;
-
-/**
- * AsilPOS'un şubesi kütükten (şube kapsamı B6): kasa kaynağı AsilPOS olan etkin fiziksel şube. Hiçbiri yoksa geri düşüş
- * `ASILPOS_BRANCH_ID` (bugünkü davranış: kütükte Marina'nın kaynağı ModPOS olsa da AsilPOS'un şubesi Marina). AsilPOS bugün
- * tek şubede çalışır (`asilposSourceError` ikincisini kaydettirmez); yine de birden çoksa geri düşüş değeri aralarındaysa
- * o, değilse kütüğün sırasıyla ilki: değer hiçbir zaman iki şube arasında gidip gelmez.
- */
-export function asilposBranchOf(branches: readonly AsilposBranchRow[]): string {
-  const ids = branches.filter((b) => b.active && b.kind === "fiziksel" && b.posSource === "asilpos").map((b) => b.id);
-  if (!ids.length || ids.includes(ASILPOS_BRANCH_ID)) return ASILPOS_BRANCH_ID;
-  return ids[0];
-}
-
-/**
- * Kasa kaynağını AsilPOS yapmanın kuralı; sorun yoksa null. AsilPOS bugün tek şubenin kasası olabilir: gün sonu, geçiş
- * günü, kasadan çıkan ve personel bağı tek şubeye göre kurulu (docs/SUBE.md › Sırada ne var). AsilPOS'un bugünkü şubesi
- * (`asilposBranchOf`; kütükte kaynağı ModPOS görünse de geri düşüşle Marina) başka bir açık fiziksel şubeyse ikincisi
- * kaydedilmez: kaydedilseydi AsilPOS'un şubesi sessizce taşınır, eski şubenin AsilPOS günleri ve geçiş günü hesaptan
- * düşer, kasası 409 alırdı. Kaynağı açıkça AsilPOS olan şube her zaman tutar; yalnız geri düşüşle tutan şube AsilPOS'u
- * kullanmıyorsa (`implicitHolderUsed` false: geçiş günü ve kayıtlı AsilPOS günü yok) AsilPOS başka şubeye geçebilir.
- */
-export function asilposSourceError(
-  next: { id: string; kind: BranchRow["kind"]; posSource: BranchRow["posSource"]; active: boolean },
-  others: readonly (AsilposBranchRow & { name: string })[],
-  implicitHolderUsed = true,
-): string | null {
-  if (next.posSource !== "asilpos" || !next.active || next.kind !== "fiziksel") return null;
-  const open = (b: AsilposBranchRow) => b.id !== next.id && b.active && b.kind === "fiziksel";
-  const explicit = others.find((b) => open(b) && b.posSource === "asilpos");
-  if (explicit) return `AsilPOS şimdilik yalnız bir şubenin kasası olabilir; ${explicit.name} şubesinin kasası zaten AsilPOS`;
-  // Bugünkü şube kütüğün şimdiki hâliyle (düzenlenen şube eski kaynağıyla; kendisi tutuyorsa sorun yok)
-  const holderId = asilposBranchOf(others);
-  const implicit = others.find((b) => b.id === holderId && open(b));
-  if (implicit && implicitHolderUsed) {
-    return `AsilPOS şimdilik yalnız bir şubenin kasası olabilir; AsilPOS günleri ${implicit.name} şubesine yazılıyor (geçiş günü ya da kayıtlı gün var). Başka şubeye geçerse ${implicit.name} şubesinin AsilPOS günleri hesaptan düşer`;
-  }
-  return null;
-}
-
-/**
- * Kaydın şubesi AsilPOS'un şubesi mi (şubesi verilmeyen kayıt Tuzla'nındır, şubeler öncesi). `asilposBranch`: türetilmiş
- * şube (`asilposBranchOf`, sunucuda `asilposBranchId`); verilmezse geri düşüş değeri
- */
-export function isAsilposBranch(branchId: string | null | undefined, asilposBranch: string = ASILPOS_BRANCH_ID): boolean {
-  return (branchId ?? DEFAULT_BRANCH_ID) === asilposBranch;
-}
-
-/**
- * Bir şubenin kasasının geçiş günü: AsilPOS'un şubesinde ayar, öteki şubelerde (kasası ModPOS) ve online kanalda null,
- * yani her günü ModPOS günü. Şubesi verilmeyen kayıt Tuzla'nındır (şubeler öncesi). Tek kasanın gününe bakan her yer
- * (Kasa raporu, föy, zil, geç rapor, kapalı gün, zayi) geçiş gününü bundan geçirir. `asilposBranch`: isAsilposBranch gibi
- */
-export function branchSwitchDay(switchDay: string | null, branchId: string | null | undefined, asilposBranch: string = ASILPOS_BRANCH_ID): string | null {
-  return isAsilposBranch(branchId, asilposBranch) ? switchDay : null;
-}
-
-/**
- * Görünümün geçiş günü (veri kümesi; ay ekranlarının metinleri ve satış kaynağı): tek şube ya da kanal seçiliyken o
- * şubenin kasasınınki (branchSwitchDay); "Tümü"de ayar. "Tümü"de satırlar şube şube ayrılır: ModPOS şubesinin ürün
- * listesi ve panel ikramı sayılmaya devam eder (mergeSalesSources, panelWasteCounts).
- */
-export function scopeSwitchDay(switchDay: string | null, scope: string, asilposBranch: string = ASILPOS_BRANCH_ID): string | null {
-  return scope === ALL_BRANCHES ? switchDay : branchSwitchDay(switchDay, scope, asilposBranch);
-}
+export { LEGACY_POS_BRANCH_ID, switchDayFor, isCountedPosDay, type SwitchDays } from "@/lib/pos/tills";
 
 /** Günün kasası (metinler için) */
 export function kasaName(day: string, switchDay: string | null): "ModPOS" | "AsilPOS" {
@@ -201,9 +126,23 @@ export function daysUntilText(day: string, today: string): string | null {
 
 /**
  * Geçiş gününün bugün etkilediği yerler (onay penceresi ve belge bunu yazar). Her AsilPOS partisi kendi okuyucusunu
- * buraya ekler: liste kodun yaptığından fazlasını söylemez.
+ * buraya ekler: liste kodun yaptığından fazlasını söylemez. Çok şube: geçiş günü bir kasanındır (`branchName`), son madde
+ * hangi kasaların ModPOS'ta kaldığını söyler (`modposNames`); tahmini stok yalnız Marina'nın (`stockEstimate`)
  */
-export const ASILPOS_SWITCH_EFFECTS: readonly string[] = [
+export function switchEffects(o: { branchName: string; modposNames: readonly string[]; stockEstimate: boolean }): string[] {
+  const own = genitive(o.branchName);
+  const others = o.modposNames.length
+    ? `${o.modposNames.map(genitive).join(" ve ")} kasası ModPOS'ta kalır; ModPOS föyü çekilmeye ve Kasa raporuyla karşılaştırılmaya devam eder, Kasa raporu, geç rapor, ürün satış listesi, ürün ikramı ve kasadaki fiyatlar orada bugünkü gibidir; Komisyon & hakediş o kasaların raporlarını kasa raporu kuralıyla ekler.`
+    : "Başka şubenin kasası bundan etkilenmez: her AsilPOS kasasının kendi geçiş günü vardır.";
+  return [
+    ...ASILPOS_SWITCH_COMMON,
+    ...(o.stockEstimate ? [STOCK_EFFECT.replace("Marina'nın", own)] : []),
+    `Bunların hepsi yalnız ${own} kasası içindir (her AsilPOS kasasının kendi geçiş günü vardır): ${others}`,
+  ];
+}
+
+/** Her kasada aynı olan etkiler */
+const ASILPOS_SWITCH_COMMON: readonly string[] = [
   "Kasa raporu bu günden itibaren AsilPOS'un gün sonuyla açılır: o günün gönderimi geldiyse form kendiliğinden dolar (kaydetmez), Z bölümü \"AsilPOS gün sonu (Z)\" olur ve ModPOS Z fotoğrafı istenmez; kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp AsilPOS'tan farklı yazılanları gösterir.",
   "Geç kasa raporu bu günden itibaren AsilPOS'un gün sonuyla girilir (gelmediyse yazarkasa Z fotoğrafıyla); kasa raporu girilmemiş günün ciro ve açık günü AsilPOS'un Z'sinden sayılır, gün yine \"rapor yok\" görünür.",
   "\"Kafe kapalıydı\" için bu günden itibaren AsilPOS'un satışlı gün sonu kanıttır: o gün kapalı onaylanamaz, işaretliyse kalkar.",
@@ -214,6 +153,11 @@ export const ASILPOS_SWITCH_EFFECTS: readonly string[] = [
   "AsilPOS'tan gelen bu günden önceki günler deneme sayılır: Ayarlar'da görünür, hiçbir hesaba girmez.",
   "Kasadaki fiyatlar bu günden itibaren yalnız siteye bağlı olmayan ve fiyatı bu günden sonra panelde değişen ürünler içindir ve yalnız yöneticinin işidir (AsilPOS'ta ürün fiyatını kasiyer değiştiremez; personele görev düşmez): siteye bağlı ürünün yeni fiyatını AsilPOS siteden kendisi alır, Kasaya işle'de, zilde ve Bugün'de görünmez. ModPOS'ta değişecek fiyatlar kaydedilmeye devam eder, yalnız gizlenir: geçiş günü kaldırılır ya da ileri alınırsa eksiksiz geri gelir.",
   "Metinler bu günden itibaren ModPOS yerine AsilPOS der: Bugün'ün ve zilin akşam kasa satırı (AsilPOS'ta Günü kapat), Kasa raporu, e-posta ve WhatsApp karşılaştırmaları, kapalı gün kartı; aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV tahmini, dışa aktarım, Claude) ayın kasasıyla, geçiş ayında \"Kasa (ModPOS 1–9 · AsilPOS 10–30)\".",
-  "Marina'nın tahmini stoğu (Stok sayımı › Tahmini stok) bu günden itibaren AsilPOS'un satışlarını, ikram ve zayisini son ay sonu sayımından düşer; kritik eşiğe inen malzeme Genel bakış ve Bugün'de söylenir.",
-  "Bunların hepsi yalnız Marina'nın kasası içindir (AsilPOS'un kurulu olduğu şube): Tuzla'nın kasası ModPOS'ta kalır; ModPOS föyü çekilmeye ve Kasa raporuyla karşılaştırılmaya devam eder, Kasa raporu, geç rapor, ürün satış listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da bugünkü gibidir; Komisyon & hakediş Tuzla'nın kasa raporlarını kasa raporu kuralıyla ekler.",
 ];
+
+/** Tahmini stok (yalnız Marina'nın; src/lib/stock-estimate.ts) */
+const STOCK_EFFECT =
+  "Marina'nın tahmini stoğu (Stok sayımı › Tahmini stok) bu günden itibaren AsilPOS'un satışlarını, ikram ve zayisini son ay sonu sayımından düşer; kritik eşiğe inen malzeme Genel bakış ve Bugün'de söylenir.";
+
+/** Eski tek kasalı kurulumun metni (Marina AsilPOS'ta, Tuzla ModPOS'ta; belge ve testler) */
+export const ASILPOS_SWITCH_EFFECTS: readonly string[] = switchEffects({ branchName: "Marina", modposNames: ["Tuzla"], stockEstimate: true });

@@ -72,10 +72,10 @@ const report: CashReportFields & { cashDiff: number } = {
 const SECRETS = ["1234.5", "1.234,50", "3333.25", "3.333,25", "751.25", "751,25", "4.084,50", "1.200", "1.100"];
 
 test("kural: yalnız personel, yalnız AsilPOS'un şubesinin AsilPOS günü", () => {
-  assert.equal(staffBlindDay({ admin: false, branchId: "marina", asilposDay: true, asilposBranch: "marina" }), true);
-  assert.equal(staffBlindDay({ admin: true, branchId: "marina", asilposDay: true, asilposBranch: "marina" }), false, "yönetici görür");
-  assert.equal(staffBlindDay({ admin: false, branchId: "tuzla", asilposDay: true, asilposBranch: "marina" }), false, "ModPOS'taki şube eskisi gibi");
-  assert.equal(staffBlindDay({ admin: false, branchId: "marina", asilposDay: false, asilposBranch: "marina" }), false, "geçiş gününden önce eskisi gibi");
+  assert.equal(staffBlindDay({ admin: false, asilposDay: true }), true);
+  assert.equal(staffBlindDay({ admin: true, asilposDay: true }), false, "yönetici görür");
+  assert.equal(staffBlindDay({ admin: false, asilposDay: false }), false, "ModPOS'taki şube eskisi gibi (şubenin günü AsilPOS günü değil)");
+  assert.equal(staffBlindDay({ admin: false, asilposDay: false }), false, "geçiş gününden önce eskisi gibi");
 });
 
 test("rapor: açılış, sayılan, teslim ve fark personelin yükünde yok; notun açılış cümleleri çıkar, kapanış notu kalır", () => {

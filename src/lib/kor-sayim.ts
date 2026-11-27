@@ -41,16 +41,17 @@ export interface BlindCountLock {
 
 /**
  * Bu kasa gününde kör sayım geçerli mi. `setting`: şube ayarı (null: seçilmedi, varsayılan); varsayılan kasası ModPOS
- * olan şubede açık, AsilPOS'un şubesinde kapalı. AsilPOS'un şubesinin AsilPOS gününde hiçbir zaman (sayım AsilPOS'ta kör)
+ * olan şubede açık, kasası AsilPOS olan şubede (`till`) kapalı. Şubenin kendi AsilPOS gününde (`asilposDay`, şubenin geçiş
+ * günüyle) hiçbir zaman (sayım AsilPOS'ta kör)
  */
-export function blindCountOn(o: { setting: boolean | null; branchId: string; asilposBranch: string | null | undefined; asilposDay: boolean }): boolean {
-  if (o.asilposDay && o.branchId === o.asilposBranch) return false;
-  return o.setting ?? o.branchId !== o.asilposBranch;
+export function blindCountOn(o: { setting: boolean | null; till: boolean; asilposDay: boolean }): boolean {
+  if (o.asilposDay) return false;
+  return o.setting ?? !o.till;
 }
 
-/** Ayarın etkin değeri, ekranın anahtarı için (varsayılan çözülmüş) */
-export function blindCountSettingOn(setting: boolean | null, branchId: string, asilposBranch: string | null | undefined): boolean {
-  return setting ?? branchId !== asilposBranch;
+/** Ayarın etkin değeri, ekranın anahtarı için (varsayılan çözülmüş); `till`: şubenin kasası AsilPOS */
+export function blindCountSettingOn(setting: boolean | null, till: boolean): boolean {
+  return setting ?? !till;
 }
 
 /** Sayım satırlarından formun kilidi (geçerli sayım en son satır); sayım yoksa null */

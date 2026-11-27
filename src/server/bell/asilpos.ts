@@ -2,14 +2,17 @@ import "server-only";
 
 import { and, eq, inArray } from "drizzle-orm";
 
+import { ALL_BRANCHES } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR } from "@/lib/format";
 import { rejectionBells } from "@/lib/asilpos/status";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import { addDays, todayTR } from "@/lib/reminders";
 import type { PanelNotification } from "@/server/actions/notifications";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
-import { loadAsilposSwitchDay, readAsilposState } from "@/server/asilpos/status";
+import { readAsilposState } from "@/server/asilpos/status";
+import { currentBranchScope } from "@/server/branch-scope";
+import { loadPosTills } from "@/server/pos/tills";
 
 /*
  * AsilPOS'un reddedilen gün sonunun zil satırı (yalnız yönetici; docs/ASILPOS.md › Durum ve onarım). Ret `POST /api/pos/gun`
@@ -23,13 +26,21 @@ export const asilposSettingsHref = (branchId: string) => `/panel/ayarlar?sube=${
 
 /**
  * Zilin Sistem başlığında "Marina gün sonu alınamadı: <neden>" (toplayıcı src/server/actions/notifications.ts yönetici
- * dalında çağırır), Ayarlar › AsilPOS'a götürür. Açık ret yoksa tek sorgu (durum satırı)
+ * dalında çağırır), Ayarlar › AsilPOS'a götürür. Çok şube: her açık AsilPOS kasası kendi satırlarıyla, başlıkta şubenin
+ * adı; şube seçiliyken yalnız o şubenin kasası (`scope`; verilmezse seçicinin seçimi). Birden çok kasada Marina dışındaki
+ * satırların kimliği şubeyi taşır (aynı günün iki reddi ayrı satır). Açık ret yoksa kasa başına tek sorgu (durum satırı)
  */
-export async function asilposRejectionBell(db: DB = getDb(), now = new Date()): Promise<PanelNotification[]> {
-  const state = await readAsilposState(db);
+export async function asilposRejectionBell(db: DB = getDb(), now = new Date(), scope?: string): Promise<PanelNotification[]> {
+  const [{ active, switchDays }, sel] = await Promise.all([loadPosTills(db), scope !== undefined ? Promise.resolve(scope) : currentBranchScope()]);
+  const tills = active.filter((id) => sel === ALL_BRANCHES || id === sel);
+  const out = await Promise.all(tills.map((id) => tillRejectionBell(db, id, switchDays[id] ?? null, now, active.length > 1)));
+  return out.flat();
+}
+
+async function tillRejectionBell(db: DB, branchId: string, switchDay: string | null, now: Date, many: boolean): Promise<PanelNotification[]> {
+  const state = await readAsilposState(db, branchId);
   const dates = Object.keys(state.rejections);
   if (!dates.length) return [];
-  const [switchDay, branchId] = await Promise.all([loadAsilposSwitchDay(db), asilposBranchId(db)]);
   const [days, [branch]] = await Promise.all([
     db
       .select({ date: s.posDayReports.date, receivedAt: s.posDayReports.receivedAt })
@@ -41,7 +52,7 @@ export async function asilposRejectionBell(db: DB = getDb(), now = new Date()): 
     rejections: state.rejections,
     switchDay,
     received: Object.fromEntries(days.map((d) => [d.date, d.receivedAt.toISOString()])),
-    branchName: branch?.name ?? "Marina",
+    branchName: branch?.name ?? branchId,
     today: businessDate(now),
     now,
   });
@@ -49,7 +60,8 @@ export async function asilposRejectionBell(db: DB = getDb(), now = new Date()): 
   return rows.map((r) => {
     const day = todayTR(new Date(r.at));
     return {
-      id: r.id,
+      // Eski kurulumun şubesinin kimliği değişmez (okundu işaretleri kalsın)
+      id: many && branchId !== LEGACY_POS_BRANCH_ID ? `${r.id}-${branchId}` : r.id,
       kind: "danger",
       title: r.title,
       body: r.body,

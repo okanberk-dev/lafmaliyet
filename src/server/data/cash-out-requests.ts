@@ -23,7 +23,7 @@ import {
 import { amountOnlyRow, cashOutLabel, cashOutsTotal, ownerCategoryRow, ownerRowsAmountOnly, staffCategory, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { staffAsilposEntryClosed } from "@/lib/asilpos/cash-moves";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
 import { okcHasFigures } from "@/lib/okc-z";
 import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
@@ -35,9 +35,8 @@ import { requestBranches } from "@/server/staff-requests/branch";
 import { cashOutsOn, staffCategoryIds } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { kasaEvidence, asilposAutoReportOf } from "@/server/data/asilpos-day";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { switchDayOf } from "@/server/pos/tills";
 import { staffDayOpen } from "@/server/photo-read/rules";
 
 /*
@@ -133,11 +132,11 @@ export async function staffOldCashOutDays(now = new Date()): Promise<string[]> {
   if (!days.length) return [];
   // Kasanın şubesinin kapalı günleri (ve işletme geneli): öteki şubenin kapalı günü bu şubenin listesinden düşmez
   const till = await currentTillBranch();
-  const [closedDays, setting, asilposBranch] = await Promise.all([closedDaysBetween(days[days.length - 1], days[0], getDb(), till), asilposSwitchDayOf(getDb()), asilposBranchId()]);
+  const [closedDays, switchDay] = await Promise.all([closedDaysBetween(days[days.length - 1], days[0], getDb(), till), switchDayOf(till)]);
   const closed = new Set(closedDays);
-  // AsilPOS gününe personel satır eklemez (staffAsilposEntryClosed; kapı staffCashOutGate da reddeder): kasadan çıkanlar AsilPOS'tan
-  const switchDay = branchSwitchDay(setting, till, asilposBranch);
-  return days.filter((d) => !closed.has(d) && !staffAsilposEntryClosed({ admin: false, branchId: till, asilposDay: isAsilposDay(d, switchDay), asilposBranch }));
+  // AsilPOS gününe personel satır eklemez (staffAsilposEntryClosed; kapı staffCashOutGate da reddeder): kasadan çıkanlar
+  // AsilPOS'tan (kasanın şubesinin kendi geçiş günüyle)
+  return days.filter((d) => !closed.has(d) && !staffAsilposEntryClosed({ admin: false, asilposDay: isAsilposDay(d, switchDay) }));
 }
 
 // ---------------------------------------------------------------- Yöneticinin kartları (Onaylar › Kasa)

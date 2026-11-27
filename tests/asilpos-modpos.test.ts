@@ -68,7 +68,7 @@ const KEYS = ["date", "ciro", "kart", "nakit", "yemek", "online", "diger", "indi
 test("istek: anahtar yoksa 503, imza yok / yanlış / başka uç / başka sorgu 401, şube yok ya da bozuksa 400, başka şube 409", () => {
   const check = (u: URL, o: { sign?: URL; secret?: string | null; now?: number } = {}) => {
     const h = signedHeaders(SECRET, "GET", o.sign ?? u, "", NOW);
-    return checkModposDaysRequest({ secret: o.secret === undefined ? SECRET : o.secret, url: u, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: o.now ?? NOW });
+    return checkModposDaysRequest({ expected: "marina", secret: o.secret === undefined ? SECRET : o.secret, url: u, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: o.now ?? NOW });
   };
   assert.deepEqual(check(url("?sube=marina")), { ok: true, sube: "marina" });
   assert.deepEqual(check(url("?sube=marina"), { secret: null }), { ok: false, status: 503, body: { error: "not_configured" } });
@@ -77,9 +77,9 @@ test("istek: anahtar yoksa 503, imza yok / yanlış / başka uç / başka sorgu 
   assert.deepEqual(check(url("?sube=marina"), { sign: url("?sube=tuzla") }), unauthorized, "şube imzanın içinde");
   assert.deepEqual(check(url("?sube=marina"), { now: NOW + 301_000 }), unauthorized, "5 dakikadan eski");
   const h = signedHeaders(SECRET, "GET", url("?sube=marina"), "", NOW);
-  assert.deepEqual(checkModposDaysRequest({ secret: SECRET, url: url("?sube=marina"), timestamp: h["x-laf-timestamp"], signature: null, now: NOW }), unauthorized);
+  assert.deepEqual(checkModposDaysRequest({ expected: "marina", secret: SECRET, url: url("?sube=marina"), timestamp: h["x-laf-timestamp"], signature: null, now: NOW }), unauthorized);
   // İmza şubeden önce: imzasız istek şubenin geçerli olup olmadığını öğrenmez
-  assert.deepEqual(checkModposDaysRequest({ secret: SECRET, url: url("?sube=tuzla"), timestamp: null, signature: null, now: NOW }), unauthorized);
+  assert.deepEqual(checkModposDaysRequest({ expected: "marina", secret: SECRET, url: url("?sube=tuzla"), timestamp: null, signature: null, now: NOW }), unauthorized);
   const invalid = { ok: false, status: 400, body: { error: "invalid", field: "sube" } };
   for (const q of ["", "?sube=", "?sube=Marina", "?sube=m", "?sube=marina%20", "?sube=marina&sube=tuzla", `?sube=${"a".repeat(25)}`]) assert.deepEqual(check(url(q)), invalid, q);
   assert.deepEqual(check(url("?sube=tuzla")), { ok: false, status: 409, body: { error: "wrong_branch", sube: "tuzla", expected: "marina" } });

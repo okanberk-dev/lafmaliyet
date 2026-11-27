@@ -3,7 +3,6 @@ import type { CashOutKind } from "@/lib/cash-outs";
 import { KASA_YAZARI } from "./eski-adlar";
 
 import type { PosCashMove } from "./day";
-import { ASILPOS_BRANCH_ID } from "./switch";
 
 /**
  * AsilPOS'un kasa hareketleri → panelin "Kasadan çıkanlar"ı (Faz 3, 23 Kasım 2026; sahibin kararı: docs/ASILPOS.md "Soru
@@ -187,15 +186,16 @@ export const ASILPOS_STAFF_ENTRY_LINE = "AsilPOS günü: harcama ve ikram/zayi A
 
 /**
  * Personel Kasa sayfasından kasadan çıkan ve ikram / zayi ekleyemez mi (sahibin kararı, 24 Kasım 2026: "sadece gün sonu
- * ladmin'e personel foto atsın"): AsilPOS'un şubesinde AsilPOS günü (geçiş gününden itibaren; staffBeforeAsilposDayEnd'in
- * şube ve gün kuralı). Kasadan çıkanlar AsilPOS'un kasa hareketlerinden (cashMoves → cash_outs), ürün ikramı, zayisi ve
+ * ladmin'e personel foto atsın"): şubenin kendi AsilPOS günü (şubenin geçiş gününden itibaren; staffBeforeAsilposDayEnd'in
+ * kuralı). Kasadan çıkanlar AsilPOS'un kasa hareketlerinden (cashMoves → cash_outs), ürün ikramı, zayisi ve
  * hazırlanmış iptal gün sonunun gövdesinden gelir. Yönetici her zaman ekler; personel AsilPOS'un satırına fiş fotoğrafı ve
  * kategori ekler. Sunucu: personelin ekleme yolu (doğrudan, istek, başka güne taşıma) staffCashOutGate'te reddedilir.
  * ModPOS'ta kalan şube ve geçiş gününden önceki gün eskisi gibi; Zayi & ikram sayfasının hammadde yolu değişmez.
- * `asilposBranch`: AsilPOS'un şubesi (sunucu asilposBranchId ile verir; yoksa ASILPOS_BRANCH_ID)
+ * `asilposDay`: günün, kasanın kendi şubesinin sayılan AsilPOS günü olup olmadığı (şubenin geçiş günüyle; src/lib/pos/tills.ts
+ * isCountedPosDay). Kasası ModPOS olan şubede hiçbir gün değildir (çok şube, 27 Kasım 2026)
  */
-export function staffAsilposEntryClosed(o: { admin: boolean; branchId: string | null | undefined; asilposDay: boolean; asilposBranch?: string }): boolean {
-  return !o.admin && o.branchId === (o.asilposBranch ?? ASILPOS_BRANCH_ID) && o.asilposDay;
+export function staffAsilposEntryClosed(o: { admin: boolean; asilposDay: boolean }): boolean {
+  return !o.admin && o.asilposDay;
 }
 
 /**

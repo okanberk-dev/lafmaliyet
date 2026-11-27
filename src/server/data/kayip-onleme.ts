@@ -6,14 +6,15 @@ import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { lossSummary, staffPersonKey, type LossCashReport, type LossCount, type LossDay, type LossPerson, type LossSummary, type LossWasteEntry } from "@/lib/kayip-onleme";
 import { isAsilposAutoBy } from "@/lib/asilpos/gun-sonu";
-import { branchSwitchDay, isAsilposDay, asilposBranchOf } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { switchDayFor } from "@/lib/pos/tills";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { monthDays } from "@/lib/sube-karsilastirma";
 import { requireAdmin } from "@/server/auth/dal";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 export interface LossData {
   months: string[];
@@ -48,7 +49,6 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
   const all = await listBranches(db);
   const branches = tillBranches(all);
   if (!branches.length) return null;
-  const asilposBranch = asilposBranchOf(all);
 
   const [cash, counts, waste, posDays, shifts, staff, users, switchDay, model] = await Promise.all([
     db
@@ -102,7 +102,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
       .where(and(eq(s.shifts.kind, "work"), gte(s.shifts.date, from), lte(s.shifts.date, to))),
     db.select({ id: s.staff.id, name: s.staff.name, userId: s.staff.userId, personRef: s.staff.personRef }).from(s.staff),
     db.select({ id: s.users.id, name: s.users.name }).from(s.users),
-    loadAsilposSwitchDay(db),
+    loadSwitchDays(db),
     loadModel({ scope: ALL_BRANCHES }),
   ]);
 
@@ -149,7 +149,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
   }
   const days: LossDay[] = [];
   for (const b of branches) {
-    const switchOf = branchSwitchDay(switchDay, b.id, asilposBranch);
+    const switchOf = switchDayFor(switchDay, b.id);
     for (const m of months) {
       for (const date of monthDays(m, to)) {
         const k = `${b.id}|${date}`;
@@ -189,7 +189,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
     months,
     from,
     to,
-    branches: branches.map((b) => ({ id: b.id, name: b.name, asilpos: b.id === asilposBranch && switchDay !== null })),
+    branches: branches.map((b) => ({ id: b.id, name: b.name, asilpos: switchDayFor(switchDay, b.id) !== null })),
     summary: lossSummary({
       cash: cashReports.filter((r) => ids.has(r.branchId)),
       counts: countRows.filter((c) => ids.has(c.branchId)),

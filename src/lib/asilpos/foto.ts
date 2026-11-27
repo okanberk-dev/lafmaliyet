@@ -7,7 +7,6 @@ import type { AmountRaw, KasaOkc } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 
 import type { BankPos, PosOkc } from "./day";
-import { ASILPOS_BRANCH_ID } from "./switch";
 
 /**
  * AsilPOS gününün gün sonu fotoğrafı (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto atsın";
@@ -57,12 +56,12 @@ export const ASILPOS_STAFF_NO_COUNT = {
 export const ASILPOS_STAFF_BEFORE_DAY_END_DESCRIPTION = "Kasa raporu AsilPOS'tan gelecek: kapanışta AsilPOS'ta Günü kapat'a basın.";
 
 /**
- * Personelin kasa formu yerine bilgi mi görür: AsilPOS'un şubesinde AsilPOS günü, gün sonu gelmedi ve rapor yok. Yönetici
- * formu görür (AsilPOS hiç göndermezse yedek yol); dünden eski gün geç rapor yolundan girer. Elle girilmiş rapor eski yolla.
- * `asilposBranch`: AsilPOS'un şubesi (sunucu asilposBranchId ile verir; yoksa ASILPOS_BRANCH_ID)
+ * Personelin kasa formu yerine bilgi mi görür: şubenin kendi AsilPOS günü (`asilposDay`, şubenin geçiş günüyle), gün sonu
+ * gelmedi ve rapor yok. Yönetici formu görür (AsilPOS hiç göndermezse yedek yol); dünden eski gün geç rapor yolundan girer.
+ * Elle girilmiş rapor eski yolla
  */
-export function staffBeforeAsilposDayEnd(o: { admin: boolean; branchId: string; asilposDay: boolean; dayEnd: boolean; hasReport: boolean; asilposBranch?: string }): boolean {
-  return !o.admin && o.branchId === (o.asilposBranch ?? ASILPOS_BRANCH_ID) && o.asilposDay && !o.dayEnd && !o.hasReport;
+export function staffBeforeAsilposDayEnd(o: { admin: boolean; asilposDay: boolean; dayEnd: boolean; hasReport: boolean }): boolean {
+  return !o.admin && o.asilposDay && !o.dayEnd && !o.hasReport;
 }
 
 /**

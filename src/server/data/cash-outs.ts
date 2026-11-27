@@ -8,7 +8,7 @@ import { asilposAwaitingCategory, asilposInsertedRow } from "@/lib/asilpos/cash-
 import { ownerRowAmountOnly } from "@/lib/roles";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { loadPosTillIds } from "@/server/pos/tills";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
@@ -86,9 +86,14 @@ export async function cashOutsBetween(from: string, to: string, branchId?: strin
     .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to), sube))
     .orderBy(asc(s.cashOuts.date), asc(s.cashOuts.createdAt), asc(s.cashOuts.id))
     .limit(2000);
+  // Satırın şubesi yalnız kategori denetimi için (çok şube: her satır kendi şubesinin gün sonuyla); istemciye gitmez
+  const fromPos = rows.filter((r) => r.asilposId !== null).map((r) => r.id);
+  const branchOf = fromPos.length
+    ? new Map((await getDb().select({ id: s.cashOuts.id, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(inArray(s.cashOuts.id, fromPos))).map((r) => [r.id, r.branchId]))
+    : new Map<number, string>();
   const awaiting = await asilposAwaitingCategoryIds(
     getDb(),
-    rows.map((r) => ({ ...r, hasExpense: r.expenseEntryId !== null })),
+    rows.map((r) => ({ ...r, branchId: branchOf.get(r.id) ?? "", hasExpense: r.expenseEntryId !== null })),
   );
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(), asilposAwaitingCategory: awaiting.has(r.id) }));
 }
@@ -101,25 +106,32 @@ export async function cashOutsBetween(from: string, to: string, branchId?: strin
  */
 export async function asilposAwaitingCategoryIds(
   db: DB | Tx,
-  rows: readonly { id: number; date: string; kind: CashOutKind; asilposId: string | null; createdBy: number | null; createdByName: string; hasExpense: boolean }[],
+  rows: readonly { id: number; branchId: string; date: string; kind: CashOutKind; asilposId: string | null; createdBy: number | null; createdByName: string; hasExpense: boolean }[],
 ): Promise<Set<number>> {
   const candidates = rows.filter((r) => asilposInsertedRow(r) && r.kind === "harcama" && !r.hasExpense);
   if (!candidates.length) return new Set();
+  // Her satırın kendi şubesinin gün sonu (çok şube): yalnız AsilPOS kasalarının günleri
+  const tills = (await loadPosTillIds(db)).ids;
   const days = await db
-    .select({ cashMoves: s.posDayReports.cashMoves })
+    .select({ branchId: s.posDayReports.branchId, cashMoves: s.posDayReports.cashMoves })
     .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, await asilposBranchId(db)), inArray(s.posDayReports.date, [...new Set(candidates.map((r) => r.date))])));
+    .where(
+      and(
+        inArray(s.posDayReports.branchId, [...new Set(candidates.map((r) => r.branchId))].filter((b) => tills.includes(b))),
+        inArray(s.posDayReports.date, [...new Set(candidates.map((r) => r.date))]),
+      ),
+    );
   const categories = await db.select().from(s.expenseCategories);
   // Hareketin kategorisi (saklı gövde şemadan geçmişti; yine de gevşek okunur): kimlik → kategori ya da null
   const moveCategory = new Map<string, number | null>();
   for (const d of days) {
     for (const m of Array.isArray(d.cashMoves) ? (d.cashMoves as unknown[]) : []) {
       const move = m as { id?: unknown; categoryId?: unknown } | null;
-      if (move && typeof move.id === "string") moveCategory.set(move.id, typeof move.categoryId === "number" ? move.categoryId : null);
+      if (move && typeof move.id === "string") moveCategory.set(`${d.branchId}|${move.id}`, typeof move.categoryId === "number" ? move.categoryId : null);
     }
   }
   const usable = (id: number) => categories.some((c) => c.id === id && staffCategory(c));
-  return new Set(candidates.filter((r) => asilposAwaitingCategory(r, moveCategory.get(r.asilposId!), usable)).map((r) => r.id));
+  return new Set(candidates.filter((r) => asilposAwaitingCategory(r, moveCategory.get(`${r.branchId}|${r.asilposId!}`), usable)).map((r) => r.id));
 }
 
 /** Günün kasadan çıkanları: verilen şubenin kasası, yoksa seçili şube ("Tümü"de hepsi) */

@@ -11,7 +11,7 @@ import { longDateTR } from "@/lib/reminders";
 import { currentVia } from "@/server/activity-via";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
+import { loadPosTills } from "@/server/pos/tills";
 import { UserError } from "@/server/user-error";
 
 /*
@@ -36,10 +36,10 @@ export async function blindCountSetting(branchId: string, db?: Reader): Promise<
   return (await resolveBranchSetting(BLIND_COUNT_GROUP, branchId, db)).value.enabled;
 }
 
-/** Bu kasa gününde kör sayım geçerli mi (ayar; AsilPOS'un şubesinin AsilPOS gününde hiçbir zaman) */
+/** Bu kasa gününde kör sayım geçerli mi (ayar; şubenin kendi AsilPOS gününde hiçbir zaman; çok şube) */
 export async function blindCountApplies(db: Reader, date: string, branchId: string): Promise<boolean> {
-  const [setting, asilposBranch, switchDay] = await Promise.all([blindCountSetting(branchId, db), asilposBranchId(db), asilposSwitchDay(db)]);
-  return blindCountOn({ setting, branchId, asilposBranch, asilposDay: branchId === asilposBranch && isAsilposDay(date, switchDay) });
+  const [setting, tills] = await Promise.all([blindCountSetting(branchId, db), loadPosTills(db)]);
+  return blindCountOn({ setting, till: tills.ids.includes(branchId), asilposDay: isAsilposDay(date, tills.switchDays[branchId] ?? null) });
 }
 
 /** Günün sayım satırları, sırayla (ilk satır kör sayım) */

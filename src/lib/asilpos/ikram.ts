@@ -3,7 +3,9 @@ import { money } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 
 import type { PosDayZ, PosIkram, PosIptal } from "./day";
-import { isAsilposBranch, isAsilposDay } from "./switch";
+import { LEGACY_POS_BRANCH_ID, tillDayKey } from "@/lib/pos/tills";
+
+import { isAsilposDay } from "./switch";
 
 /**
  * AsilPOS'un ikramları (denetim E-38; docs/ASILPOS.md › İkram, docs/ZAYI-IKRAM.md). Saf: veri kümesi, Zayi & ikram,
@@ -23,6 +25,8 @@ import { isAsilposBranch, isAsilposDay } from "./switch";
 /** AsilPOS'un bir ikram satırı (pos_day_reports.ikram), panel ürünüyle çözülmüş */
 export interface AsilposIkramLine {
   date: string;
+  /** Satırın kasasının şubesi (çok şube; okuyucu verir) */
+  branchId?: string;
   /** Nedeni "Zayi: " ile başlayan satır zayidir (asilposLineKind); öteki her satır (ödenmez dahil) ikram */
   kind: "zayi" | "ikram";
   /** AsilPOS'taki ad (POS adı) */
@@ -138,24 +142,32 @@ export function asilposListByKind(lines: readonly (Pick<PosIkram, "menuValue" | 
  * günlerde paneldeki ürün ikramı sayılmaz) ve ikram satırları. Geçiş günü yoksa veri kümesinde hiç yoktur.
  */
 export interface AsilposIkramData {
+  /** Okunan kasaların en erken geçiş günü */
   switchDay: string;
+  /** Gün sonu gelen günler (tarihler, tekil) */
   days: string[];
+  /**
+   * Gün sonu gelen (şube, gün) anahtarları (src/lib/pos/tills.ts tillDayKey): panelWasteCounts bunlara bakar. Okuyucu
+   * her zaman verir; verilmemiş eski veri (tek kasa) ikramTillDays ile Marina'nın günleri sayılır
+   */
+  tillDays?: string[];
   lines: AsilposIkramLine[];
 }
 
 /**
  * Paneldeki kayıt hesaba girer mi: AsilPOS'un gün sonu gelen günde (geçiş gününden itibaren) ürün ikramı girmez,
- * AsilPOS'taki sayılır. Zayi ve hammadde ikramı her zaman girer. `asilposDays` AsilPOS'un şubesinin gün sonu gelen
- * günleridir: kayıt yalnız o şubenin kasasınınsa düşer, ModPOS'ta kalan şubenin aynı günkü ürün ikramı sayılır
- * (denetim 21 Kasım #5). Şubesi verilmeyen kayıt Tuzla'nındır. `asilposBranch`: AsilPOS'un şubesi (Dataset.asilposBranch;
- * verilmezse geri düşüş değeri)
+ * AsilPOS'taki sayılır. Zayi ve hammadde ikramı her zaman girer. `tillDays` gün sonu gelen (şube, gün) anahtarlarıdır
+ * (src/lib/pos/tills.ts tillDayKey; çok şube): kayıt yalnız kendi şubesinin kasasının o günü geldiyse düşer, ModPOS'ta
+ * kalan şubenin aynı günkü ürün ikramı sayılır (denetim 21 Kasım #5; R9). Şubesi verilmeyen kayıt Tuzla'nındır
  */
-export function panelWasteCounts(
-  w: { date: string; kind: "zayi" | "ikram"; productId: number | null; branchId?: string | null },
-  asilposDays: ReadonlySet<string>,
-  asilposBranch?: string,
-): boolean {
-  return !(w.kind === "ikram" && w.productId !== null && isAsilposBranch(w.branchId, asilposBranch) && asilposDays.has(w.date));
+export function panelWasteCounts(w: { date: string; kind: "zayi" | "ikram"; productId: number | null; branchId?: string | null }, tillDays: ReadonlySet<string>): boolean {
+  return !(w.kind === "ikram" && w.productId !== null && tillDays.has(tillDayKey(w.branchId, w.date)));
+}
+
+/** Gün sonu gelen (şube, gün) anahtarları; `tillDays` verilmemiş eski veride (tek kasa) Marina'nın günleri */
+export function ikramTillDays(data: Pick<AsilposIkramData, "days" | "tillDays"> | null | undefined): Set<string> {
+  if (!data) return new Set();
+  return new Set(data.tillDays ?? data.days.map((d) => tillDayKey(LEGACY_POS_BRANCH_ID, d)));
 }
 
 /** Zayi & ikram'ın metinleri (ekran, eylemlerin reddi, kasa e-postası) */

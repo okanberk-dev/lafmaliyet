@@ -63,7 +63,8 @@ export interface BranchRow {
 export const DEFAULT_BRANCHES: readonly Omit<BranchRow, "active">[] = [
   // Özellikler sahibin varsayılanı (src/lib/branch-features.ts): karaoke Tuzla'da, sipariş, garson ve yemek kartı her şubede
   { id: DEFAULT_BRANCH_ID, name: "Tuzla", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 1, features: ["karaoke", "siparis", "garson", "yemek_karti"] },
-  { id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 2, features: ["siparis", "garson", "yemek_karti"] },
+  // Marina'nın kasası AsilPOS (sahibin kararı, 27 Kasım 2026: Marina'da ModPOS tamamen bitti; göç 0099 canlıdakini çevirir)
+  { id: "marina", name: "Marina", kind: "fiziksel", posSource: "asilpos", openedOn: null, sortOrder: 2, features: ["siparis", "garson", "yemek_karti"] },
   { id: ONLINE_BRANCH_ID, name: "laffogato.net", kind: "online", posSource: "yok", openedOn: null, sortOrder: 3, features: [] },
 ];
 /** Tohumun bir kez çalıştığının işareti (integration_state) */

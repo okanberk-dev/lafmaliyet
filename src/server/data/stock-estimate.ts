@@ -7,7 +7,7 @@ import { businessDate } from "@/lib/cash-report";
 import { SEPARATE_CATEGORIES, settingsFromRows } from "@/lib/constants";
 import { isCountable } from "@/lib/ingredient-usage";
 import { asilposSalesCountFrom } from "@/lib/asilpos/sales";
-import { branchSwitchDay } from "@/lib/asilpos/switch";
+import { singleTill } from "@/lib/pos/tills";
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { buildSiteLinkIndex, siteBranchOf } from "@/lib/site-sales/calc";
@@ -30,7 +30,7 @@ import { productLabel } from "@/lib/waste";
 import { currentBranchScope } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
+import { switchDayOf } from "@/server/pos/tills";
 import { siteLinkSecret } from "@/server/site-link";
 import { loadBranchSiteSales } from "@/server/site-sales/sync";
 
@@ -95,10 +95,9 @@ export async function loadStockEstimate(
       .where(eq(s.stockThresholds.branchId, STOCK_ESTIMATE_BRANCH)),
   ]);
   const settings = settingsFromRows(settingRows);
-  // Tahmin AsilPOS'un gün sonlarıyla: tahminin şubesi AsilPOS'un şubesi değilse (kasa kaynağı başka şubeye geçti) tahmin
-  // yok (stok_tahmini özelliği ayrı dilim; docs/SUBE.md › Sırada ne var)
-  // Geçiş günü AsilPOS'un şubesinin şube ayarından (SUBE_AYAR_GRUBU; settings tablosundaki eski kayıt yalnız satırı yokken)
-  const switchDay = branchSwitchDay(await asilposSwitchDay(db), STOCK_ESTIMATE_BRANCH, await asilposBranchId(db));
+  // Tahmin Marina'nın AsilPOS gün sonlarıyla: Marina'nın kasası AsilPOS değilse tahmin yok (öteki kasalar için tahmin ayrı
+  // dilim; docs/SUBE.md › Sırada ne var). Geçiş günü Marina'nın şube ayarından (switchDayOf; çok şube)
+  const switchDay = await switchDayOf(STOCK_ESTIMATE_BRANCH, db);
   if (!switchDay) return null;
 
   // AsilPOS'un sayıldığı ilk gün: geçiş ayında Marina'nın ModPOS listesi varsa onun son gününden sonra (veri kümesiyle
@@ -150,7 +149,7 @@ export async function loadStockEstimate(
       })
       .from(s.wasteEntries)
       .where(and(eq(s.wasteEntries.branchId, STOCK_ESTIMATE_BRANCH), range(s.wasteEntries.date))),
-    loadAsilposIkram(db, switchDay, { from: asilposFrom, to: today }, STOCK_ESTIMATE_BRANCH),
+    loadAsilposIkram(db, singleTill(STOCK_ESTIMATE_BRANCH, switchDay), { from: asilposFrom, to: today }, STOCK_ESTIMATE_BRANCH),
     receiptLots(db, asilposFrom, today),
     closedDaysBetween(asilposFrom, addDays(today, -1), db, STOCK_ESTIMATE_BRANCH),
     onlineOn && branch ? loadBranchSiteSales(branch, onlineMonthsNeeded(onlineFrom, today, 0), db) : Promise.resolve([]),

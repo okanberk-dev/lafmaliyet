@@ -14,9 +14,8 @@ import { KasaOkcRaw, type KasaOkc } from "@/lib/photo-read/schemas";
 import { aiConfigured, extractImage, loadAiSettings, type AiResult } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, type AiClient, type AiImageType, type AiTimeouts } from "@/server/ai/run";
 import { schema as s, type DB } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
 import { dayPhotoIds, asilposDayDevice } from "@/server/asilpos/foto";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { switchDayOf } from "@/server/pos/tills";
 import { getPhoto, readPhoto } from "@/server/storage/photos";
 
 import { ocrImage, OCR_TIMEOUT_MS } from "./ocr";
@@ -121,9 +120,8 @@ export async function readAsilposDayPhoto(
   // geçilir (ucuz sığmazsa kod, güçlü sığmazsa ucuz okunuş kalır). Yükleme yolunda son an yok (60 sn'ye sığar)
   const fits = (ms: number) => o.deadlineAt === undefined || o.deadlineAt - Date.now() >= ms + STEP_MARGIN_MS;
   const late: ReadStep = { ok: false, code: "timeout", message: "Süre yetmedi" };
-  // AsilPOS'un şubesi kütükten (asilposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
-  if (branchId !== (await asilposBranchId(db))) return null;
-  if (!isAsilposDay(day, await loadAsilposSwitchDay(db))) return null;
+  // Şubenin kendi kasasının AsilPOS günü mü (çok şube; kasası ModPOS olan şubede geçiş günü yok)
+  if (!isAsilposDay(day, await switchDayOf(branchId, db))) return null;
   const device = await asilposDayDevice(db, day, branchId);
   if (!device) return null;
   const [settings, report] = await Promise.all([loadAiSettings(), compareReport(db, day, branchId, device)]);
@@ -178,9 +176,8 @@ const UNREAD_MAX_ATTEMPTS = 6;
  * yoksa kod) bir kez daha dener. Okunan fotoğraf sayısı döner; çağıran karşılaştırmayı yeniler. Fotoğraf eklenince
  * (after) ve gün sonu otomasyonunda (günlük iş) çağrılır
  */
-export async function readUnreadDayPhotos(db: DB, date: string, deps: StrongRecheckDeps = {}): Promise<number> {
-  const branchId = await asilposBranchId(db);
-  if (!isAsilposDay(date, await loadAsilposSwitchDay(db))) return 0;
+export async function readUnreadDayPhotos(db: DB, date: string, branchId: string, deps: StrongRecheckDeps = {}): Promise<number> {
+  if (!isAsilposDay(date, await switchDayOf(branchId, db))) return 0;
   const [st] = await db
     .select({ reportId: s.asilposDayEnds.reportId, autoValues: s.asilposDayEnds.autoValues, pendingPhotos: s.asilposDayEnds.pendingPhotos })
     .from(s.asilposDayEnds)
@@ -240,8 +237,7 @@ const AFTER_STRONG_MS = 10_000;
  * slipWithZTraces) Z no hiç okunmaz; o fotoğraf da bir kez güçlü modelle okunur. Yapay zekâ kapalıysa hiçbir şey
  * yapılmaz. Güçlü okuma denenen fotoğraf sayısı döner (çağıran karşılaştırmayı yeniler, sonra e-postaları gönderir)
  */
-export async function strongRecheckDayPhotos(db: DB, date: string, deps: StrongRecheckDeps = {}): Promise<number> {
-  const branchId = await asilposBranchId(db);
+export async function strongRecheckDayPhotos(db: DB, date: string, branchId: string, deps: StrongRecheckDeps = {}): Promise<number> {
   const [st] = await db
     .select({ reportId: s.asilposDayEnds.reportId, autoValues: s.asilposDayEnds.autoValues, photoCheck: s.asilposDayEnds.photoCheck })
     .from(s.asilposDayEnds)

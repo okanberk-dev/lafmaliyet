@@ -49,7 +49,12 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - **Durum (27 Kasım gece):** P1'in 12 bulgusu ve iki ek maddesi testleriyle düzeltildi (`wip/entegre3-fix`, #163);
   ikinci bağımsız inceleme yarıda (kullanım limiti). Kasa deposunda ad değişikliği `asilpos-adi` dalında, incelemesi kaldı.
 - **AsilPOS ilerleme:** panelin ad değişikliği #166 (P1'in üstünde), kasa deposunda ad değişikliği #187 ve çoklu şube
-  kasa tarafı #188 hazır; panel çoklu şube (B1) + Marina yalnız AsilPOS sırada; daraltma (A3) ≥ 7 gün sonra.
+  kasa tarafı #188 hazır. Panel çoklu şube (B1) + Marina yalnız AsilPOS `cok-sube-kasa` dalında hazır (#166'nın üstünde;
+  göç 0099): üç bağımsız incelemenin (para, anahtar, geçiş) doğrulanan bulguları testleriyle düzeltildi (süren ayın
+  kasa raporu beklemesi kasa başına, geçiş günü sonra olan kasanın komisyonu föyün markasıyla, komisyonun günleri takvim
+  günü, Marina dışı anahtar metinleri, anahtarın başka şubenin kasa hareketini yazmaması, kurulum kodunun kilidi). Dal
+  gönderilmedi, PR açılmadı: #166'dan sonra birleşir, gün sonu penceresinin (22:00–03:00) dışında. Sonra sahip:
+  YAPILACAKLAR.md › Dalga 3'teki [Sahip] maddesi. Şube ayrımı (plan B adım 9) ayrı paket. Daraltma (A3) ≥ 7 gün sonra.
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
@@ -110,8 +115,8 @@ Ağır veri yolu ve Faturalar listesinin sayfalanması; ModPOS föyünden kasa f
 araçları (kasadan_cikanlar, zayi_ikram, komisyon_kanallari) ve ~60 işlem uyarlayıcısı; mutabakatta resmi tatiller
 ("Geç geldi" yanlış uyarısı); şube başına kalan ayarlar (uyarı sesi / kontrol hatırlatma saatleri); Tükendi'nin şube
 başına tutulması; karaoke "Gelmedi"; senkron Faz 2'nin panel tarafı; tedarikçi "Birleştir"; cari v2.
-AsilPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; iki şubeli AsilPOS;
-`bankPosPending` değişikliğinin AsilPOS'ta birleşmesi.
+AsilPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; çok şubeli kasanın kasa tarafı
+(#188, ikinci kasa açılmadan önce); `bankPosPending` değişikliğinin AsilPOS'ta birleşmesi.
 
 ## Sahibin tarafında (kod değil)
 

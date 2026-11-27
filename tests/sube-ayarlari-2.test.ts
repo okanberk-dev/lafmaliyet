@@ -169,21 +169,21 @@ test("kaynak: geçiş günü, ModPOS ay yedeği ve komisyon süreleri eski genel
     if (/COMMISSION_SETTINGS_KEY/.test(src)) bad.push(`${f}: COMMISSION_SETTINGS_KEY`);
   }
   assert.deepEqual(bad, [], "eski kayıt yalnız şube ayarının geçiş okumasında (legacySettings, legacyKey)");
-  // Okuyucular tek yerde: AsilPOS'un şubesinin şube ayarı
-  const branch = read("src/server/asilpos/branch.ts");
-  assert.match(branch, /export async function asilposSwitchDay\(db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return switchDayOf\(await asilposBranchId\(db\), db\);/);
-  assert.match(branch, /export async function switchDayOf\(branchId: string, db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return \(await resolveBranchSetting\(ASILPOS_GROUP, branchId, db\)\)\.value\.switchDay;/);
+  // Okuyucular tek yerde (çok şube): kasaların listesi kütükten, her kasanın geçiş günü kendi şube ayarından
+  const tills = read("src/server/pos/tills.ts");
+  assert.match(tills, /resolveForTills\(ASILPOS_GROUP, db, \{ closed: true \}\)/);
+  assert.match(tills, /if \(!ids\.includes\(branchId\)\) return null;\n\s+return \(await resolveBranchSetting\(ASILPOS_GROUP, branchId, db\)\)\.value\.switchDay;/);
   // Gün sonunu yazan ve silen işlem geçiş gününü yazdığı şubeyle okur (şube işlemin içinde yeniden türetilmez)
   assert.match(read("src/server/asilpos/ingest.ts"), /isAsilposDay\(day\.date, await switchDayOf\(branchId, tx\)\)/);
   assert.match(read("src/server/asilpos/admin.ts"), /const counted = isAsilposDay\(date, await switchDayOf\(branchId, tx\)\);/);
-  assert.match(read("src/server/asilpos/status.ts"), /export async function loadAsilposSwitchDay\(db: DB = getDb\(\)\): Promise<string \| null> \{\s*return asilposSwitchDay\(db\);/);
-  assert.match(read("src/server/data/asilpos-ikram.ts"), /export async function asilposSwitchDayOf\(db: Reader\): Promise<string \| null> \{\s*return asilposSwitchDay\(db\);/);
-  assert.match(read("src/server/data/dataset.ts"), /asilposGecisGunu: switchDay, acikGun: calendar\.value\.openDays/);
+  assert.match(read("src/server/data/asilpos-ikram.ts"), /export async function asilposSwitchDaysOf\(db: Reader\): Promise<SwitchDays> \{\s*return loadSwitchDays\(db\);/);
+  assert.match(read("src/server/data/dataset.ts"), /asilposGecisGunu: earliestSwitchDay\(switchDays\), acikGun: calendar\.value\.openDays/);
   // Yazım şube ayarına, grup kilidiyle
   const admin = read("src/server/asilpos/admin.ts");
-  assert.match(admin, /await lockGroup\(tx, ASILPOS_GROUP\.id\);[\s\S]*?if \(known\) await putBranchSetting\(tx, ASILPOS_GROUP, branchId, \{ switchDay: day \}, me\.name\);/);
-  // Kütükte AsilPOS'un şubesi yoksa (tek şubeli eski kurulum) eski genel kayda, okuyanla aynı yere
-  assert.match(admin, /const key = ASILPOS_GROUP\.legacySettings!\.switchDay;/);
+  assert.match(admin, /await lockGroup\(tx, ASILPOS_GROUP\.id\);[\s\S]*?await putBranchSetting\(tx, ASILPOS_GROUP, branchId, \{ switchDay: day \}, me\.name\);/);
+  // Eski genel kayda artık yazılmaz (çok şube); kapalı dönemi etkileyen değişiklik yazılmaz
+  assert.doesNotMatch(admin, /legacySettings!/);
+  assert.match(admin, /const refusal = lockRefusal\(/);
   // Komisyon: hakediş işletmenin; son gün seçiciden bağımsız, şubelerin en kısa süresiyle (ekran, zil, Bugün, e-posta aynı)
   const commission = read("src/server/data/commission.ts");
   assert.doesNotMatch(commission, /settingsBranch/);
@@ -199,25 +199,27 @@ test("kaynak: AsilPOS'un imzalı uçları anahtarı şube ayarından okur (panel
   const routes = ["src/app/api/pos/gun/route.ts", ...readdirSync("src/app/api/panel/pos").map((d) => `src/app/api/panel/pos/${d}/route.ts`)];
   for (const f of routes) {
     const src = read(f);
-    // İsteğin anahtarı: önbellek ön süzgeç, imza tutarsa veritabanından yeniden (döndürülen eski anahtar geçmez)
-    assert.match(src, /await asilposRequestSecret\(request(, body)?\)/, f);
-    assert.doesNotMatch(src, /[^t] asilpos(Request)?Secret\(/, `${f}: senkron okuma kalmadı`);
+    // İsteğin kasası: anahtar şubeyi bulur; önbellek ön süzgeç, imza tutarsa veritabanından yeniden (döndürülen eski anahtar geçmez)
+    assert.match(src, /await posRequestCaller\(request(, body)?\)/, f);
+    assert.doesNotMatch(src, /asilpos(Request)?Secret\(/, `${f}: eski tek anahtar okuması kalmadı`);
   }
   const branch = read("src/server/asilpos/branch.ts");
-  assert.match(branch, /if \(stored\) return \{ secret: stored, source: "panel", envName \};/);
+  // Ortamdaki anahtar yalnız eski kurulumun şubesinin, o şubenin saklanan anahtarı yokken
+  assert.match(branch, /if \(!raw\.has\(LEGACY_POS_BRANCH_ID\) && env0\) raw\.set\(LEGACY_POS_BRANCH_ID, \{ value: env0, source: "ortam" \}\);/);
   // Eylem: yalnız yönetici, yalnız AsilPOS'un şubesinde, sitenin anahtarı reddedilir; anahtar işlem geçmişine yazılmaz
   const action = read("src/server/actions/branch-settings.ts");
   const save = action.slice(action.indexOf("export async function saveAsilposSecret"));
   assert.match(save, /const me = await requireAdmin\(\);/);
-  assert.match(save, /if \(d\.secret !== null && d\.branchId !== \(await asilposBranchId\(db\)\)\) throw new UserError/);
+  assert.match(save, /if \(!ids\.includes\(d\.branchId\) && !install\) throw new UserError/);
+  assert.match(save, /const taken = await posKeyTaken\(d\.branchId, d\.secret, db\);/, "başka şubenin anahtarı reddedilir");
   // Parolayla (anahtar gün sonu yazımlarının güven kökü), denetimlerden sonra, yazımdan önce
   assert.ok(save.indexOf("await requireStepUp(me, confirm,") > save.indexOf("KARAOKE_SYNC_SECRET"));
   assert.ok(save.indexOf("await requireStepUp(me, confirm,") < save.indexOf("db.transaction("));
-  assert.ok(save.indexOf("forgetAsilposSecret();") > save.indexOf("db.transaction("), "kayıttan sonra önbellek düşer");
+  assert.ok(save.indexOf("forgetPosKeys();") > save.indexOf("db.transaction("), "kayıttan sonra önbellek düşer");
   // İmzalı uçların okuması önbellekli ve veritabanı hatasında null (503)
-  assert.match(branch, /if \(hit && now - hit\.at < ASILPOS_BRANCH_CACHE_MS\) entry = hit;/);
-  assert.match(branch, /console\.error\("\[asilpos\] anahtar okunamadı", e\);\s*return null;/);
-  assert.match(branch, /export function forgetAsilposBranch\(\): void \{\s*cache = new WeakMap\(\);\s*forgetAsilposSecret\(\);/);
+  assert.match(branch, /if \(hit && now - hit\.at < POS_KEYS_CACHE_MS\) return \{ \.\.\.hit, fresh: false \};/);
+  assert.match(branch, /console\.error\("\[asilpos\] anahtarlar okunamadı", e\);\s*return null;/);
+  assert.match(branch, /export function forgetPosBranches\(\): void \{\s*forgetPosTills\(\);\s*forgetPosKeys\(\);/);
   assert.match(save, /d\.secret === process\.env\.KARAOKE_SYNC_SECRET\?\.trim\(\)/);
   assert.doesNotMatch(save.slice(save.indexOf("logSetting")), /\$\{d\.secret\}/, "anahtar işlem geçmişine yazılmaz");
   // İstemciye giden kart verisinde gizli alan yok
@@ -226,11 +228,11 @@ test("kaynak: AsilPOS'un imzalı uçları anahtarı şube ayarından okur (panel
 
 test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bileşenler, şubeyle", () => {
   const page = read("src/app/panel/subeler/[id]/page.tsx");
-  for (const re of [/<AsilposBranchCard/, /<ModposBranchCard/, /<TillDeviceCard view=\{device\} asilpos=\{asilposHere\} \/>/, /<ChannelSettingsCard settings=\{effectiveSettings\(commission\.value\.channels\)\}/, /<CalendarCard view=\{calendar\} \/>/]) {
+  for (const re of [/<AsilposBranchCard/, /<ModposBranchCard/, /<TillDeviceCard view=\{device\} asilpos=\{tillHere\} \/>/, /<ChannelSettingsCard settings=\{effectiveSettings\(commission\.value\.channels\)\}/, /<CalendarCard view=\{calendar\} \/>/]) {
     assert.match(page, re);
   }
-  // AsilPOS kartı AsilPOS'un (türetilmiş) şubesinde: kütükte kaynağı ModPOS görünse de (sunucu ve Ayarlar ile aynı şube)
-  assert.match(page, /const asilposHere = branch\.id === \(await asilposBranchId\(\)\);/);
+  // AsilPOS kartı kasası AsilPOS olan ya da kurulumu yapılmış şubede (çok şube; sunucu aynı kurala bakar)
+  assert.match(page, /const asilposHere = tillHere \|\| Boolean\(installed\);/);
   assert.match(page, /sourceModpos: branch\.posSource !== "asilpos",/);
   assert.match(page, /<AsilposOldSecretCard branchId=\{branch\.id\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
   // "X şubesinde düzenle" bağlantısı kartı olan sayfaya çıkar: başka şube bu şubenin ayarını kullanıyorsa kart çizilir

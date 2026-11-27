@@ -5,7 +5,6 @@ import { addDays, shiftMonth } from "@/lib/reminders";
 
 import { checkAsilposRequest } from "./request";
 import { modposThroughOf } from "./sales";
-import { ASILPOS_BRANCH_ID } from "./switch";
 
 /**
  * AsilPOS'un ModPOS dönemi (docs/ASILPOS.md › ModPOS dönemi: `GET /api/panel/pos/modpos-gunler`; saf, testleri
@@ -160,14 +159,16 @@ export type ModposDaysCheck = { ok: true; sube: string } | { ok: false; status: 
  * İsteğin denetimi: anahtar (503), imza (401; yol ve sıralı sorgu imzanın içinde, gövdesiz GET), sonra şube: yoksa ya
  * da bozuksa 400 `{ error: "invalid", field: "sube" }`, AsilPOS'un şubesi değilse 409 `{ error: "wrong_branch", sube,
  * expected }` (gün sonunun kuralı: başka şubeye ayarlı kasa başka şubenin rakamını almaz). İmzasız istek şubeyi öğrenmez.
- * `expected`: AsilPOS'un şubesi (sunucu kütükten okur, asilposBranchId); verilmezse geri düşüş değeri
+ * `expected`: anahtarın şubesi (çok şube; sunucu imzanın tuttuğu anahtardan bulur, src/server/asilpos/branch.ts
+ * resolvePosCaller); null: imza hiçbir kasanınkiyle tutmadı (401)
  */
-export function checkModposDaysRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number; expected?: string }): ModposDaysCheck {
+export function checkModposDaysRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number; expected: string | null }): ModposDaysCheck {
   const check = checkAsilposRequest({ ...input, method: "GET", body: "", maxBytes: 0 });
   if (!check.ok) return { ok: false, status: check.status, body: { error: check.error } };
+  if (input.expected === null) return { ok: false, status: 401, body: { error: "unauthorized" } };
   const sube = modposSube(input.url);
   if (sube === null) return { ok: false, status: 400, body: { error: "invalid", field: "sube" } };
-  const expected = input.expected ?? ASILPOS_BRANCH_ID;
+  const expected = input.expected;
   if (sube !== expected) return { ok: false, status: 409, body: { error: "wrong_branch", sube, expected } };
   return { ok: true, sube };
 }

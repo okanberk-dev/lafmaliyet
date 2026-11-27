@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
+
 import { DURUM_ANAHTARI, ZIL_ONEKI } from "./eski-adlar";
 
 import { dateTimeTR } from "@/lib/format";
@@ -25,6 +27,17 @@ import { dayMonthYearTR, daysUntilText, isAsilposDay } from "./switch";
  */
 export const ASILPOS_STATE_KEY = DURUM_ANAHTARI;
 export const ASILPOS_STATE_KEY_NEW = "asilpos";
+
+/**
+ * Bir kasanın durum satırının anahtarları (çok şube, 27 Kasım 2026); yeni adlı önce okunur, eski adlı yazılır (`write`).
+ * Eski tek kasalı kurulumun şubesi (Marina) genel satırda kalır (ASILPOS_STATE_KEY: canlıdaki eski sürüm ve geri dönüş
+ * onu okur), öteki kasalar `<ad>:<şube>` satırında. İmzası doğrulanamayan isteklerin sayacı genel satırdadır (imza tutmayan
+ * istek bir şubeye bağlanamaz), her kasanın durumunda okunur
+ */
+export function stateKeysOf(branchId: string): { read: [string, string]; write: string } {
+  if (branchId === LEGACY_POS_BRANCH_ID) return { read: [ASILPOS_STATE_KEY_NEW, ASILPOS_STATE_KEY], write: ASILPOS_STATE_KEY };
+  return { read: [`${ASILPOS_STATE_KEY_NEW}:${branchId}`, `${ASILPOS_STATE_KEY}:${branchId}`], write: `${ASILPOS_STATE_KEY}:${branchId}` };
+}
 
 /** Son yazılan gün sonu */
 export interface AsilposOk {
@@ -275,7 +288,7 @@ export function isUnverifiedAfterOk(state: AsilposState): boolean {
 /** Ayarlar kartının okuduğu her şey (src/server/asilpos/status.ts › loadAsilposCard) */
 export interface AsilposCardInput {
   /** Anahtarın sorunu (src/lib/asilpos/request.ts › asilposSecretProblem); null: bağlantı açık */
-  secretProblem: "missing" | "short" | "same_as_site" | null;
+  secretProblem: "missing" | "short" | "same_as_site" | "same_as_other_branch" | null;
   /**
    * Kullanılan anahtar nereden: Şube ayarları'nda saklanan ("panel", şifreli) ya da ortamdaki ASILPOS_SYNC_SECRET
    * ("ortam"); anahtar yoksa null. Eski çağıranlar vermeyebilir
@@ -286,6 +299,12 @@ export interface AsilposCardInput {
    * metinler bunu söyler. Verilmezse yeni ad
    */
   secretEnvName?: string;
+  /**
+   * Ortamdaki anahtarın da okunabildiği eski tek kasalı kurulumun şubesi mi (Marina, LEGACY_POS_BRANCH_ID; src/server/asilpos/
+   * branch.ts readKeys). Değilse ortamdaki değişken o şubeye hiç hizmet etmez: metinler şubenin kendi anahtarını söyler
+   * (Şube ayarları ya da kurulum kodu). Verilmezse eski kurulum (true)
+   */
+  secretLegacy?: boolean;
   switchDay: string | null;
   /** İş günü */
   today: string;
@@ -330,9 +349,22 @@ export interface AsilposCardSummary {
   short: string;
 }
 
-/** Anahtarın sorununun metni; `name`: ortamda okunan değişkenin adı */
-const secretText = (p: "missing" | "short" | "same_as_site", name = "ASILPOS_SYNC_SECRET"): string =>
-  p === "missing" ? `${name} yok` : p === "short" ? `${name} 32 karakterden kısa` : `${name} sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı`;
+/**
+ * Anahtarın sorununun metni (cümle içinde, küçük harfle başlar; satır başında `capital`); `name`: ortamda okunan
+ * değişkenin adı. `legacy` değilse (Marina dışındaki kasa) ortamdaki değişken o şubeye hiç hizmet etmez: şubenin anahtarı
+ * söylenir (inceleme 27 Kasım)
+ */
+const secretText = (p: "missing" | "short" | "same_as_site" | "same_as_other_branch", name = "ASILPOS_SYNC_SECRET", legacy = true): string => {
+  if (p === "same_as_other_branch") return "anahtar başka bir şubenin AsilPOS anahtarıyla aynı";
+  const key = legacy ? name : "şube anahtarı";
+  return p === "missing" ? `${key} yok` : p === "short" ? `${key} 32 karakterden kısa` : `${key} sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı`;
+};
+
+/** Cümlenin ilk harfi büyük */
+const capital = (s: string) => s.charAt(0).toLocaleUpperCase("tr") + s.slice(1);
+
+/** Marina dışındaki kasada anahtarın yolu: ortamdaki değişken değil, şubenin kendi anahtarı */
+const BRANCH_KEY_HINT = "Şube ayarları'ndan anahtar kaydedin ya da kurulum kodu gönderin.";
 
 /** Geçiş gününden bu yana: "10 Kasım'dan beri" */
 const sinceText = (d: string) => `${dayLocativeTR(d)}n beri`;
@@ -381,15 +413,17 @@ function summaryOf(c: AsilposCardInput): Omit<AsilposCardSummary, "dayRejections
   const last = c.lastDay ? `Son gün sonu ${dayText(c.lastDay.date, c.today)} (Z ${c.lastDay.zNo}), alındı ${dateTimeTR(c.lastDay.receivedAt)}.` : null;
 
   if (c.secretProblem) {
+    const legacy = c.secretLegacy ?? true;
+    const problem = secretText(c.secretProblem, c.secretEnvName, legacy);
     if (c.switchDay) {
       return {
         tone: "red",
         badge: "Bağlantı kapalı",
-        headline: `Geçiş günü seçili (${dayMonthYearTR(c.switchDay)}) ama ${secretText(c.secretProblem, c.secretEnvName)}: AsilPOS günleri gelemez.`,
-        lines: [last].filter((x): x is string => x !== null),
+        headline: `Geçiş günü seçili (${dayMonthYearTR(c.switchDay)}) ama ${problem}: AsilPOS günleri gelemez.`,
+        lines: [last, legacy ? null : BRANCH_KEY_HINT].filter((x): x is string => x !== null),
       };
     }
-    if (c.secretProblem !== "missing") lines.push(`${secretText(c.secretProblem, c.secretEnvName)}: bağlantı kapalı. Ayrı, en az 32 karakterlik bir anahtar üretin.`);
+    if (c.secretProblem !== "missing") lines.push(`${capital(problem)}: bağlantı kapalı. Ayrı, en az 32 karakterlik bir anahtar üretin.`);
     if (c.totalDays) lines.push(`Daha önce gelen ${c.totalDays} gün saklanıyor, hiçbir hesaba girmiyor.`);
     return { tone: c.secretProblem === "missing" ? "gray" : "amber", badge: "Kurulmadı", headline: "Henüz kurulmadı · kasada ModPOS kullanılıyor.", lines };
   }

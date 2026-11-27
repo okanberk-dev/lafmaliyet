@@ -226,13 +226,12 @@ test("kaynak: zil, sabah e-postası ve AsilPOS kanıtı şubesiz okumaz", () => 
   // AsilPOS'un gün sonu kanıtı: şube verilmezse AsilPOS'un şubesininki (günün herhangi bir satırı değil)
   const closed = read("src/server/closed-days.ts");
   const ev = closed.slice(closed.indexOf("async function asilposEvidence"), closed.indexOf("/** İş gününün penceresi"));
-  assert.match(ev, /const branch = branchId \?\? asilposBranch;/);
-  assert.match(ev, /asilposBranchId\(db\)/, "AsilPOS'un şubesi kütükten (asilposBranchId)");
+  assert.match(ev, /const branches = branchId \? \[branchId\] : countedTillIds\(switchDays\);/, "şube verilmezse sayılan kasalar (çok şube)");
   assert.match(ev, /\.where\(and\(eq\(s\.posDayReports\.date, date\), eq\(s\.posDayReports\.branchId, branch\)\)\)/);
-  assert.match(ev, /branchSwitchDay\(switchDay, branch, asilposBranch\)/);
-  assert.match(ev, /asilposSwitchDay\(db\)/, "geçiş günü AsilPOS'un şubesinin şube ayarından");
+  assert.match(ev, /switchDayFor\(switchDays, branch\)/);
+  assert.match(ev, /loadSwitchDays\(db\)/, "geçiş günü şubenin şube ayarından");
   const saved = closed.slice(closed.indexOf("export async function onAsilposDaySaved"), closed.indexOf("export async function onNextReport"));
-  assert.match(saved, /branchSwitchDay\(switchDay, branchId, asilposBranch\)/);
+  assert.match(saved, /await switchDayOf\(branchId, tx\)/);
 });
 
 // ---------------------------------------------------------------- Personelin özel günleri

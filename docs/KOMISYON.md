@@ -26,7 +26,11 @@ ve hakediş işletmenin" notu ve **Marina payı** kartı (kanal kanal şubenin s
 - **ModPOS'ta kalan şube** (Tuzla) seçiliyken de geçiş ayından itibaren Z'deki yemek kartı ve online tek kanala yazılmaz
   (`modposScope`, `commissionScopeDays`): föyde markası olan kısım kanalına ("ModPOS föyünden"), kalan **Marka belirsiz**.
   Önceden şube görünümünde `tek` kuralı sürüyordu: Tuzla'nın bütün Z'si tek karta yazılır, "Tuzla payı" işletmenin bütün
-  faturasından büyük çıkabilirdi. Geçiş ayından önceki aylar eski kuralla (tek kanal).
+  faturasından büyük çıkabilirdi. Geçiş ayından önceki aylar eski kuralla (tek kanal). **Geçiş günü sonra olan kasa**
+  (çok şube, inceleme 27 Kasım 2026; ör. Kadıköy 10 Aralık'ta, Marina 22 Kasım'da geçer) seçiliyken de kasaların ilk
+  geçiş ayından kendi geçiş ayına dek aynı kural (`commissionScopeDays`: `modpos` ilk geçiş günü, kendi geçiş ayından
+  itibaren AsilPOS ayı kazanır; föyün markası ilk geçiş ayının başından okunur): önceden bu aylar `tek` yazılır, şubelerin
+  payı faturayı aşardı ve ileri bir geçiş günü kaydetmek geçmiş ayları değiştirirdi.
 - **Sonradan açılan şubenin açılış ayı** (Marina, 13 Kasım 2026) "kasa raporları ay ortasında başladı" sayılmaz
   (`openedOn`, Kasa'nın kuralı `tillOpenedOn` / `partialStart`); önceden Marina'nın Kasım'ındaki bütün kanallar "Satış
   bilinmiyor" çıkıyordu.
@@ -167,7 +171,8 @@ ekran ve uyarılar bugünkü gibi; geçiş gününden önceki AsilPOS günleri (
   (ModPOS'ta kalan şubenin Z'si 6.000 ₺, AsilPOS'ta kanalı seçilmemiş ödeme 300 ₺). Hiçbir karta yazılmaz; kartın oranı
   yalnız markası bilinen satışla hesaplanır." Grubun Z toplamı ve ortalama oranı onu da içerir.
 - **Eksik gün:** gün sonu gelmeyen gün kasa raporu varsa grubun toplamına rapordan girer (kart kart bilinmez), ikisi de
-  yoksa eksik sayılır (kapalı işaretli gün değil). Kanalın satışı o zaman ödemelerinin toplamıdır; `kasa-eksik` bilgisi
+  yoksa eksik sayılır (kapalı işaretli gün değil). Günler takvim günüdür: "Tümü"de iki kasanın aynı eksik günü "N gün"
+  metninde bir kez, kayıtlı gün sayısı da takvim günü (çok şube, inceleme 27 Kasım 2026). Kanalın satışı o zaman ödemelerinin toplamıdır; `kasa-eksik` bilgisi
   ne eksik kaldığını söyler ("9 gün AsilPOS gün sonu yok ve kanalı seçilmemiş 300 ₺ ödeme var ve Z'de markası belirsiz
   6.000 ₺ var; satış eksik kaldıysa oran yüksek görünür.") ve %6 aşımını kırmızıdan turuncuya indirir ("… 9 gün AsilPOS gün sonu yok; kesin değil, kontrol
   edin."). Eksiksiz AsilPOS ayında aşım kesindir (AsilPOS kartın ödemesini kendisi yollar).

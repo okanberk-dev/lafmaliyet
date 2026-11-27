@@ -7,11 +7,12 @@ import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
 import { clearedText, isUnverifiedAfterOk, asilposCardSummary, rejectionText, unverifiedText } from "@/lib/asilpos/status";
-import { ASILPOS_SWITCH_MAX_AHEAD, ASILPOS_SWITCH_MIN } from "@/lib/asilpos/switch";
+import { ASILPOS_SWITCH_MAX_AHEAD, ASILPOS_SWITCH_MIN, switchEffects } from "@/lib/asilpos/switch";
 import type { BranchRow } from "@/lib/branches";
 import { asilposCardView } from "@/lib/pos-cards";
+import { STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
 import { addDays, longDateTR } from "@/lib/reminders";
-import { loadAsilposCard } from "@/server/asilpos/status";
+import { loadAsilposCard, type AsilposCardData } from "@/server/asilpos/status";
 
 import type { ProductOption } from "../satislar/product-picker";
 import { AsilposDayDelete, AsilposSwitchDayForm, AsilposUnmatchedList } from "./asilpos-client";
@@ -36,19 +37,25 @@ const UNVERIFIED_DAYS = 14;
  * yalnız burada görünür (deneme), başka hiçbir ekrana ya da hesaba girmez (sahibin 26 Ekim kararı). Yalnız yönetici
  * (Ayarlar sayfası requireAdmin).
  *
- * Seçili şubeye göre (şube kapsamı C P2-2, src/lib/pos-cards.ts): kasası AsilPOS olmayan şube ya da online kanal
- * seçiliyken kart "Bu şubede kullanılmıyor" satırına iner (durum okunmaz); "Tümü"de birden çok kasa açıkken kart şubenin
- * adıyla. AsilPOS'un şubesi kütükten (kasa kaynağı AsilPOS olan şube, yoksa Marina).
+ * Seçili şubeye göre (şube kapsamı C P2-2, src/lib/pos-cards.ts; çok şube, 27 Kasım 2026): her AsilPOS kasasının kendi
+ * bölümü (durumu, geçiş günü, günleri, anahtarı). Kasası AsilPOS olan şube seçiliyken yalnız onun bölümü; "Tümü"de her
+ * kasanın adıyla bir bölüm; kasası AsilPOS olmayan şube ya da online kanal seçiliyken kart "Bu şubede kullanılmıyor"
+ * satırına iner (durum okunmaz). İmzası doğrulanamayan isteklerin sayacı şubeye bağlanamaz: her bölümde görünür.
  */
 export async function AsilposCard({ products, scope, branches }: { products: ProductOption[]; scope: string; branches: readonly BranchRow[] }) {
   const view = asilposCardView(scope, branches);
   if (view.kind === "elsewhere") return <PosElsewhereCard id="asilpos" icon={<Store />} title="AsilPOS (kasa)" system="AsilPOS" users={view.users} />;
   const now = new Date();
-  const data = await loadAsilposCard(undefined, now).catch((e) => {
-    console.error("AsilPOS durumu okunamadı", e);
-    return null;
-  });
-  if (!data) {
+  const all = await Promise.all(
+    view.ids.map((id) =>
+      loadAsilposCard(undefined, id, now).catch((e) => {
+        console.error("AsilPOS durumu okunamadı", id, e);
+        return null;
+      }),
+    ),
+  );
+  const datas = all.filter((d): d is AsilposCardData => d !== null);
+  if (datas.length !== all.length || !datas.length) {
     return (
       <SectionCard id="asilpos" icon={<Store />} title="AsilPOS (kasa)" summary="Durum okunamadı">
         <CardContent>
@@ -57,10 +64,47 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
       </SectionCard>
     );
   }
+  const nameOf = (id: string) => branches.find((b) => b.id === id)?.name ?? id;
+  // "Tümü"de birden çok kasa açıkken bölümler ve özet şubenin adıyla (ModPOS kartının şube bölümleri gibi)
+  const summary = datas.map((d) => (view.named ? `${nameOf(d.branchId)}: ${asilposCardSummary(d).short}` : asilposCardSummary(d).short)).join(" · ");
+  const anySwitch = datas.some((d) => d.switchDay);
+  return (
+    <SectionCard
+      id="asilpos"
+      icon={<Store />}
+      title="AsilPOS (kasa)"
+      summary={summary}
+      // Geçiş günü seçildiyse "ModPOS sayılır" cümlesi geçmişi anlatır: yalnız seçilmeden önce (sahibin isteği 24.11.2026)
+      description={
+        anySwitch
+          ? "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir."
+          : "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir. Geçiş günü seçilene kadar kasa ModPOS sayılır: AsilPOS'un gönderdiği günler yalnız burada görünür, hiçbir hesaba girmez."
+      }
+    >
+      <CardContent className="space-y-6">
+        {datas.map((data) => (
+          <TillSection
+            key={data.branchId}
+            data={data}
+            now={now}
+            products={products}
+            branchName={view.named ? nameOf(data.branchId) : null}
+            effects={switchEffects({
+              branchName: nameOf(data.branchId),
+              modposNames: branches.filter((b) => b.active && b.kind === "fiziksel" && b.posSource === "modpos").map((b) => b.name),
+              stockEstimate: data.branchId === STOCK_ESTIMATE_BRANCH,
+            })}
+          />
+        ))}
+      </CardContent>
+    </SectionCard>
+  );
+}
+
+/** Bir kasanın bölümü (şube adı yalnız "Tümü"de birden çok kasa varken) */
+function TillSection({ data, now, products, branchName, effects }: { data: AsilposCardData; now: Date; products: ProductOption[]; branchName: string | null; effects: string[] }) {
   const sum = asilposCardSummary(data);
   const { state, today } = data;
-  // "Tümü"de birden çok kasa açıkken kartın şubesi adıyla (ModPOS kartının şube bölümleri gibi)
-  const branchName = view.named ? (branches.find((b) => b.id === data.branchId)?.name ?? data.branchId) : null;
   const linked = data.secretProblem === null;
   // Bağlantı kapalıyken retler kırmızı değil (özet de saymaz)
   const rejectTone = linked ? "bad" : "neutral";
@@ -69,19 +113,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
   // Sonradan başarılı gönderim geldiyse bağlantı çalışıyor: uyarı değil, soluk bilgi
   const unverifiedLoud = unverified !== null && isUnverifiedAfterOk(state);
   return (
-    <SectionCard
-      id="asilpos"
-      icon={<Store />}
-      title="AsilPOS (kasa)"
-      summary={branchName ? `${branchName}: ${sum.short}` : sum.short}
-      // Geçiş günü seçildiyse "ModPOS sayılır" cümlesi geçmişi anlatır: yalnız seçilmeden önce (sahibin isteği 24.11.2026)
-      description={
-        data.switchDay
-          ? "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir."
-          : "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir. Geçiş günü seçilene kadar kasa ModPOS sayılır: AsilPOS'un gönderdiği günler yalnız burada görünür, hiçbir hesaba girmez."
-      }
-    >
-      <CardContent className="space-y-4">
+    <section className="space-y-4" aria-label={branchName ? `AsilPOS · ${branchName}` : undefined}>
         {branchName ? <p className="text-sm font-semibold text-ink">{branchName}</p> : null}
         <div className="space-y-1.5 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -114,7 +146,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
               size="sm"
               title={`${longDateTR(e.date)} reddedildi · ${dateTimeTR(e.at)} · ${e.status}`}
               // 409'un çözümü: gün hâlâ reddeden Z ile kayıtlıysa silinebilir
-              action={e.error === "z_conflict" && day && day.zNo === e.zNo ? <AsilposDayDelete date={e.date} zNo={day.zNo} lines={day.lines} label="Bu günün AsilPOS kaydını sil" /> : undefined}
+              action={e.error === "z_conflict" && day && day.zNo === e.zNo ? <AsilposDayDelete branchId={data.branchId} date={e.date} zNo={day.zNo} lines={day.lines} label="Bu günün AsilPOS kaydını sil" /> : undefined}
             >
               {rejectionText(e, today)}
             </Notice>
@@ -133,7 +165,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
           <Notice tone={unverifiedLoud ? "warn" : "neutral"} size="sm" title={`${unverifiedText(unverified)}${unverifiedLoud ? "" : " O günden beri gün sonları geliyor."}`} />
         ) : null}
 
-        <AsilposSwitchDayForm value={data.switchDay} today={today} min={ASILPOS_SWITCH_MIN} max={addDays(today, ASILPOS_SWITCH_MAX_AHEAD)} linked={linked} />
+        <AsilposSwitchDayForm branchId={data.branchId} effects={effects} value={data.switchDay} today={today} min={ASILPOS_SWITCH_MIN} max={addDays(today, ASILPOS_SWITCH_MAX_AHEAD)} linked={linked} />
 
         {data.days.length ? (
           <div className="space-y-2">
@@ -158,7 +190,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
                       Z {d.zNo} · {num(d.receipts)} fiş · {money(d.zTotal)} · {num(d.lines)} satır · alındı {dateTimeTR(d.receivedAt)}
                     </p>
                   </div>
-                  <AsilposDayDelete date={d.date} zNo={d.zNo} lines={d.lines} />
+                  <AsilposDayDelete branchId={data.branchId} date={d.date} zNo={d.zNo} lines={d.lines} />
                 </li>
               ))}
             </ul>
@@ -191,7 +223,6 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
             <AsilposUnmatchedList items={data.unmatchedIkram} more={data.unmatchedIkramCount - data.unmatchedIkram.length} products={products} ikram />
           </div>
         ) : null}
-      </CardContent>
-    </SectionCard>
+    </section>
   );
 }

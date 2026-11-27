@@ -1,6 +1,6 @@
 # Yapılacaklar (ladmin)
 
-Son güncelleme: 26 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve sahibin istekleri.
+Son güncelleme: 27 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve sahibin istekleri.
 
 Etiketler:
 - **[Ladmin]**: yalnız panelde değişiklik.
@@ -10,6 +10,18 @@ Etiketler:
 AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
+
+- **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (#167, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
+  şubenin kendi AsilPOS kasası olabilir ("yalnız bir şube" sınırı kalktı); her kasanın kendi anahtarı, geçiş günü, gün
+  sonu, kasa e-postası, komisyonu ve durumu var, panel şubeyi anahtardan tanır (başka şube bildiren kasa 409). Bir günün
+  sayılma kuralı tek: şubenin kasası AsilPOS ve gün o şubenin geçiş gününden önce değil; "Tümü"de her kasa kendi
+  gününden, (şube, gün) anahtarlı, çift sayım yok. Marina'da ModPOS bitti (föyü çekilmez, zil ve istemler geçiş gününden
+  susar; 22 Kasım'dan önceki föy sayılmaya devam eder), Tuzla ModPOS'ta. Göç 0099 yalnız veri, iki kez çalışsa da aynı.
+  Bugünkü veride (yalnız Marina kasası) rakam değişmez. İnceleme düzeltmeleri: süren ayın kasa raporu beklemesi kasa
+  başına ("Tümü" şube görünümlerinin toplamı); geçiş günü sonra olan kasa kendi geçiş ayına dek komisyonda föyün
+  markasıyla (`tek` değil); komisyonun eksik günleri takvim günü; Marina dışındaki şubede anahtar metinleri ortamdaki
+  değişkeni önermez; bir anahtar başka şubenin kasa hareketi satırını yazmaz; kurulum kodunun anahtarı kilit altında.
+  Kasa tarafı kasa deposunun #188'i (ikinci kasa açılmadan önce birleşmeli).
 
 - **AsilPOS: kasanın yeni adı panelde her yerde** (#166, 27 Kasım; docs/ASILPOS.md › Ad değişikliği (teknik)):
   ekran, e-posta, belge, kod, tablo ve ortam değişkeni; kurulu kasa, Vercel'deki eski adlı değişkenler ve eski derleme çalışmaya
@@ -77,6 +89,8 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Devam eden (26 Kasım akşamı)
 
+- [ ] [Ladmin] Şube seçiliyken her ekranda yalnız o şubenin bilgisi ("Tümü"de şube şube); firma geneli ekranlar için sahibin kararı.
+
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
 - P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
   rol × ekran duman testi).
@@ -131,7 +145,7 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - [x] [Ladmin] Muhasebeciye aylık tek paket ve ay kapanış e-postası. (26 Kasım; Ayarlar › Muhasebeci paketi, docs/MUHASEBE-PAKETI.md)
 - [x] [Ladmin] Kontrol listelerinin denetime hazır aylık PDF'i. (26 Kasım; Kontrol › Geçmiş › Aylık PDF)
 - [x] [Ladmin] Asistana fiş fotoğrafı: telefonda çekince kart hazırlanır. (26 Kasım; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı)
-- [ ] [İkisi] Tuzla AsilPOS'a geçecekse iki şubeli AsilPOS.
+- [ ] [Sahip] Çok şubeli kasa canlıya çıkınca: Ayarlar › AsilPOS › Marina bölümünde geçiş günü 22 Kasım 2026 mı bakın; Marina dışındaki şubede Marina'nın anahtarını almış kasa varsa yeni kurulum kodu gönderin; Vercel'de `MODPOS_API_KEY_MARINA`'yı silin (artık okunmuyor). Gün sonu penceresinde (22:00–03:00) birleştirmeyin. İkinci AsilPOS kasası açılmadan önce kasa deposunun #188'i birleşmeli.
 - [x] [Ladmin] Dönem kapanışı: beyan edilmiş aya sonradan fatura girmesin. Reçete geçmişi tutulsun. (26 Kasım; Ayarlar › Dönem kapanışı, docs/DONEM-KAPANISI.md)
 - [x] [Ladmin] İşçilik maliyeti / ciro oranı: günlük, haftalık ve şube şube. (26 Kasım; Raporlar › İşçilik)
 - [x] [Ladmin] Personel belgeleri (hijyen eğitimi, sağlık raporu, SGK) ve avans takibi. (26 Kasım; Giderler & maaşlar › Belgeler, Avanslar; docs/PERSONEL-BELGE.md)

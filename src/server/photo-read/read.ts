@@ -4,7 +4,7 @@ import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 import type { z } from "zod";
 
 import { staffCategory, staffExpenseLocked } from "@/lib/cash-outs";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
 import { cheapFirst, receiptReadProblems, zReadProblems, type CheapStep } from "@/lib/photo-read/cheap-first";
 import { cheapReadingProblems, formFailureOf } from "@/lib/photo-read/asilpos-read";
@@ -21,9 +21,8 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { switchDayOf } from "@/server/pos/tills";
 import { asilposOkcDeviceOf } from "@/server/asilpos/foto";
 
 import { logPhotoRead, readAsilposDayPhoto } from "./asilpos";
@@ -191,10 +190,10 @@ export async function readPhotoFor(
       previousOkc(input.day),
       okcTypical(input.day),
       // Günün kasası: AsilPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
-      // günü (branchSwitchDay): ModPOS'ta kalan şubede öneri kalır
-      Promise.all([asilposSwitchDayOf(getDb()), currentTillBranch(), asilposBranchId()])
-        .then(async ([d, b, l]) => {
-          const switchDay = branchSwitchDay(d, b, l);
+      // günü (çok şube): ModPOS'ta kalan şubede öneri kalır
+      currentTillBranch()
+        .then(async (b) => {
+          const switchDay = await switchDayOf(b);
           // AsilPOS gününde günün kaydı henüz yoksa cihaz şubenin son gün sonundan (Pavo ayrı mali Z basmaz)
           return { switchDay, device: isAsilposDay(input.day, switchDay) ? await asilposOkcDeviceOf(getDb(), b).catch(() => null) : null };
         })

@@ -1,13 +1,13 @@
 import { FEATURE_ELSEWHERE } from "./branch-features";
 import { ALL_BRANCHES, type BranchRow, type BranchScope, DEFAULT_BRANCH_ID, tillBranches } from "./branches";
-import { asilposBranchOf } from "./asilpos/switch";
+import { activePosTillIds } from "./pos/tills";
 import { modposBranchIds } from "./modpos/sube";
 
 /**
  * Ayarlar'ın AsilPOS ve ModPOS kartları seçili şubeye göre (şube kapsamı C P2-2; docs/SUBE.md › Ayarlar'da kasa kartları):
  * kasası o sistem olmayan şube seçiliyken kart "Bu şubede kullanılmıyor" satırına iner ve sistemin kullanıldığı şubeyi
  * seçtiren bağlantıyı gösterir; "Tümü"de kartlar şube adıyla çizilir. Hangi şubenin kasasının ne olduğu kütükten:
- * AsilPOS'un şubesi `asilposBranchOf` (kasa kaynağı AsilPOS olan şube, yoksa Marina), ModPOS'tan çekilenler `modposBranchIds`
+ * AsilPOS kasaları `activePosTillIds` (kasa kaynağı AsilPOS olan açık şubeler, hiç yoksa Marina; çok şube), ModPOS'tan çekilenler `modposBranchIds`
  * (hiç yoksa Tuzla, kartın bugünkü kuralı).
  *
  * Saf: veritabanına ve Next'e bağlı değil; `tests/asilpos-sube.test.ts` doğrudan çalıştırır.
@@ -43,9 +43,12 @@ function cardView(scope: BranchScope, branches: readonly CardBranch[], used: rea
   return { kind: "elsewhere", users };
 }
 
-/** AsilPOS kartı: AsilPOS'un şubesi (asilposBranchOf) seçiliyken ya da "Tümü"de çizilir */
+/**
+ * AsilPOS kartı (çok şube): kasası AsilPOS olan şube seçiliyken yalnız onun bölümü, "Tümü"de her kasanın adıyla bir bölüm;
+ * kasası ModPOS olan şube seçiliyken "kullanılmıyor"
+ */
 export function asilposCardView(scope: BranchScope, branches: readonly CardBranch[]): PosCardView {
-  return cardView(scope, branches, [asilposBranchOf(branches)]);
+  return cardView(scope, branches, activePosTillIds(branches));
 }
 
 /** ModPOS kartı: ModPOS'tan çekilen şubeler (hiç yoksa Tuzla); tek şube seçiliyken yalnız onun bölümü */

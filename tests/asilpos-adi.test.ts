@@ -6,7 +6,7 @@
 // - src/lib/asilpos/eski-adlar.ts (TypeScript dosyaları eski adı yalnız oradan alır);
 // - eski yolla kalan URL klasörleri (src/app/api/<eski>/kurulum, src/app/<eski>/indir: kurulu kasalar ve gönderilmiş
 //   e-postalar), gönderilmiş migration'lar (drizzle/0000–0097, günlük ve anlık görüntüler) ile eski adlardan taşıyan
-//   0098, tests/fixtures (telin altın dosyaları bayt bayt), iki depoda aynı docs/hesap-sozlesmesi.md;
+//   0098 ve eski değerleri yazan çok şube göçü 0099, tests/fixtures (telin altın dosyaları bayt bayt), iki depoda aynı docs/hesap-sozlesmesi.md;
 // - TypeScript dışındaki dosyalarda (belge, betik, örnek ortam dosyası) ESKI_AD_METINLERI ve migration etiketleri,
 //   belgede ayrıca BELGE_ALINTILARI ve eski git dalları (ESKI_DAL_ADI); eski adlı ortam değişkeni ancak aynı satırda
 //   yeni adıyla ya da ESKI_ENV_ADLARI'ndaysa;
@@ -36,9 +36,9 @@ const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclud
 
 /** Eski yolla kalan URL klasörleri (adları eski; içerikleri yeni işleyiciyi dışa verir) */
 const URL_KLASORLERI = [`src/app/api/${TEL_KAYNAK}/`, `src/app/${TEL_KAYNAK}/`];
-/** Gönderilmiş migration'lar (0000–0097, günlük ve anlık görüntüler) ve eski adlardan taşıyan 0098 */
+/** Gönderilmiş migration'lar (0000–0097, günlük ve anlık görüntüler), eski adlardan taşıyan 0098 ve eski değerleri yazan 0099 */
 const goc = (f: string) => {
-  if (f.startsWith("drizzle/meta/") || f === "drizzle/0098_asilpos_adi.sql") return true;
+  if (f.startsWith("drizzle/meta/") || f === "drizzle/0098_asilpos_adi.sql" || f === "drizzle/0099_pos_cok_sube.sql") return true;
   const m = /^drizzle\/(\d{4})_[a-z_]+\.sql$/.exec(f);
   return m !== null && Number(m[1]) <= 97;
 };

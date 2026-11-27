@@ -1,7 +1,6 @@
 import "server-only";
 
 import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches, type BranchScope } from "@/lib/branches";
-import { asilposBranchOf } from "@/lib/asilpos/switch";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR } from "@/lib/format";
 import { modposKeyProblem } from "@/lib/modpos/request";
@@ -11,7 +10,7 @@ import { addDays, todayTR } from "@/lib/reminders";
 import type { PanelNotification } from "@/server/actions/notifications";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween } from "@/server/data/cash-reports";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { loadModposSheets, readModposState } from "@/server/modpos/store";
 import { canFetchModpos, sharedKeyText } from "@/server/modpos/sync";
 import type { DigestBox } from "@/server/notify/digest-template";
@@ -85,8 +84,8 @@ export async function modposDigestLines(now = new Date(), scope: BranchScope = A
   // Şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): yalnız o şubenin raporu ve anahtarı
   const inScope = (id: string | null | undefined) => scope === ALL_BRANCHES || (id ?? DEFAULT_BRANCH_ID) === scope;
   const [found, key] = await Promise.all([
-    Promise.all([cashReportsBetween(yesterday, yesterday), loadModposSheets(yesterday, yesterday), loadAsilposSwitchDay(), listBranches()])
-      .then(([reports, sheets, switchDay, branches]) => ({ mismatches: modposMismatches(reports, sheets, switchDay, asilposBranchOf(branches)).filter((m) => inScope(m.report.branchId)), branches }))
+    Promise.all([cashReportsBetween(yesterday, yesterday), loadModposSheets(yesterday, yesterday), loadSwitchDays(), listBranches()])
+      .then(([reports, sheets, switchDays, branches]) => ({ mismatches: modposMismatches(reports, sheets, switchDays).filter((m) => inScope(m.report.branchId)), branches }))
       .catch(() => null),
     loadKeyAlerts()
       .then((all) => all.filter((k) => inScope(k.branchId)))

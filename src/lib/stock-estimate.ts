@@ -22,13 +22,16 @@ import { PACKAGING_CATEGORY } from "./constants";
 import { num } from "./format";
 import { panelWasteCounts } from "./asilpos/ikram";
 import { missingAsilposDays } from "./asilpos/status";
-import { ASILPOS_BRANCH_ID } from "./asilpos/switch";
+import { LEGACY_POS_BRANCH_ID, tillDayKey } from "./pos/tills";
 import { addDays, shiftMonth, todayTR } from "./reminders";
 import { OPTION_KINDS, OPTION_PRODUCTS, optionProductId, optionTotals, productForLine, sizeLabel } from "./site-sales/calc";
 import type { SiteSalesMonth } from "./site-sales/schema";
 
-/** Tahmini stoğun şubesi: AsilPOS'un kurulu olduğu şube (Marina). Tuzla'nın kasası ModPOS: tahmin yok */
-export const STOCK_ESTIMATE_BRANCH = ASILPOS_BRANCH_ID;
+/**
+ * Tahmini stoğun şubesi: Marina (ilk AsilPOS kasası). Öteki kasalar için tahmin henüz yok (ayrı iş; docs/SUBE.md); Tuzla
+ * seçiliyken "Tuzla için tahmin yok"
+ */
+export const STOCK_ESTIMATE_BRANCH = LEGACY_POS_BRANCH_ID;
 
 /** Ekranın adresi (Stok sayımı'nın alt ekranı: personel de açar, src/lib/roles.ts) */
 export const STOCK_ESTIMATE_PATH = "/panel/sayim/tahmini";
@@ -460,6 +463,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
   const { today, asilposFrom } = input;
   const running = today.slice(0, 7);
   const received = new Set(input.receivedDays);
+  const receivedKeys = new Set(input.receivedDays.map((d) => tillDayKey(STOCK_ESTIMATE_BRANCH, d)));
 
   // Son sayım: bitmiş ayların en yenisi (malzeme başına)
   const lastCount = new Map<number, EstimateCount>();
@@ -538,7 +542,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
 
   // Zayi ve ikram: panel (her gün tek kaynak) ve AsilPOS'un gün sonu
   for (const w of input.panelWaste) {
-    if (!panelWasteCounts({ ...w, branchId: STOCK_ESTIMATE_BRANCH }, received, STOCK_ESTIMATE_BRANCH)) continue;
+    if (!panelWasteCounts({ ...w, branchId: STOCK_ESTIMATE_BRANCH }, receivedKeys)) continue;
     if (inAvg(w.date)) {
       if (w.productId !== null) recent(w.productId, w.qty, recentWasted);
       else if (w.ingredientId !== null) add(recentWasted, w.ingredientId, w.qty * w.factor);

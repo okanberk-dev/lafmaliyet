@@ -8,7 +8,8 @@ import { cashDaySubject, cashSubjectBranch, handedToText, lateBell, lateBranchOf
 import { money } from "@/lib/format";
 import { asilposDiffs, type AsilposDiff } from "@/lib/asilpos/diffs";
 import { unreceiptedCashOut, type AsilposDay } from "@/lib/asilpos/prefill";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { switchDayFor } from "@/lib/pos/tills";
 import { okcLateChain, zNoNumber, type OkcLateChain } from "@/lib/okc-z";
 import { photoDiffs, savedFields, type CashReading, type PhotoDiff } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
@@ -22,8 +23,8 @@ import { cashOutsOn } from "@/server/data/cash-outs";
 import { heldPhotoInfo, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { loadMonthEntry, nextOkc, previousOkc } from "@/server/data/cash-reports";
 import { loadKasaAsilpos } from "@/server/data/asilpos-day";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
-import { asilposBranchId, loadBranchSwitchDay } from "@/server/asilpos/branch";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -84,7 +85,7 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
 /** [from, to] içinde AsilPOS gün sonu gelmiş AsilPOS günleri (yalnız geçiş gününden itibaren; boşken boş küme) */
 async function asilposEvidenceDays(from: string, to: string, branchId: string): Promise<Set<string>> {
   const db = getDb();
-  // Geçiş günü kasanın şubesininki (branchSwitchDay): ModPOS'ta kalan şubede AsilPOS kanıtı yok
+  // Geçiş günü kasanın şubesininki (çok şube): ModPOS'ta kalan şubede AsilPOS kanıtı yok
   const switchDay = await loadBranchSwitchDay(branchId, db);
   if (switchDay === null || to < switchDay) return new Set();
   const rows = await db
@@ -300,7 +301,7 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
   const reportedDays = new Set(reported.map((x) => branchDayKey(x.branchId, x.date)));
   const firstOf = new Map(firsts.map((f) => [f.branchId, f.date]));
   const openedOf = (branchId: string) => tillOpenedOn(branches.find((b) => b.id === branchId));
-  const [switchDay, asilposBranch] = await Promise.all([loadAsilposSwitchDay(db), asilposBranchId(db)]);
+  const switchDays = await loadSwitchDays(db);
   const cards: (LateCard & { branchId: string })[] = [];
   for (const x of rows) {
     const parsed = LatePayload.safeParse(x.payload);
@@ -394,8 +395,8 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
         ...asilpos,
         diffs: asilpos.day ? asilposDiffs(fields, asilpos.day) : [],
         sameTill: {
-          prev: !chain.prev || isAsilposDay(chain.prev.date, branchSwitchDay(switchDay, branchId, asilposBranch)) === asilpos.asilpos,
-          next: !chain.next || isAsilposDay(chain.next.date, branchSwitchDay(switchDay, branchId, asilposBranch)) === asilpos.asilpos,
+          prev: !chain.prev || isAsilposDay(chain.prev.date, switchDayFor(switchDays, branchId)) === asilpos.asilpos,
+          next: !chain.next || isAsilposDay(chain.next.date, switchDayFor(switchDays, branchId)) === asilpos.asilpos,
         },
       },
     });

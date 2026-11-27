@@ -56,8 +56,8 @@ test("tohum: Tuzla, Marina ve laffogato.net; sabitler listede", () => {
   const online = DEFAULT_BRANCHES.find((b) => b.id === ONLINE_BRANCH_ID)!;
   assert.equal(online.kind, "online");
   assert.equal(online.posSource, "yok");
-  // Marina ModPOS kullanır (sahibin kararı, 4 Kasım 2026)
-  assert.equal(DEFAULT_BRANCHES.find((b) => b.id === "marina")!.posSource, "modpos");
+  // Marina'nın kasası AsilPOS (sahibin kararı, 27 Kasım 2026: Marina'da ModPOS tamamen bitti)
+  assert.equal(DEFAULT_BRANCHES.find((b) => b.id === "marina")!.posSource, "asilpos");
   // Her tohum kaydı kendi kurallarını geçmeli
   for (const b of DEFAULT_BRANCHES) {
     assert.equal(branchIdError(b.id), null, b.id);

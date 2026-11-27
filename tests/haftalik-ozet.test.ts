@@ -324,7 +324,7 @@ const weekReports = (from: string, n: number, total: number, branchId = "tuzla")
   Array.from({ length: n }, (_, i) => till(new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), total / n, branchId));
 const TUZLA = { id: "tuzla", name: "Tuzla", openedOn: null };
 const line = (rows: TillRow[], branches: { id: string; name: string; openedOn: string | null }[] = [TUZLA], switchDay: string | null = null) =>
-  salesLine({ week: W44, rows, branches, switchDay, asilposBranch: "marina" });
+  salesLine({ week: W44, rows, branches, switchDays: switchDay ? { marina: switchDay } : {} });
 
 test("kasa cirosu satırı: tam haftalar karşılaştırılır; eksik hafta gün sayısıyla; rapor yoksa satır yok", () => {
   const prev = ["2026-10-12", "2026-10-05", "2026-09-28", "2026-09-21"].flatMap((d) => weekReports(d, 7, 78_300));
@@ -342,7 +342,7 @@ test("kasa cirosu satırı ödenmezi saymaz: Genel bakış ve Bugün'ün cirosuy
   assert.equal(line([till("2026-10-20", 10_000, "tuzla", { offRevenue: 500, payments: 10_000 })]), `Geçen hafta kasa cirosu 10.000${NB}₺ (1 gün raporlu)`);
   // Toplayıcı satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından kurar (tillRows: raporu olmayan AsilPOS günü dahil)
   const collect = readFileSync(join(process.cwd(), "src/server/weekly/collect.ts"), "utf8");
-  assert.match(collect, /Promise\.all\(\[tillRows\(\), loadAsilposSwitchDay\(\)\]\)/);
+  assert.match(collect, /Promise\.all\(\[tillRows\(\), loadSwitchDays\(\)\]\)/);
 });
 
 test("kasa cirosu satırı: yeni açılan şube büyüme sayılmaz, karşılaştırma aynı şube ve günlerle (bulgu 65)", () => {

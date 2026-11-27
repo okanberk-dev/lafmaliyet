@@ -8,7 +8,6 @@ import { classifyWorkedStaff, posStaffItems, staffIdOfRef, type PosStaffItem, ty
 import { checkPosStaffRequest } from "@/lib/asilpos/personel-istek";
 import { getDb, schema as s, type DB } from "@/server/db";
 
-import { asilposBranchId } from "./branch";
 import type { EndpointResult } from "./ingest";
 
 /**
@@ -36,12 +35,12 @@ export async function loadPosStaff(db: DB, sube: string, month: string): Promise
  * `{ error: "wrong_branch", sube, expected }`, 503.
  */
 export async function servePosStaff(
-  input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date },
+  input: { secret: string | null; branchId: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date },
   load: (sube: string, month: string) => Promise<PosStaffItem[]> = (sube, month) => loadPosStaff(getDb(), sube, month),
 ): Promise<EndpointResult> {
   const now = input.now ?? new Date();
-  // Beklenen şube kütükten (kasa kaynağı AsilPOS olan şube, yoksa Marina; önbellekli)
-  const check = checkPosStaffRequest({ ...input, now: now.getTime(), expected: await asilposBranchId() });
+  // Beklenen şube anahtarın şubesi (çok şube; imzanın tuttuğu anahtar)
+  const check = checkPosStaffRequest({ ...input, now: now.getTime(), expected: input.branchId });
   if (!check.ok) return { status: check.status, body: check.body };
   const items = await load(check.sube, currentMonthTR(now));
   return { status: 200, body: { version: ASILPOS_VERSION, now: (input.now ?? new Date()).toISOString(), sube: check.sube, items } };
@@ -51,10 +50,10 @@ export async function servePosStaff(
  * Gün sonu gövdesindeki kimliklerin sınıfı (200 yanıtının `staff`'ı; src/server/asilpos/status.ts handlePosDay): yalnız
  * kimliklerin satırları okunur (şube ve aralık)
  */
-export async function workedStaffAnswer(db: DB, refs: readonly string[], date: string): Promise<WorkedStaffAnswer> {
+export async function workedStaffAnswer(db: DB, refs: readonly string[], date: string, branchId: string): Promise<WorkedStaffAnswer> {
   const ids = [...new Set(refs.flatMap((r) => staffIdOfRef(r) ?? []))];
   const rows = ids.length
     ? await db.select({ id: s.staff.id, branchId: s.staff.branchId, startMonth: s.staff.startMonth, endMonth: s.staff.endMonth }).from(s.staff).where(inArray(s.staff.id, ids))
     : [];
-  return classifyWorkedStaff(refs, new Map(rows.map((r) => [r.id, r])), date, await asilposBranchId(db));
+  return classifyWorkedStaff(refs, new Map(rows.map((r) => [r.id, r])), date, branchId);
 }

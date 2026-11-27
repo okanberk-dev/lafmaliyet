@@ -10,7 +10,7 @@ import { isAsilposDay } from "@/lib/asilpos/switch";
 import { onAsilposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
-import { asilposBranchId, switchDayOf } from "./branch";
+import { switchDayOf } from "./branch";
 import { detachAsilposCashOuts, syncAsilposCashOuts } from "./cash-moves";
 
 /**
@@ -21,10 +21,10 @@ import { detachAsilposCashOuts, syncAsilposCashOuts } from "./cash-moves";
  */
 
 /**
- * AsilPOS'un anahtarı (Şube ayarları'nda saklanan, yoksa ASILPOS_SYNC_SECRET; en az 32 karakter); yoksa uçların hepsi 503
- * (src/server/asilpos/branch.ts asilposSecret)
+ * İsteği yapan kasa (çok şube): imzanın tuttuğu anahtarın şubesi ve o anahtar; anahtar yoksa uçların hepsi 503, imza hiçbir
+ * kasanınkiyle tutmazsa 401 (src/server/asilpos/branch.ts resolvePosCaller)
  */
-export { asilposRequestSecret, asilposSecret } from "./branch";
+export { posKeysConfigured, posRequestCaller, type PosCaller } from "./branch";
 
 export interface EndpointResult {
   status: number;
@@ -48,13 +48,11 @@ export type StorePosDayResult = { ok: true; lines: number; matched: number; unma
  * önceki Z'yi ve günün satırlarını sessizce silmek yerine uç 409 döner. Ürün: önce sitenin kalemi ve boyu, yoksa POS
  * eşleştirmesi (resolvePosLine). Gün AsilPOS günüyse ve satış varsa o günün kapalı işareti kalkar (onAsilposDaySaved).
  * Sayılan AsilPOS gününde kasa hareketleri "Kasadan çıkanlar"a satır satır yazılır (Faz 3; cash-moves.ts), aynı işlemde;
- * sayılmayan günde o günün AsilPOS satırları AsilPOS'tan ayrılır (detachAsilposCashOuts "drop"). `branch`: AsilPOS'un
- * şubesi (uç bir kez okur ve verir; verilmezse asilposBranchId).
+ * sayılmayan günde o günün AsilPOS satırları AsilPOS'tan ayrılır (detachAsilposCashOuts "drop"). `branchId`: kasanın şubesi
+ * (imzanın tuttuğu anahtarın şubesi; çok şube). Gün her şubeye saklanır, yalnız şubenin kasası AsilPOS ve gün şubenin
+ * geçiş gününden önce değilse sayılır (src/lib/pos/tills.ts)
  */
-export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(), branch?: string): Promise<StorePosDayResult> {
-  // Gün sonunun şubesi: AsilPOS'un kurulu olduğu şube (türetilmiş, src/server/asilpos/branch.ts; 21 Kasım 2026'dan beri
-  // Marina; Tuzla ModPOS'ta, geçiş günü de yalnız onun kasasınındır; docs/SUBE.md)
-  const branchId = branch ?? (await asilposBranchId(db));
+export async function storePosDay(db: DB, day: PosDayPush, now: Date, branchId: string): Promise<StorePosDayResult> {
   return db.transaction(async (tx) => {
     // Kilit ve Z denetimi (gün, şube) başına: başka şubenin aynı günkü kaydı (ör. Tuzla'daki eski deneme günü) bu şubenin
     // gün sonunu engellemez
@@ -168,16 +166,17 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
  */
 export async function receivePosDay(
   db: DB,
-  input: { secret: string | null; url: URL; body: string; timestamp: string | null; signature: string | null },
+  input: { secret: string | null; branchId: string | null; url: URL; body: string; timestamp: string | null; signature: string | null },
   now: Date = new Date(),
 ): Promise<EndpointResult> {
   const check = checkAsilposRequest({ ...input, method: "POST", maxBytes: POS_DAY_MAX_BYTES, now: now.getTime() });
   if (!check.ok) return { status: check.status, body: { error: check.error } };
   const parsed = parsePosDay(input.body, now);
   if (!parsed.ok) return { status: 400, body: { error: "invalid", field: parsed.field } };
-  // Kasa başka şubeye ayarlıysa (ör. Tuzla'nın kasası ModPOS'ta): gün yazılmaz, kasa ayarını düzeltene kadar bekler.
-  // Beklenen şube kütükten (kasa kaynağı AsilPOS olan şube; yoksa Marina, asilposBranchId)
-  const expected = await asilposBranchId(db);
+  // Beklenen şube anahtarın şubesidir (çok şube): kasa başka şubeye ayarlıysa gün yazılmaz, kasa ayarını düzeltene kadar
+  // bekler. Şube göndermeyen eski kasanın günü anahtarın şubesine yazılır
+  const expected = input.branchId;
+  if (expected === null) return { status: 401, body: { error: "unauthorized" } };
   if (parsed.data.sube && parsed.data.sube !== expected) return { status: 409, body: { error: "wrong_branch", sube: parsed.data.sube, expected } };
   const r = await storePosDay(db, parsed.data, now, expected);
   if (!r.ok) return { status: 409, body: { error: "z_conflict", date: parsed.data.date, zNo: r.zNo } };

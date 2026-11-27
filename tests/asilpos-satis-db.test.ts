@@ -613,7 +613,7 @@ describe("AsilPOS satışları aylık modele: veritabanında", { skip: !SERVER_U
         new Date(NOW),
       );
       assert.ok(parsed.ok);
-      assert.equal((await ingest.storePosDay(db, parsed.data, new Date(NOW))).ok, true);
+      assert.equal((await ingest.storePosDay(db, parsed.data, new Date(NOW), "marina")).ok, true);
     };
     await push("2026-12-05", 205, [
       { posName: "LATTE ORTA", siteMenuId: "mnu-0003", slot: "M", qty: 10, revenue: 2_000 },
@@ -720,7 +720,7 @@ describe("AsilPOS satışları aylık modele: veritabanında", { skip: !SERVER_U
       new Date(NOW),
     );
     assert.ok(parsed.ok);
-    assert.deepEqual(await ingest.storePosDay(db, parsed.data, new Date(NOW)), { ok: true, lines: 1, matched: 0, unmatched: ["SALEP"] });
+    assert.deepEqual(await ingest.storePosDay(db, parsed.data, new Date(NOW), "marina"), { ok: true, lines: 1, matched: 0, unmatched: ["SALEP"] });
     assert.equal((await rowsOf("SALEP"))[0].productId, null);
     await db.update(s.products).set({ siteMenuId: "mnu-0099", siteMenuSlot: "M" }).where(eq(s.products.id, ids.only));
     assert.equal(await rematch.rematchPosSalesBySite(db, [{ productId: ids.only, siteMenuId: "mnu-0099", slot: "M" }]), 1);

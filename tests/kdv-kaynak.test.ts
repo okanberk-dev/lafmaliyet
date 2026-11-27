@@ -41,7 +41,7 @@ const rowsOf = (branchId: string, extra: Record<string, Partial<TillRow>> = {}):
 function novemberModel(rows: TillRow[], switchDay: string | null, typed?: { posRevenue: number; openDays: number }) {
   const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
   const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-12" };
-  const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, switchDay);
+  const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, { froms: switchDay ? { marina: switchDay } : null, tills: ["marina"] });
   const stored = typed ? { month: "2026-11", discounts: null, offRevenue: null, cardShare: null, note: null, ...typed } : undefined;
   const nov = resolveMonth("2026-11", stored, till);
   const ds: Dataset = { ...base, settings: { ...base.settings, asilposGecisGunu: switchDay }, salesLines: base.salesLines.filter((l) => l.month !== "2026-11"), months: [...base.months.filter((m) => m.month !== "2026-11"), nov] };

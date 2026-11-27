@@ -8,11 +8,12 @@ import type { KasaEvidence } from "@/lib/cash-out-requests";
 import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosOffDevice, type PosOkc } from "@/lib/asilpos/day";
 import { asilposDayDetail, type AsilposDayDetail } from "@/lib/asilpos/gun-ayrinti";
 import { asilposDayOf, type AsilposDay } from "@/lib/asilpos/prefill";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId, asilposSwitchDay, loadBranchSwitchDay } from "@/server/asilpos/branch";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
+import { earliestSwitchDay, switchDayFor } from "@/lib/pos/tills";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 /**
  * Kasa raporunun okuduğu (docs/ASILPOS.md › Kasa raporu): yalnız AsilPOS günlerinde, yani geçiş günü seçili ve gün ondan
@@ -28,11 +29,11 @@ export async function loadKasaAsilposDay(date: string, db: DB = getDb(), branchI
  * günün gönderimi gelmemiş olsa da), `day` gelen özet (yoksa ya da AsilPOS günü değilse null). Kasa formu ve geç rapor
  * ikisine de bakar: AsilPOS gününde ModPOS Z fotoğrafı istenmez; AsilPOS'un gönderimi yoksa yazarkasa Z'si kanıttır.
  * Kasa tek şubenindir (verilen şube, yoksa kasanın şubesi): geçiş günü yalnız AsilPOS'un şubesinin kasasına uygulanır,
- * ModPOS'ta kalan şubenin her günü ModPOS günüdür (branchSwitchDay; denetim 21 Kasım #5).
+ * ModPOS'ta kalan şubenin her günü ModPOS günüdür (çok şube: her kasa kendi geçiş günüyle; denetim 21 Kasım #5).
  */
 export async function loadKasaAsilpos(date: string, db: DB = getDb(), branchId?: string): Promise<{ asilpos: boolean; day: AsilposDay | null }> {
-  const [switchDay, sube, asilposBranch] = await Promise.all([loadAsilposSwitchDay(db), branchId ?? currentTillBranch(), asilposBranchId(db)]);
-  if (!isAsilposDay(date, branchSwitchDay(switchDay, sube, asilposBranch))) return { asilpos: false, day: null };
+  const sube = branchId ?? (await currentTillBranch());
+  if (!isAsilposDay(date, await loadBranchSwitchDay(sube, db))) return { asilpos: false, day: null };
   return { asilpos: true, day: await loadAsilposDay(date, db, sube) };
 }
 
@@ -71,13 +72,12 @@ type Reader = Pick<DB, "select">;
  * Günün kasa kanıtı (G8, docs/ASILPOS.md › Kasa raporu): ModPOS gününde (geçiş günü boş ya da gün ondan önce) ModPOS Z
  * fotoğrafı ("modpos-z"); AsilPOS gününde o günün AsilPOS gün sonu geldiyse o ("asilpos": fotoğraf gerekmez), gelmediyse
  * yazarkasa (Banka POS) Z fotoğrafı ("okc-z"). Geç rapor ve fotoğraf kaldırma aynı kurala bakar; işlem içinden de.
- * Geçiş günü yalnız AsilPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubede hep "modpos-z"
+ * Geçiş günü şubenin kendi kasasınındır (çok şube): ModPOS'ta kalan şubede hep "modpos-z"
  */
 export async function kasaEvidence(db: Reader, date: string, branchId?: string): Promise<KasaEvidence> {
   // Gün sonu şubenin kasasınındır: başka şubenin AsilPOS günü bu kasanın kanıtı sayılmaz
   const sube = branchId ?? (await currentTillBranch());
-  const [switchDay, asilposBranch] = await Promise.all([asilposSwitchDay(db), asilposBranchId(db)]);
-  if (!isAsilposDay(date, branchSwitchDay(switchDay, sube, asilposBranch))) return "modpos-z";
+  if (!isAsilposDay(date, await loadBranchSwitchDay(sube, db))) return "modpos-z";
   const [day] = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
@@ -99,7 +99,8 @@ export async function asilposAutoReportOf(db: Reader, reportId: number): Promise
  * [from, to] içindeki günlerin kasası ve AsilPOS özetleri (yöneticinin ay görünümü, zil): `of(gün, şube)`
  * loadKasaAsilpos'un aynısını verir (geçiş gününden önceki günde ya da geçiş günü boşken `{ asilpos: false, day: null }`).
  * Gün sonları (şube, gün) ile tutulur: "Tümü"de iki şubenin aynı günü birbirine karışmaz; şube verilmezse kasanın
- * şubesi (seçili fiziksel şube, "Tümü"de Tuzla). Geçiş günü yalnız AsilPOS'un şubesinin kasasınındır (branchSwitchDay).
+ * şubesi (seçili fiziksel şube, "Tümü"de Tuzla). Geçiş günü şubenin kendi kasasınındır (çok şube; okuma kasaların en erken
+ * geçiş gününden).
  */
 export async function loadKasaAsilposDays(
   from: string,
@@ -107,11 +108,12 @@ export async function loadKasaAsilposDays(
   db: DB = getDb(),
 ): Promise<(date: string, branchId?: string | null) => { asilpos: boolean; day: AsilposDay | null }> {
   const out = new Map<string, AsilposDay>();
-  const [switchDay, sube, asilposBranch] = await Promise.all([loadAsilposSwitchDay(db), currentTillBranch(), asilposBranchId(db)]);
+  const [switchDays, sube] = await Promise.all([loadSwitchDays(db), currentTillBranch()]);
   const of = (date: string, branchId?: string | null) => {
     const b = branchId ?? sube;
-    return isAsilposDay(date, branchSwitchDay(switchDay, b, asilposBranch)) ? { asilpos: true, day: out.get(branchDayKey(b, date)) ?? null } : { asilpos: false, day: null };
+    return isAsilposDay(date, switchDayFor(switchDays, b)) ? { asilpos: true, day: out.get(branchDayKey(b, date)) ?? null } : { asilpos: false, day: null };
   };
+  const switchDay = earliestSwitchDay(switchDays);
   if (switchDay === null || to < switchDay) return of;
   const start = from > switchDay ? from : switchDay;
   const rows = await db

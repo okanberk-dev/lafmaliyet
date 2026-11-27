@@ -145,7 +145,7 @@ test("#4: elle girilen litre fiyatı önce gelir; Ayarlar önizlemesi şubede de
 test("#4 kaynak: yükleyici şube seçiliyken faturalı ayların satışını 'Tümü' kapsamında okur; döküm motorun litresini kullanır", () => {
   const d = oku("src/server/data/dataset.ts");
   assert.match(d, /const billMonths = new Set\(pnlEntries\.filter\(\(e\) => e\.rowKey === "manual:su" && e\.amount > 0\)/);
-  assert.match(d, /branch && billMonths\.size\n\s+\? (?:\/\/[^\n]*\n\s+)?companyWaterSales\(db, \{ switchDay: scopeSwitchDay\(storedSettings\.asilposGecisGunu, ALL_BRANCHES, asilposBranch\),/);
+  assert.match(d, /branch && billMonths\.size\n\s+\? (?:\/\/[^\n]*\n\s+)?companyWaterSales\(db, \{ switchDays: allSwitchDays,/);
   // Su litresi "Tümü"nün satışıyla: geçiş günü görünümün şubesine göre kısılmaz (Marina seçiliyken Tuzla'nın AsilPOS'u da sayılır)
   assert.match(d, /\.\.\.\(waterSales \? \{ waterSales \} : \{\}\)/);
   const fn = d.slice(d.indexOf("async function companyWaterSales"));

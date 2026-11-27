@@ -28,7 +28,8 @@ import { ZIL_ONEKI } from "@/lib/asilpos/eski-adlar";
 import { ASILPOS_PHOTO_TEXT, photoUnsureText } from "@/lib/asilpos/foto";
 import { ASILPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/asilpos/gun-sonu";
 import { asilposMovesPending, unreceiptedCashOut } from "@/lib/asilpos/prefill";
-import { branchSwitchDay, kasaName } from "@/lib/asilpos/switch";
+import { kasaName } from "@/lib/asilpos/switch";
+import { switchDayFor } from "@/lib/pos/tills";
 import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -43,8 +44,8 @@ import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { cashOutsBetween } from "@/server/data/cash-outs";
 import { asilposNoCountDays, loadKasaAsilposDays } from "@/server/data/asilpos-day";
 import { asilposPhotoMarks } from "@/server/asilpos/foto";
-import { asilposBranchId, loadBranchSwitchDay } from "@/server/asilpos/branch";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets } from "@/server/modpos/store";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
@@ -229,7 +230,7 @@ async function staffCashNotifications(now: Date, day: string, reports: CashRepor
   if (!isCashEvening(now, evening.hourOf(till))) return out;
   if (reports.some((r) => r.date === day) || noCount.has(day)) return out;
   // Günün kasası (denetim E-39): geçiş gününden itibaren AsilPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
-  // günü yalnız AsilPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
+  // günü şubenin kendi kasasınındır (çok şube): ModPOS'ta kalan şubenin personeli ModPOS'u okur
   const asilpos = kasaName(day, await loadBranchSwitchDay(till).catch(() => null)) === "AsilPOS";
   out.push({
     id: `kasa-bekliyor-${day}`,
@@ -264,7 +265,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     loadKasaAsilposDays(oldest.date, day).catch(() => null),
-    Promise.all([loadModposSheets(oldest.date, day), loadAsilposSwitchDay(), asilposBranchId()]).catch(() => null),
+    Promise.all([loadModposSheets(oldest.date, day), loadSwitchDays()]).catch(() => null),
   ]);
   const yesterday = addDays(day, -1);
   const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
@@ -356,7 +357,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
   }
   // ModPOS föyünden farklı yazılan (yalnız ModPOS günlerinde, kasası kapanmış föyle; föy hiç çekilmediyse satır yok).
   // Rapor kendi şubesinin föyüyle; birden çok kasa açıkken gövdede şubenin adı
-  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1], modpos[2]) : []) {
+  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1]) : []) {
     const t = tills.of(m.report.branchId);
     out.push({ ...modposMismatchBell(m, t.named ? t.name : undefined), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
   }
@@ -509,16 +510,12 @@ async function staffTillsWaiting(day: string, now: Date, evening: Awaited<Return
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
   if (tills.length < 2 || tills.some((b) => b.id === scope)) return null;
-  const [reports, switchDay, asilposBranch] = await Promise.all([
-    withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)),
-    loadAsilposSwitchDay().catch(() => null),
-    asilposBranchId().catch(() => undefined),
-  ]);
+  const [reports, switchDays] = await Promise.all([withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)), loadSwitchDays().catch(() => ({}))]);
   return tills
     // Kasanın kendi saatinden sonra (şube ayarı isletme.takvim)
     .filter((b) => isCashEvening(now, evening.hourOf(b.id)) && !reports.some((r) => r.branchId === b.id && r.date === day))
     .map((b) => {
-      const asilpos = kasaName(day, branchSwitchDay(switchDay, b.id, asilposBranch)) === "AsilPOS";
+      const asilpos = kasaName(day, switchDayFor(switchDays, b.id)) === "AsilPOS";
       return {
         id: `kasa-bekliyor-${day}-${b.id}`,
         kind: "warning" as const,

@@ -118,11 +118,11 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
   const send = (body: unknown) => {
     const raw = JSON.stringify(body);
     const h = signedHeaders(SECRET, "POST", GUN, raw, NOW.getTime());
-    return status.handlePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW, { unverifiedWindowMs: 0 });
+    return status.handlePosDay(db, { branchId: "marina", secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW, { unverifiedWindowMs: 0 });
   };
   const signedGet = (url: URL) => {
     const h = signedHeaders(SECRET, "GET", url, "", NOW.getTime());
-    return { secret: SECRET, url, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW };
+    return { branchId: "marina", secret: SECRET, url, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW };
   };
   const storedRefs = async (date: string) =>
     (await db.select({ w: s.posDayReports.workedStaff }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, ASILPOS_SUBE))))[0]?.w;
@@ -174,7 +174,7 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     const ingest = await import("../src/server/asilpos/ingest");
     const raw = JSON.stringify(day("2026-10-09", { workedStaffRefs: [ref(ids.arda)] }));
     const h = signedHeaders(SECRET, "POST", GUN, raw, NOW.getTime());
-    const core = await ingest.receivePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW);
+    const core = await ingest.receivePosDay(db, { branchId: "marina", secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW);
     assert.deepEqual(Object.keys(core.body).sort(), ["date", "lines", "matched", "ok", "unmatched"]);
     // Boş liste: "bağlı var, kimse çalışmadı"
     const empty = await send(day("2026-10-08", { workedStaffRefs: [] }));

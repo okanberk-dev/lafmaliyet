@@ -110,8 +110,10 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     writeFileSync(journalPath, JSON.stringify(journal));
     await migrate(db, { migrationsFolder: join(tmp, "drizzle") });
     // Şube satırları düz SQL ile: 0077'de `branches.features` yok (0084), Drizzle'ın insert'ü şemanın her sütununu adlandırır
+    // 0077'nin kütüğü AsilPOS'un yeni değerini tanımaz: o günkü tohum gibi Marina ModPOS (AsilPOS kasası geri düşüşle Marina)
     for (const b of DEFAULT_BRANCHES) {
-      await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, sort_order) VALUES (${b.id}, ${b.name}, ${b.kind}, ${b.posSource}, ${b.sortOrder}) ON CONFLICT DO NOTHING`);
+      const source = b.posSource === "asilpos" ? "modpos" : b.posSource;
+      await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, sort_order) VALUES (${b.id}, ${b.name}, ${b.kind}, ${source}, ${b.sortOrder}) ON CONFLICT DO NOTHING`);
     }
     await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, active, sort_order) VALUES ('eski', 'Eski', 'fiziksel', 'modpos', false, 9)`);
     for (const k of Object.keys(users) as (keyof typeof users)[]) {

@@ -26,14 +26,14 @@ const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslan
 // ---------------------------------------------------------------- Kör kasa
 
 test("kör kasa: AsilPOS okunamayınca (null) AsilPOS'un şubesinde personele kör; Tuzla ve yönetici değişmez", () => {
-  assert.equal(staffBlindView({ admin: false, branchId: "marina", asilposDay: null }), true, "okuma düştü: kapalı");
-  assert.equal(staffBlindView({ admin: false, branchId: "tuzla", asilposDay: null }), false, "ModPOS şubesi kör değil");
-  assert.equal(staffBlindView({ admin: true, branchId: "marina", asilposDay: null }), false, "yönetici görür");
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: null }), true, "okuma düştü: kapalı");
+  assert.equal(staffBlindView({ admin: false, till: false, asilposDay: null }), false, "ModPOS şubesi kör değil");
+  assert.equal(staffBlindView({ admin: true, till: true, asilposDay: null }), false, "yönetici görür");
   // Kütükten gelen AsilPOS şubesi geri düşüşün yerine geçer
-  assert.equal(staffBlindView({ admin: false, branchId: "tuzla", asilposDay: null, asilposBranch: "tuzla" }), true);
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: null }), true);
   // Okunduysa geçiş gününün kuralı
-  assert.equal(staffBlindView({ admin: false, branchId: "marina", asilposDay: false }), false, "geçiş gününden önce");
-  assert.equal(staffBlindView({ admin: false, branchId: "marina", asilposDay: true }), true);
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: false }), false, "geçiş gününden önce");
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: true }), true);
 });
 
 test("kör kasa: elle girilmiş raporun satırı 'Rakamlar AsilPOS'tan geldi' demez; alt başlık 'nakdi sayın' demez", () => {

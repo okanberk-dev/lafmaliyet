@@ -1,5 +1,6 @@
 "use server";
 
+import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -19,6 +20,7 @@ import {
 } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_MAX } from "@/lib/branches";
 import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/request";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import type { StepUpConfirm } from "@/lib/step-up";
 import { PRESET_KEYS, PRESET_LABELS, presetHours, presetText, shiftPresetsError, shiftPresetsOf, type SavedShiftPreset } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
@@ -26,8 +28,9 @@ import { requireStepUp } from "@/server/auth/step-up";
 import { setBranchFeatureTx } from "@/server/branch-features";
 import { linkBranchSetting, lockGroup, logSetting, putBranchSetting, resolveBranchSetting, unlinkBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
-import { getDb } from "@/server/db";
-import { forgetAsilposSecret, asilposBranchId } from "@/server/asilpos/branch";
+import { getDb, schema as s } from "@/server/db";
+import { forgetPosKeys, posKeyTaken } from "@/server/asilpos/branch";
+import { loadPosTillIds } from "@/server/pos/tills";
 import { beforeParasutLink } from "@/server/parasut/accounts";
 
 import { attempt, UserError } from "./util";
@@ -239,33 +242,52 @@ export async function saveShiftPresets(input: z.input<typeof presetInput>) {
 
 const secretInput = z.object({
   branchId: zBranch,
-  /** Yeni anahtar; null: panelde saklanan anahtar silinir (ortamdaki ASILPOS_SYNC_SECRET kullanılır) */
+  /**
+   * Yeni anahtar; null: panelde saklanan anahtar silinir (Marina'da ortamdaki ASILPOS_SYNC_SECRET kullanılır, öbür şubede
+   * kasa bağlantısız kalır)
+   */
   secret: z.string().trim().min(ASILPOS_SECRET_MIN, `Anahtar en az ${ASILPOS_SECRET_MIN} karakter olmalı`).max(256, "Anahtar çok uzun").nullable(),
 });
 
 /**
- * AsilPOS'un imza anahtarı, AsilPOS'un şubesinde (şube ayarı SUBE_AYAR_GRUBU; şifreli, secret-box). Saklanan anahtar ortamdaki
- * ASILPOS_SYNC_SECRET'ın önüne geçer; AsilPOS'ta aynı anahtar (LAFMALIYET_SYNC_SECRET) yazılmalıdır. Sitenin anahtarıyla
+ * AsilPOS'un imza anahtarı, kasanın şubesinde (şube ayarı SUBE_AYAR_GRUBU; şifreli, secret-box). Eski kurulumun şubesinde
+ * (Marina) saklanan anahtar ortamdaki ASILPOS_SYNC_SECRET'ın önüne geçer; öbür şubeye ortamdaki anahtar hiç hizmet etmez
+ * (silinirse kasa bağlantısız kalır). AsilPOS'ta aynı anahtar (LAFMALIYET_SYNC_SECRET) yazılmalıdır. Sitenin anahtarıyla
  * (KARAOKE_SYNC_SECRET) aynısı reddedilir. Anahtar hiçbir yere yazılmaz: işlem geçmişine yalnız "değişti" ya da
  * "silindi", istemciye yalnız durumu döner. Yalnız yönetici ve parolasıyla (anahtar makinenin gün sonu yazımlarının
- * güven kökü: açık kalmış bir oturum sahte gün sonu imzalayamasın, gerçek kasayı 401'e düşüremesin). Yeni anahtar yalnız
- * AsilPOS'un şubesine yazılır; silme her şubede (kasa kaynağı başka şubeye geçtiyse eski şubede kalan anahtar silinebilsin)
+ * güven kökü: açık kalmış bir oturum sahte gün sonu imzalayamasın, gerçek kasayı 401'e düşüremesin). Çok şube: yeni anahtar
+ * kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şubeye yazılır (kurulu kasanın deneme günleri için); başka şubenin
+ * anahtarıyla ya da ortamdaki eski kurulum anahtarıyla aynı olamaz (anahtar şubeyi tanıtır: aynı anahtar bir şubenin
+ * günlerini öbürüne yazdırırdı). Silme her şubede (kasa kaynağı değiştiyse eski şubede kalan anahtar silinebilsin)
  */
 export async function saveAsilposSecret(input: z.input<typeof secretInput>, confirm?: StepUpConfirm) {
   return attempt(async () => {
     const me = await requireAdmin();
     const d = secretInput.parse(input);
     const db = getDb();
-    if (d.secret !== null && d.branchId !== (await asilposBranchId(db))) throw new UserError("AsilPOS anahtarı yalnız kasası AsilPOS olan şubede saklanır (Ayarlar › Şubeler › kasa kaynağı)");
+    if (d.secret !== null) {
+      const [{ ids }, [install]] = await Promise.all([
+        loadPosTillIds(db, Date.now(), true),
+        db.select({ id: s.asilposInstalls.id }).from(s.asilposInstalls).where(eq(s.asilposInstalls.branchId, d.branchId)).limit(1),
+      ]);
+      if (!ids.includes(d.branchId) && !install) throw new UserError("AsilPOS anahtarı yalnız kasası AsilPOS olan (ya da AsilPOS kurulumu yapılmış) şubede saklanır (Ayarlar › Şubeler › kasa kaynağı)");
+      const taken = await posKeyTaken(d.branchId, d.secret, db);
+      if (taken) {
+        const owner = (await listBranches()).find((b) => b.id === taken)?.name ?? taken;
+        throw new UserError(`Bu anahtar ${owner} şubesinin AsilPOS anahtarı; her şubenin kasası kendi anahtarını kullanır, yeni bir anahtar üretin`);
+      }
+    }
     if (d.secret && d.secret === process.env.KARAOKE_SYNC_SECRET?.trim()) throw new UserError("Bu, sitenin anahtarı (KARAOKE_SYNC_SECRET); AsilPOS için ayrı bir anahtar üretin");
     if (d.secret === null && (await resolveBranchSetting(ASILPOS_GROUP, d.branchId, db)).secrets.secret === "none") throw new UserError("Bu şubede panelde saklanan AsilPOS anahtarı yok");
     await requireStepUp(me, confirm, `AsilPOS anahtarı ${d.secret ? "değiştirme" : "silme"}`, "AsilPOS");
     const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
     await db.transaction(async (tx) => {
       await putBranchSetting(tx, ASILPOS_GROUP, d.branchId, { secret: d.secret }, me.name);
-      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : "silindi (ortamdaki anahtar kullanılır)"}`);
+      // Silinince: ortamdaki anahtar yalnız eski kurulumun şubesine (Marina) hizmet eder; öbür şubenin kasası bağlantısız kalır
+      const dropped = d.branchId === LEGACY_POS_BRANCH_ID ? "silindi (ortamdaki anahtar kullanılır)" : "silindi (şubenin kasası bağlantısız kalır)";
+      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : dropped}`);
     });
-    forgetAsilposSecret();
+    forgetPosKeys();
     refresh();
     return { saved: d.secret !== null };
   });

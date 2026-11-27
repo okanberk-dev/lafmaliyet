@@ -245,7 +245,7 @@ test("AsilPOS'a geçilen ay: Satışlar bandının uyarısı Genel bakış'ta da
   const st = asilposMonthStatus({ month: "2026-10", switchDay: S, today: "2026-10-27", modpos: null, asilpos: { days: 12, last: "2026-10-26" } })!;
   const latte = model.ds.products[0];
   const lines = ds.salesLines.filter((l) => l.month !== "2026-10").concat([{ id: -1, month: "2026-10", posName: "LATTE", qty: 120, revenue: 24_000, productId: latte.id, isService: false, note: null, asilpos: { days: 12 } }]);
-  const m = createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: S, countFrom: S, months: [st] } });
+  const m = createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: S, countFrom: S, froms: { marina: S }, months: [st] } });
   const facts = monthTaskFacts(m, "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null });
   assert.deepEqual(facts.sales.asilpos && [facts.sales.asilpos.source, facts.sales.asilpos.days], ["gecis", 12]);
   const satis = monthTasks(facts).find((t) => t.key === "satis")!;
@@ -264,13 +264,13 @@ test("AsilPOS'a geçilen ay: Satışlar bandının uyarısı Genel bakış'ta da
     asilposDates: ["2026-10-10"],
   })!;
   assert.deepEqual(full.missing, ["2026-10-01", "2026-10-02"], "bugünün raporu gün sonundan önce girilmiş olabilir");
-  const fm = createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", months: [full] } });
+  const fm = createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", froms: { marina: "2026-10-01" }, months: [full] } });
   const fullTask = monthTasks(monthTaskFacts(fm, "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null })).find((t) => t.key === "satis")!;
   assert.equal(fullTask.status, "warn");
   assert.match(fullTask.detail, /^2 günün AsilPOS gün sonu gelmedi, kasa raporu var: 1, 2 Ekim\. Bu günlerin satışı hesapta yok; AsilPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın\.$/);
   // Sorunsuz AsilPOS ayı: tamam, metin listeden değil AsilPOS'tan söz eder; satırsız süren ay "Patron listesi" demez
   const clean = asilposMonthStatus({ month: "2026-10", switchDay: "2026-10-01", today: "2026-10-27", modpos: null, asilpos: { days: 26, last: "2026-10-26" } })!;
-  const base: MonthTaskFacts = monthTaskFacts(createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", months: [clean] } }), "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null });
+  const base: MonthTaskFacts = monthTaskFacts(createModel({ ...ds, salesLines: lines, asilposSales: { switchDay: "2026-10-01", countFrom: "2026-10-01", froms: { marina: "2026-10-01" }, months: [clean] } }), "2026-10", "closed", null, { payments: NO_PAYMENTS, parasut: null });
   const ok = monthTasks(base).find((t) => t.key === "satis")!;
   assert.equal(ok.status, "done");
   assert.equal(ok.detail, "AsilPOS'tan 26 gün geldi (1 satır), hepsi reçeteyle eşleşti.");

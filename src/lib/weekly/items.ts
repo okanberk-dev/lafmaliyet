@@ -15,6 +15,7 @@ import { monthLabel, pct, tl } from "@/lib/format";
 import { percentText, WEEKDAY_NAMES } from "@/lib/karaoke/occupancy-text";
 import { cellReader, comparePairs, type KiyasBranch } from "@/lib/kiyas";
 import type { KasaName } from "@/lib/asilpos/kasa";
+import type { SwitchDays } from "@/lib/pos/tills";
 import { addDays, daysBetween, longDateTR } from "@/lib/reminders";
 
 import { WEEKLY_BALANCE_MAX_AGE, WEEKLY_CASH_DAYS, WEEKLY_KARAOKE_EMPTY, WEEKLY_MIN_TL, WEEKLY_POS_MIN_DAYS, WEEKLY_SALES_FULL_DAYS, WEEKLY_STOCK_MIN_TL, WEEKLY_WASTE_FACTOR, type WeekInfo, type WeeklyItem } from "./core";
@@ -207,9 +208,8 @@ export interface SalesLineIn {
   rows: readonly TillRow[];
   /** Kasası olan fiziksel şubeler ve açılış günleri (Kıyas kartıyla aynı: src/lib/kiyas.ts) */
   branches: readonly KiyasBranch[];
-  /** AsilPOS'a geçiş günü: öncesindeki AsilPOS gün sonu deneme günüdür */
-  switchDay: string | null;
-  asilposBranch?: string;
+  /** Kasa başına AsilPOS'a geçiş günü (çok şube): öncesindeki AsilPOS gün sonu deneme günüdür */
+  switchDays: SwitchDays;
 }
 
 /**
@@ -225,7 +225,7 @@ export interface SalesLineIn {
  * hafta tek şubeli dört haftayla kıyaslanıp "önceki 4 haftaya göre %X fazla" deniyordu.
  */
 export function salesLine(i: SalesLineIn): string | null {
-  const read = cellReader({ rows: i.rows, branches: i.branches, today: i.week.lastTo, switchDay: i.switchDay, asilposBranch: i.asilposBranch });
+  const read = cellReader({ rows: i.rows, branches: i.branches, today: i.week.lastTo, switchDays: i.switchDays });
   const days: string[] = [];
   for (let d = i.week.lastFrom; d <= i.week.lastTo; d = addDays(d, 1)) days.push(d);
   // Geçen hafta bütün şubelerle: raporlu gün tekil (iki şubenin aynı günü bir gün, ciro ikisinin toplamı)

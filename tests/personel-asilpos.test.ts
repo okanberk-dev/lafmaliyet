@@ -96,7 +96,7 @@ test("personel listesi: biten satır ile 'Devam ettir'in yeni satırı aynı hes
 test("imza ve şube: anahtar yoksa 503, imzasız 401, şube yoksa 400, başka şube 409 wrong_branch; imza şubeden önce", () => {
   const url = new URL("https://ladmin.laffogato.net/api/panel/pos/personel?sube=marina");
   const h = signedHeaders(SECRET, "GET", url, "", NOW.getTime());
-  const ok = { secret: SECRET, url, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW.getTime() };
+  const ok = { expected: "marina", secret: SECRET, url, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW.getTime() };
   assert.deepEqual(checkPosStaffRequest(ok), { ok: true, sube: "marina" });
   assert.deepEqual(checkPosStaffRequest({ ...ok, secret: null }), { ok: false, status: 503, body: { error: "not_configured" } });
   assert.deepEqual(checkPosStaffRequest({ ...ok, signature: null }), { ok: false, status: 401, body: { error: "unauthorized" } });
@@ -123,7 +123,7 @@ test("uç: imzalı, önbelleksiz, oturumsuz GET; çekirdek imza ve şubeyi okuma
   const route = read("src/app/api/panel/pos/personel/route.ts");
   assert.match(route, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(route, /"Cache-Control": "no-store"/);
-  assert.match(route, /servePosStaff\(\{\s*(?:\/\/[^\n]*\n\s*)?secret: await asilposRequestSecret\(request\),/);
+  assert.match(route, /servePosStaff\(\{\s*(?:\/\/[^\n]*\n\s*)?\.\.\.\(await posRequestCaller\(request\)\),/);
   assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   const serve = read("src/server/asilpos/personel.ts");
   const handler = serve.slice(serve.indexOf("export async function servePosStaff"));
@@ -180,14 +180,14 @@ test("sınıflama: sayılan = şubenin o ay aralıktaki satırı; başka şubeni
       { id: 14, branchId: "marina", startMonth: null, endMonth: "2026-10" },
     ].map((r) => [r.id, r]),
   );
-  assert.deepEqual(classifyWorkedStaff(["s:7", "s:12", "s:13", "s:14", "s:99"], rows, "2026-11-22"), {
+  assert.deepEqual(classifyWorkedStaff(["s:7", "s:12", "s:13", "s:14", "s:99"], rows, "2026-11-22", "marina"), {
     counted: ["s:7", "s:12"],
     unknown: ["s:14", "s:99"],
     otherBranch: ["s:13"],
   });
   // Satırın aralığı günün ayına göre: Ekim'de 7 henüz yok, 14 var
-  assert.deepEqual(classifyWorkedStaff(["s:7", "s:14"], rows, "2026-10-31"), { counted: ["s:14"], unknown: ["s:7"], otherBranch: [] });
-  assert.deepEqual(classifyWorkedStaff([], rows, "2026-11-22"), { counted: [], unknown: [], otherBranch: [] });
+  assert.deepEqual(classifyWorkedStaff(["s:7", "s:14"], rows, "2026-10-31", "marina"), { counted: ["s:14"], unknown: ["s:7"], otherBranch: [] });
+  assert.deepEqual(classifyWorkedStaff([], rows, "2026-11-22", "marina"), { counted: [], unknown: [], otherBranch: [] });
 });
 
 // ---------------------------------------------------------------- yemek kartının günü
@@ -203,11 +203,11 @@ const TUZLA = person({ id: 14, name: "Tuzla", netSalary: 30_000, mealCard: true,
 const decDay = (d: number) => `2026-12-${String(d).padStart(2, "0")}`;
 /** Aralık 2026: 1–31 her gün AsilPOS gün sonu; Arda 20 gün, Cenk 18 gün, Derya (işaretsiz) 25 gün */
 const decWorked = (patch: (date: string, refs: string[]) => string[] | null = (_d, r) => r): AsilposWorked => ({
-  switchDay: "2026-11-22",
+  switchDays: { marina: "2026-11-22" },
   days: Array.from({ length: 31 }, (_, i) => {
     const d = i + 1;
     const refs = [...(d <= 20 ? ["s:7"] : []), ...(d > 13 ? ["s:12"] : []), ...(d <= 25 ? ["s:13"] : []), "s:99"];
-    return { date: decDay(d), refs: patch(decDay(d), refs) };
+    return { branchId: "marina", date: decDay(d), refs: patch(decDay(d), refs) };
   }),
 });
 const nov = { month: "2026-11", openDays: 30, posRevenue: 300_000, discounts: 0, offRevenue: 0, note: null };
@@ -228,7 +228,7 @@ test("çalışılan gün: ayın her sayılan AsilPOS günü liste taşıyorsa ki
   assert.equal(asilposWorkedDays(undefined, ARDA, "2026-12"), null);
   // Geçiş ayı (Kasım: 13–21 ModPOS, 22'den AsilPOS): ayın ModPOS günlerinde çalışılan gün bilinmez, 22–30 her gün liste
   // taşısa da ay eksik sayılır (§6: Arda'in Kasım yemek kartı 330 × 26 = 8.580)
-  const novFull: AsilposWorked = { switchDay: "2026-11-22", days: [22, 23, 24, 25, 26, 27, 28, 29, 30].map((d) => ({ date: `2026-11-${d}`, refs: ["s:7"] })) };
+  const novFull: AsilposWorked = { switchDays: { marina: "2026-11-22" }, days: [22, 23, 24, 25, 26, 27, 28, 29, 30].map((d) => ({ branchId: "marina", date: `2026-11-${d}`, refs: ["s:7"] })) };
   assert.equal(asilposWorkedDays(novFull, ARDA, "2026-11"), null);
   // Ayın hiçbir gününde geçmeyen kimlik (AsilPOS'ta bağlı değil ya da "Devam ettir"den önceki satıra bağlı): 0 gün
   // sayılmaz, bilinmiyor (varsayılan 26) ve "görünmüyor" diye işaretlenir (Maaşlar ve Genel bakış uyarır)

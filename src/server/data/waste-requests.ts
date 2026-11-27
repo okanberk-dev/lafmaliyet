@@ -7,15 +7,14 @@ import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, namedTill, requestIn
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
-import { productIkramRefusal, recordedOffRevenue } from "@/lib/asilpos/ikram";
-import { branchSwitchDay } from "@/lib/asilpos/switch";
+import { ikramTillDays, productIkramRefusal, recordedOffRevenue } from "@/lib/asilpos/ikram";
+import { switchDayFor, tillDayKey } from "@/lib/pos/tills";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText, type LateWastePayloadT, type WasteDeletePayloadT } from "@/lib/waste-requests";
 import { listBranches } from "@/server/branches";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
+import { asilposSwitchDaysOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
 import { requestBranches } from "@/server/staff-requests/branch";
 
 /*
@@ -335,9 +334,9 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
   const countedMonths = new Set(counted.filter((c) => c.n > 0).map((c) => c.month));
   const time = (d: Date) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(d);
   const productPrice = (model: Model, id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
-  // Geçiş günü ayarın kendisi; isteğin şubesine göre uygulanır (branchSwitchDay). AsilPOS'un gün sonu gelen günleri
-  // şubenin modelinden (AsilPOS'un şubesinde geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
-  const [switchDay, asilposBranch] = await Promise.all([asilposSwitchDayOf(db), asilposBranchId(db)]);
+  // Geçiş günü isteğin şubesinin kasasınınki (çok şube; switchDayFor). AsilPOS'un gün sonu gelen günleri şubenin
+  // modelinden (kasası AsilPOS olan şubede geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
+  const switchDays = await asilposSwitchDaysOf(db);
   const today = businessDate(now);
   /**
    * Günün sayılan ikramının menü değeri (şubenin modeli; Z'nin ödenmez tutarıyla karşılaştırılır): AsilPOS satırı kendi
@@ -375,7 +374,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
       });
       const menu = p.kind === "ikram" ? productPrice(model, p.productId) : null;
       const ikramRecorded = p.kind === "ikram" ? ikramValueOf(model, p.date) : null;
-      const asilposDays = new Set(model.ds.asilposIkram?.days ?? []);
+      const asilposDays = ikramTillDays(model.ds.asilposIkram);
       return [
         {
           ...base,
@@ -392,9 +391,9 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
           otherPending: [...new Set(others)],
           report: { exists: !!report, emailed: !!report?.emailedAt, offRevenue: report?.offRevenue ?? null },
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
-          ikramFromAsilpos: asilposDays.has(p.date),
+          ikramFromAsilpos: asilposDays.has(tillDayKey(sube, p.date)),
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
-          asilposRefusal: productIkramRefusal(p, branchSwitchDay(switchDay, p.branchId, asilposBranch), { received: asilposDays.has(p.date), today }, "onay"),
+          asilposRefusal: productIkramRefusal(p, switchDayFor(switchDays, p.branchId), { received: asilposDays.has(tillDayKey(sube, p.date)), today }, "onay"),
         },
       ];
     }

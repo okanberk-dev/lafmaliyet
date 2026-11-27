@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -153,12 +153,12 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
   const send = (body: unknown, now = NOW) => {
     const raw = typeof body === "string" ? body : JSON.stringify(body);
     const h = signedHeaders(SECRET, "POST", GUN, raw, now.getTime());
-    return status.handlePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, now, { unverifiedWindowMs: 0 });
+    return status.handlePosDay(db, { branchId: "marina", secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, now, { unverifiedWindowMs: 0 });
   };
   const signedGet = (url: URL, o: { now?: Date; sign?: boolean; secret?: string | null } = {}) => {
     const now = o.now ?? NOW;
     const h = o.sign === false ? { "x-laf-timestamp": null, "x-laf-signature": null } : signedHeaders(SECRET, "GET", url, "", now.getTime());
-    return { secret: o.secret === undefined ? SECRET : o.secret, url, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now };
+    return { branchId: "marina", secret: o.secret === undefined ? SECRET : o.secret, url, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now };
   };
   const outsOf = (date: string) =>
     db
@@ -183,11 +183,11 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
   });
 
   test("yeniden sayım: otomatik rapor yazıldıktan sonra gelen gövdenin sayımı (önceki sayımın yankısı değil); rapor da onu yazar", async () => {
-    assert.equal(await gunSonu.writeAutoReport(db, "2026-11-21", later(1)), "written");
+    assert.equal(await gunSonu.writeAutoReport(db, "2026-11-21", "marina", later(1)), "written");
     const recount = await send(day("2026-11-21", { counted: 1_300, revision: 2, correction: { kind: "recount", reason: "Yeniden sayıldı" } }), later(2));
     assert.equal(recount.status, 200, JSON.stringify(recount.body));
     assert.deepEqual(recount.body.nextOpening, { amount: 1_300, source: "kasa_raporu" }, "yanıt yeni sayımı söyler");
-    assert.equal(await gunSonu.writeAutoReport(db, "2026-11-21", later(3)), "updated");
+    assert.equal(await gunSonu.writeAutoReport(db, "2026-11-21", "marina", later(3)), "updated");
     const [rep] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, "2026-11-21"), eq(s.cashReports.branchId, ASILPOS_SUBE)));
     assert.equal(rep.countedCash - rep.handedOver, 1_300, "rapor yanıtın söylediğini yazdı");
     // Sayımsız yeniden kapanış: rapor sayımını korur, yanıt da
@@ -265,7 +265,7 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
     assert.deepEqual((await outsOf(D)).map((o) => o.id), rows.map((o) => o.id), "aynı satırlar");
     assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, rows[0].id))).length, 1);
     // Kasa raporu: gün içinde çıkan satırların toplamı (harcama + teslim), teslim edilen 0
-    assert.equal(await gunSonu.writeAutoReport(db, D, NOV28), "written");
+    assert.equal(await gunSonu.writeAutoReport(db, D, "marina", NOV28), "written");
     const [rep] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, D), eq(s.cashReports.branchId, ASILPOS_SUBE)));
     assert.deepEqual([rep.cashOut, rep.handedOver, rep.cashIn], [1_000, 0, 50]);
   });
@@ -353,6 +353,34 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
       "ödemeye bağlı satır kaldı, AsilPOS bağı çözüldü",
     );
     assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, rows[0].id))).length, 0, "kalkan satırın gider kaydı da kalktı");
+  });
+
+  test("hareketler: anahtar yalnız kendi şubesinin satırını yazar; kimliği başka şubenin satırında olan hareket ona dokunmaz, yeni satır da açmaz (inceleme 27 Kasım)", async () => {
+    const date = "2026-11-26";
+    // Tuzla'nın AsilPOS satırı (ör. Tuzla'nın yedeğinden kurulmuş kasa Marina'nın anahtarıyla eski günü yeniden yolluyor)
+    const [tuzlaRow] = await db
+      .insert(s.cashOuts)
+      .values({ branchId: "tuzla", date: "2026-11-20", kind: "harcama", amount: 75, description: "Tuzla'nın", docType: "yok", createdByName: "AsilPOS", asilposId: ulid("R1") })
+      .returning();
+    const moves = [move("R1", "harcama", 91.5), move("R2", "teslim", 333.25)];
+    const mine = async () =>
+      (await db.select().from(s.cashOuts).where(inArray(s.cashOuts.asilposId, [ulid("R1"), ulid("R2")])).orderBy(asc(s.cashOuts.id))).map((o) => [o.branchId, o.date, o.kind, o.amount, o.asilposId]);
+    const r = await send(day(date, { moves }), NOV28);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(
+      await mine(),
+      [
+        ["tuzla", "2026-11-20", "harcama", 75, ulid("R1")],
+        [ASILPOS_SUBE, date, "teslim", 333.25, ulid("R2")],
+      ],
+      "Tuzla'nın satırı değişmedi, Marina'ya taşınmadı; yalnız Marina'nın kendi hareketi yazıldı",
+    );
+    assert.equal((await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, tuzlaRow.id)))[0].description, "Tuzla'nın");
+    const [log] = await db.select({ detail: s.activityLog.detail }).from(s.activityLog).where(eq(s.activityLog.action, "Kasadan çıkanlar (AsilPOS)")).orderBy(desc(s.activityLog.id)).limit(1);
+    assert.match(log.detail ?? "", /1 hareket başka şubenin satırı olduğu için yazılmadı/);
+    // Yeniden gönderim de aynı: 500'e düşmez, Tuzla'nın satırı kalır
+    assert.equal((await send(day(date, { moves, revision: 2 }), NOV28)).status, 200);
+    assert.deepEqual((await mine())[0], ["tuzla", "2026-11-20", "harcama", 75, ulid("R1")]);
   });
 
   test("hareketler: sayılmayan günde, eski AsilPOS'un (alan yok) ve bozuk listenin gövdesinde satırlara dokunulmaz", async () => {
@@ -575,12 +603,12 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
       assert.equal((await outsOf(trial)).length, 2);
       // Deneme günü: geçiş 8 Kasım'a alındı, 7 Kasım'ın kaydı silinir (yeniden gönderim yok)
       await setSwitch(real);
-      await asilposAdmin.removeAsilposDay(db, users.admin, trial, 11, NOV28);
+      await asilposAdmin.removeAsilposDay(db, users.admin, "marina", trial, 11, NOV28);
       assert.deepEqual(await outsOf(trial), [], "deneme gününün AsilPOS satırları kalktı");
       // Sayılan gün: AsilPOS'taki Z doğru, paneldeki kayıt silinir
       const before = await outsOf(real);
       await db.update(s.cashOuts).set({ store: "Bakkal" }).where(eq(s.cashOuts.id, before[0].id));
-      await asilposAdmin.removeAsilposDay(db, users.admin, real, 11, NOV28);
+      await asilposAdmin.removeAsilposDay(db, users.admin, "marina", real, 11, NOV28);
       assert.deepEqual(
         (await outsOf(real)).map((o) => [o.id, o.asilposId]),
         before.map((o) => [o.id, null]),

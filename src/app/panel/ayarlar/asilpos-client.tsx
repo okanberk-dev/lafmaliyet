@@ -13,7 +13,7 @@ import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { monthLabel, num } from "@/lib/format";
 import { ASILPOS_RESEND_HINT } from "@/lib/asilpos/status";
-import { dayMonthYearTR, ASILPOS_SWITCH_EFFECTS, switchAffectedMonths, switchDayProblem } from "@/lib/asilpos/switch";
+import { dayMonthYearTR, switchAffectedMonths, switchDayProblem } from "@/lib/asilpos/switch";
 import { isStepUpError } from "@/lib/step-up";
 import { deleteAsilposDay, saveAsilposSwitchDay } from "@/server/actions/asilpos";
 import { matchAsilposName } from "@/server/actions/sales";
@@ -21,11 +21,27 @@ import { matchAsilposName } from "@/server/actions/sales";
 import { ProductPicker, type ProductOption } from "../satislar/product-picker";
 
 /**
- * Ayarlar › AsilPOS (kasa) › AsilPOS'a geçiş günü. Kaydetmeden önce onay penceresi: bu günden itibaren ne değişir
- * (ASILPOS_SWITCH_EFFECTS, kodun bugün yaptığı) ve hangi ayların günleri kaynak değiştirir (switchAffectedMonths).
- * Boşaltmak da aynı pencereden: kasa yeniden ModPOS sayılır. Hiçbir kayıt silinmez.
+ * Ayarlar › AsilPOS (kasa) › bir kasanın AsilPOS'a geçiş günü (çok şube: `branchId` bölümün şubesi). Kaydetmeden önce
+ * onay penceresi: bu günden itibaren ne değişir (`effects`: switchEffects, kodun bugün yaptığı) ve hangi ayların günleri
+ * kaynak değiştirir (switchAffectedMonths). Boşaltmak da aynı pencereden: kasa yeniden ModPOS sayılır. Hiçbir kayıt silinmez.
  */
-export function AsilposSwitchDayForm({ value, today, min, max, linked }: { value: string | null; today: string; min: string; max: string; linked: boolean }) {
+export function AsilposSwitchDayForm({
+  branchId,
+  effects,
+  value,
+  today,
+  min,
+  max,
+  linked,
+}: {
+  branchId: string;
+  effects: readonly string[];
+  value: string | null;
+  today: string;
+  min: string;
+  max: string;
+  linked: boolean;
+}) {
   const router = useRouter();
   const [draft, setDraft] = useState(value ?? "");
   // Kayıttan ya da başka bir sekmedeki değişiklikten sonra sunucudan yeni değer gelir: el değmemiş alan yenisini alır
@@ -42,7 +58,7 @@ export function AsilposSwitchDayForm({ value, today, min, max, linked }: { value
 
   const save = (day: string | null) =>
     start(async () => {
-      const res = await saveAsilposSwitchDay(day);
+      const res = await saveAsilposSwitchDay({ branchId, day });
       if (!res.ok) return void toast.error(res.error);
       setConfirm(undefined);
       toast.success(res.data.change ?? "Değişiklik yok");
@@ -54,12 +70,12 @@ export function AsilposSwitchDayForm({ value, today, min, max, linked }: { value
     <div className="space-y-3">
       <Field
         label="AsilPOS'a geçiş günü"
-        htmlFor="asilpos-gecis"
+        htmlFor={`asilpos-gecis-${branchId}`}
         error={problem}
         hint="Kasada AsilPOS'u kullanmaya başladığınız ilk iş günü. Boş bırakın: her şey bugünkü gibi ModPOS'a göre çalışır. Tercihen ayın 1'i (ModPOS'un o ayki listesi bölünmez)."
       >
         <Input
-          id="asilpos-gecis"
+          id={`asilpos-gecis-${branchId}`}
           type="date"
           value={draft}
           min={min}
@@ -106,7 +122,7 @@ export function AsilposSwitchDayForm({ value, today, min, max, linked }: { value
             <>
               <p>Bu günden itibaren kasanın kaynağı AsilPOS olur:</p>
               <ul className="list-disc space-y-1 pl-5">
-                {ASILPOS_SWITCH_EFFECTS.map((e) => (
+                {effects.map((e) => (
                   <li key={e}>{e}</li>
                 ))}
               </ul>
@@ -132,7 +148,7 @@ export function AsilposSwitchDayForm({ value, today, min, max, linked }: { value
  * AsilPOS reddedilen ya da silinen günü kendisi yeniden göndermez: yenisi AsilPOS'ta Kasa › Geçmiş günler › o günün Z
  * raporu › Gönder ile gelir (ASILPOS_RESEND_HINT). `label` verilirse metinli düğme, yoksa satır sonunda çöp kutusu.
  */
-export function AsilposDayDelete({ date, zNo, lines, label }: { date: string; zNo: number; lines: number; label?: string }) {
+export function AsilposDayDelete({ branchId, date, zNo, lines, label }: { branchId: string; date: string; zNo: number; lines: number; label?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const title = `${dayMonthYearTR(date)} AsilPOS kaydını sil`;
@@ -155,7 +171,7 @@ export function AsilposDayDelete({ date, zNo, lines, label }: { date: string; zN
           danger
           onClose={() => setOpen(false)}
           onConfirm={async (password) => {
-            const res = await deleteAsilposDay({ date, zNo }, { password });
+            const res = await deleteAsilposDay({ branchId, date, zNo }, { password });
             if (!res.ok) {
               // Parola hataları pencerede kalır; öteki hatalar (gün yeniden gönderildi) bildirimle
               if (isStepUpError(res.error)) return res.error;

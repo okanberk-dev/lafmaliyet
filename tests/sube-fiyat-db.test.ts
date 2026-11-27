@@ -159,7 +159,7 @@ describe("Şube fiyatı: veritabanında, sahte siteyle", { skip: !SERVER_URL && 
     const { storePosDay } = await import("../src/server/asilpos/ingest");
     const parsed = parsePosDay(GOLDEN(), new Date("2026-10-28T12:00:00+03:00"));
     assert.ok(parsed.ok);
-    const r = await storePosDay(db, parsed.data, new Date("2026-10-28T12:00:00+03:00"));
+    const r = await storePosDay(db, parsed.data, new Date("2026-10-28T12:00:00+03:00"), "marina");
     assert.ok(r.ok);
     const lines = await db
       .select({ posName: s.posDailySales.posName, listPrices: s.posDailySales.listPrices })

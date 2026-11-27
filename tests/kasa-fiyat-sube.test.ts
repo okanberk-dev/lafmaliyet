@@ -114,7 +114,7 @@ test("kaynak: göç tek veri adımı; Tuzla'ya hepsi, Marina'ya okuyucunun süzg
   assert.match(data, /ON CONFLICT \("branch_id", "product_id"\) DO NOTHING;/);
   assert.doesNotMatch(data, /UPDATE "products"|DELETE FROM/);
   // Şube kimliği ve geçiş gününün en erkeni kodla aynı
-  assert.match(read("src/lib/asilpos/switch.ts"), /export const ASILPOS_BRANCH_ID = "marina";/);
+  assert.match(read("src/lib/pos/tills.ts"), /export const LEGACY_POS_BRANCH_ID = "marina";/);
   assert.match(read("src/lib/constants.ts"), /export const ASILPOS_SWITCH_MIN = "2026-10-01";/);
   assert.match(data, />= '2026-10-01'/);
 });

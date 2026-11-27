@@ -7,6 +7,7 @@ import type { TaxDoc, Withholding } from "../tax/rules";
 
 import type { AsilposIkramData } from "../asilpos/ikram";
 import type { AsilposWorked } from "../asilpos/personel";
+import type { PosFroms, SwitchDays } from "../pos/tills";
 
 import type { PurchaseLot } from "./fifo";
 
@@ -702,12 +703,23 @@ export interface Dataset {
    * AsilPOS'a geçiş günü seçiliyse satış kaynaklarının özeti (src/lib/asilpos/sales.ts): geçiş ayından itibaren her ayın
    * ModPOS listesi ve AsilPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
    */
-  asilposSales?: { switchDay: string; countFrom: string; months: AsilposSalesMonth[] };
+  asilposSales?: {
+    switchDay: string;
+    /** Kasaların en erken sayılma günü (metinler) */
+    countFrom: string;
+    /**
+     * Kasa başına AsilPOS satışlarının sayıldığı ilk gün (çok şube; para hesapları bunu okur: listDiscountOf). Okuyucu her
+     * zaman verir; verilmemiş eski veride (tek kasa) Marina'nın `countFrom`'u (salesFroms)
+     */
+    froms?: PosFroms;
+    months: AsilposSalesMonth[];
+  };
   /**
-   * AsilPOS'un şubesi (kütükten türetilir: kasa kaynağı AsilPOS olan şube, yoksa Marina; src/lib/asilpos/switch.ts
-   * asilposBranchOf). Geçiş günü yalnız bu şubenin kasasınındır; okunmamışsa (test verisi) geri düşüş değeri
+   * AsilPOS kasaları (çok şube; kütükten: kasa kaynağı AsilPOS olan fiziksel şubeler, src/lib/pos/tills.ts) ve geçiş
+   * günleri. "Tümü"de her kasa kendi geçiş günüyle; okunmamışsa (test verisi) yok
    */
-  asilposBranch?: string;
+  posTills?: readonly string[];
+  posSwitchDays?: SwitchDays;
   /**
    * AsilPOS'a geçiş günü seçiliyse o günden itibaren AsilPOS'un ikramları ve gün sonu gelen günler
    * (src/lib/asilpos/ikram.ts): ikram satırları kayıtlı tüketime girer, o günlerde paneldeki ürün ikramı sayılmaz. Yoksa
@@ -748,10 +760,11 @@ export interface AsilposSalesMonth {
   /** Gelen AsilPOS gün sonları (sayılan ve kasa raporunu bekleyen): kaç gün geldi, son gün; hiç gelmediyse null */
   asilpos: { days: number; last: string } | null;
   /**
-   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan AsilPOS günleri (kasa raporlarının son gününden
-   * sonra; docs/ASILPOS.md › Kapsam); yoksa null ya da yok
+   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan AsilPOS günleri (kasanın kendi kasa raporlarının
+   * son gününden sonra; docs/ASILPOS.md › Kapsam); yoksa null ya da yok. Birden çok kasa bekliyorsa ("Tümü") `from` → `to`
+   * ilk bekleyen günden son gelen güne, `tills` kasa kasa
    */
-  held?: { from: string; to: string } | null;
+  held?: { from: string; to: string; tills?: { branchId: string; from: string; to: string }[] } | null;
   /**
    * AsilPOS'un sayılması gereken (`from`'dan dünden önceye) ama gün sonu gelmemiş, kasa raporu olan günler: o günlerin
    * satışı hiçbir kaynakta yok; yoksa alan yok

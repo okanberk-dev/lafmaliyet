@@ -80,7 +80,7 @@ describe("AsilPOS bağlantısı: veritabanında", { skip: !URL_ && "ASILPOS_TEST
     const raw = typeof body === "string" ? body : JSON.stringify(body);
     const now = o.now ?? NOW;
     const h = signedHeaders(o.signWith ?? SECRET, "POST", GUN, raw, now.getTime());
-    return ingest.receivePosDay(db, { secret: o.secret === undefined ? SECRET : o.secret, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, now);
+    return ingest.receivePosDay(db, { branchId: "marina", secret: o.secret === undefined ? SECRET : o.secret, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, now);
   };
   const rowsOf = (date: string) =>
     db
@@ -210,7 +210,7 @@ describe("AsilPOS bağlantısı: veritabanında", { skip: !URL_ && "ASILPOS_TEST
     const a = parsePosDay(JSON.stringify(push(D3, [line(`A1 ${tag}`), line(`A2 ${tag}`)])), NOW);
     const b = parsePosDay(JSON.stringify(push(D3, [line(`B1 ${tag}`)])), NOW);
     assert.ok(a.ok && b.ok);
-    await Promise.all([ingest.storePosDay(db, a.data, NOW), ingest.storePosDay(db, b.data, NOW)]);
+    await Promise.all([ingest.storePosDay(db, a.data, NOW, "marina"), ingest.storePosDay(db, b.data, NOW, "marina")]);
     const names = (await rowsOf(D3)).map((x) => x.posName);
     assert.ok(JSON.stringify(names) === JSON.stringify([`A1 ${tag}`, `A2 ${tag}`]) || JSON.stringify(names) === JSON.stringify([`B1 ${tag}`]), names.join(", "));
   });
@@ -262,7 +262,7 @@ describe("AsilPOS bağlantısı: veritabanında", { skip: !URL_ && "ASILPOS_TEST
     const a = parsePosDay(JSON.stringify(push(D5, [line(`A ${tag}`)], { zNo: 400 })), NOW);
     const b = parsePosDay(JSON.stringify(push(D5, [line(`B1 ${tag}`), line(`B2 ${tag}`)], { zNo: 401 })), NOW);
     assert.ok(a.ok && b.ok);
-    const results = await Promise.all([ingest.storePosDay(db, a.data, NOW), ingest.storePosDay(db, b.data, NOW)]);
+    const results = await Promise.all([ingest.storePosDay(db, a.data, NOW, "marina"), ingest.storePosDay(db, b.data, NOW, "marina")]);
     const [winner] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, D5));
     assert.ok(winner.z.zNo === 400 || winner.z.zNo === 401, String(winner.z.zNo));
     assert.deepEqual(results.filter((r) => !r.ok), [{ ok: false, zNo: winner.z.zNo }]);
@@ -307,7 +307,7 @@ describe("AsilPOS bağlantısı: veritabanında", { skip: !URL_ && "ASILPOS_TEST
       { date: D5, branchId: MODPOS_SUBE, posName: tuzlaName, qty: 50, revenue: 500, productId: null },
       { date: D4, branchId: ASILPOS_SUBE, posName: marinaName, qty: 1, revenue: 10, productId: null },
     ]);
-    const card = await loadAsilposCard(db, NOW);
+    const card = await loadAsilposCard(db, "marina", NOW);
     assert.equal(card.days.some((d) => d.date === D5 && d.zNo === 7), false, "Tuzla'nın günü (Z 7) kartta yok");
     assert.equal(card.unmatched.some((u) => u.posName === tuzlaName), false, "Tuzla'nın adı eşleşmeyenlerde yok");
     assert.equal(card.unmatched.some((u) => u.posName === marinaName), true, "Marina'nın eşleşmeyen adı var");
@@ -317,7 +317,7 @@ describe("AsilPOS bağlantısı: veritabanında", { skip: !URL_ && "ASILPOS_TEST
 
   test("ürün maliyetleri: yalnız imzayla; yalnız siteye bağlı ürünler ve altı alan; maliyet modelden, kuruş", async () => {
     const h = signedHeaders(SECRET, "GET", URUNLER, "", NOW.getTime());
-    const input = { secret: SECRET, url: URUNLER, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW };
+    const input = { branchId: "marina", secret: SECRET, url: URUNLER, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW };
     assert.deepEqual(await products.servePosProducts({ ...input, signature: null }), { status: 401, body: { error: "unauthorized" } });
     assert.deepEqual(await products.servePosProducts({ ...input, secret: null }), { status: 503, body: { error: "not_configured" } });
     const r = await products.servePosProducts(input);
