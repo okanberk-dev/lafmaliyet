@@ -76,6 +76,15 @@ Biten ayın günlerinin işçilik toplamı Gelir-gider'in personeline eşittir (
 ay: Gelir-gider maaşı son kasa raporunun gününe kadar oranlar, bu tablo bugüne kadar; elle yazılan açık gün) kartın
 altında iki rakam ve neden yazılır.
 
+**Müdürün görünümü** ([ROLLER.md](ROLLER.md) › Kararlar; kişisel ücret yalnız yöneticinin, `can(rol, "maas")`):
+yalnız kendi şubesi, haftalık satırlar ve ayın satırı, yalnız ciro ve oran. Günlük görünüm, işçiliğin tutarı (₺) ve
+Gelir-gider'le farkın notu yok. Part-time'ın günlük ücreti (ve yemek kartı) Vardiya'daki günlerine yazılmaz, hiç
+sayılmaz (`withoutDayWages`): oran tam zamanlının aylık işveren maliyeti ve part-time'ın aylık ek ödemesi ayın günlerine
+eşit bölünerek; ayın satırı da Gelir-gider'den değil ayın cirosu bilinen günlerinden. Müdür Vardiya'ya yazdığı için
+hafta part-time'ın günleriyle sayılsaydı tek hücrenin öncesi ve sonrası (ya da tek part-time'ın gün sayısı farklı iki
+hafta) o kişinin günlük ücretini verirdi (`tests/iscilik-mudur-db.test.ts`). Ücreti yazılmamış tam zamanlı uyarıda
+kalır; part-time'ın vardiya bağlantısı müdürün oranını değiştirmediği için sorulmaz.
+
 ## Kaçak raporu (Marina)
 
 `/panel/raporlar/kacak`. Ayın son günündeki tahmini stok ([STOK-TAHMINI.md](STOK-TAHMINI.md); `loadStockEstimate(db,

@@ -137,13 +137,15 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
   test("İşçilik / ciro: ayın satırı Gelir-gider'in personeli; günlerin toplamı onu tutar; ücreti olmayan kişi yazılır", async () => {
     const data = await labor.loadLaborReport(PREV);
     assert.ok(data, "rapor var");
+    assert.equal(data.wages, true, "yönetici kişisel ücretli görünümü alır");
     const t = data.branches.find((b) => b.id === "tuzla")!;
     const tuzla = (await loadModel({ scope: "tuzla" })).pnlMonth(PREV);
-    assert.ok(Math.abs(t.month.labor - tuzla.sections.personel) < 0.01, `ay: ${t.month.labor} ↔ ${tuzla.sections.personel}`);
-    assert.ok(Math.abs(t.daysLabor - t.month.labor) < 1, `günlerin toplamı ${t.daysLabor} ↔ Gelir-gider ${t.month.labor}`);
+    const monthLabor = t.month.labor ?? NaN;
+    assert.ok(Math.abs(monthLabor - tuzla.sections.personel) < 0.01, `ay: ${t.month.labor} ↔ ${tuzla.sections.personel}`);
+    assert.ok(Math.abs((t.daysLabor ?? NaN) - monthLabor) < 1, `günlerin toplamı ${t.daysLabor} ↔ Gelir-gider ${t.month.labor}`);
     const day1 = t.days.find((r) => r.from === d(1))!;
     const day4 = t.days.find((r) => r.from === d(4))!;
-    assert.ok(Math.abs(day1.labor - day4.labor - 1_000) < 0.01, "Can'ın günlük ücreti çalıştığı güne");
+    assert.ok(Math.abs((day1.labor ?? NaN) - (day4.labor ?? NaN) - 1_000) < 0.01, "Can'ın günlük ücreti çalıştığı güne");
     assert.equal(day4.revenue, null, "raporu olmayan gün: veri yok");
     assert.ok(day1.ratio !== null && day1.ratio > 0, "raporlu günün oranı");
     assert.deepEqual(

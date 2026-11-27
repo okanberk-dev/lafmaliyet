@@ -12,12 +12,13 @@ import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/t
 import { ALL_BRANCHES } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { monthLabel, pct, tl } from "@/lib/format";
-import { dayLabel, LABOR_METHOD, weekLabel, type LaborRow } from "@/lib/iscilik";
+import { dayLabel, LABOR_METHOD, LABOR_METHOD_NO_WAGES, weekLabel } from "@/lib/iscilik";
 import { shiftMonth } from "@/lib/reminders";
+import { can } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { requireCan } from "@/server/auth/dal";
 import { monthParam } from "@/server/data/dataset";
-import { loadLaborReport, type LaborBranchReport, type LaborReport } from "@/server/data/iscilik";
+import { loadLaborReport, type LaborBranchReport, type LaborReport, type LaborRowShown } from "@/server/data/iscilik";
 
 import { ReportHeader } from "../header";
 
@@ -28,6 +29,10 @@ const TITLE = "İşçilik / ciro";
 const DESCRIPTION = "Personel maliyetinin ciroya oranı: günlük, haftalık ve şube şube.";
 const MORE =
   "Ayın satırı Gelir-gider'in personeli ve cirosudur (KDV hariç). Günlük ve haftalık satırlarda tam zamanlının aylık işveren maliyeti ayın günlerine eşit bölünür (kapalı günde de maaş işler), part-time'ın günlük ücreti Vardiya'da çalıştığı güne yazılır. Giderlerdeki maaş ödemeleri kullanılmaz: ödeme günü çalışılan gün değildir. Cirosu bilinmeyen gün (kasa raporu, LafPOS gün sonu ya da föy yok) orana girmez, sıfır sayılmaz.";
+// Kişisel ücreti görmeyen rol (müdür; docs/ROLLER.md): oran yalnız aylık ücretlerle, tutar ve günlük görünüm yok
+const DESCRIPTION_NO_WAGES = "Personelin aylık ücretlerinin ciroya oranı: haftalık ve aylık.";
+const MORE_NO_WAGES =
+  "Tam zamanlının aylık işveren maliyeti ve part-time'ın aylık ek ödemesi ayın günlerine eşit bölünür (kapalı günde de maaş işler). Part-time'ın günlük ücreti kişisel ücrettir: Vardiya'daki günlerine yazılmaz, orana girmez; işçiliğin tutarı ve günlük görünüm yöneticinin. Cirosu bilinmeyen gün (kasa raporu, LafPOS gün sonu ya da föy yok) orana girmez, sıfır sayılmaz.";
 
 const PICKER_MONTHS = 24;
 
@@ -49,10 +54,13 @@ export default function LaborPage({ searchParams }: PageProps<"/panel/raporlar/i
 }
 
 async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/raporlar/iscilik">["searchParams"] }) {
-  // Yönetici ve müdür (docs/ROLLER.md): müdür yalnız kendi şubesini, haftalık ve aylık görür. Günlük görünüm müdüre kapalı:
-  // tek kişinin çalıştığı günün işçiliği o kişinin günlük ücretidir (kişisel ücret)
+  // Yönetici ve müdür (docs/ROLLER.md): müdür yalnız kendi şubesini, haftalık ve aylık oranı görür. Kişisel ücret (maaş
+  // yeteneği) yalnız yöneticinin: günlük görünüm (tek kişinin günü o kişinin ücreti), işçiliğin tutarı ve part-time'ın
+  // Vardiya'daki günü (müdür kendi yazdığı hücrenin öncesini ve sonrasını karşılaştırırdı) müdüre gitmez
   const me = await requireCan("rapor.sube");
-  const admin = me.role === "admin";
+  const admin = can(me.role, "maas");
+  const description = admin ? DESCRIPTION : DESCRIPTION_NO_WAGES;
+  const more = admin ? MORE : MORE_NO_WAGES;
   const sp = await searchParams;
   const current = businessDate().slice(0, 7);
   const asked = monthParam(sp.ay);
@@ -78,7 +86,7 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
   if (!data) {
     return (
       <>
-        <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role={me.role} />
+        <ReportHeader path={PATH} title={TITLE} description={description} more={more} actions={actions} role={me.role} />
         <EmptyState icon={<Users />} title="Açık şube yok" description="Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." />
       </>
     );
@@ -86,9 +94,9 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
   const list = data.total ? [...data.branches, data.total] : data.branches;
   return (
     <>
-      <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role={me.role} />
+      <ReportHeader path={PATH} title={TITLE} description={description} more={more} actions={actions} role={me.role} />
       <p className="-mt-2 mb-4 text-xs text-pretty text-ink-mute" role="note">
-        Yöntem: {LABOR_METHOD}
+        Yöntem: {data.wages ? LABOR_METHOD : LABOR_METHOD_NO_WAGES}
       </p>
       {admin ? <CompanyWideNotice screen="raporlar" className="mb-4" /> : null}
       {data.missing.length ? (
@@ -122,7 +130,11 @@ function MonthSummary({ data, list, running }: { data: LaborReport; list: LaborB
       <CardHeader
         icon={<Users />}
         title={`${monthLabel(data.month)}${running ? " (bugüne kadar)" : ""}`}
-        description="Gelir-gider'in ayı: personel giderleri (işveren maliyeti) ÷ ciro (KDV hariç)."
+        description={
+          data.wages
+            ? "Gelir-gider'in ayı: personel giderleri (işveren maliyeti) ÷ ciro (KDV hariç)."
+            : "Ayın cirosu bilinen günleri: aylık ücretler ÷ ciro (KDV hariç); part-time'ın günlük ücreti sayılmaz."
+        }
       />
       <TableWrap>
         <Table>
@@ -130,7 +142,7 @@ function MonthSummary({ data, list, running }: { data: LaborReport; list: LaborB
             <tr>
               <TH sticky>Şube</TH>
               <TH numeric>Ciro (KDV hariç)</TH>
-              <TH numeric>İşçilik</TH>
+              {data.wages ? <TH numeric>İşçilik</TH> : null}
               <TH numeric>İşçilik / ciro</TH>
             </tr>
           </THead>
@@ -143,7 +155,7 @@ function MonthSummary({ data, list, running }: { data: LaborReport; list: LaborB
                 <TD numeric className={b.month.revenue === null ? "text-ink-mute" : undefined}>
                   {b.month.revenue === null ? "ciro yok" : tl(b.month.revenue)}
                 </TD>
-                <TD numeric>{tl(b.month.labor)}</TD>
+                {b.month.labor === null ? null : <TD numeric>{tl(b.month.labor)}</TD>}
                 <TD numeric className="font-semibold">
                   {ratioText(b.month.ratio)}
                 </TD>
@@ -156,7 +168,7 @@ function MonthSummary({ data, list, running }: { data: LaborReport; list: LaborB
   );
 }
 
-function rowNote(r: LaborRow): string | null {
+function rowNote(r: LaborRowShown): string | null {
   const parts: string[] = [];
   if (r.unknownDays) parts.push(r.from === r.to ? "veri yok" : `${r.unknownDays} gün veri yok`);
   if (r.closedDays) parts.push(r.from === r.to ? "satış yok" : `${r.closedDays} gün satış yok`);
@@ -165,8 +177,12 @@ function rowNote(r: LaborRow): string | null {
 
 function BranchCard({ branch, view, data }: { branch: LaborBranchReport; view: View; data: LaborReport }) {
   const rows = view === "gun" ? branch.days : branch.weeks;
-  const label = (r: LaborRow) => (view === "gun" ? dayLabel(r.from) : weekLabel(r.from, r.to));
-  const gap = Math.abs(branch.daysLabor - branch.month.labor) >= 1;
+  const label = (r: LaborRowShown) => (view === "gun" ? dayLabel(r.from) : weekLabel(r.from, r.to));
+  // Tutar yalnız yöneticide (müdürde ikisi de null: not yok)
+  const gap =
+    branch.daysLabor !== null && branch.month.labor !== null && Math.abs(branch.daysLabor - branch.month.labor) >= 1
+      ? { days: branch.daysLabor, month: branch.month.labor }
+      : null;
   return (
     <Card>
       <CardHeader
@@ -179,7 +195,7 @@ function BranchCard({ branch, view, data }: { branch: LaborBranchReport; view: V
             <tr>
               <TH sticky>{view === "gun" ? "Gün" : "Hafta"}</TH>
               <TH numeric>Ciro (KDV hariç)</TH>
-              <TH numeric>İşçilik</TH>
+              {data.wages ? <TH numeric>İşçilik</TH> : null}
               <TH numeric>İşçilik / ciro</TH>
               <TH>
                 <span className="sr-only">Not</span>
@@ -197,7 +213,7 @@ function BranchCard({ branch, view, data }: { branch: LaborBranchReport; view: V
                   <TD numeric className={r.revenue === null ? "text-ink-mute" : undefined}>
                     {r.revenue === null ? "veri yok" : tl(r.revenue)}
                   </TD>
-                  <TD numeric>{tl(r.labor)}</TD>
+                  {r.labor === null ? null : <TD numeric>{tl(r.labor)}</TD>}
                   <TD numeric className="font-semibold">
                     {ratioText(r.ratio)}
                   </TD>
@@ -206,7 +222,7 @@ function BranchCard({ branch, view, data }: { branch: LaborBranchReport; view: V
               );
             })}
           </tbody>
-          {view === "gun" && rows.length ? (
+          {view === "gun" && rows.length && branch.daysLabor !== null ? (
             <tfoot>
               <TFootRow>
                 <TD sticky>Günlerin toplamı</TD>
@@ -221,7 +237,7 @@ function BranchCard({ branch, view, data }: { branch: LaborBranchReport; view: V
       </TableWrap>
       {gap ? (
         <p className="px-5 pb-4 text-xs text-pretty text-ink-mute">
-          Ayın günlerinin işçiliği {tl(branch.daysLabor)}, Gelir-gider&apos;in personeli {tl(branch.month.labor)}: Gelir-gider maaşı ayın kasa raporuyla kaplı
+          Ayın günlerinin işçiliği {tl(gap.days)}, Gelir-gider&apos;in personeli {tl(gap.month)}: Gelir-gider maaşı ayın kasa raporuyla kaplı
           (ya da elle yazılan açık) günüyle oranlar, bu tablo bugüne kadarki takvim günüyle.
         </p>
       ) : null}

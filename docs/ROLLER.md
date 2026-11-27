@@ -87,15 +87,15 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 **Görür ve yapar:** personelin her ekranı; kasa raporlarının rakamları ve geçmişi, onaysız düzeltme ve silme, kilitli
 ya da eski güne yazma, kafe kapalı günü işaretleme; kasadan çıkanı (yöneticinin kategorisindeki satır hariç) ve zayi /
 ikramı doğrudan; Onaylar (şubesinin istekleri); vardiya planını yazma; Teslim defteri; Bugün'de şubesinin günü (ciro,
-kasa farkı, geçen hafta); İşçilik / ciro (haftalık ve aylık, yalnız şubesi).
+kasa farkı, geçen hafta); İşçilik / ciro (haftalık ve aylık oran, yalnız şubesi, yalnız aylık ücretlerle).
 
 **Görmez / yapamaz:** maaşlar ve kişisel ücretler (Maaşlar, avanslar, bordro, personel belgeleri, İşçilik'in günlük
-görünümü, kasadan çıkanın maaş / kira kategorileri: seçmek, adını ve o kategorideki satırın yerini, açıklamasını, fişini
-görmek, o satırı düzeltmek, silmek ve isteğine karar vermek), vergi, Paraşüt, ayarlar, kullanıcı yönetimi, yedek,
-anahtarlar, şube ayarları, Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme raporları, maliyet / kâr / hammadde
-fiyatı ekranları, reçeteyi doğrudan düzenleme ve reçete önerisine karar, karaoke doluluğu (tutar) ve Kasa raporunun site
-satırındaki karaoke ön ödemesi (online toplamı görür; `karaoke.tutar`), kontrol listelerini düzenleme, panel asistanı
-(yalnız yönetici), öteki şubeler.
+görünümü, işçilik tutarı ve part-time'ın günlük ücreti, kasadan çıkanın maaş / kira kategorileri: seçmek, adını ve o
+kategorideki satırın yerini, açıklamasını, fişini görmek, o satırı düzeltmek, silmek ve isteğine karar vermek), vergi,
+Paraşüt, ayarlar, kullanıcı yönetimi, yedek, anahtarlar, şube ayarları, Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp
+önleme raporları, maliyet / kâr / hammadde fiyatı ekranları, reçeteyi doğrudan düzenleme ve reçete önerisine karar,
+karaoke doluluğu (tutar) ve Kasa raporunun site satırındaki karaoke ön ödemesi (online toplamı görür; `karaoke.tutar`),
+kontrol listelerini düzenleme, panel asistanı (yalnız yönetici), öteki şubeler.
 
 ## Muhasebeci
 
@@ -126,8 +126,8 @@ oturumları kapanır (oturum sürümü).
 
 ## Kararlar
 
-- **Maaş ve kişisel ücret müdürde yok** (en tutucusu). İşçilik / ciro'da yalnız haftalık ve aylık şube toplamı; günlük
-  görünüm tek kişinin gününü (kişisel ücret) gösterdiği için kapalı. Kasadan çıkanda müdür personelin kategorilerini
+- **Maaş ve kişisel ücret müdürde yok** (en tutucusu). İşçilik / ciro'da yalnız haftalık ve aylık şube oranı, aylık
+  ücretlerle (bir sonraki madde). Kasadan çıkanda müdür personelin kategorilerini
   seçer; **yöneticinin kategorisindeki satırın yalnız türünü ve tutarını görür**: kategorinin adı, satırın yeri (kime),
   açıklaması, fişin bilgileri (no, tarih, KDV) ve fotoğrafı ona gitmez, satırın adı "Harcama" (serbest metin kişinin
   adını ve ücretini taşır: "Selin · Kasım avansı"). Kural tek yerde: `src/lib/roles.ts` › `ownerRowAmountOnly`
@@ -157,6 +157,16 @@ oturumları kapanır (oturum sürümü).
   günü), bu yüzden yalnız şubesinin kasadan çıkanlarına ve harcama kayıtlarına, yalnız personelin kategorisindekilere
   bakar; öteki şubenin satırı, işletme geneli (şubesiz) harcama kaydı ve yöneticinin kategorisindeki satır ve kayıt
   okunmaz (`src/server/photo-read/read.ts` › `recentReceipts`).
+- **İşçilik / ciro müdüre kişisel ücretsiz.** Günlük görünüm kapalı: tek kişinin çalıştığı günün işçiliği o kişinin
+  günlük ücretidir. Part-time'ın Vardiya'daki günlük ücreti (ve yemek kartı) müdürün rakamlarına hiç girmez, işçiliğin
+  tutarı (₺: haftalar, ay, günlerin toplamı, Gelir-gider'le farkın notu) ona gitmez; yalnız ciro ve oran. Sebep: müdür
+  Vardiya'ya yazar. Hafta part-time'ın günleriyle sayılsaydı dün için tek hücre yazıp sayfayı yenileyen müdür farkta o
+  kişinin günlük ücretini okurdu (geçmiş gün kimseye bildirilmez); yazmadan da tek part-time'ın gün sayısı farklı iki
+  hafta aynısını verirdi. Oran × ciro tutarı verdiği için oran da aynı kuralla: müdürün oranı tam zamanlının aylık işveren
+  maliyeti ve part-time'ın aylık ek ödemesi (ikisi de Vardiya'dan bağımsız) ayın günlerine eşit bölünerek, cirosu bilinen
+  günlerden; ayın satırı da ayın günlerinden (Gelir-gider'in personeli Vardiya'nın günleriyle sayılır, yöneticinin).
+  Rakamlar Vardiya'dan bağımsız olduğundan müdürün geçmiş güne yazması da bir şey açmaz. Kural `can(rol, "maas")`:
+  `src/server/data/iscilik.ts` › `loadLaborReport` (`wages`), `src/lib/iscilik.ts` › `withoutDayWages`.
 - **Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme müdüre açılmadı:** işletme geneli kâr, kira ve maaşı ve
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
 - **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel
@@ -204,3 +214,6 @@ oturumları kapanır (oturum sürümü).
   yöneticinin kategorisinin kayıtlarını okumaz, şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu eylemleri
   "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube kurulumu e-postası müdür, muhasebeci, yönetici ya
   da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve kurulum bağlantısı yazılmaz).
+- `tests/iscilik-mudur-db.test.ts` (gerçek Postgres, `ISCILIK_TEST_DATABASE_URL`): müdürün İşçilik raporunda tutar ve
+  günlük satır yok; dün için Vardiya'ya yazdığı ve sildiği part-time hücresinden önce ve sonra raporu birebir aynı
+  (yöneticininkinde aynı hücre tam günlük ücret).

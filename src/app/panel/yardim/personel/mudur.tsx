@@ -50,8 +50,8 @@ export const MANAGER_HELP: { title: string; href: string; icon: LucideIcon; body
     icon: FileSpreadsheet,
     body: (
       <>
-        Şubenizin haftalık ve aylık işçilik oranı. Kişi başı ücret ve günlük döküm görünmez; Bugün ekranında şubenizin günü (ciro, kasa farkı, geçen hafta) de
-        sizde.
+        Şubenizin haftalık ve aylık işçilik oranı, aylık ücretlerle. Kişi başı ücret, part-time&apos;ın günlük ücreti, işçiliğin tutarı ve günlük döküm
+        görünmez; Bugün ekranında şubenizin günü (ciro, kasa farkı, geçen hafta) de sizde.
       </>
     ),
   },

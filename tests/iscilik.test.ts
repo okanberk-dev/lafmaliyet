@@ -17,6 +17,7 @@ import {
   weekLabel,
   weekStart,
   weeklyRows,
+  withoutDayWages,
   type LaborBranchInput,
   type LaborDaySales,
   type LaborPerson,
@@ -44,6 +45,13 @@ test("ücret uydurulmaz: ücreti yazılmamış ve vardiya bağlantısı olmayan 
   ]);
   // Bağlantısız part-time'ın günü bilinmez: hiçbir güne yazılmaz (tahmin yok)
   assert.equal(laborOfDay([part("Dilek", 1200, null)], "2026-11-07"), 0);
+});
+
+test("kişisel ücretsiz görünüm (müdür): part-time'ın günlük ücreti hiçbir güne yazılmaz, aylık kalemler günlere eşit", () => {
+  const people = withoutDayWages([full("Ayşe", 30000), part("Can", 1500, ["2026-11-07"], 300), part("Dilek", 1200, null)]);
+  assert.equal(laborOfDay(people, "2026-11-07"), laborOfDay(people, "2026-11-08"), "Can'ın çalıştığı gün öteki günle aynı");
+  assert.equal(laborOfDay(people, "2026-11-07"), 1000 + 10, "tam zamanlı ve Can'ın ek ödemesi");
+  assert.deepEqual(missingWages("2026-11", people), [], "gün ücreti sayılmadığı için vardiya bağlantısı sorulmaz");
 });
 
 const branch = (sales: Record<string, LaborDaySales>, people: LaborPerson[], netFactor = 0.9): LaborBranchInput => ({

@@ -32,6 +32,10 @@ export function weekLabel(from: string, to: string): string {
 export const LABOR_METHOD =
   "Tam zamanlının aylık işveren maliyeti ayın günlerine eşit bölünür, part-time'ın günlük ücreti Vardiya'da çalıştığı güne yazılır (Gelir-gider'in personel kuralı); ciro KDV hariç.";
 
+/** Kişisel ücreti görmeyen rolün (müdür; docs/ROLLER.md) yöntemi: `withoutDayWages` */
+export const LABOR_METHOD_NO_WAGES =
+  "Yalnız aylık ücretler: tam zamanlının aylık işveren maliyeti ve part-time'ın aylık ek ödemesi ayın günlerine eşit bölünür. Part-time'ın günlük ücreti kişisel ücrettir, sayılmaz; tutar yazılmaz, yalnız oran. Ciro KDV hariç.";
+
 /** Ayın bir kişisi (o ayın maaşıyla; Gelir-gider'in personnelFor satırı) */
 export interface LaborPerson {
   name: string;
@@ -107,6 +111,17 @@ export function laborOfDay(people: readonly LaborPerson[], date: string): number
     if (p.kind === "part_time" && p.perDay > 0 && p.workDays?.includes(date)) total += p.perDay;
   }
   return total;
+}
+
+/**
+ * Kişisel ücreti görmeyen rolün (müdür; docs/ROLLER.md › Kararlar) kişileri: part-time'ın günlük ücreti hiçbir güne
+ * yazılmaz. Haftanın işçiliği (tutarı ya da cirosuyla oranı) Vardiya'nın günlerine bağlı olsaydı müdür kendi yazdığı tek
+ * hücrenin öncesini ve sonrasını (ya da tek part-time'ın çalıştığı gün sayısı farklı iki haftayı) karşılaştırıp o
+ * kişinin günlük ücretini bulurdu. Aylık kalemler (tam zamanlının maliyeti, part-time'ın ek ödemesi) Vardiya'dan
+ * bağımsızdır, günlere eşit kalır.
+ */
+export function withoutDayWages(people: readonly LaborPerson[]): LaborPerson[] {
+  return people.map((p) => (p.kind === "part_time" ? { ...p, perDay: 0, workDays: [] } : p));
 }
 
 /** Ayın ücreti girilmemiş ya da günü bilinmeyen kişileri (uydurulmaz, adıyla yazılır) */
