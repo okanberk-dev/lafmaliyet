@@ -11,10 +11,10 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
 
-- **AsilPOS: LafPOS'un adı panelde her yerde AsilPOS** (#166, 27 Kasım; docs/ASILPOS.md › Ad değişikliği (teknik)):
-  ekran, e-posta, belge, kod, tablo ve ortam değişkeni; kurulu kasa, Vercel'deki `LAFPOS_*` ve eski derleme çalışmaya
-  devam eder (göç 0098 yalnız genişletir). Kasa tarafı okanberk-dev/lafpos#187. Sahibe söylenecek: Vercel'de
-  `ASILPOS_SYNC_SECRET` (varsa CLOUD / SITE / KURUCU de) aynı değerle eklensin, sonra `LAFPOS_*` silinebilir; eski adları
+- **AsilPOS: kasanın yeni adı panelde her yerde** (#166, 27 Kasım; docs/ASILPOS.md › Ad değişikliği (teknik)):
+  ekran, e-posta, belge, kod, tablo ve ortam değişkeni; kurulu kasa, Vercel'deki eski adlı değişkenler ve eski derleme çalışmaya
+  devam eder (göç 0098 yalnız genişletir). Kasa tarafı kasa deposunun #187'si. Sahibe söylenecek: Vercel'de
+  `ASILPOS_SYNC_SECRET` (varsa CLOUD / SITE / KURUCU de) aynı değerle eklensin, sonra eski adlı değişkenler silinebilir; eski adları
   kaldıran daraltma göçü (A3) en erken 7 gün sonra.
 
 - **Roller: Müdür ve salt okunur Muhasebeci; vardiyanın şube ayarları** (#163, 27 Kasım; docs/ROLLER.md): müdür şubesine
