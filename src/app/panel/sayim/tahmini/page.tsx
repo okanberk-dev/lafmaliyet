@@ -99,6 +99,19 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
       </>
     );
   }
+  // Başka şube seçiliyken (ör. Tuzla) Marina'nın rakamları gösterilmez (çok şube, 27 Kasım 2026: seçili şube yalnız kendi
+  // bilgisini görür; tahmin yalnız Marina'nın)
+  const [selected, all] = await Promise.all([currentBranchScope(), listBranches()]);
+  const chosen = selected !== ALL_BRANCHES && selected !== STOCK_ESTIMATE_BRANCH ? all.find((b) => b.id === selected) : undefined;
+  if (chosen) {
+    const marina = all.find((b) => b.id === STOCK_ESTIMATE_BRANCH)?.name ?? "Marina";
+    return (
+      <>
+        <Header role={user.role} />
+        <Notice tone="neutral" title={`${chosen.name} için tahmin yok`} text={`Tahmini stok yalnız ${marina} için tutulur; ${marina} ya da Tümü seçiliyken görünür.`} />
+      </>
+    );
+  }
   const data = await loadStockEstimate(undefined, undefined, { leadDays });
   if (!data) {
     return (

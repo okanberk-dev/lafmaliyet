@@ -94,6 +94,11 @@ export interface SplitOptions {
   resolve: (sube: string) => string | null;
   /** Kendi anahtarı olan şubeler: başka anahtarın föyünden kasaları alınmaz */
   keyed?: ReadonlySet<string>;
+  /**
+   * Kasası ModPOS olan şubeler (modposBranchIds; çok şube, 27 Kasım 2026). Verilirse kasası ModPOS olmayan şubeye
+   * (AsilPOS'a geçmiş Marina) hiçbir föy yazılmaz: başka şubenin föyünde görünen kasası atlanır (`skipped`)
+   */
+  modposIds?: ReadonlySet<string>;
 }
 
 /** `kasa.3.x` → 3; tek kasada yol sırasızdır (`kasa.x`) → 0 */
@@ -121,7 +126,7 @@ export function splitFoyByBranch(foy: KasaFoyu, o: SplitOptions): FoySplit {
       unmatched.add(sube.trim() || "(adsız)");
       return null;
     }
-    if (id !== o.own && o.keyed?.has(id)) {
+    if (id !== o.own && (o.keyed?.has(id) || (o.modposIds && !o.modposIds.has(id)))) {
       skipped.add(id);
       return null;
     }

@@ -204,7 +204,8 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
       // Başlık da föyün <kota>'sı da yoksa kalan hak elle düşülür (bir sonraki istek boşuna 429 almasın)
       quota = r.quota ?? { day: todayTR(now), hak: quota?.hak ?? MODPOS_DAILY_QUOTA, kalan: Math.max(0, quotaLeft(quota, now) - 1), yenilenme: null, at: now.toISOString() };
       // Şube şube: çekenin föyü (ham XML'iyle) ve föyde kasası olan öteki şubelerinki, her biri kendi gününe
-      const split = splitFoyByBranch(r.foy, { own: branchId, resolve, keyed });
+      // Kasası ModPOS olmayan şubeye (AsilPOS'a geçen Marina) föy yazılmaz (çok şube)
+      const split = splitFoyByBranch(r.foy, { own: branchId, resolve, keyed, modposIds: new Set(b.peers) });
       const stored = await storeFoy(db, split.parts.get(branchId)!, now, r.raw, branchId);
       for (const [id, part] of split.parts) if (id !== branchId) await storeFoy(db, part, now, null, id);
       const notice = splitNoticeText(split);
