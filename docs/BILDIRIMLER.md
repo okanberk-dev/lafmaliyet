@@ -292,6 +292,14 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
 
 ### Alıcılar ve hesaplar
 
+**Kişiye giden bildirimler** (Web Push'un bütün konuları; vardiya değişikliği, kontrol listesi hatırlatması ve karaoke
+personel e-postaları) yalnız **bildirim alabilen hesaba** gider: etkin hesap ve şubesi kapalı müdür değil
+(`src/server/notify/reachable.ts` › `reachableUser`, `reachableUsers`; 28 Kasım 2026). Müdür şubesine kilitlidir; şubesi
+pasife alınınca oturumu yok sayılır ve girişi reddedilir ([ROLLER.md](ROLLER.md) › Müdür), ama hesabı "etkin" kalır.
+Alıcı sorguları yalnız etkinliğe bakarken panele giremeyen müdüre bildirim gitmeye devam ediyordu; kitle kuralları da
+şubesi kapalı hesabı şubesiz saydığı için öbür şubelerin karaoke, sipariş ve sayım bildirimleri de. Personelde kural
+değişmedi (şubesi kapanınca kilidi kalkar, bildirim alır). Şube yeniden açılınca müdür kendiliğinden yeniden alıcıdır.
+
 Kasa raporu e-postası (Kasa › Rapor alıcıları), sabah e-postası, bekçi uyarısı, iki deneme e-postası ve muhasebeci
 paketi (Ayarlar › Muhasebeci paketi; bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları;
 [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)) ödemeler, fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve

@@ -268,6 +268,21 @@ komisyon faturası satırı Faturalar'da o ayın tarihli Komisyon faturalarını
 faturasını önceki aya koyar).
 Bankanın POS komisyonunu ayrıca fatura ya da dekont olarak gönderip göndermediği sahibe soru (denetim, soru 9).
 
+**"Tümü" şube görünümlerinin toplamıdır** (28 Kasım 2026; `engine.ts` › `posCommission`, `legacyPos`;
+`tests/kart-komisyonu-tumu.test.ts`). Komisyon şube şube hesaplanır ve toplanır; her şube "Tümü"de kendi görünümündeki
+tutarla sayılır:
+
+| Şubenin ayı | Tutar | Yuvarlama |
+| --- | --- | --- |
+| Kasa kartı var (ciro kasa raporlarından, kartlı oran elle yazılmamış) | banka kartı × şubenin POS oranı (Şubeler) | kuruşa, yarım kuruş yukarı |
+| Kasa kartı yok (ciro ya da kartlı oran elle yazılmış, eski ay) | ciro × Ayarlar'daki komisyon oranı × şubenin banka kartı payı | yuvarlanmaz (eski hesap tablosundan aktarılan aylarla uyum) |
+
+Tümü = kuruşa yuvarlanmış kart tutarlarının toplamı + yuvarlanmamış eski formül tutarlarının toplamı; tek şube
+görünümündeki yuvarlamanın aynısı olduğu için arada kuruş farkı oluşmaz. Önceden iki durumda toplam tutmuyordu: ayın
+hiçbir şubesinde kasa kartı yokken toplam ciroya tek kartlı oran uygulanıyordu (oranı yalnız bir şube yazdıysa onunki
+öbür şubenin cirosuna da); şubelerden birinin kasa kartı olup öbürününki yokken kartsız şube "Tümü"de şubenin POS
+oranıyla, kendi görünümünde Ayarlar'daki oranla sayılıyordu. Kasa kartı olan aylar ve tek şubeli eski aylar değişmedi.
+
 ## 7. Hakediş
 
 - **Ayda tek işaret** (kanal ve satış ayı, `commission_months`): gelen günü ve tutarı. Haftalık ödeyen platformda ayın
