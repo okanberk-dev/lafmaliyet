@@ -37,6 +37,7 @@ import { AppearanceCard } from "./appearance-card";
 import { BackupDownload, StoredBackupList } from "./backup-client";
 import { BranchSettingsLinkCard } from "./branch-settings-card";
 import { DatabaseCard } from "./database-card";
+import { ErrorLogCard } from "./errors-card";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { LafposCard } from "./lafpos-card";
@@ -489,6 +490,7 @@ async function SettingsContent() {
         />
       </div>
       <JobsCard />
+      <ErrorLogCard />
       <SiteLinksCard />
       <LafposCard
         products={model.products.map((p) => ({
