@@ -28,7 +28,7 @@ import {
   slipWithZTraces,
 } from "../src/lib/photo-read/okc";
 import { parsePavoOcr, type OcrLine } from "../src/lib/photo-read/pavo-ocr";
-import { OKC_SHORT_TASK, OKC_TASK, POS_TASK, Z_TASK } from "../src/lib/photo-read/prompts";
+import { KIYAS_BASLIKLARI, OKC_SHORT_TASK, OKC_TASK, POS_TASK, Z_TASK } from "../src/lib/photo-read/prompts";
 import type { KasaOkc } from "../src/lib/photo-read/schemas";
 
 const DAY = "2026-11-24";
@@ -398,9 +398,12 @@ test("İstemler AsilPOS'un kâğıdını tanıtır: başlık aynen, Z no ve NET 
     assert.match(task, /GÜN SONU · Z/);
     assert.match(task, /BANKA GÜN SONU · PAVO/);
     assert.match(task, /mali Z değildir/);
-    assert.ok(task.includes(`PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`), "kıyas başlığı eski adla basılır");
+    // Kıyas başlığı AsilPOS #189'dan sonra yeni adla, öncesinde (ve eski fotoğraflarda) eski adla basılır: istem ikisini de bilir
+    assert.ok(task.includes("PAVO - ASILPOS KARŞILAŞTIRMA"), "kıyas başlığının yeni adı");
+    assert.ok(task.includes(`PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`), "kıyas başlığının eski adı");
     assert.match(task, /software_z/);
   }
+  assert.deepEqual([...KIYAS_BASLIKLARI], ["PAVO - ASILPOS KARŞILAŞTIRMA", `PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`]);
   assert.match(OKC_SHORT_TASK(DAY), /also when the bank end-of-day is on the same paper/);
   assert.ok(OKC_SHORT_TASK(DAY).length * 2 < OKC_TASK(DAY).length);
 });
@@ -449,6 +452,18 @@ test("Kodla okuma: AsilPOS'un kâğıdı Z sayılmaz; Bankalar satırları batch
   const empty = parsePavoOcr(["L'AFFOGATO", "BANKA GÜN SONU · PAVO", "Batch 000280", "Bankalar", "İşlem yok", "TOPLAM -", `PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`].map((l) => ln(l))).raw;
   assert.deepEqual([empty.documentType, empty.readable, empty.batches.length], ["batch_slip", false, 0]);
   assert.equal(read(empty).error, OKC_ASILPOS_BANK_UNREAD_TEXT);
+  // AsilPOS #189'dan sonraki kâğıt: kıyas başlığı yeni adla; aynı okuma (karşılaştırma satırları batch değil)
+  const yeni = parsePavoOcr(KOR_LINES.map((l) => ln(l === `PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA` ? KIYAS_BASLIKLARI[0] : l))).raw;
+  assert.deepEqual(
+    [yeni.documentType, yeni.batches.map((b) => [b.bank, b.netTotal.value])],
+    [
+      "batch_slip",
+      [
+        ["Garanti BBVA", 500],
+        ["Akbank", 255],
+      ],
+    ],
+  );
   // Ara rapor: AsilPOS'un kâğıdı, yazılım Z'si; NET CİRO'su okunmaz
   const x = parsePavoOcr(Z_LINES.map((l) => ln(l === "GÜN SONU · Z 31" ? "ARA RAPOR (X)" : l))).raw;
   assert.deepEqual([x.documentType, x.title, x.dailyTotal.value, x.zNo.text], ["software_z", "ARA RAPOR (X)", null, null]);

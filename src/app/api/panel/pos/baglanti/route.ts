@@ -1,9 +1,11 @@
-import { connection, type NextRequest } from "next/server";
+import { after, connection, type NextRequest } from "next/server";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
 import { dagitilanBaglantilar } from "@/lib/asilpos/baglanti-dagitim";
 import { checkAsilposRequest } from "@/lib/asilpos/request";
+import { noteBaglantiRaporu } from "@/server/asilpos/anahtar-uyumu";
 import { posRequestCaller } from "@/server/asilpos/ingest";
+import { getDb } from "@/server/db";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -14,7 +16,9 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * `{ ok: true, surum, baglanti }`. Yalnız AsilPOS'un imzasıyla (ASILPOS_SYNC_SECRET; sorgu imzaya girer): anahtar yoksa
  * 503, imza tutmazsa 401. Günlüğe anahtarın şubesi (çok şube: kasa imzasının tuttuğu anahtardan), sorgudaki `sube` ve
  * `uygulanan` (kasanın yazdığı sürüm) düşer: anahtar değişiminden önce kasanın yenisini aldığı buradan görülür. Bağlantılar
- * şubeye göre değişmez
+ * şubeye göre değişmez. Yanıttan sonra (`after`) kasanın uyguladığı ve güncel sürüm şubenin satırına yazılır; değiştiyse
+ * Uzaktan ve site panelin anahtarıyla sınanır (src/server/asilpos/anahtar-uyumu.ts noteBaglantiRaporu): reddeden uç
+ * Ayarlar › AsilPOS'ta ve zilde uyarı olur
  */
 export async function GET(request: NextRequest) {
   await connection();
@@ -34,5 +38,7 @@ export async function GET(request: NextRequest) {
   const sube = (url.searchParams.get("sube") ?? "?").slice(0, 24);
   const uygulanan = (url.searchParams.get("uygulanan") ?? "").slice(0, 16);
   console.info(`[asilpos baglanti] anahtar=${caller.branchId} sube=${sube} uygulanan=${uygulanan || "-"} guncel=${out.surum || "-"}`);
+  const branchId = caller.branchId;
+  if (out.surum) after(() => noteBaglantiRaporu(getDb(), branchId, { uygulanan, guncel: out.surum }));
   return Response.json({ ok: true, ...out }, { headers: NO_STORE });
 }

@@ -6,16 +6,18 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
+import { durumMetni, KASA_RAPORU_GUN } from "@/lib/asilpos/anahtar-uyumu";
 import { clearedText, isUnverifiedAfterOk, asilposCardSummary, rejectionText, unverifiedText } from "@/lib/asilpos/status";
 import { ASILPOS_SWITCH_MAX_AHEAD, ASILPOS_SWITCH_MIN, switchEffects } from "@/lib/asilpos/switch";
 import type { BranchRow } from "@/lib/branches";
 import { asilposCardView } from "@/lib/pos-cards";
 import { STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
 import { addDays, longDateTR } from "@/lib/reminders";
+import { loadAnahtarUyumuKarti, type AnahtarUyumuKarti } from "@/server/asilpos/anahtar-uyumu";
 import { loadAsilposCard, type AsilposCardData } from "@/server/asilpos/status";
 
 import type { ProductOption } from "../satislar/product-picker";
-import { AsilposDayDelete, AsilposSwitchDayForm, AsilposUnmatchedList } from "./asilpos-client";
+import { AsilposDayDelete, AsilposKeyTest, AsilposSwitchDayForm, AsilposUnmatchedList } from "./asilpos-client";
 import { PosElsewhereCard } from "./pos-elsewhere";
 import { SectionCard } from "./section-card";
 
@@ -46,14 +48,21 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
   const view = asilposCardView(scope, branches);
   if (view.kind === "elsewhere") return <PosElsewhereCard id="asilpos" icon={<Store />} title="AsilPOS (kasa)" system="AsilPOS" users={view.users} />;
   const now = new Date();
-  const all = await Promise.all(
-    view.ids.map((id) =>
-      loadAsilposCard(undefined, id, now).catch((e) => {
-        console.error("AsilPOS durumu okunamadı", id, e);
-        return null;
-      }),
+  const [all, keys] = await Promise.all([
+    Promise.all(
+      view.ids.map((id) =>
+        loadAsilposCard(undefined, id, now).catch((e) => {
+          console.error("AsilPOS durumu okunamadı", id, e);
+          return null;
+        }),
+      ),
     ),
-  );
+    // Uzaktan ve site anahtarının uyumu: okunamazsa bölüm görünmez, kartın geri kalanı bozulmaz
+    loadAnahtarUyumuKarti(undefined, now).catch((e) => {
+      console.error("AsilPOS anahtar uyumu okunamadı", e);
+      return null;
+    }),
+  ]);
   const datas = all.filter((d): d is AsilposCardData => d !== null);
   if (datas.length !== all.length || !datas.length) {
     return (
@@ -66,7 +75,10 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
   }
   const nameOf = (id: string) => branches.find((b) => b.id === id)?.name ?? id;
   // "Tümü"de birden çok kasa açıkken bölümler ve özet şubenin adıyla (ModPOS kartının şube bölümleri gibi)
-  const summary = datas.map((d) => (view.named ? `${nameOf(d.branchId)}: ${asilposCardSummary(d).short}` : asilposCardSummary(d).short)).join(" · ");
+  const summary = [
+    ...(keys?.uyarilar.map((u) => u.title) ?? []),
+    ...datas.map((d) => (view.named ? `${nameOf(d.branchId)}: ${asilposCardSummary(d).short}` : asilposCardSummary(d).short)),
+  ].join(" · ");
   const anySwitch = datas.some((d) => d.switchDay);
   return (
     <SectionCard
@@ -82,6 +94,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
       }
     >
       <CardContent className="space-y-6">
+        {keys ? <KeySection data={keys} nameOf={nameOf} /> : null}
         {datas.map((data) => (
           <TillSection
             key={data.branchId}
@@ -98,6 +111,54 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
         ))}
       </CardContent>
     </SectionCard>
+  );
+}
+
+/** "Marina ve Tuzla" */
+const andList = (names: readonly string[]) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} ve ${names.at(-1)}` : (names[0] ?? ""));
+
+/**
+ * Uzaktan ve site anahtarı (docs/ASILPOS.md › Şube kurulumu › Anahtar değişimi): panelin kasalara dağıttığı anahtarı iki
+ * uç kabul ediyor mu (son sınama, sabah işi ya da kasanın raporu değişince; "Anahtarları sına" şimdi), kasalar güncel
+ * değerleri uyguladı mı, ve reddeden ucun uyarısı adımlarıyla. Anahtar ve sürüm gösterilmez. Kasalar şubeye göre değil:
+ * bütün kasaların bölümlerinin üstünde bir kez
+ */
+function KeySection({ data, nameOf }: { data: AnahtarUyumuKarti; nameOf: (id: string) => string }) {
+  const { uygulayan, bekleyen } = data.kasalar;
+  const kasalar = [
+    uygulayan.length ? `${andList(uygulayan.map(nameOf))} güncel değerleri uyguladı` : null,
+    bekleyen.length ? `${andList(bekleyen.map(nameOf))} gün kapanınca uygulayacak` : null,
+  ].filter(Boolean);
+  return (
+    <section className="space-y-3" aria-label="Uzaktan ve site anahtarı">
+      <div className="space-y-1.5 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="font-medium text-ink">Uzaktan ve site anahtarı</p>
+          <AsilposKeyTest />
+        </div>
+        {data.hedefler.map((h) => (
+          <p key={h.hedef} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5">
+            <Badge tone={!h.sonuc ? "gray" : h.sonuc.durum === "ok" ? "green" : h.sonuc.durum === "hata" ? "amber" : "red"} dot>
+              {h.ad}
+            </Badge>
+            <span className="text-ink-soft">{durumMetni(h.sonuc)}</span>
+          </p>
+        ))}
+        <p className="text-[13px] leading-5 text-pretty text-ink-mute">
+          {data.sinama ? `Son sınama ${dateTimeTR(data.sinama.at)}.` : data.eskiDegerlerle ? "Değerler son sınamadan sonra değişti; kasa sorunca ya da düğmeyle yeniden sınanır." : "Henüz sınanmadı."}{" "}
+          {kasalar.length ? `Kasalar: ${kasalar.join("; ")}.` : `Son ${KASA_RAPORU_GUN} günde bağlantıyı soran kasa yok.`}
+        </p>
+      </div>
+      {data.uyarilar.map((u) => (
+        <Notice key={u.hedef} tone={u.kind === "danger" ? "bad" : "warn"} size="sm" title={u.title} text={u.text} detailsLabel="Ne yapılmalı" defaultOpen>
+          <ol className="list-decimal space-y-1 pl-4">
+            {u.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </Notice>
+      ))}
+    </section>
   );
 }
 

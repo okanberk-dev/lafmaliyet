@@ -1066,7 +1066,8 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
   const actions = read("src/server/actions/asilpos.ts");
   assert.match(actions, /^"use server";/);
   const exported = [...actions.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
-  assert.deepEqual(exported, ["saveAsilposSwitchDay", "deleteAsilposDay"], "dosyada yardımcı dışa aktarım yok (her biri bir POST ucu)");
+  // testAsilposKeys: Uzaktan ve sitenin anahtar uyumunu sınar (docs/ASILPOS.md › Anahtar değişimi)
+  assert.deepEqual(exported, ["saveAsilposSwitchDay", "deleteAsilposDay", "testAsilposKeys"], "dosyada yardımcı dışa aktarım yok (her biri bir POST ucu)");
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport /)[0];
     assert.match(body, /return attempt\(async \(\) => \{\s*const me = adminActor\(await requireAdmin\(\)\);/, `${name}: önce yönetici oturumu`);

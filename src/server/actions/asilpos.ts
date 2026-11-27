@@ -5,6 +5,8 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
+import { durumMetni, ELLE_SINAMA_ARALIGI_MS, gecerliSinama, HEDEF_ADI, HEDEFLER, type Sinama } from "@/lib/asilpos/anahtar-uyumu";
+import { dagitilanBaglantilar } from "@/lib/asilpos/baglanti-dagitim";
 import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import type { StepUpConfirm } from "@/lib/step-up";
 import { adminActor } from "@/lib/roles";
@@ -12,13 +14,14 @@ import { requireAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { getDb, schema as s } from "@/server/db";
 import { removeAsilposDay, writeAsilposSwitchDay } from "@/server/asilpos/admin";
+import { readAnahtarUyumu, sinaAnahtarlar } from "@/server/asilpos/anahtar-uyumu";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate } from "./util";
 
 /*
- * Ayarlar › AsilPOS (kasa) (docs/ASILPOS.md › Geçiş günü, Durum ve onarım). Bu dosyadaki her dışa aktarım bir POST ucudur:
- * ikisi de önce yönetici oturumunu denetler; yazımlar src/server/asilpos/admin.ts'te (rol orada da denetlenir).
+ * Ayarlar › AsilPOS (kasa) (docs/ASILPOS.md › Geçiş günü, Durum ve onarım, Anahtar değişimi). Bu dosyadaki her dışa aktarım
+ * bir POST ucudur: hepsi önce yönetici oturumunu denetler; yazımlar src/server/asilpos/admin.ts'te (rol orada da denetlenir).
  */
 
 const switchSchema = z.object({ branchId: z.string().min(1).max(24), day: z.union([z.null(), zDate]) });
@@ -66,5 +69,34 @@ export async function deleteAsilposDay(input: z.input<typeof deleteSchema>, conf
     await logActivity(me, "AsilPOS günü silindi", `${dayMonthYearTR(data.date)} · Z ${r.zNo} · ${r.lines} satır`);
     refresh();
     return r;
+  });
+}
+
+/** Sınamanın tek satırlık özeti (işlem geçmişi ve bildirim): "AsilPOS Uzaktan: anahtarı kabul ediyor · laffogato.net: …" */
+function sinamaOzeti(sinama: Sinama): string {
+  return HEDEFLER.filter((h) => sinama.sonuc[h])
+    .map((h) => `${HEDEF_ADI[h]}: ${durumMetni(sinama.sonuc[h])}`)
+    .join(" · ");
+}
+
+/**
+ * Ayarlar › AsilPOS › Anahtarları sına (docs/ASILPOS.md › Anahtar değişimi): Uzaktan ve site panelin kasalara dağıttığı
+ * anahtarı şimdi kabul ediyor mu (src/server/asilpos/anahtar-uyumu.ts sinaAnahtarlar). Anahtar değişiminden sonra (önce
+ * Uzaktan ve site, sonra panel) ve uyarıyı düzelttikten sonra basılır. Aynı değerler ELLE_SINAMA_ARALIGI_MS içinde
+ * sınandıysa yeniden istek atılmaz, son sonuç döner. İşlem geçmişine yalnız durumlar düşer (anahtar yok)
+ */
+export async function testAsilposKeys() {
+  return attempt(async () => {
+    const me = adminActor(await requireAdmin());
+    const { surum } = dagitilanBaglantilar();
+    if (!surum) throw new UserError("Panel kasalara Uzaktan ve site anahtarı dağıtmıyor (ASILPOS_CLOUD_* ve ASILPOS_SITE_* tanımlı değil)");
+    const db = getDb();
+    const son = gecerliSinama(await readAnahtarUyumu(db), surum);
+    const sinama = son && Date.now() - Date.parse(son.at) < ELLE_SINAMA_ARALIGI_MS ? son : await sinaAnahtarlar(db, { tetik: "elle" });
+    if (!sinama) throw new UserError("Sınanacak uç yok");
+    const ozet = sinamaOzeti(sinama);
+    if (sinama !== son) await logActivity(me, "AsilPOS anahtarları sınandı", ozet);
+    refresh();
+    return { ok: HEDEFLER.every((h) => !sinama.sonuc[h] || sinama.sonuc[h]?.durum === "ok"), ozet };
   });
 }

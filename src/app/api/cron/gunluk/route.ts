@@ -14,6 +14,7 @@ import { getDb } from "@/server/db";
 import { pruneErrorLog } from "@/server/errors/store";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
+import { sinaAnahtarlar } from "@/server/asilpos/anahtar-uyumu";
 import { catchUpAsilposDayEnds } from "@/server/asilpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
 import { purgeExpiredStatements } from "@/server/mutabakat/store";
@@ -47,7 +48,8 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // günde 2 hak; docs/MODPOS-API.md) de Paraşüt'le aynı anda yalnız bir kez çekilir, sabah e-postasından önce beklenir.
 // Haftalık tam yedek (pazartesi; alınamazsa sonraki günler) özel depoya yazılır, son 8 hafta kalır (docs/YEDEK.md ›
 // Otomatik haftalık yedek); veritabanının boyutu ölçülür, %70 ve %90 kota eşiği ilk geçildiğinde yöneticilere zil ve
-// e-posta gider (docs/YEDEK.md › Veritabanı kotası).
+// e-posta gider (docs/YEDEK.md › Veritabanı kotası). AsilPOS Uzaktan ve site panelin kasalara dağıttığı anahtarı
+// kabul ediyor mu, sınanır (docs/ASILPOS.md › Anahtar değişimi; reddeden uç Ayarlar › AsilPOS'ta ve zilde uyarı olur).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -175,6 +177,20 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
+  // Anahtar uyumu (docs/ASILPOS.md › Anahtar değişimi): Uzaktan ve site panelin kasalara dağıttığı anahtarı kabul ediyor
+  // mu (iki imzalı GET, her biri en çok 8 sn). Sonucu yalnız yanıtta (body.anahtar: uç başına durum); iş adımı değil,
+  // uyarısı Ayarlar › AsilPOS'ta ve zilde. Panel uç dağıtmıyorsa istek yok ("yok")
+  const anahtarTask = () =>
+    capped<Record<string, string> | "yok" | "error" | "süre doldu">(
+      sinaAnahtarlar(getDb(), { tetik: "cron" })
+        .then((r) => (r ? Object.fromEntries(Object.entries(r.sonuc).map(([h, x]) => [h, x?.durum ?? "-"])) : ("yok" as const)))
+        .catch((e: Error) => {
+          console.error("[asilpos anahtar] sınama", e.message);
+          return "error" as const;
+        }),
+      Math.min(10_000, tailStepDeadline(jobStart) - Date.now()),
+      "süre doldu" as const,
+    );
   // Ay sonu stok sayımı bildirimi (ayın son günü, sayım tamamlanmadıysa): en çok 8 sn, kuyruğun 55 sn'sini aşmadan;
   // adım yalnız bildirim gönderilince yazılır
   const countTask = () =>
@@ -232,7 +248,7 @@ export async function GET(request: NextRequest) {
     );
   };
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat, muhasebe, hatalar] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat, muhasebe, hatalar, anahtar] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -251,6 +267,7 @@ export async function GET(request: NextRequest) {
       reconTask(),
       muhasebeTask(),
       errorsTask(),
+      anahtarTask(),
     ]);
     const vardiyaResult = vardiyaStep(vardiya);
     const countResult = countStep(count);
@@ -275,7 +292,7 @@ export async function GET(request: NextRequest) {
       ...(quotaResult ? { quota: quotaResult } : {}),
       ...(muhasebeResult ? { muhasebe: muhasebeResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", hatalar, mutabakat }, steps, weekly: weekly.status };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", hatalar, anahtar, mutabakat }, steps, weekly: weekly.status };
   };
   // Paraşüt bitince çoğunlukla bitmiştir; adım yalnız anahtar varken yazılır
   const modpos = await modposP;

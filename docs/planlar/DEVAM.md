@@ -56,6 +56,14 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   gönderilmedi, PR açılmadı: #166'dan sonra birleşir, gün sonu penceresinin (22:00–03:00) dışında. Sonra sahip:
   YAPILACAKLAR.md › Dalga 3'teki [Sahip] maddesi. Şube ayrımı (plan B adım 9) ayrı paket. Daraltma (A3) ≥ 7 gün sonra.
 
+- **Anahtar değişimi uyumu (27 Kasım öğleden sonra; dal `uyum-anahtar`, gönderilmedi):** sabahki olaydan sonra (iki
+  anahtar yalnız panelde değişti, Uzaktan perşembe dondu) üç depoda uyum: panelde anahtar uyumu denetimi (Uzaktan ve
+  site panelin anahtarını kabul ediyor mu; Ayarlar › AsilPOS ve zil), kasa deposunda Uzaktan'ın `_ONCEKI` anahtarı
+  (`uyum-1`, #189'un üstünde), sitede `LAFPOS_SYNC_SECRET_ONCEKI`. Sıra: kasa ve site PR'ları yayına çıkmadan yeni
+  anahtar sırası (docs/ASILPOS.md › Anahtar değişimi) kullanılmaz; panelin denetimi tek başına da güvenli (yalnız uyarır).
+  Sahibe söylenecek: sonraki değişimde önce Uzaktan ve site (`_ONCEKI` ile), sonra panel, sonra Ayarlar › AsilPOS ›
+  Anahtarları sına.
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)
