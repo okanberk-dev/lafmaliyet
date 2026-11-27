@@ -76,9 +76,10 @@ export interface SiteSalesCardData {
 /**
  * Gelir-gider'de laffogato.net online satışlarının kaynağı (docs/SITE-SATIS.md): hangi ayın ne zaman çekildiği, ayın
  * kapanıp kapanmadığı, son hata ve "Siteden yenile". Rakamlar tabloda Maliyet bölümünde ayrı gelir satırlarıdır (KDV
- * hariç); ModPOS cirosuna eklenmez, kâr / zarar ve oranlar ikisinin toplamıyla hesaplanır.
+ * hariç); ModPOS cirosuna eklenmez, kâr / zarar ve oranlar ikisinin toplamıyla hesaplanır. Salt okunur hesapta
+ * (`readOnly`, muhasebeci) çekme düğmeleri, kurulum notu ve sitenin yönetim paneline bağlantı yok: rakamlar okunur.
  */
-export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
+export function SiteSalesCard({ data, readOnly = false }: { data: SiteSalesCardData; readOnly?: boolean }) {
   const [pending, start] = useActionTransition();
   const [busyMonth, setBusyMonth] = useState<string | null>(null);
   const [pick, setPick] = useState(data.choices.find((m) => !data.months.some((x) => x.month === m)) ?? data.choices[0] ?? "");
@@ -124,7 +125,7 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
           </Badge>
         }
         actions={
-          data.configured ? (
+          data.configured && !readOnly ? (
             <Button variant="secondary" size="sm" onClick={() => pull(data.refreshMonths)} disabled={pending}>
               <RefreshCw size={14} className={cn(pending && busyMonth === "*" && "animate-spin")} aria-hidden="true" /> Siteden yenile
             </Button>
@@ -137,7 +138,11 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
             tone="neutral"
             size="sm"
             title="Site bağlantısı kurulmadı: online satış satırları görünmez"
-            tech={<>Bağlantı karaoke ve menüyle aynı anahtarı kullanır: Vercel&apos;de iki projeye de aynı değerle KARAOKE_SYNC_SECRET ekleyin. Kurulana kadar tabloda online satır görünmez.</>}
+            tech={
+              readOnly ? undefined : (
+                <>Bağlantı karaoke ve menüyle aynı anahtarı kullanır: Vercel&apos;de iki projeye de aynı değerle KARAOKE_SYNC_SECRET ekleyin. Kurulana kadar tabloda online satır görünmez.</>
+              )
+            }
           />
         ) : (
           <>
@@ -153,9 +158,11 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
                       </p>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="text-base font-semibold text-ink tabular">{tl(m.total)}</span>
-                        <IconButton label={`${monthLabel(m.month)} online satışlarını siteden yenile`} onClick={() => pull([m.month])} disabled={pending}>
-                          <RefreshCw size={14} className={cn(pending && busyMonth === m.month && "animate-spin")} />
-                        </IconButton>
+                        {readOnly ? null : (
+                          <IconButton label={`${monthLabel(m.month)} online satışlarını siteden yenile`} onClick={() => pull([m.month])} disabled={pending}>
+                            <RefreshCw size={14} className={cn(pending && busyMonth === m.month && "animate-spin")} />
+                          </IconButton>
+                        )}
                       </div>
                     </div>
                     <p className="mt-1 text-[13px] leading-5 text-ink-soft tabular">
@@ -181,10 +188,10 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
               </ul>
             ) : (
               <p className="rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-mute ring-1 ring-line">
-                Bu yıl için henüz çekilmedi. Her sabah bu ay ve önceki iki ay (geç gelen iadeler) kendiliğinden çekilir; şimdi çekmek için Siteden yenile.
+                Bu yıl için henüz çekilmedi. Her sabah bu ay ve önceki iki ay (geç gelen iadeler) kendiliğinden çekilir{readOnly ? "." : "; şimdi çekmek için Siteden yenile."}
               </p>
             )}
-            {data.choices.length ? (
+            {data.choices.length && !readOnly ? (
               <div className="flex flex-wrap items-center gap-2">
                 <label htmlFor="site-sales-month" className="text-[13px] text-ink-mute">
                   Başka bir ay
@@ -210,14 +217,16 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
                 />
               </span>
               <span>Son çekme {data.lastPullAt ? dateTimeTR(data.lastPullAt) : "—"}</span>
-              <a
-                href={data.sitePanelUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
-              >
-                laffogato.net paneli <ExternalLink size={13} aria-hidden="true" />
-              </a>
+              {readOnly ? null : (
+                <a
+                  href={data.sitePanelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
+                >
+                  laffogato.net paneli <ExternalLink size={13} aria-hidden="true" />
+                </a>
+              )}
             </p>
           </>
         )}

@@ -18,7 +18,8 @@ import { attachAsilposDayPhoto, setAsilposBankPos } from "@/server/actions/cash-
  * AsilPOS'tan ve Pavo'dan kendiliğinden yazıldı, personelin tek işi Pavo'nun gün sonu fişinin (istenince basılan detaylı Z;
  * ayrı mali Z basan cihazda yazarkasa Z'sinin de) fotoğrafı. Fotoğraf hiçbir rakamı yazmaz (kayıt, sürüm, onay yok): rapora bağlanır, okunuşu
  * AsilPOS'un rakamlarıyla karşılaştırılır. Personel yalnız "Fotoğraf alındı" ya da "yeniden çekin" görür; fark ve "Banka
- * POS'a yaz" yalnız yöneticinin (`admin`).
+ * POS'a yaz" yalnız yöneticinin (`admin`). Salt okunur hesap (`readOnly`, muhasebeci) karşılaştırmayı okur; fotoğraf
+ * ekleyemez, "Banka POS'a yaz" çizilmez.
  */
 export function AsilposPhotoCard({
   date,
@@ -27,7 +28,10 @@ export function AsilposPhotoCard({
   storage,
   reading,
   admin = null,
+  readOnly = false,
 }: {
+  /** Salt okunur hesap: fotoğraf seçici ve "Banka POS'a yaz" yok */
+  readOnly?: boolean;
   date: string;
   branchId: string;
   state: { need: AsilposPhotoNeed; attached: number; pending: number; line: string; done: boolean; auto: boolean };
@@ -80,7 +84,7 @@ export function AsilposPhotoCard({
       />
       <div className="space-y-3 px-5 pb-5 text-sm">
         <Notice tone={tone} size="sm" title={state.line} text={state.attached ? `${state.attached} fotoğraf${state.pending && !state.auto ? " (rapor bekleniyor)" : ""}` : undefined} />
-        {storage && !full ? (
+        {readOnly ? null : storage && !full ? (
           <>
             <PhotoPicker onPick={(f) => void pick(f)} read disabled={up.busy || pending} />
             <PhotoStatus phase={up.phase} />
@@ -89,14 +93,14 @@ export function AsilposPhotoCard({
         ) : !storage ? (
           <p className="text-[13px] text-ink-mute">Fotoğraf deposu bu ortamda kapalı.</p>
         ) : null}
-        {admin ? <AdminCheck check={check} bankPos={admin.bankPos} onWrite={writeBank} busy={pending} /> : null}
+        {admin ? <AdminCheck check={check} bankPos={admin.bankPos} onWrite={readOnly ? null : writeBank} busy={pending} /> : null}
       </div>
     </Card>
   );
 }
 
 /** Yöneticinin fiş ↔ AsilPOS satırları (düz Türkçe: "Fiş AsilPOS'la aynı"); Banka POS boşken okunan toplam ve "Banka POS'a yaz" */
-function AdminCheck({ check, bankPos, onWrite, busy }: { check: AsilposPhotoCheck | null; bankPos: number | null; onWrite: (amount: number) => void; busy: boolean }) {
+function AdminCheck({ check, bankPos, onWrite, busy }: { check: AsilposPhotoCheck | null; bankPos: number | null; onWrite: ((amount: number) => void) | null; busy: boolean }) {
   if (!check) return <p className="text-[13px] text-ink-mute">Fiş fotoğrafı yok.</p>;
   const head =
     check.state === "uyumlu"
@@ -127,9 +131,11 @@ function AdminCheck({ check, bankPos, onWrite, busy }: { check: AsilposPhotoChec
       {bankPos === null && check.readBankPos !== null ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-ink">Fotoğrafta {money(check.readBankPos)}</span>
-          <Button size="sm" variant="secondary" onClick={() => onWrite(check.readBankPos!)} disabled={busy}>
-            Banka POS&apos;a yaz
-          </Button>
+          {onWrite ? (
+            <Button size="sm" variant="secondary" onClick={() => onWrite(check.readBankPos!)} disabled={busy}>
+              Banka POS&apos;a yaz
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </section>

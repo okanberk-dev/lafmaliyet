@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { namedTill, tillBranches } from "@/lib/branches";
 import { invoiceBranchLabel, invoiceBranchOptions, invoiceBranchValue } from "@/lib/invoice-branch";
 import { DEFAULT_PARASUT_ACCOUNT } from "@/lib/parasut/accounts";
+import { isReadOnly } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -47,6 +48,8 @@ import { DELETED_BILLS_KEY, ignoredBills, UNPAID_VS_PAYMENTS, type InvoiceRow } 
 export const metadata: Metadata = { title: "Faturalar" };
 
 const DESCRIPTION = "Alış faturaları Paraşüt'ten her sabah gelir; elle de ekleyebilirsiniz.";
+/** Salt okunur hesabın (muhasebeci; docs/ROLLER.md) açıklaması: fatura eklemeyi önermez */
+const READ_ONLY_DESCRIPTION = "Alış faturaları Paraşüt'ten her sabah gelir.";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE =
   "Paraşüt'e gelen e-faturalar her sabah kendiliğinden gelir, Paraşüt'te “içeri al” gerekmez; elle eklediğiniz faturalar da burada. Mal alımları (hammadde, tatlı, ambalaj) gelir-gider tablosuna tedarikçi bazında, komisyon faturaları komisyon giderlerine otomatik gider.";
@@ -89,8 +92,10 @@ export default function InvoicesPage() {
 }
 
 async function InvoicesContent() {
-  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
-  await requireCan("muhasebe.oku");
+  // Yönetici ve muhasebeci (docs/ROLLER.md). Muhasebeci salt okur: ekran ona yazma düğmesi ve açamayacağı ekrana bağlantı
+  // çizmez (isReadOnly, openableHref); sunucu eylemleri ayrıca reddeder
+  const viewer = await requireCan("muhasebe.oku");
+  const readOnly = isReadOnly(viewer.role);
   const db = getDb();
   const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOutState, cashOutCats, parasutCompanies, scope, branches, accountRows, unassigned] = await Promise.all([
     loadModel(),
@@ -191,7 +196,7 @@ async function InvoicesContent() {
 
   return (
     <>
-      <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
+      <PageHeader path="/panel/faturalar" role={viewer.role} title="Faturalar" description={readOnly ? READ_ONLY_DESCRIPTION : DESCRIPTION} more={readOnly ? undefined : MORE} />
       {/* Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): tek şube seçiliyken o şubenin ve işletme genelinin faturaları;
           şubesi seçilmemişler "Tümü"deki kutuda */}
       {scopeName ? (
@@ -201,12 +206,15 @@ async function InvoicesContent() {
           title={`${scopeName} seçili: ${scopeName} şubesinin ve işletme genelinin faturaları`}
           text={
             unassigned.count
-              ? `${num(unassigned.count)} faturanın şubesi seçilmemiş (${tl(unassigned.total)}); burada görünmezler. Tümü'de “Şubesi seçilmemiş” kutusundan şubelerini seçin.`
+              ? `${num(unassigned.count)} faturanın şubesi seçilmemiş (${tl(unassigned.total)}); burada görünmezler. ${readOnly ? "Tümü'de “Şubesi seçilmemiş” süzgecinde görünürler." : "Tümü'de “Şubesi seçilmemiş” kutusundan şubelerini seçin."}`
               : "Öbür şubelerin faturaları burada görünmez; Tümü'de hepsi."
           }
-          action={unassigned.count ? <NoticeLink href="/panel/faturalar?sube=hepsi#subesiz">Şubesi seçilmemişler</NoticeLink> : undefined}
+          action={
+            unassigned.count ? <NoticeLink href={readOnly ? "/panel/faturalar?sube=hepsi&durum=subesiz#fatura-listesi" : "/panel/faturalar?sube=hepsi#subesiz"}>Şubesi seçilmemişler</NoticeLink> : undefined
+          }
         />
-      ) : box ? (
+      ) : box && !readOnly ? (
+        // Şube atama kutusu yazar: salt okunur hesapta yok (şubesi seçilmemişler listenin süzgecinde durur)
         <UnassignedBox box={box} options={branchOptions} />
       ) : null}
 
@@ -273,7 +281,7 @@ async function InvoicesContent() {
         </StatBreakdown>
       </div>
 
-      <ReviewNotice count={reviewCount} stockOnly={stockOnlyCount} cashOuts={cashOuts.pending.length} cashOutDuplicates={cashOuts.duplicates.length} />
+      <ReviewNotice count={reviewCount} stockOnly={stockOnlyCount} cashOuts={cashOuts.pending.length} cashOutDuplicates={cashOuts.duplicates.length} readOnly={readOnly} />
 
       {/* Süzgeçler (?ara, ?durum=odenmedi|kontrol, ?kategori, ?ay, ?sirala) adreste; istemci okur, sunucuya istek gitmez */}
       <InvoicesClient
@@ -292,6 +300,7 @@ async function InvoicesContent() {
         cashOutCategories={cashOutCats.map(({ id, name }) => ({ id, name }))}
         branchOptions={branchOptions}
         defaultBranch={scopeName ? scope : ""}
+        role={viewer.role}
       />
 
       <Card className="mt-6">
@@ -479,13 +488,14 @@ async function InvoicesContent() {
             </Table>
           </TableWrap>
         ) : (
-          <EmptyState title="Henüz fatura yok" description="Fatura ekledikçe aylık özet burada oluşur." />
+          <EmptyState title="Henüz fatura yok" description={readOnly ? "Faturalar geldikçe aylık özet burada oluşur." : "Fatura ekledikçe aylık özet burada oluşur."} />
         )}
       </Card>
 
-      {ignored.length ? <DeletedBills bills={ignored} /> : null}
+      {/* Silinen Paraşüt faturalarını geri almak yazar: salt okunur hesapta kart yok */}
+      {ignored.length && !readOnly ? <DeletedBills bills={ignored} /> : null}
       {/* Telefon: sayfanın sonu yüzen "Fatura ekle" düğmesinin altında kalmasın (tablette düğme başlıkta) */}
-      <div aria-hidden="true" className="h-16 sm:hidden" />
+      {readOnly ? null : <div aria-hidden="true" className="h-16 sm:hidden" />}
     </>
   );
 }

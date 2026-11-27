@@ -69,6 +69,8 @@ export interface OkcAdminView {
   outside: number | null;
   /** Kümülatif okundu ama saklanmadı ya da temizlendi (metin) */
   note: string | null;
+  /** "Kümülatifi temizle" çizilsin mi (verilmezse evet); salt okunur hesapta (muhasebeci) hayır: temizlemek yazar */
+  clearable?: boolean;
 }
 
 /** Kasa farkının rengi: eksik kırmızı, fazla turuncu, tutuyor yeşil */
@@ -350,9 +352,11 @@ function OkcCumulative({ view }: { view: OkcAdminView }) {
               </>
             ) : null}
           </span>
-          <Button size="xs" variant="ghost" onClick={() => setConfirm(true)} disabled={pending}>
-            <Eraser size={13} aria-hidden="true" /> Kümülatifi temizle
-          </Button>
+          {view.clearable === false ? null : (
+            <Button size="xs" variant="ghost" onClick={() => setConfirm(true)} disabled={pending}>
+              <Eraser size={13} aria-hidden="true" /> Kümülatifi temizle
+            </Button>
+          )}
         </div>
       ) : null}
       {view.note ? <p className="text-ink-mute">{view.note}</p> : null}

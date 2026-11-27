@@ -261,9 +261,12 @@ export function CashHistory({
                         Onay bekliyor · {waiting.requestedByName} girdi
                         {sheetLine}
                       </span>
-                      <ButtonLink href={`/panel/onaylar#istek-${waiting.id}`} variant="ghost" size="xs">
-                        İncele
-                      </ButtonLink>
+                      {/* Onaylar salt okunur hesaba kapalı: bekleyen istek bilgi olarak kalır */}
+                      {readOnly ? null : (
+                        <ButtonLink href={`/panel/onaylar#istek-${waiting.id}`} variant="ghost" size="xs">
+                          İncele
+                        </ButtonLink>
+                      )}
                     </>
                   ) : (
                     <>
@@ -271,9 +274,12 @@ export function CashHistory({
                         Rapor girilmedi
                         {sheetLine}
                       </span>
-                      <ButtonLink href={dayHref(date)} variant="ghost" size="xs">
-                        <Pencil size={13} /> Gir
-                      </ButtonLink>
+                      {/* Salt okunur hesap rapor giremez */}
+                      {readOnly ? null : (
+                        <ButtonLink href={dayHref(date)} variant="ghost" size="xs">
+                          <Pencil size={13} /> Gir
+                        </ButtonLink>
+                      )}
                     </>
                   )}
                 </li>

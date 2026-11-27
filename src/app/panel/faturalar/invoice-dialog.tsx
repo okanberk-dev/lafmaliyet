@@ -843,9 +843,10 @@ function DocumentField({
 /** Paraşüt faturasının tutarları: salt okunur özet + nerede düzeltileceği */
 /**
  * Faturanın cari bağları (§6.4; salt okunur): sayılan ödemeler (gün, şekil, tutar) ve bağlı faturasız alımlar,
- * fotoğraflarıyla (irsaliye ya da el fişi). Değiştirmek için tedarikçinin Hesap hareketleri.
+ * fotoğraflarıyla (irsaliye ya da el fişi). Değiştirmek için tedarikçinin Hesap hareketleri (salt okunur pencerede,
+ * `readOnly`, bu cümle yok).
  */
-function InvoiceCari({ cari, href }: { cari: InvoiceCariLinks; href: string | null }) {
+export function InvoiceCari({ cari, href, readOnly = false }: { cari: InvoiceCariLinks; href: string | null; readOnly?: boolean }) {
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   return (
     <section className="space-y-3 rounded-2xl bg-panel p-4 text-sm sm:col-span-2" aria-label="Cari bağları">
@@ -879,17 +880,19 @@ function InvoiceCari({ cari, href }: { cari: InvoiceCariLinks; href: string | nu
           </ul>
         </div>
       ) : null}
-      <p className="text-xs text-ink-mute">
-        Değiştirmek için tedarikçinin{" "}
-        {href ? (
-          <Link href={`${href}?sekme=hareketler`} className="font-medium text-info underline-offset-2 hover:underline">
-            Hesap hareketlerini açın
-          </Link>
-        ) : (
-          "Hesap hareketlerini açın"
-        )}
-        .
-      </p>
+      {readOnly ? null : (
+        <p className="text-xs text-ink-mute">
+          Değiştirmek için tedarikçinin{" "}
+          {href ? (
+            <Link href={`${href}?sekme=hareketler`} className="font-medium text-info underline-offset-2 hover:underline">
+              Hesap hareketlerini açın
+            </Link>
+          ) : (
+            "Hesap hareketlerini açın"
+          )}
+          .
+        </p>
+      )}
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </section>
   );

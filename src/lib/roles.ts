@@ -71,6 +71,15 @@ export function can(role: Role | null | undefined, cap: Capability): boolean {
   return !!role && (CAPABILITIES[cap] as readonly Role[]).includes(role);
 }
 
+/**
+ * Salt okunur hesap mı (muhasebeci): hiçbir iş kaydı yazamaz. Ekranlar yazma düğmesini, formunu ve satır içi düzenlemeyi
+ * buna bakarak çizmez (sunucu eylemleri ayrıca reddeder); ekranın içindeki bağlantı için `openableHref`. Rol adıyla
+ * karşılaştırma yerine tek soru: yeni bir salt okunur rol eklenince ekranlar kendiliğinden uyar
+ */
+export function isReadOnly(role: Role | null | undefined): boolean {
+  return !can(role, "kayit.yaz");
+}
+
 /** Bilinen bir rol mü (oturum çerezi ve veritabanı satırı için) */
 export function isRole(v: unknown): v is Role {
   return v === "admin" || v === "manager" || v === "staff" || v === "accountant";

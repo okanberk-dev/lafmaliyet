@@ -61,7 +61,7 @@ import { ALL_BRANCHES, branchScopeLabel, sortBranches, tillBranches } from "@/li
 import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
-import { can, cashAudience } from "@/lib/roles";
+import { isReadOnly, can, cashAudience } from "@/lib/roles";
 import { siteDayTitle } from "@/lib/site-sales/calc";
 import { requireUser, type CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server/branch-scope";
@@ -157,7 +157,7 @@ function more(email: boolean) {
 async function CashDescription({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
   if (!can(user.role, "kasa.rakam")) return (await staffAsilposDescription(searchParams)) ?? STAFF_DESCRIPTION;
-  if (!can(user.role, "kayit.yaz")) return READ_ONLY_DESCRIPTION;
+  if (isReadOnly(user.role)) return READ_ONLY_DESCRIPTION;
   // Açıklamanın kasası: tek şubede o şube; "Tümü"de birden çok kasa açıkken herhangi birinin e-postası gidiyorsa "e-posta
   // gider" (her şubenin kartı kendi alıcılarını ayrıca söyler; yalnız Tuzla'nınkine bakılmaz)
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
@@ -330,7 +330,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // Yalnız yöneticinin kalanlar (kasanın rapor ayarları, tedarikçi önerileri) `owner` ile
   const audience = cashAudience(user.role);
   const admin = audience === "admin";
-  const readOnly = !can(user.role, "kayit.yaz");
+  const readOnly = isReadOnly(user.role);
   const owner = user.role === "admin";
   // Kasadan çıkanın bütün kategorileri (maaş, kira, reklam): yönetici ve muhasebeci. Müdür personelin kategorilerini seçer,
   // öbür satırların kategori adını görmez (kişisel ücret; docs/ROLLER.md › Kararlar)
@@ -415,6 +415,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       storage={storage.available}
       reading={ai.state}
       admin={admin ? { check: asilposPhoto.check, bankPos: report?.bankPos ?? null } : null}
+      readOnly={readOnly}
     />
   ) : null;
   // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
@@ -502,7 +503,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
             <span className="font-semibold text-ink">Zayi &amp; ikram</span>
             {wasteItems.length ? null : <span className="text-ink-mute"> · {entryClosed || waste.asilpos?.received ? "yok" : "girilmedi"}</span>}
           </p>
-          {entryClosed ? null : (
+          {/* Salt okunur hesap (muhasebeci) zayi yazamaz, Zayi & ikram ekranını da açamaz: satır bilgi olarak kalır */}
+          {entryClosed || readOnly ? null : (
             <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
               <Gift size={14} /> Ekle
             </ButtonLink>
@@ -513,7 +515,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
             <span className="font-medium text-ink">{w.label}:</span> <span className="text-ink-soft">{w.text}</span>
           </p>
         ))}
-        {!wasteItems.length && !entryClosed ? (
+        {!wasteItems.length && !entryClosed && !readOnly ? (
           <p className="text-[13px] leading-5 text-ink-mute">
             {waste.asilpos ? "Atılan ya da hammadde ikramı olduysa ekleyin; ürün ikramı AsilPOS'ta işaretlenir." : "Ödenmeden verilen ya da atılan bir şey olduysa raporu göndermeden ekleyin."}
           </p>
@@ -531,7 +533,11 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       <SiteDayRow date={date} till={view.till} karaoke={can(user.role, "karaoke.tutar")} kasa={asilposState.asilpos ? "AsilPOS" : "ModPOS"} />
     </Suspense>
   ) : null;
-  const form = showForm ? (
+  // Salt okunur hesap (muhasebeci) rapor giremez: raporu olmayan günde form yerine tek satır (form "Gönder"le çizilirdi,
+  // sunucu reddederdi)
+  const form = showForm && readOnly && !report ? (
+    <Notice tone="neutral" title="Bu günün kasa raporu girilmedi" text="Rapor girilince rakamlarıyla burada görünür." />
+  ) : showForm ? (
     <CashForm
       // Kasa da anahtarda: seçici değişince yarım kalan form öbür kasanın formu olarak kalmasın
       key={`${view.till}:${date}:${report?.revision ?? 0}`}
@@ -542,6 +548,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       whatsapp={whatsapp}
       recipients={mailTo}
       canEdit={canEdit && !blind}
+      readOnly={readOnly}
       photoUi={photoUi}
       saved={report ? { photos: showPhotos ? (photoInfo?.photos ?? []) : [], readings: photoInfo?.readings ?? [] } : null}
       cashOuts={dayOuts}
@@ -565,7 +572,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       blindCount={!admin && countState?.on ? { lock: lockOf(countState.rows) } : null}
       handoverAdmins={kimeAdmins}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
-      {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
+      {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null, !readOnly) } : {})}
     />
   ) : null;
   // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)
@@ -795,7 +802,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const okcAdmin: Record<number, OkcAdminView> = {};
   let lastCum = okcBefore.cum ?? null;
   for (const r of [...monthReports].reverse()) {
-    const view = okcAdminView(r, infos.get(r.id)?.readings ?? [], lastCum);
+    const view = okcAdminView(r, infos.get(r.id)?.readings ?? [], lastCum, !readOnly);
     if (view) okcAdmin[r.id] = view;
     if (r.okcCumTotal != null && r.okcZNo) lastCum = { date: r.date, zNo: r.okcZNo, cumTotal: r.okcCumTotal, cumVat: r.okcCumVat ?? null };
   }
@@ -1133,7 +1140,7 @@ async function closedBarFor(date: string, admin: boolean, user: { id: number }, 
  * tahsilat; kümülatif saklı değilse ama okunduysa nedeni (önceki saklanan kümülatifle tutmadı ya da yönetici temizledi).
  * Yalnız yönetici dalında çağrılır (personelin DTO'sunda sunucu sütunları yok)
  */
-function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPrev["cum"]): OkcAdminView | null {
+function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPrev["cum"], clearable = true): OkcAdminView | null {
   if (!okcHasFigures(r)) return null;
   let note: string | null = null;
   const read = r.okcCumTotal == null ? okcReadFigures(readings) : null;
@@ -1153,7 +1160,7 @@ function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPre
     // Temizlenmiş de olabilir, yazıldığı an önceki bir kümülatifle tutmamış da: hangisi olduğu kayıtlı değil
     else if (res.cumTotal !== null) note = `Kümülatif saklı değil (okunan ${money(res.cumTotal)}). Yeni bir yazarkasa Z fotoğrafı okununca yeniden yazılır.`;
   }
-  return { reportId: r.id, cumTotal: r.okcCumTotal ?? null, cumVat: r.okcCumVat ?? null, outside: r.okcOutside ?? null, note };
+  return { reportId: r.id, cumTotal: r.okcCumTotal ?? null, cumVat: r.okcCumVat ?? null, outside: r.okcOutside ?? null, note, clearable };
 }
 
 /**

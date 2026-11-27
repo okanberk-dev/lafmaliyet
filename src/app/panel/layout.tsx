@@ -7,7 +7,7 @@ import { PanelAssistantGate } from "@/components/panel/assistant/assistant-gate"
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
 import { Notice } from "@/components/ui/notice";
 import { assistantEnabled } from "@/lib/assistant/protocol";
-import { can } from "@/lib/roles";
+import { isReadOnly } from "@/lib/roles";
 import { getCurrentUser, requireUser } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
 import { loadSearchIndex } from "@/server/data/search";
@@ -40,7 +40,7 @@ async function SidebarWithUser() {
  */
 async function ReadOnlyBanner() {
   const user = await getCurrentUser();
-  if (!user || can(user.role, "kayit.yaz")) return null;
+  if (!user || !isReadOnly(user.role)) return null;
   return <Notice tone="neutral" size="sm" className="mb-4" title="Salt okunur hesap" text="Kayıtları rakamlarıyla görürsünüz; değiştiremez, silemez, ekleyemezsiniz. Düzeltme için yöneticiye yazın." />;
 }
 

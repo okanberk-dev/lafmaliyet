@@ -24,9 +24,10 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { TableWrap, TD, TH } from "@/components/ui/table";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { MONTH_NAMES } from "@/lib/constants";
+import { MONTH_NAMES, type Role } from "@/lib/constants";
 import { FIXED_LOCKED_CELL_TEXT } from "@/lib/fixed-expense-rules";
 import { monthLabel, num, pct, tl } from "@/lib/format";
+import { isReadOnly } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { setMonthField, setMonthNote, setPnlCell } from "@/server/actions/pnl";
 
@@ -43,7 +44,7 @@ import {
   type CellField,
 } from "./cell-rules";
 import { MonthView } from "./month-view";
-import { rowLink, type RowLink } from "./row-links";
+import { rowLink, rowLinkFor, type RowLink } from "./row-links";
 
 export interface GridSection {
   key: string;
@@ -155,7 +156,13 @@ function EditableCell({
   warn,
   tag,
   source,
+  readOnly = false,
 }: {
+  /**
+   * Salt okunur hesap (muhasebeci): hücre aynı görünür (elle girilen mavi, üzerine yazılan mavi zeminli, not üçgeni,
+   * uyarı ve açıklama ipucu) ama düğme değildir; tıklanmaz, rakam yazılmaz, not penceresi açılmaz
+   */
+  readOnly?: boolean;
   value: number | null;
   computed: number | null;
   overridden: boolean;
@@ -231,6 +238,7 @@ function EditableCell({
     return false;
   };
 
+  // Salt okunur kutuda düzenleme hiç başlamaz (düğme çizilmez): `editing` hep kapalı kalır
   if (editing) {
     return (
       <div className="relative">
@@ -342,60 +350,83 @@ function EditableCell({
   // Uyarı ve bu ayın açıklaması dokunmatikte de okunur: hücrenin solunda dokununca açılan ipucu (title yalnız farede).
   // Düğmenin içinde değil (düğmede düğme olmaz), üstüne konumlu; düğmeye dokunmak yine düzenlemeyi açar
   const tip = [warn ? `Dikkat: ${warn}` : null, info ?? null].filter(Boolean).join(" ");
+  const boxClass = cn(
+    "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-11",
+    CELL_MIN,
+    // Salt okunur kutu tıklanmaz: yazı imleci ve üzerine gelme tonu yok
+    readOnly ? "cursor-default" : "hover:bg-surface hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/25",
+    // .cell-input katmansız bir kural olduğu için negatifte kırmızının önüne geçmesin
+    (overridden || kind === "manual") && !negative && "cell-input",
+    overridden && kind === "auto" && "bg-info-soft font-medium",
+    overridden && kind === "auto" && !readOnly && "hover:bg-info-soft",
+    negative && "text-bad",
+    value === null && "text-ink-quiet",
+    muted && "bg-transparent ring-0 outline-1 -outline-offset-1 outline-line-strong outline-dashed",
+    muted && !readOnly && "hover:bg-surface/60",
+    tip && "pl-6",
+  );
+  const shown = (
+    <>
+      {fmt(value, format)}
+      {suffix ? <span className="ml-0.5 text-xs font-normal text-ink-quiet">{suffix}</span> : null}
+      {note ? (
+        // Not üçgeni: sol üst köşede
+        <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
+      ) : null}
+      {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
+    </>
+  );
+  const said = `${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}${warn ? `. Dikkat: ${warn}` : ""}`;
   return (
     <div className="flex items-center gap-0.5">
       {source}
       <div className="relative min-w-0 flex-1">
         {tip ? <InfoTip text={tip} tone={warn ? "warn" : undefined} className="absolute top-1/2 left-1.5 z-10 -translate-y-1/2" /> : null}
-        <button
-          type="button"
-          data-pnl-col={col}
-          ref={(el) => {
-            if (!el || !refocus.current) return;
-            const where = refocus.current;
-            refocus.current = null;
-            if (where === "next") {
-              // Aynı aydaki bir sonraki girilebilir hücre (sayfadaki sırayla); yoksa bu hücrede kalır
-              const list = [...document.querySelectorAll<HTMLButtonElement>(`button[data-pnl-col="${col}"]`)];
-              const next = list[list.indexOf(el) + 1];
-              (next ?? el).focus();
-              next?.scrollIntoView({ block: "nearest", inline: "nearest" });
-            } else el.focus();
-          }}
-          onClick={() => begin()}
-          onKeyDown={(e) => {
-            if (noteKeys(e, valueText())) return;
-            // Hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
-            if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\d,.-]$/.test(e.key)) {
-              e.preventDefault();
-              begin(e.key);
-            }
-          }}
-          title={[warn ? `Dikkat: ${warn}` : null, note ? `Not: ${note}` : null, info ?? null, note ? help : `${help}${onNote ? " · Not için Shift+F2" : ""}`]
-            .filter(Boolean)
-            .join("\n\n")}
-          aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}${warn ? `. Dikkat: ${warn}` : ""}. Değiştirmek için tıklayın`}
-          className={cn(
-            "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-11",
-            CELL_MIN,
-            "hover:bg-surface hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/25",
-            // .cell-input katmansız bir kural olduğu için negatifte kırmızının önüne geçmesin
-            (overridden || kind === "manual") && !negative && "cell-input",
-            overridden && kind === "auto" && "bg-info-soft font-medium hover:bg-info-soft",
-            negative && "text-bad",
-            value === null && "text-ink-quiet",
-            muted && "bg-transparent ring-0 outline-1 -outline-offset-1 outline-line-strong outline-dashed hover:bg-surface/60",
-            tip && "pl-6",
-          )}
-        >
-          {fmt(value, format)}
-          {suffix ? <span className="ml-0.5 text-xs font-normal text-ink-quiet">{suffix}</span> : null}
-          {note ? (
-            // Not üçgeni: sol üst köşede
-            <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
-          ) : null}
-          {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
-        </button>
+        {readOnly ? (
+          // Salt okunur: aynı kutu, düğme değil. İpucu yalnız okunacakları taşır (uyarı, not, hesabın açıklaması)
+          <span
+            title={[warn ? `Dikkat: ${warn}` : null, note ? `Not: ${note}` : null, info ?? null, overridden && computed !== null ? `Elle girildi. ${computedLabel}: ${fmt(computed, format)}` : null]
+              .filter(Boolean)
+              .join("\n\n") || undefined}
+            aria-label={said}
+            className={boxClass}
+          >
+            {shown}
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-pnl-col={col}
+            ref={(el) => {
+              if (!el || !refocus.current) return;
+              const where = refocus.current;
+              refocus.current = null;
+              if (where === "next") {
+                // Aynı aydaki bir sonraki girilebilir hücre (sayfadaki sırayla); yoksa bu hücrede kalır
+                const list = [...document.querySelectorAll<HTMLButtonElement>(`button[data-pnl-col="${col}"]`)];
+                const next = list[list.indexOf(el) + 1];
+                (next ?? el).focus();
+                next?.scrollIntoView({ block: "nearest", inline: "nearest" });
+              } else el.focus();
+            }}
+            onClick={() => begin()}
+            onKeyDown={(e) => {
+              if (noteKeys(e, valueText())) return;
+              // Hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
+              if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\d,.-]$/.test(e.key)) {
+                e.preventDefault();
+                begin(e.key);
+              }
+            }}
+            title={[warn ? `Dikkat: ${warn}` : null, note ? `Not: ${note}` : null, info ?? null, note ? help : `${help}${onNote ? " · Not için Shift+F2" : ""}`]
+              .filter(Boolean)
+              .join("\n\n")}
+            aria-label={`${said}. Değiştirmek için tıklayın`}
+            className={boxClass}
+          >
+            {shown}
+          </button>
+        )}
         {tag ? <CellTag tag={tag} /> : null}
       </div>
     </div>
@@ -686,7 +717,13 @@ export function PnlGrid({
   asilposSwitch = null,
   openDaysLocked = null,
   writeBranch = null,
+  role = "admin",
 }: {
+  /**
+   * Bakanın rolü. Salt okunur hesapta (muhasebeci; src/lib/roles.ts › isReadOnly) tablo yalnız okunur: hücreye rakam
+   * yazılmaz, hücre ve ay notu eklenmez; kaynak bağlantıları yalnız rolün açabildiği ekranlara (rowLink › openableHref)
+   */
+  role?: Role;
   year: number;
   months: string[];
   activeMonths: string[];
@@ -722,6 +759,7 @@ export function PnlGrid({
   writeBranch?: string | null;
 }) {
   const reduce = useCalmMotion();
+  const readOnly = isReadOnly(role);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   const [monthNoteFor, setMonthNoteFor] = useState<number | null>(null);
   const [view, setView] = useQueryState<MonthView>("aylar", activeMonths.length ? "aktif" : "12");
@@ -847,10 +885,17 @@ export function PnlGrid({
         icon={<CalendarRange />}
         title={`${year} gelir-gider tablosu`}
         description={
-          <>
-            <span className="md:hidden">KDV hariç. Ayı seçin; tutar girmek için kaleme dokunun.</span>
-            <span className="max-md:hidden">KDV hariç. Hücreye tıklayın ya da seçip rakam yazın; Enter kaydedip alttaki hücreye geçer, Esc vazgeçer.</span>
-          </>
+          readOnly ? (
+            <>
+              <span className="md:hidden">KDV hariç. Ayı seçin.</span>
+              <span className="max-md:hidden">KDV hariç. Noktalı çizgili tutar, geldiği sayfayı açar.</span>
+            </>
+          ) : (
+            <>
+              <span className="md:hidden">KDV hariç. Ayı seçin; tutar girmek için kaleme dokunun.</span>
+              <span className="max-md:hidden">KDV hariç. Hücreye tıklayın ya da seçip rakam yazın; Enter kaydedip alttaki hücreye geçer, Esc vazgeçer.</span>
+            </>
+          )
         }
         // Telefonda tek ay görünümü var; ay seçimi aşağıda
         actionsClassName="max-md:hidden"
@@ -954,15 +999,17 @@ export function PnlGrid({
               ))}
             </Select>
           </Field>
-          <ToggleRow
-            title="Yalnız girilebilenler"
-            description={`${editableCount} kalem elle girilebilir ya da üzerine yazılabilir`}
-            checked={onlyEditable === "1"}
-            onChange={(on) => setOnlyEditable(on ? "1" : "")}
-            label="Yalnız girilebilen kalemler"
-            onText="Açık"
-            offText="Kapalı"
-          />
+          {readOnly ? null : (
+            <ToggleRow
+              title="Yalnız girilebilenler"
+              description={`${editableCount} kalem elle girilebilir ya da üzerine yazılabilir`}
+              checked={onlyEditable === "1"}
+              onChange={(on) => setOnlyEditable(on ? "1" : "")}
+              label="Yalnız girilebilen kalemler"
+              onText="Açık"
+              offText="Kapalı"
+            />
+          )}
           <ToggleRow
             title="Yalnız üzerine yazılanlar"
             description="Hesaplanan değerin yerine elle tutar girilmiş kalemler"
@@ -995,9 +1042,11 @@ export function PnlGrid({
               </option>
             ))}
           </Select>
-          <FilterChip active={onlyEditable === "1"} onToggle={() => setOnlyEditable(onlyEditable ? "" : "1")} count={editableCount}>
-            Girilebilir
-          </FilterChip>
+          {readOnly ? null : (
+            <FilterChip active={onlyEditable === "1"} onToggle={() => setOnlyEditable(onlyEditable ? "" : "1")} count={editableCount}>
+              Girilebilir
+            </FilterChip>
+          )}
           <FilterChip active={onlyOverridden === "1"} onToggle={() => setOnlyOverridden(onlyOverridden ? "" : "1")} count={overriddenCount}>
             Üzerine yazılan
           </FilterChip>
@@ -1009,21 +1058,21 @@ export function PnlGrid({
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[13px] text-ink-mute">
           <span className="flex items-center gap-1.5">
             <span className="cell-input inline-flex h-6 items-center rounded-md bg-surface px-1.5 font-semibold tabular ring-1 ring-line ring-inset">123</span>
-            elle girilen / girilebilen
+            {readOnly ? "elle girilen" : "elle girilen / girilebilen"}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="relative inline-flex h-6 w-9 items-center rounded-md bg-info-soft ring-1 ring-line ring-inset">
               <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" />
             </span>
             hesaplananın üzerine yazılmış
-            <InfoTip text="İçini silip Enter'a basınca hücre hesaplanan değere döner." />
+            {readOnly ? null : <InfoTip text="İçini silip Enter'a basınca hücre hesaplanan değere döner." />}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="relative inline-flex h-6 w-9 items-center rounded-md bg-surface ring-1 ring-line ring-inset">
               <span className="absolute top-0 left-0 size-0 rounded-tl-md border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" />
             </span>
             notlu hücre{notedCount ? ` (${notedCount})` : ""}
-            <InfoTip text="Hücreyi düzenlerken soldaki not simgesine basın (klavyede Shift+F2). Ay notu için ay adına tıklayın." />
+            {readOnly ? null : <InfoTip text="Hücreyi düzenlerken soldaki not simgesine basın (klavyede Shift+F2). Ay notu için ay adına tıklayın." />}
           </span>
         </div>
       </div>
@@ -1048,6 +1097,7 @@ export function PnlGrid({
         expectedDebts={expectedDebts}
         asilposSwitch={asilposSwitch}
         openDaysLocked={openDaysLocked}
+        role={role}
       />
       <ExpectedDebtsNote months={visibleIdx.map((v) => v.m)} expected={expectedDebts} className="max-md:hidden" />
 
@@ -1078,15 +1128,20 @@ export function PnlGrid({
                     {/* Ay adı ay notunu açar; not varsa yanında ⓘ ile okunur */}
                     <span className="inline-flex items-center justify-end gap-1 px-1">
                       {monthNotes[i] ? <InfoTip text={monthNotes[i]} /> : null}
-                      <button
-                        type="button"
-                        onClick={() => setMonthNoteFor(i)}
-                        title={monthNotes[i] ? `${MONTH_NAMES[i]} notunu düzenle` : `${MONTH_NAMES[i]} için not ekle`}
-                        aria-label={`${MONTH_NAMES[i]} ${year} ay notu${monthNotes[i] ? `: ${monthNotes[i]}` : " ekle"}`}
-                        className="cursor-pointer rounded-md px-1 underline decoration-transparent decoration-dotted underline-offset-4 hover:decoration-ink-quiet focus-visible:ring-2 focus-visible:ring-ink/25 focus-visible:outline-none"
-                      >
-                        {MONTH_NAMES[i]}
-                      </button>
+                      {readOnly ? (
+                        // Salt okunur: ay adı düğme değil; ay notu varsa yanındaki ⓘ ile okunur
+                        <span className="px-1">{MONTH_NAMES[i]}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setMonthNoteFor(i)}
+                          title={monthNotes[i] ? `${MONTH_NAMES[i]} notunu düzenle` : `${MONTH_NAMES[i]} için not ekle`}
+                          aria-label={`${MONTH_NAMES[i]} ${year} ay notu${monthNotes[i] ? `: ${monthNotes[i]}` : " ekle"}`}
+                          className="cursor-pointer rounded-md px-1 underline decoration-transparent decoration-dotted underline-offset-4 hover:decoration-ink-quiet focus-visible:ring-2 focus-visible:ring-ink/25 focus-visible:outline-none"
+                        >
+                          {MONTH_NAMES[i]}
+                        </button>
+                      )}
                     </span>
                     {m === currentMonth ? <span className="block px-2 text-[11px] font-normal text-ink-mute">bu ay</span> : null}
                   </TH>
@@ -1116,13 +1171,14 @@ export function PnlGrid({
                   {visibleIdx.map(({ m, i }) => {
                     // Kasa raporlarından gelen açık gün hesaplanan gibi: elle yazılan onun üzerine yazılmıştır
                     const kasa = openDaysKasa?.[i] ?? null;
-                    // "Tümü" birden çok şubenin toplamıyken yazılmaz (yazılan tek şubenin ay satırına inerdi)
-                    if (openDaysLocked) {
+                    // "Tümü" birden çok şubenin toplamıyken yazılmaz (yazılan tek şubenin ay satırına inerdi); salt okunur
+                    // hesapta da düz rakam
+                    if (openDaysLocked || readOnly) {
                       return (
                         <td key={m} className={cn(CELL, "text-right")}>
                           <span
                             className={cn("block px-2 py-1 whitespace-nowrap tabular text-ink-mute", openDays[i] === null && "text-ink-quiet")}
-                            title={openDaysLocked}
+                            title={openDaysLocked ?? (kasa !== null && !(openDaysManual ? openDaysManual[i] !== null : false) ? KASA_LABEL : undefined)}
                           >
                             {fmt(openDays[i], "days")}
                             {openDays[i] !== null ? <span className="text-ink-quiet">/{dims[i]}</span> : null}
@@ -1152,28 +1208,35 @@ export function PnlGrid({
                 </tr>
               ) : null}
               {shownSections.map((sec) => (
-                <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} current={currentMonth} onSave={save} onNote={openNote} />
+                <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} current={currentMonth} onSave={save} onNote={openNote} role={role} />
               ))}
             </tbody>
           </table>
         </TableWrap>
       )}
 
-      {noteTarget ? <CellNoteDialog key={`${noteTarget.month}-${noteTarget.rowKey}`} target={noteTarget} onClose={() => setNoteTarget(null)} /> : null}
-      {monthNoteFor !== null ? <MonthNoteDialog month={months[monthNoteFor]} note={monthNotes[monthNoteFor]} branchId={writeBranch} locked={openDaysLocked} onClose={() => setMonthNoteFor(null)} /> : null}
+      {noteTarget && !readOnly ? <CellNoteDialog key={`${noteTarget.month}-${noteTarget.rowKey}`} target={noteTarget} onClose={() => setNoteTarget(null)} /> : null}
+      {monthNoteFor !== null && !readOnly ? <MonthNoteDialog month={months[monthNoteFor]} note={monthNotes[monthNoteFor]} branchId={writeBranch} locked={openDaysLocked} onClose={() => setMonthNoteFor(null)} /> : null}
 
       <CardFooter className="justify-start gap-2 max-md:hidden">
         <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
-        <span>
-          Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Noktalı çizgili tutar ve ok simgesi (
-          <ArrowUpRight size={13} className="inline align-[-2px]" aria-hidden="true" />) tutarın geldiği sayfayı açar: o ayın faturaları
-          (komisyon faturaları dahil), harcamaları, stok sayımı, satışları (ciro, kartlı satış oranı); personel, sabit giderler. Hücrenin
-          solundaki uyarı ya da bilgi simgesi o ayın hesabını açıklar. Faturadan gelen mal alışlarını değiştirmek için{" "}
-          <Link href="/panel/faturalar" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
-            Faturalar
-          </Link>{" "}
-          sayfasını kullanın.
-        </span>
+        {readOnly ? (
+          <span>
+            Noktalı çizgili tutar ve ok simgesi (<ArrowUpRight size={13} className="inline align-[-2px]" aria-hidden="true" />) tutarın geldiği sayfayı açar: o ayın
+            faturaları (komisyon faturaları dahil) ve harcamaları. Hücrenin solundaki uyarı ya da bilgi simgesi o ayın hesabını açıklar.
+          </span>
+        ) : (
+          <span>
+            Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Noktalı çizgili tutar ve ok simgesi (
+            <ArrowUpRight size={13} className="inline align-[-2px]" aria-hidden="true" />) tutarın geldiği sayfayı açar: o ayın faturaları
+            (komisyon faturaları dahil), harcamaları, stok sayımı, satışları (ciro, kartlı satış oranı); personel, sabit giderler. Hücrenin
+            solundaki uyarı ya da bilgi simgesi o ayın hesabını açıklar. Faturadan gelen mal alışlarını değiştirmek için{" "}
+            <Link href="/panel/faturalar" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
+              Faturalar
+            </Link>{" "}
+            sayfasını kullanın.
+          </span>
+        )}
       </CardFooter>
     </Card>
   );
@@ -1220,7 +1283,10 @@ function SectionRows({
   current,
   onSave,
   onNote,
+  role,
 }: {
+  /** Bakanın rolü: bağlantılar rolün açabildiği ekranlara, salt okunur hesapta hücreler düğme değil */
+  role: Role;
   sec: GridSection;
   visibleIdx: { m: string; i: number }[];
   /** "Bu ay": stok sayımı bağlantısı sonraki aylara gitmez */
@@ -1228,6 +1294,7 @@ function SectionRows({
   onSave: (month: string, key: string, v: number | null, hadNote?: boolean, kasa?: boolean) => Promise<unknown>;
   onNote: (month: string, i: number, def: PnlRowDef, c: PnlCell, amountText: string) => void;
 }) {
+  const readOnly = isReadOnly(role);
   return (
     <>
       <tr>
@@ -1242,7 +1309,7 @@ function SectionRows({
         const isProfit = def.key === "profit" || def.key === "ratio:profit";
         const tone = (v: number | null) => (v !== null && v < 0 ? "text-bad" : isProfit && v !== null && v > 0 ? "text-good" : null);
         // Her ay aynı kaynak (personel, sabit giderler): satırın adında tek bağlantı
-        const rowSource = rowLink(def.key, current);
+        const rowSource = rowLinkFor(role, rowLink(def.key, current));
         return (
           <tr key={`${sec.key}-${def.key}`} className={cn(ROW, def.strong && "font-semibold [&>td]:border-line-strong")}>
             <TD sticky className={cn(STICKY, "py-1.5", def.strong ? "text-ink" : "text-ink-soft")}>
@@ -1260,7 +1327,7 @@ function SectionRows({
               // Aylık ciro kasa raporlarından geliyorsa hesaplanan hücre gibi (elle yazılan mavi, boşaltınca kasaya döner)
               const kasa = def.key === "revenue" && c.computed !== null;
               // Bu ayın kaynağı (faturalar, harcamalar, stok sayımı, komisyon, satışlar); faturasız ayda yok
-              const link = rowLink(def.key, m, { value: c.value, current });
+              const link = rowLinkFor(role, rowLink(def.key, m, { value: c.value, current }));
               const monthLink = link?.scope === "month" ? link : null;
               // Geçerlilik aralığının dışındaki sabit gider kalemi (bitmiş ya da başlamamış): boş hücreye yeni tutar yazılmaz
               // (sunucu da reddeder: setPnlCell, fixed-expense-rules.ts); önceden yazılmış tutar düzenlenir ve silinir
@@ -1282,6 +1349,7 @@ function SectionRows({
                       info={c.info}
                       warn={c.warn}
                       tag={c.tag}
+                      readOnly={readOnly}
                       source={monthLink ? <SourceLink link={monthLink} label={`${def.label} · ${MONTH_NAMES[i]}`} /> : null}
                       onSave={async (v) => {
                         await onSave(m, def.key, v, !!c.note, kasa);
