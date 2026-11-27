@@ -5,7 +5,8 @@ import { and, asc, eq, gte, inArray, min, or } from "drizzle-orm";
 import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
 import { featureBranches } from "@/lib/branch-features";
-import { ALL_BRANCHES, DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID } from "@/lib/branches";
+import type { ViewMode } from "@/lib/branch-view";
 import { tillOpenedOn } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
@@ -21,6 +22,7 @@ import {
   groupInvoiceRows,
   overduePayouts,
   reportWindow,
+  scopeCommissionReport,
   type ChannelMonthIn,
   type ChannelSettings,
   type CommissionAlert,
@@ -33,7 +35,7 @@ import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { posDaySchema, posZSchema } from "@/lib/asilpos/day";
 import { modposChannels } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
-import { andWhere, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { andWhere, areaScope, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { loadSupplierRefs } from "@/server/data/suppliers";
@@ -58,7 +60,8 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
  * Şube (23 Kasım 2026; docs/SUBE.md): satış seçili şubenin kasa raporlarından ve AsilPOS'undan (ilk rapor, açılış günü ve
  * kapalı günler de şubenin), faturalar ve hakediş işletme geneli. ModPOS'ta kalan şube (Tuzla) seçiliyken AsilPOS okunmaz
  * ama geçiş ayından itibaren Z'si "Tümü"deki gibi tek kanala yığılmaz (modposScope; föyde markası olan kanalına). Ekran
- * şube seçiliyken işletmenin raporunu da okur (oran işletmenin; şubenin payı = şube satışı × oran). Zil, Bugün, sabah
+ * şube seçiliyken işletmenin raporunu da okur (oran işletmenin; şubenin payı = şube satışı × oran). Zil ve Bugün
+ * Komisyon ve hakediş alanının kapsamıyla (şube ayrımı parça 4: şube kipinde yalnız şubenin satışı olan kanallar); sabah
  * e-postası ve haftalık özet her zaman işletme geneli ("Tümü"; seçiciden bağımsız).
  */
 
@@ -287,36 +290,52 @@ export async function loadCommissionReport(): Promise<CommissionReport> {
 }
 
 /**
- * Hafif rapor (zil, Bugün, sabah e-postası): ekranın ayları, faturadaki adın öneki (bağlanmazsa kartın adları). Her zaman
- * işletme geneli: seçicide şube seçili olsa da uyarı ve hakediş işletmenindir (docs/SUBE.md)
+ * Hafif rapor (zil, Bugün, sabah e-postası): ekranın ayları, faturadaki adın öneki (bağlanmazsa kartın adları). Faturalar,
+ * oran ve hakediş işletmenin ("Tümü"nün raporu). `scope` tek şubeyse (Komisyon ve hakediş alanının şube kipi; şube
+ * ayrımı parça 4, docs/SUBE.md › Şube ayrımı) rapor şubenin o ay satışı olan kanal ve aylara süzülür
+ * (scopeCommissionReport): öbür şubenin kullandığı kanalın gecikmesi bu şubenin zilinde ve Bugün'ünde görünmez
  */
-async function loadLightReport(today?: string): Promise<CommissionReport> {
-  // şube-ayrımı: komisyon.hafif
-  return withBranchScope(ALL_BRANCHES, async () => buildCommissionReport(await loadCommissionInput({ resolveNames: false, today })));
+async function loadLightReport(scope: BranchScope, today?: string): Promise<CommissionReport> {
+  // şube-ayrımı: komisyon.oran
+  const all = await withBranchScope(ALL_BRANCHES, async () => buildCommissionReport(await loadCommissionInput({ resolveNames: false, today })));
+  if (scope === ALL_BRANCHES) return all;
+  const branch = await withBranchScope(scope, async () => buildCommissionReport(await loadCommissionInput({ resolveNames: false, today: all.today })));
+  return scopeCommissionReport(all, branch);
 }
 
 /**
  * Ekranın raporları: seçili kapsamın raporu ve (şube seçiliyken) işletmenin raporu. Faturalar, oran ve hakediş
- * işletmenindir (`all`); şubenin satışı `branch`'ten (branchCommissionShare). "Tümü"de ikisi aynı rapor, `branch` null
+ * işletmenindir (`all`); şubenin satışı `branch`'ten (branchCommissionShare). "Tümü"de ikisi aynı rapor, `branch` null.
+ * `mode`: Komisyon ve hakediş alanının kipi (şube ayrımı parça 4): "sube"de ekranın ana görünümü şubenin payı ve şubenin
+ * kanallarının hakedişi, işletmenin raporu katlı ekte; "firma"da bugünkü gibi işletmenin raporu
  */
-export async function loadCommissionReports(): Promise<{ all: CommissionReport; branch: CommissionReport | null; scope: string }> {
+export async function loadCommissionReports(): Promise<{ all: CommissionReport; branch: CommissionReport | null; scope: string; mode: ViewMode }> {
   const scope = await currentBranchScope();
-  if (scope === ALL_BRANCHES) return { all: await loadCommissionReport(), branch: null, scope };
-  // Ödeme süreleri her iki raporda işletmenin (businessPayDays): son gün ve gecikme seçiciye göre değişmez, zille aynı
-  // şube-ayrımı: komisyon.sayfa
-  const [all, branch] = await Promise.all([withBranchScope(ALL_BRANCHES, () => loadCommissionReport()), withBranchScope(scope, () => loadCommissionReport())]);
-  return { all, branch, scope };
+  if (scope === ALL_BRANCHES) return { all: await loadCommissionReport(), branch: null, scope, mode: "firma" };
+  // Ödeme süreleri her iki raporda işletmenin (businessPayDays): son gün ve gecikme seçiciye göre değişmez, zille aynı.
+  // Oran işletmenin: şubenin payı onunla hesaplanır, şube kipinde de okunur
+  const [all, branch, area] = await Promise.all([
+    // şube-ayrımı: komisyon.oran
+    withBranchScope(ALL_BRANCHES, () => loadCommissionReport()),
+    withBranchScope(scope, () => loadCommissionReport()),
+    // şube-ayrımı: alan.komisyon
+    areaScope("komisyon"),
+  ]);
+  return { all, branch, scope, mode: area === ALL_BRANCHES ? "firma" : "sube" };
 }
 
 /** Zilin uyarıları (Faturalar başlığı, yalnız yönetici): geciken hakediş, %6 aşımı, komisyon dışı ücret; en çok beş */
 export async function loadCommissionAlerts(): Promise<CommissionAlert[]> {
-  const report = await loadLightReport();
+  // Komisyon alanının kapsamı: şube kipinde yalnız şubenin satışı olan kanallar (müdürde hep şubesi)
+  // şube-ayrımı: alan.komisyon
+  const report = await loadLightReport(await areaScope("komisyon"));
   return commissionAlerts(report, report.today);
 }
 
-/** Bugün'ün "Hakedişler" satırı: geciken hakedişler, en eski son gün önce */
+/** Bugün'ün "Hakedişler" satırı: geciken hakedişler, en eski son gün önce (zil gibi alanın kapsamıyla) */
 export async function loadOverduePayouts(): Promise<{ label: string; month: string; due: string }[]> {
-  return overduePayouts(await loadLightReport()).map((r) => ({ label: r.label, month: r.month, due: r.payout.due! }));
+  // şube-ayrımı: alan.komisyon
+  return overduePayouts(await loadLightReport(await areaScope("komisyon"))).map((r) => ({ label: r.label, month: r.month, due: r.payout.due! }));
 }
 
 /** Takibin başladığı gün: yoksa bugün yazılır (yalnız yazma yollarında: sabah e-postası, hakediş ve kanal kaydı) */
@@ -334,7 +353,9 @@ export async function ensureCommissionSince(): Promise<string> {
  */
 export async function loadCommissionDigest(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> {
   if (!ctx.preview) await ensureCommissionSince();
-  const report = await loadLightReport(today);
+  // Sabah e-postasının kutusu firmanın (alıcı firma; gönderilen uyarının anahtarı bir kez yazılır)
+  // şube-ayrımı: eposta.firma
+  const report = await loadLightReport(ALL_BRANCHES, today);
   const alerts = commissionAlerts(report, today, Infinity);
   if (!alerts.length) return null;
   const keys = alerts.map(commissionLogKey);

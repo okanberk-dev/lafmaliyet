@@ -165,7 +165,8 @@ test("kaynak: şubenin gönderimleri günlüğe şubesiyle yazılır; Son gönde
   assert.match(asilpos, /error: PHOTO_SENDING, sentAt: now, branchId \}\)/);
   assert.match(read("src/server/vardiya/notify.ts"), /recipients: "\(yöneticiler\)", ok: true, branchId: b\.id \}/);
   assert.match(read("src/server/notify/digest.ts"), /export async function recentNotifications\(limit = 12, scope: BranchScope = ALL_BRANCHES\)/);
-  assert.match(read("src/app/panel/hatirlaticilar/page.tsx"), /recentNotifications\(10, scope\.scope\)/);
+  // Şube ayrımı parça 4: Son gönderimler Ödemeler ve faturalar alanının kapsamıyla (şube kipinde şubenin)
+  assert.match(read("src/app/panel/hatirlaticilar/page.tsx"), /recentNotifications\(10, area\)/);
 });
 
 // ---------------------------------------------------------------- Yatırımlar

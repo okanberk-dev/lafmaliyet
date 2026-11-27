@@ -1203,6 +1203,14 @@ export function transferNote(lines: readonly RequestLine[]): string {
 }
 
 /**
+ * Ödeme talebinin ödeyeni: işletmenin adı; tedarikçi bakiyelerinin şube kipinde şubenin adıyla ("L'Affogato · Marina";
+ * metin "Ödeme talebi · L'Affogato · Marina" başlar, şube ayrımı parça 4). Şube yoksa işletmenin adı
+ */
+export function requestPayer(company: string, branch: string | null | undefined): string {
+  return branch ? `${company} · ${branch}` : company;
+}
+
+/**
  * Ödeme talebi metni (kopyala, WhatsApp, e-posta): alıcı (unvan), IBAN, banka, tutar, açıklama ve faturalar. Ödemeyi
  * yapacak kişiye (muhasebe, ortak) gönderilir ya da bankanın havale ekranına kopyalanır.
  */

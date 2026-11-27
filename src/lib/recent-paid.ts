@@ -154,3 +154,12 @@ export function paymentUnchanged(e: Pick<RecentPaid, "at" | "stamp">, updatedAt:
   const t = new Date(updatedAt).getTime();
   return e.stamp ? t === new Date(e.stamp).getTime() : t <= new Date(e.at).getTime();
 }
+
+/**
+ * Şube kipinin son ödenenleri (Ödemeler ve faturalar alanı; şube ayrımı parça 4): fatura yalnız kapsamdaysa (şubenin ya da
+ * işletme genelinin; `invoicesInScope`), hatırlatıcı olduğu gibi (ekran şubenin listesiyle süzer: liveRecentPaid),
+ * faturasız borcun (cari) ödemesi yok (firmanın, İşletme geneli). "Tümü"de çağrılmaz
+ */
+export function scopeRecentPaid(list: readonly RecentPaid[], invoicesInScope: ReadonlySet<number>): RecentPaid[] {
+  return list.filter((e) => (e.kind === "invoice" ? invoicesInScope.has(e.id) : e.kind === "reminder"));
+}

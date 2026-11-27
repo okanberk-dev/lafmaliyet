@@ -20,7 +20,15 @@ export type CardDebt = CariDebt & {
 };
 
 const ids = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => Number.isInteger(x)) : []);
-export type CardPayment = CariPayment & { supplierId: number; cashOutCreated: boolean; photoId: number | null; createdByName: string; updatedAt: Date };
+export type CardPayment = CariPayment & {
+  supplierId: number;
+  cashOutCreated: boolean;
+  photoId: number | null;
+  createdByName: string;
+  updatedAt: Date;
+  /** Kasadan ödemede Kasa satırının şubesi (tedarikçi bakiyelerinin şube kipi: şubenin kasasından ödenen) */
+  cashOutBranchId?: string | null;
+};
 
 export function toDebt(r: EntryRow): CardDebt {
   return {
@@ -43,7 +51,7 @@ export function toDebt(r: EntryRow): CardDebt {
   };
 }
 
-export function toPayment(r: EntryRow, cashOutStore: string | null = null): CardPayment {
+export function toPayment(r: EntryRow, cashOutStore: string | null = null, cashOutBranchId: string | null = null): CardPayment {
   return {
     id: r.id,
     supplierId: r.supplierId,
@@ -53,6 +61,7 @@ export function toPayment(r: EntryRow, cashOutStore: string | null = null): Card
     note: r.note,
     cashOutId: r.cashOutId,
     cashOutStore,
+    cashOutBranchId,
     cashOutCreated: r.cashOutCreated,
     photoId: r.photoId,
     createdByName: r.createdByName,
@@ -65,7 +74,7 @@ export async function loadCardEntries(cardIds?: readonly number[]): Promise<{ de
   const db = getDb();
   if (cardIds && !cardIds.length) return { debts: [], payments: [], allocations: [] };
   const rows = await db
-    .select({ e: s.supplierEntries, store: s.cashOuts.store })
+    .select({ e: s.supplierEntries, store: s.cashOuts.store, till: s.cashOuts.branchId })
     .from(s.supplierEntries)
     .leftJoin(s.cashOuts, eq(s.supplierEntries.cashOutId, s.cashOuts.id))
     .where(cardIds ? inArray(s.supplierEntries.supplierId, [...cardIds]) : undefined)
@@ -96,7 +105,7 @@ export async function loadCardEntries(cardIds?: readonly number[]): Promise<{ de
   }));
   return {
     debts: rows.filter((r) => r.e.kind === "borc").map((r) => toDebt(r.e)),
-    payments: rows.filter((r) => r.e.kind === "odeme").map((r) => toPayment(r.e, r.store)),
+    payments: rows.filter((r) => r.e.kind === "odeme").map((r) => toPayment(r.e, r.store, r.till)),
     allocations,
   };
 }

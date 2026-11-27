@@ -777,6 +777,9 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     const today = todayTR();
     const teslim = await cashOut({ amount: 2200, date: today, branchId: "tuzla" });
     const sts = await invoice({ payable: 2200, date: today, dueDate: today, invoiceNo: "STS9" });
+    // Şube ayrımı parça 4: Marina'nın listesi şubenin ve işletme genelinin faturaları (şubesi seçilmemiş fatura listede
+    // değil, sayıda); bu fatura işletme geneli
+    await db.update(s.invoices).set({ companyWide: true }).where(eq(s.invoices.id, sts.id));
     const digest = await import("../src/server/notify/digest");
     const count = async (branch: string) => (await digest.loadUpcoming(today, { branch })).cari.kasaPending.count;
     assert.equal(await count("marina"), 0, "Tuzla'nın kasasından çıkan satır Marina'nın zilinde sayılmaz");

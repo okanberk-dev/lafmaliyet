@@ -128,10 +128,13 @@ test("veri yükleyici: şube süzgeci her tabloda, giderde işletme geneli de; o
 });
 
 test("işletme geneli ekranlar şube seçiminden bağımsız: vergi, nakit planı, tutarlılık, dışa aktarım", () => {
-  for (const p of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx", "src/app/panel/hatirlaticilar/nakit/page.tsx", "src/app/api/export/route.ts"]) {
+  for (const p of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx", "src/app/api/export/route.ts"]) {
     const s = oku(p);
     assert.match(s, /withBranchScope\(ALL_BRANCHES,/, p);
   }
+  // Nakit planı şube ayrımı parça 4'ten beri kişinin şube görünümüyle (areaScope("nakit")); firmanın planı yine "Tümü"yle
+  assert.match(oku("src/app/panel/hatirlaticilar/nakit/page.tsx"), /areaScope\("nakit"\)/);
+  assert.match(oku("src/server/data/cash-plan.ts"), /withBranchScope\(ALL_BRANCHES,/);
   assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /loadModel\(\{ scope: ALL_BRANCHES \}\)/);
   // Seçimi geçersiz kılan kapsam isteğin seçiminden önce gelir
   const kapsam = oku("src/server/branch-scope.ts");

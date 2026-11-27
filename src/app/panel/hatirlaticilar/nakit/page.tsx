@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
-import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { planNotes } from "@/lib/cash-plan";
 import { branchFlowNote } from "@/lib/cash-plan-branch";
 import { requireAdmin } from "@/server/auth/dal";

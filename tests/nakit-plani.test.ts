@@ -1453,10 +1453,12 @@ test("ekran: yalnız yönetici; menüde (⌘K) Para grubunda, telefonda başlı�
     assert.match(body.slice(0, body.indexOf("\n}\n")), /const me = await requireAdmin\(\);/, fn);
   }
   const dash = read("src/app/panel/page.tsx");
-  // Şube seçiliyken de işletmenin planı: model "Tümü" ile yeniden okunur (docs/SUBE.md › Neyi süzer)
-  // ve "Tümü" kapsamında okunur (kasa raporları, kasalardaki devir; Nakit planı sayfası gibi)
-  assert.match(dash, /model\.ds\.branchView \? loadModel\(\{ scope: ALL_BRANCHES \}\) : Promise\.resolve\(model\)\)\s*\.then\(\(m\) => withBranchScope\(ALL_BRANCHES, \(\) => loadCashPlan\(m, upcoming\)\)\)\s*\.catch\(\(\) => null\)/);
-  assert.match(page, /withBranchScope\(ALL_BRANCHES,/);
+  // Nakit planı alanı (şube ayrımı parça 4, docs/SUBE.md › Şube ayrımı): Genel bakış'ın kartı ve ekran aynı yükleyiciyle;
+  // firma kipinde ve "Tümü"de firmanın planı (şube seçiliyken model "Tümü" ile yeniden okunur), şube kipinde şubenin akışı
+  assert.match(dash, /areaScope\("nakit"\),\s*model\.ds\.branchView \? null : model,\s*\]\)\s*\.then\(\(\[area, firmModel\]\) => loadAreaCashPlan\(area, \{ model: firmModel \?\? undefined, upcoming \}\)\)\s*\.catch\(\(\) => null\)/);
+  assert.match(page, /const area = await areaScope\("nakit"\);\s*const \{ model, view, flow \} = await loadAreaCashPlan\(area\);/);
+  // Firmanın planı (bakiye ve İşletme geneli satırları) "Tümü" kapsamında okunur
+  assert.match(read("src/server/data/cash-plan.ts"), /const firm = await withBranchScope\(ALL_BRANCHES, async \(\) => \{/);
   // db:reset nakit planının durumunu siler (sabit gider kimlikleri baştan sayar)
   assert.match(read("scripts/seed.ts"), /'cashflow\.plan'/);
 });

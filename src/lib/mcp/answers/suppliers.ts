@@ -286,3 +286,21 @@ export function supplierSummary(
     panelAdresi: listUrl,
   };
 }
+
+/**
+ * Şube kipinin İşletme geneli satırı (tedarikci_ozeti; şube ayrımı parça 4, src/lib/cari/branch-account.ts): şubenin
+ * bakiyesine girmeyen faturasız borç ve hesaptaki para. `tedarikci` verilirse o adla eşleşen tedarikçilerin, yoksa
+ * hepsinin toplamı. Tedarikçi adı, IBAN ya da not gönderilmez
+ */
+export function sharedCariAnswer(
+  groups: readonly (Pick<LedgerGroupLike, "name" | "names" | "keys"> & { shared?: { debtOpen: number; debtOpenCount: number; credit: number } | null })[],
+  tedarikci?: string,
+): { faturasizBorc: { adet: number; tutar: number }; hesaptakiOdeme: number; aciklama: string } {
+  const { exact, partial } = tedarikci ? matchSuppliers(groups, tedarikci) : { exact: groups, partial: [] };
+  const list = (exact.length ? exact : partial).map((g) => g.shared).filter((x): x is NonNullable<typeof x> => Boolean(x));
+  return {
+    faturasizBorc: { adet: list.reduce((a, x) => a + x.debtOpenCount, 0), tutar: r2(list.reduce((a, x) => a + x.debtOpen, 0)) },
+    hesaptakiOdeme: r2(list.reduce((a, x) => a + x.credit, 0)),
+    aciklama: "Şube görünümünde bakiye yalnız bu şubenin ve işletme genelinin faturalarından; faturasız borç ve hesaptaki ödeme firmanın, bakiyeye girmez.",
+  };
+}

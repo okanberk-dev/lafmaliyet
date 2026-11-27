@@ -186,7 +186,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     assert.deepEqual(groupOf(r, "meal", "2026-11")?.unbranded, { amount: 1000, pre: 0, modpos: 1000, loose: 0, fallback: 0 });
   });
 
-  test("Komisyon & hakediş şube seçimine uyar: satış şubenin, oran ve hakediş işletmenin; zil ve Bugün işletme geneli", async () => {
+  test("Komisyon & hakediş şube seçimine uyar: satış şubenin, oran ve hakediş işletmenin; zil ve Bugün alanın kipiyle", async () => {
     // Marina seçili: Tuzla'nın kasa raporları ve föyü okunmaz
     const marina = await inMarina(() => commission.loadCommissionReport());
     assert.equal(groupOf(marina, "meal", "2026-11")?.zTotal, 0, "Marina'nın Z'sinde yemek kartı yok");
@@ -226,8 +226,11 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
       rate: 0.1,
       commission: null,
     });
-    // Bugün'ün hakediş satırı seçiciden bağımsız (işletme geneli): Marina seçiliyken de aynı
-    assert.deepEqual(await inMarina(() => commission.loadOverduePayouts()), await branchScope.withBranchScope("hepsi", () => commission.loadOverduePayouts()));
+    // Bugün'ün hakediş satırı Komisyon alanının kipiyle (şube ayrımı parça 4): firma kipinde Marina seçiliyken de
+    // işletmenin; şube kipinde yalnız Marina'nın satışı olan kanallar (Marina'nın Z'sinde yemek kartı yok)
+    const firmPayouts = await branchScope.withBranchScope("hepsi", () => commission.loadOverduePayouts());
+    assert.deepEqual(await inMarina(() => branchScope.withBranchView({ komisyon: "firma" }, () => commission.loadOverduePayouts())), firmPayouts);
+    assert.deepEqual(await inMarina(() => branchScope.withBranchView({ komisyon: "sube" }, () => commission.loadOverduePayouts())), []);
   });
 
   test("bitmiş sabit gider: Kasım'da biten haftalık Part-time kalemine Aralık için yeni tutar yazılmaz; var olanı düzeltmek ve silmek serbest", async () => {

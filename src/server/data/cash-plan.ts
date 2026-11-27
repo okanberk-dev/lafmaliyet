@@ -1,10 +1,10 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { Model } from "@/lib/calc/engine";
 import { buildCashPlan, goodsRows, parseCashPlanState, planCashReports, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanInput, type CashPlanState } from "@/lib/cash-plan";
-import { BRANCH_PLAN_EXCLUDED, branchCashFlow, type BranchCashFlow, type SharedPlanIds } from "@/lib/cash-plan-branch";
+import { BRANCH_PLAN_EXCLUDED, branchCashFlow, ownPlanInvoice, sharedPlanIdsOf, type BranchCashFlow } from "@/lib/cash-plan-branch";
 import { addDays, type UpcomingItem } from "@/lib/reminders";
 import type { TaxInputs } from "@/lib/tax/inputs";
 import type { TaxPlanFeed } from "@/lib/tax/view";
@@ -61,6 +61,22 @@ function isPayable(i: UpcomingItem): boolean {
 }
 
 /**
+ * Şubenin akışına giren kesin ödeme (Nakit planı alanının şube kipi): yalnız şubeye seçilmiş fatura. Faturasız borç
+ * (cari) ve işletme geneli fatura firmanın planında (İşletme geneli satırı); hatırlatıcı planın kendi kuralıyla
+ */
+function ownBranchPayable(i: UpcomingItem, invoiceBranches: ReadonlyMap<number, { branchId: string | null; companyWide: boolean }>, branch: string): boolean {
+  switch (i.source) {
+    case "invoice":
+      return ownPlanInvoice(invoiceBranches.get(i.sourceId), branch);
+    case "cari":
+    case "reminder":
+      return false;
+    default:
+      return unreachable(i.source);
+  }
+}
+
+/**
  * Vergi girdileri nakit planı için: okunamazsa (tablolar, ayar) plan bugünkü gibi vergi satırsız çalışır (K29, §13);
  * hata yalnız günlüğe
  */
@@ -109,8 +125,8 @@ export async function loadCashPlan(
   // olmalı (loadAreaCashPlan). Plan yalnız şubeye ait kalemlerle kurulur: işletme geneli hatırlatıcı, işletme geneli
   // fatura, faturasız borç, vergi, KDV ve SGK firmanın planındadır (src/lib/cash-plan-branch.ts); açılış bakiyesi yok
   const branch = opts.branch ?? null;
-  // Verilmezse firmanın ödemeleri (firmanın planı: loadAreaCashPlan "Tümü"yle çağırır)
-  // şube-ayrımı: nakit.bakiye
+  // Verilmezse bütün ödemeler (Vergi › Özet: firmanın planı; Vergi alanı parça 5'te)
+  // şube-ayrımı: vergi.sayfa
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
   const branchesP = listBranches();
@@ -152,7 +168,7 @@ export async function loadCashPlan(
     // Şube şube (günlük satış şubelerin ortalamalarının toplamı); pasif şube sayılmaz
     cashReports: planCashReports(reports, branches),
     // Şubenin akışında yalnız şubeye seçilmiş faturalar (işletme geneli fatura ve faturasız borç firmanın planında)
-    invoices: up.items.filter(isPayable).filter((i) => !branch || (i.source === "invoice" && up.invoiceBranches.get(i.sourceId)?.branchId === branch)),
+    invoices: up.items.filter(isPayable).filter((i) => !branch || ownBranchPayable(i, up.invoiceBranches, branch)),
     reminders: branch ? up.reminders.filter((r) => r.branchId === branch) : up.reminders,
     paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),
     vatPaid,
@@ -190,30 +206,20 @@ export interface AreaCashPlan {
  * ödemeleri (Genel bakış ikinci kez okumaz)
  */
 export async function loadAreaCashPlan(area: BranchScope, company: { model?: Model; upcoming?: Awaited<ReturnType<typeof loadUpcoming>> } = {}): Promise<AreaCashPlan> {
+  // Firmanın planı: firma kipinde ekranın kendisi; şube kipinde yalnız açılış bakiyesi ve İşletme geneli satırları
   // şube-ayrımı: nakit.bakiye
   const firm = await withBranchScope(ALL_BRANCHES, async () => {
-    const model = company.model ?? (await loadModel());
-    return { model, view: await loadCashPlan(model, company.upcoming) };
+    const [model, upcoming] = await Promise.all([company.model ?? loadModel(), company.upcoming ?? loadUpcoming()]);
+    return { model, upcoming, view: await loadCashPlan(model, upcoming) };
   });
-  if (area === ALL_BRANCHES) return { ...firm, flow: null };
-  const [own, branches, shared] = await Promise.all([
+  if (area === ALL_BRANCHES) return { model: firm.model, view: firm.view, flow: null };
+  const [own, branches] = await Promise.all([
     withBranchScope(area, async () => {
       const [model, upcoming] = await Promise.all([loadModel(), loadUpcoming(undefined, { branch: area })]);
       return { model, view: await loadCashPlan(model, upcoming, { branch: area }) };
     }),
     listBranches(),
-    sharedPlanIds(),
   ]);
   const name = branches.find((b) => b.id === area)?.name ?? area;
-  return { ...own, flow: branchCashFlow(firm.view.plan, shared, name) };
-}
-
-/** İşletme geneli hatırlatıcıların ve faturaların kimlikleri (firmanın planından İşletme geneli satırını ayırmak için) */
-async function sharedPlanIds(): Promise<SharedPlanIds> {
-  const db = getDb();
-  const [reminders, invoices] = await Promise.all([
-    db.select({ id: s.reminders.id }).from(s.reminders).where(isNull(s.reminders.branchId)),
-    db.select({ id: s.invoices.id }).from(s.invoices).where(and(eq(s.invoices.unpaid, true), eq(s.invoices.companyWide, true))),
-  ]);
-  return { reminders: new Set(reminders.map((r) => r.id)), invoices: new Set(invoices.map((i) => i.id)) };
+  return { ...own, flow: branchCashFlow(firm.view.plan, sharedPlanIdsOf(firm.upcoming), name) };
 }

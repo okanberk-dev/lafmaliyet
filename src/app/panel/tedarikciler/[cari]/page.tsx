@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
@@ -16,7 +17,7 @@ import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadSupplierCari } from "@/server/data/cari";
 import { loadSupplierLedger } from "@/server/data/suppliers";
@@ -26,6 +27,7 @@ import { sameSupplier } from "@/server/parasut/mapping";
 
 import { accountBreakdowns } from "../breakdowns";
 import { aliasCandidates, isHiddenSupplier, sharedTaxNotes, supplierHref, supplierSlug, taxNameIndex } from "../logic";
+import { SharedCariNotice } from "../shared-cari";
 import { CountUp } from "../suppliers-client";
 import { SupplierClient } from "./supplier-client";
 
@@ -73,7 +75,12 @@ function slugOf(raw: string): string {
 async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikciler/[cari]">["params"] }) {
   await requireAdmin();
   const { cari } = await params;
-  const { today, termDays: defaultTermDays, groups } = await loadSupplierLedger();
+  // Tedarikçi bakiyeleri alanı (şube ayrımı parça 4): şube kipinde özet kartları ve fatura listesi şubenin ve işletme
+  // genelinin faturalarıyla, faturasız borç ve hesaptaki para "İşletme geneli" satırında; cari hareketleri ve ekstre
+  // firmanın (tek hesap). Firma kipinde ve "Tümü"de tedarikçinin bütün carisi
+  // şube-ayrımı: alan.tedarikciler
+  const area = await areaScope("tedarikciler");
+  const { today, termDays: defaultTermDays, groups } = await loadSupplierLedger(area, { keepAll: true });
   const slug = slugOf(cari);
   const g = groups.find((x) => x.slug === slug);
   if (!g) {
@@ -84,8 +91,8 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     notFound();
   }
   const [docs, data, scope, branches, parasut, rules] = await Promise.all([
-    listInvoiceDocuments(g.invoices.map((i) => i.id)),
-    loadSupplierCari(g, { today, termDays: g.termDays }),
+    listInvoiceDocuments(g.allInvoices.map((i) => i.id)),
+    loadSupplierCari({ card: g.card, invoices: g.allInvoices }, { today, termDays: g.termDays }),
     currentBranchScope(),
     listBranches(),
     anyParasutConfigured(),
@@ -96,13 +103,15 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
   const ignoreRule = rules.find((r) => nameKeys.has(r.supplierKey))?.reason ?? null;
   const documents: Record<number, DocumentMeta[]> = {};
   for (const d of docs) (documents[d.invoiceId] ??= []).push(d);
-  const a = data.account;
-  const hasCari = data.debts.length > 0 || data.payments.length > 0;
+  // Şube kipinde özet kartları şubenin hesabıyla (faturasız borç ve hesaptaki para İşletme geneli satırında)
+  const branchName = g.shared ? (branches.find((b) => b.id === area)?.name ?? area) : null;
+  const a = g.shared ? g.account : data.account;
+  const hasCari = !g.shared && (data.debts.length > 0 || data.payments.length > 0);
   const remaining = (id: number) => {
     const d = data.debts.find((x) => x.id === id);
     return d ? debtRemaining(d, data.allocations) : 0;
   };
-  const breakdown = accountBreakdowns(g.invoices, { debts: data.debts, account: a, remaining }, { today, termDays: g.termDays, rowHref, debtHref });
+  const breakdown = accountBreakdowns(g.invoices, { debts: g.shared ? [] : data.debts, account: a, remaining }, { today, termDays: g.termDays, rowHref, debtHref });
   const year = today.slice(0, 4);
   const credit = showsCredit(a);
   const invoiceOpen = g.invoices.filter((i) => i.unpaid).length;
@@ -113,68 +122,72 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       : "Borç yok";
 
   const stats = (
-    <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <StatBreakdown
-        title={credit ? "Alacak (fazla ödeme)" : "Kalan borç"}
-        description="Ödenmemiş faturalar ve faturasız alımlar (KDV dahil; kısmen ödenmişte kalan); hesapta sayılmamış ödeme düşülür. Kaleme dokununca listede açılır."
-        groups={breakdown.open}
-        total={a.balance}
-        totalLabel={credit ? "Alacak" : "Kalan borç"}
-        exact
-        empty="Ödenmemiş fatura yok."
-      >
-        <Stat
-          icon={<Wallet />}
-          label={credit ? "Alacak (fazla ödeme)" : "Kalan borç"}
-          value={<CountUp value={credit ? -a.balance : a.balance} />}
-          tone={credit || a.balance <= 0 ? "good" : "warn"}
-          sub={credit ? `${tl(-a.balance, 2)} · hesapta sayılmamış ödeme` : openSub}
-        />
-      </StatBreakdown>
-      <StatBreakdown
-        title="Vadesi geçen"
-        description="Vadesi geçmiş ödenmemiş faturalar ve faturasız alımlar; hesaptaki ödeme en eski vadeden düşülür. Vadesi yazılmamışta tahmini vade sayılır."
-        groups={breakdown.overdue}
-        total={a.overdue}
-        exact
-        empty="Vadesi geçmiş fatura yok."
-      >
-        <Stat
-          icon={<AlarmClock />}
-          label="Vadesi geçen"
-          value={<CountUp value={a.overdue} />}
-          tone={a.overdue > 0 ? "bad" : "good"}
-          sub={a.overdueCount ? `${num(a.overdueCount)} ${hasCari ? "kalem" : "fatura"}` : a.nextDue ? `En yakın vade ${dateTR(a.nextDue.date)}` : "Geciken yok"}
-        />
-      </StatBreakdown>
-      <StatBreakdown title={`${year} alımları`} description={`${year} faturaları ve faturasız alımları ay ay (KDV dahil; iade eksi; eski borç hariç).`} groups={breakdown.year} total={a.year} exact empty={`${year} yılında fatura yok.`}>
-        <Stat
-          icon={<CalendarRange />}
-          label={`${year} alımları`}
-          value={<CountUp value={a.year} />}
-          sub={[a.lastInvoice ? `Son fatura ${dateTR(a.lastInvoice)}` : "Fatura yok", a.yearDebts > 0.005 ? `faturasız ${tl(a.yearDebts, 2)} dahil` : ""].filter(Boolean).join(" · ")}
-        />
-      </StatBreakdown>
-      <StatBreakdown
-        title="Ödemeler"
-        description="Son 12 ödeme günü: ödeme kayıtları ve faturalardaki ödendi işaretleri (KDV dahil). Ödeme günü kaydedilmeden önce ödenmiş faturalar sayılmaz."
-        groups={breakdown.paid}
-        exact
-        empty="Ödeme günü girilmiş fatura yok."
-      >
-        <Stat
-          icon={<CircleCheck />}
-          label="Son ödeme"
-          value={a.lastPaid ? dateTR(a.lastPaid) : "–"}
-          info="Ödeme kayıtları ve ödendi işaretleri; kısmi ödemeler ve hesaba ödemeler dahil."
-          sub={a.lastPaid ? tl(a.lastPaidAmount, 2) : "Henüz kayıt yok"}
-        />
-      </StatBreakdown>
-    </div>
+    <>
+      <BranchViewChip area="tedarikciler" className="mb-4" />
+      {branchName && g.shared ? <SharedCariNotice name={branchName} shared={{ debt: g.shared.debtOpen, debtCount: g.shared.debtOpenCount, credit: g.shared.credit }} /> : null}
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatBreakdown
+          title={credit ? "Alacak (fazla ödeme)" : "Kalan borç"}
+          description="Ödenmemiş faturalar ve faturasız alımlar (KDV dahil; kısmen ödenmişte kalan); hesapta sayılmamış ödeme düşülür. Kaleme dokununca listede açılır."
+          groups={breakdown.open}
+          total={a.balance}
+          totalLabel={credit ? "Alacak" : "Kalan borç"}
+          exact
+          empty="Ödenmemiş fatura yok."
+        >
+          <Stat
+            icon={<Wallet />}
+            label={credit ? "Alacak (fazla ödeme)" : "Kalan borç"}
+            value={<CountUp value={credit ? -a.balance : a.balance} />}
+            tone={credit || a.balance <= 0 ? "good" : "warn"}
+            sub={credit ? `${tl(-a.balance, 2)} · hesapta sayılmamış ödeme` : openSub}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Vadesi geçen"
+          description="Vadesi geçmiş ödenmemiş faturalar ve faturasız alımlar; hesaptaki ödeme en eski vadeden düşülür. Vadesi yazılmamışta tahmini vade sayılır."
+          groups={breakdown.overdue}
+          total={a.overdue}
+          exact
+          empty="Vadesi geçmiş fatura yok."
+        >
+          <Stat
+            icon={<AlarmClock />}
+            label="Vadesi geçen"
+            value={<CountUp value={a.overdue} />}
+            tone={a.overdue > 0 ? "bad" : "good"}
+            sub={a.overdueCount ? `${num(a.overdueCount)} ${hasCari ? "kalem" : "fatura"}` : a.nextDue ? `En yakın vade ${dateTR(a.nextDue.date)}` : "Geciken yok"}
+          />
+        </StatBreakdown>
+        <StatBreakdown title={`${year} alımları`} description={`${year} faturaları ve faturasız alımları ay ay (KDV dahil; iade eksi; eski borç hariç).`} groups={breakdown.year} total={a.year} exact empty={`${year} yılında fatura yok.`}>
+          <Stat
+            icon={<CalendarRange />}
+            label={`${year} alımları`}
+            value={<CountUp value={a.year} />}
+            sub={[a.lastInvoice ? `Son fatura ${dateTR(a.lastInvoice)}` : "Fatura yok", a.yearDebts > 0.005 ? `faturasız ${tl(a.yearDebts, 2)} dahil` : ""].filter(Boolean).join(" · ")}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Ödemeler"
+          description="Son 12 ödeme günü: ödeme kayıtları ve faturalardaki ödendi işaretleri (KDV dahil). Ödeme günü kaydedilmeden önce ödenmiş faturalar sayılmaz."
+          groups={breakdown.paid}
+          exact
+          empty="Ödeme günü girilmiş fatura yok."
+        >
+          <Stat
+            icon={<CircleCheck />}
+            label="Son ödeme"
+            value={a.lastPaid ? dateTR(a.lastPaid) : "–"}
+            info="Ödeme kayıtları ve ödendi işaretleri; kısmi ödemeler ve hesaba ödemeler dahil."
+            sub={a.lastPaid ? tl(a.lastPaidAmount, 2) : "Henüz kayıt yok"}
+          />
+        </StatBreakdown>
+      </div>
+    </>
   );
 
   // Şeritler ve pencerelerin verisi (yalnız istemcinin kullandığı alanlar)
-  const invoiceById = new Map(g.invoices.map((i) => [i.id, i]));
+  const invoiceById = new Map(g.allInvoices.map((i) => [i.id, i]));
   const debtById = new Map(data.debts.map((d) => [d.id, d]));
   const candidates = [...data.strong.map((c) => ({ ...c, strong: true })), ...data.weak.map((c) => ({ ...c, strong: false }))].flatMap((c) => {
     const inv = invoiceById.get(c.invoiceId);
@@ -206,7 +219,7 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     categories: data.categories,
     countedCategories: data.countedCategories,
     defaultCategoryId: data.defaultCategoryId,
-    defaultCostMode: defaultCostMode(g.invoices, today),
+    defaultCostMode: defaultCostMode(g.allInvoices, today),
     businessDay: businessDate(),
     // Kasadan ödemenin yeni satırı: seçili fiziksel şubenin kasası; "Tümü"de birden çok kasa açıksa pencere sorar (#31)
     tills: { options: tillBranches(branches).map((b) => ({ id: b.id, name: b.name })), defaultId: defaultTill(scope, branches) },
@@ -227,6 +240,7 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       taxIndex={taxNameIndex(groups)}
       card={g.card}
       invoices={g.invoices}
+      allInvoices={g.shared ? g.allInvoices : undefined}
       documents={documents}
       defaultTermDays={defaultTermDays}
       suggestions={aliasCandidates(g, groups, sameSupplier)}
@@ -238,7 +252,7 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       ignoreRule={parasut || ignoreRule ? { reason: ignoreRule, names: g.names.length ? g.names : [g.name] } : undefined}
       branchInfo={
         tillBranches(branches).length > 1
-          ? { options: invoiceBranchOptions(branches), scope, scopeName: branches.find((b) => b.id === scope)?.name ?? null }
+          ? { options: invoiceBranchOptions(branches), scope, scopeName: branches.find((b) => b.id === scope)?.name ?? null, branchMode: Boolean(g.shared) }
           : undefined
       }
     />

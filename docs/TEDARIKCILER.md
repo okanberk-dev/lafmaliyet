@@ -374,9 +374,12 @@ Düzenle penceresinde birden çok kasa açıkken **Faturaların şubesi › Vars
 bu şubeye yazılır (ayrı Paraşüt hesabının faturası hesabın şubesine), elle eklenen faturada pencere şube seçmediyse bu
 geçer. "Şubesi seçilmemiş N faturasına da yaz" işaretlenirse kayıtla aynı işlemde yalnız seçilmemiş faturalara yazılır;
 şubesi seçilmiş faturaya dokunulmaz. Tedarikçi sayfasında her faturanın şubesi rozetinde; şubesi seçilmemiş fatura varsa
-şerit sayısını söyler ve kartın varsayılanı varsa **Hepsini … yap** der. Bakiye, borç ve ödemeler firma geneli kalır
-(tek firma); şube seçiliyken sayfa o şubenin fatura sayısını ve tutarını ayrıca yazar. Ayrıntı:
-[SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026).
+şerit sayısını söyler ve kartın varsayılanı varsa **Hepsini … yap** der. Şube seçiliyken bakiye, borç ve ödemeler kişinin
+şube görünümüyle (27 Kasım 2026): **Firma geneli** kipinde tek firmanın carisi (sayfa o şubenin fatura sayısını ve tutarını
+ayrıca yazar); **Yalnız şube** kipinde liste, özet kartları ve fatura listesi şubenin ve işletme genelinin faturalarıyla,
+faturasız borç ve hesaptaki para üstteki **İşletme geneli** satırında; cari hareketleri ve ekstre firmanın tek hesabıyla
+kalır, ödeme talebi şubenin adını taşır. Ayrıntı: [SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026),
+[SUBE.md › Alanlar](SUBE.md#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4).
 
 ## Eşleşme
 

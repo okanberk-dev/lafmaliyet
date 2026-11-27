@@ -385,6 +385,18 @@ Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
   (bakiye zaten kısa ömürlü).
 - Tam yedek (docs/YEDEK.md) `integration_state` tablosuyla bu anahtarı da alır.
 
+## Şubenin nakit akışı (27 Kasım 2026)
+
+Şube seçiliyken plan kişinin şube görünümüyle (Hesabım › Şube görünümü ya da ekranın çipi; [SUBE.md › Alanlar](SUBE.md#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)).
+**Firma geneli** kipinde bugünkü firmanın planı. **Yalnız şube** kipinde **Şubenin nakit akışı** (`loadAreaCashPlan`,
+`src/lib/cash-plan-branch.ts`): gelen şubenin satış tahmini ve kasa devri; giden şubenin hatırlatıcıları, şubeye seçilmiş
+faturaları, personelinin maaşı, şubenin kendi sabit giderleri ve mal tahmini. Açılış bakiyesi firmanındır: şubenin akışı
+bakiyesiz kurulur, hafta satırı ve karo **Net akış** yazar, "Elinizdeki para · Firma geneli" karosu firmanın bakiyesini
+bilgi olarak gösterir. KDV, vergi, damga, SGK, işletme geneli hatırlatıcı ve fatura ve faturasız borçlar firmanın
+planından hafta hafta tek **İşletme geneli** satırında toplanır (en büyük üç kalemiyle), şubenin akışına girmez.
+Şubesi seçilmemiş fatura hiçbir şubenin akışında yoktur ("Tümü"de vardır). Genel bakış'ın kartı şube kipinde "6 haftada
+net akış" ve işletme geneli toplamını yazar.
+
 ## Kod
 
 | Dosya | İş |

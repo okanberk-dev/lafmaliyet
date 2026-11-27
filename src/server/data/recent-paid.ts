@@ -1,9 +1,11 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
-import { addRecentPaid, dropChangedReminder, parseRecentPaid, pruneRecentPaid, removeRecentPaid, type RecentPaid, type ReminderState } from "@/lib/recent-paid";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { addRecentPaid, dropChangedReminder, parseRecentPaid, pruneRecentPaid, removeRecentPaid, scopeRecentPaid, type RecentPaid, type ReminderState } from "@/lib/recent-paid";
 import { getDb, schema as s } from "@/server/db";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 
 /** integration_state anahtarı: son 30 günde "Ödendi" işaretlenenler (Ödemeler › Son ödenenler) */
 export const RECENT_PAID_KEY = "payments.recent";
@@ -40,7 +42,22 @@ export async function forgetChangedReminder(cur: ReminderState) {
   await update((list) => dropChangedReminder(list, cur));
 }
 
-export async function loadRecentPaid(): Promise<RecentPaid[]> {
-  const [row] = await getDb().select().from(s.integrationState).where(eq(s.integrationState.key, RECENT_PAID_KEY)).limit(1);
-  return pruneRecentPaid(parseRecentPaid(row?.value), new Date().toISOString());
+/**
+ * Son ödenenler. `scope` tek şubeyse (Ödemeler ve faturalar alanının şube kipi; şube ayrımı parça 4) yalnız şubenin ve
+ * işletme genelinin faturaları ile hatırlatıcılar (hatırlatıcının şubesini ekran listesi süzer); faturasız borcun (cari)
+ * ödemesi firmanın, şube kipinde yok. "Tümü"de hepsi (nakit planı da bununla okur)
+ */
+export async function loadRecentPaid(scope: BranchScope = ALL_BRANCHES): Promise<RecentPaid[]> {
+  const db = getDb();
+  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, RECENT_PAID_KEY)).limit(1);
+  const list = pruneRecentPaid(parseRecentPaid(row?.value), new Date().toISOString());
+  if (scope === ALL_BRANCHES) return list;
+  const ids = list.filter((e) => e.kind === "invoice").map((e) => e.id);
+  const inScope = ids.length
+    ? await db
+        .select({ id: s.invoices.id })
+        .from(s.invoices)
+        .where(and(inArray(s.invoices.id, ids), invoiceScopeWhere(scope)))
+    : [];
+  return scopeRecentPaid(list, new Set(inScope.map((r) => r.id)));
 }

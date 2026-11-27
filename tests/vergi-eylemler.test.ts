@@ -342,8 +342,9 @@ test("vergi yükleyicileri: Özet nakit planını vergi girdisiyle okur; nakit p
   assert.match(data, /loadCashPlan\(model, upcoming \?\? undefined, \{ taxInputs \}\)/);
   assert.match(data, /Promise\.all\(\[/);
   const plan = read("src/server/data/cash-plan.ts");
-  assert.match(plan, /export async function loadCashPlan\(model: Model, upcoming\?: Awaited<ReturnType<typeof loadUpcoming>>, opts: \{ taxInputs\?: TaxInputs \} = \{\}\)/);
-  assert.match(plan, /opts\.taxInputs \?\? taxInputsForPlan\(\)/);
+  assert.match(plan, /export async function loadCashPlan\(\s*model: Model,\s*upcoming\?: Awaited<ReturnType<typeof loadUpcoming>>,\s*opts: \{ taxInputs\?: TaxInputs; branch\?: string \} = \{\},?\s*\)/);
+  // Şubenin akışında (şube ayrımı parça 4) vergi satırı yok: vergi firmanın, İşletme geneli satırında
+  assert.match(plan, /branch \? null : \(opts\.taxInputs \?\? taxInputsForPlan\(\)\)/);
   assert.match(plan, /tax = loadTaxPlanFeed\(model, today, taxInputs\);/);
   // Besleme yoksa stopajlı sabit gider brüt ödenir (P4: stopaj ve KDV-2 satırı da yok)
   assert.match(plan, /planInputFromModel\(model, today, taxInputs\?\.settings, \{ feed: tax !== null \}\)/);

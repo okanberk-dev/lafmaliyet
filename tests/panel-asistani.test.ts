@@ -1,5 +1,5 @@
 // Panel asistanı (docs/ASISTAN.md), sahte istemciyle: isteğin biçimi (Sonnet 5.5, efor medium, yedek model, önbellek
-// sırası, düşünme / sıcaklık yok, araçlar = Claude bağlantısının yedi aracı + iki yeni, hepsi strict), araç uyarlayıcısı
+// sırası, düşünme / sıcaklık yok, araçlar = bağlantının yedi aracı + iki yeni, sınıra sığanlar strict), araç uyarlayıcısı
 // (zod hatası, aracın kendi uyarısı, beklenmeyen hata ve süre → is_error), döngü (paralel araç sonuçları tek mesajda,
 // asistanın içeriği değişmeden geri, tur ve süre sınırı, ret, kesilen yanıt, durdurma, API hatası, yedek modelin sınırı),
 // uç (yönetici dışı 403, oturum, köken, gövde ve geçmiş sınırları, günlük sınır, akışın olayları, kayıt), tarayıcıdaki
@@ -188,7 +188,7 @@ test("istek: Sonnet 5.5, efor medium, yedek model 'default', önbellek sırası;
   assert.deepEqual(final.tool_choice, { type: "none" });
 });
 
-test("istek: araçlar = Claude bağlantısının yedi aracı (aynı sıra, aynı şema) + panel_rehberi + parasut_bekleyenler; hepsi strict", () => {
+test("istek: araçlar = bağlantının yedi aracı (aynı sıra, aynı şema) + panel_rehberi + parasut_bekleyenler; sınıra sığanlar strict", () => {
   assert.deepEqual(MCP_NAMES, ["ay_ozeti", "urun_karliligi", "zam_etkisi", "tedarikci_ozeti", "odemeler", "kasa_raporlari", "ara"]);
   // Sahte listedeki şemalar kaynaktakilerle aynı (araç adı → inputSchema)
   const mcpSource = read("src/server/mcp/tools.ts");
@@ -212,8 +212,14 @@ test("istek: araçlar = Claude bağlantısının yedi aracı (aynı sıra, aynı
     params.map((t) => t.name),
     [...MCP_NAMES, "panel_rehberi", "parasut_bekleyenler"],
   );
+  // Şube ayrımı parça 4 (`gorunum`, tedarikci_ozeti'nin `sube`'si) isteğe bağlı alanları 24'ün üstüne çıkardı: en karmaşık
+  // araç (tedarikci_ozeti) strict'siz gider (toolParams; girdisi yine zod'la doğrulanır), ötekiler strict
+  assert.deepEqual(
+    params.filter((t) => !t.strict).map((t) => t.name),
+    ["tedarikci_ozeti"],
+  );
   for (const t of params) {
-    assert.equal(t.strict, true, t.name);
+    if (t.name !== "tedarikci_ozeti") assert.equal(t.strict, true, t.name);
     assert.ok(t.description?.endsWith(TOOL_TAIL), t.name);
     const schema = JSON.stringify(t.input_schema);
     assert.equal(t.input_schema.type, "object");
@@ -228,7 +234,7 @@ test("istek: araçlar = Claude bağlantısının yedi aracı (aynı sıra, aynı
   assert.equal(urun.input_schema.required, undefined);
   assert.deepEqual((urun.input_schema.properties as Record<string, { enum?: string[] }>).siralama.enum, ["toplam_kar", "birim_kar", "marj", "adet", "zarar"]);
   // Yapılandırılmış çıktının karmaşıklık sınırı istekteki bütün şemaların toplamına uygulanır: sığıyor
-  const schemas = params.map((t) => t.input_schema);
+  const schemas = params.filter((t) => t.strict).map((t) => t.input_schema);
   assert.equal(fitsStructuredOutputs(schemas), true, JSON.stringify(schemaComplexity(schemas)));
   // Sığmayan araçlar strict'siz gider (istek 400 almasın): sınıra sığan önek strict, kalanı değil
   const many = Array.from({ length: 30 }, (_, i) => ({ ...TOOLS[0], name: `arac_${i}`, inputSchema: urunKarliligiInput }));

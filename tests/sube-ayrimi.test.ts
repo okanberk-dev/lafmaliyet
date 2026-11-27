@@ -157,7 +157,7 @@ const BRANCH_TABLES = [
   "notificationRecipients",
 ] as const;
 
-const SCOPED = /branchWhere|currentBranchWhere|branchWhereWithShared|invoiceScopeWhere|requestInScope|requestsInScope/;
+const SCOPED = /branchWhere|currentBranchWhere|branchWhereWithShared|invoiceScopeWhere|requestInScope|requestsInScope|recipientScopeWhere/;
 const READ_DIRS = ["src/server/data", "src/server/bell", "src/server/notify", "src/server/ai", "src/server/mcp", "src/server/assistant-reads"];
 
 /** `.from(s.X)` ifadesi: önceki `;`'den sonrası (en çok 10 satır yukarı) ile sonraki `;`'ye kadar (en çok 20 satır) */
@@ -188,7 +188,6 @@ function unscopedReads(): Map<string, string[]> {
 const BEKLEYEN_B: Record<string, number> = {
   "src/app/panel/faturalar/page.tsx": 2,
   "src/app/panel/hammaddeler/page.tsx": 1,
-  "src/app/panel/hatirlaticilar/page.tsx": 2,
   "src/server/data/asilpos-day-end.ts": 1,
   "src/server/data/asilpos-day.ts": 2,
   "src/server/data/asilpos-ikram.ts": 1,
@@ -253,8 +252,8 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
 
 // ---------------------------------------------------------------- (c) çip ve firma geneli notu
 
-/** Ekranlarına çipi henüz konmamış alanlar: parça 4 (odemeler, nakit, tedarikciler, komisyon), 5, 6 boşaltır */
-const BEKLEYEN_ALANLAR: readonly ViewArea[] = ["odemeler", "nakit", "vergi", "tutarlilik", "mutabakat", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"];
+/** Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon) bağladı; 5, 6 boşaltır */
+const BEKLEYEN_ALANLAR: readonly ViewArea[] = ["vergi", "tutarlilik", "mutabakat", "stok_degeri", "karsilastirma", "ortak_gider"];
 /** Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır */
 const YALNIZ_FIRMA_SAYFALARI: readonly string[] = [];
 /** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme parça 2'de kapsamla okumaya geçti; boş) */

@@ -60,9 +60,10 @@ test("araçlar yalnız izinli okuyucuları çağırır; hiçbiri yazmaz, eşitle
   const ALLOWED: Record<string, string[]> = {
     // Şube kütüğü ve isteğin şube seçimi (kasa raporlarını şube şube okumak için; salt okunur)
     // Şubesine kilitli hesap `sube` ile başka şubeyi isteyemez (şube kapsamı C P2-13)
-    "@/server/branch-scope": ["currentBranchScope", "staffBranchLock", "withBranchScope"],
+    // Alanın kipi (şube ayrımı parça 4): `gorunum` ve anahtar sahibinin tercihiyle alanın kapsamı (salt okunur)
+    "@/server/branch-scope": ["areaScope", "currentBranchScope", "staffBranchLock", "withAreaView", "withBranchScope"],
     "@/server/branches": ["listBranches"],
-    "@/server/data/cash-plan": ["loadCashPlan"],
+    "@/server/data/cash-plan": ["loadAreaCashPlan"],
     "@/server/data/cash-reports": ["cashReportsBetween", "firstCashReportDate", "previousCarryOver", "previousCarryOverByBranch"],
     "@/server/data/dataset": ["loadModel"],
     "@/server/data/price-alerts": ["loadPriceAlerts"],

@@ -1,7 +1,8 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
@@ -14,12 +15,12 @@ import { fixedReminderAt } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadFixedForReminders } from "@/server/data/fixed-reminders";
 import { loadRecentPaid } from "@/server/data/recent-paid";
-import { invoiceInScope } from "@/lib/invoice-branch";
 import { areaScope, branchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming, recentNotifications } from "@/server/notify/digest";
-import { blockedAccounts } from "@/server/notify/recipients";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
+import { blockedAccounts, loadRecipientsInScope } from "@/server/notify/recipients";
 import { DEFAULT_FROM, isEmailConfigured, resolveFrom } from "@/server/notify/resend";
 import { loadWeeklyPanel } from "@/server/weekly/send";
 
@@ -54,33 +55,29 @@ async function RemindersContent() {
   // şube seçili; ekranın çipi alanı değiştirir
   // şube-ayrımı: alan.odemeler
   const [scope, allBranches, area] = await Promise.all([branchScope(), listBranches(db), areaScope("odemeler")]);
-  const [{ today, settings, reminders, items, laterInvoices, covered, shared, unassigned }, recipientRows, log, fixedData, unpaid, recentPaidAll, weekly] = await Promise.all([
+  const [{ today, settings, reminders, items, laterInvoices, covered, shared, unassigned }, recipients, log, fixedData, unpaid, recentPaid, weekly] = await Promise.all([
     loadUpcoming(undefined, { branch: area }),
-    db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
+    // Bildirim adresleri: şube kipinde o şubeye bağlı ve bütün şubelerin adresleri (`branchIds` boş); öbür şubeninki yok
+    loadRecipientsInScope(db, area),
     // Son gönderimler: şubenin ve işletme genelinin (şube ayrımı, notification_log.branch_id)
     recentNotifications(10, area),
     // Bitiş ayına göre (saklı `active` bayatlayabilir; E-62): biten kalem "Sabit giderlerden ekle"de önerilmez
     // Şube seçiliyken adaylar o şubenin ve işletme genelinin kalemleri (şube kapsamı C P1-3)
     loadFixedForReminders(db, currentMonthTR(now), scope.scope),
-    // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
-    db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
-    loadRecentPaid(),
+    // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı; şube kipinde şubenin ve
+    // işletme genelinin
+    db
+      .select({ id: s.invoices.id, source: s.invoices.source })
+      .from(s.invoices)
+      .where(and(eq(s.invoices.unpaid, true), invoiceScopeWhere(area))),
+    // Son ödenenler: şube kipinde öbür şubenin ve şubesi seçilmemiş faturası ve faturasız borcun (cari) ödemesi yok
+    loadRecentPaid(area),
     // Haftalık özetin satırı; okunamazsa satır gösterilmez, sayfa açılır
     loadWeeklyPanel(now).catch((e) => {
       console.error("[haftalik] Ödemeler satırı", e);
       return null;
     }),
   ]);
-  // Bildirim adresleri: şube kipinde o şubeye bağlı ve bütün şubelerin adresleri (`branchIds` boş); öbür şubeninki yok
-  const recipients = area === ALL_BRANCHES ? recipientRows : recipientRows.filter((r) => !r.branchIds.length || r.branchIds.includes(area));
-  // Son ödenenler: şube kipinde öbür şubenin ve şubesi seçilmemiş faturası yok (hatırlatıcı listeyle zaten süzülür,
-  // cari ödeme firmanın)
-  const paidInvoiceIds = area === ALL_BRANCHES ? [] : recentPaidAll.filter((e) => e.kind === "invoice").map((e) => e.id);
-  const paidInvoices = paidInvoiceIds.length
-    ? await db.select({ id: s.invoices.id, branchId: s.invoices.branchId, companyWide: s.invoices.companyWide }).from(s.invoices).where(inArray(s.invoices.id, paidInvoiceIds))
-    : [];
-  const paidRef = new Map(paidInvoices.map((i) => [i.id, i]));
-  const recentPaid = area === ALL_BRANCHES ? recentPaidAll : recentPaidAll.filter((e) => e.kind !== "invoice" || invoiceInScope(paidRef.get(e.id) ?? {}, area));
   // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura,
   // silinmiş ya da düzenlenmiş cari ödeme) gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
   const paymentIds = recentPaid.filter((e) => e.kind === "cari").map((e) => e.id);
@@ -108,7 +105,7 @@ async function RemindersContent() {
 
   return (
     <RemindersClient
-      scopeBanner={<PaymentsBranchArea shared={shared} unassigned={unassigned} />}
+      scopeBanner={<PaymentsBranchArea chip={<BranchViewChip area="odemeler" className="mb-3" />} shared={shared} unassigned={unassigned} />}
       branches={{
         options: allBranches.filter((b) => b.kind === "fiziksel" && (b.active || reminders.some((r) => r.branchId === b.id))).map((b) => ({ id: b.id, name: b.name })),
         // Yeni ödeme seçili fiziksel şubenin; "Tümü" ya da online kanalda işletme geneli

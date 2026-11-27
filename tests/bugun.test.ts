@@ -1112,7 +1112,6 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "loadDueReminders(",
     "loadSessions(",
     "dayWaste(",
-    "loadUpcoming(",
     "countUnlinkedProducts(",
     "loadUnpricedIngredients(",
     "loadChecklistDays(",
@@ -1120,6 +1119,8 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
   ]) {
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }
+  // Ödemeler alanının kapsamı önce okunur (şube ayrımı parça 4), liste yine safe() içinde
+  assert.match(src, /safe\(areaScope\("odemeler"\)\.then\(\(branch\) => loadUpcoming\(undefined, \{ branch \}\)\)\)/);
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const call of [
     "pendingHoldSummary(",

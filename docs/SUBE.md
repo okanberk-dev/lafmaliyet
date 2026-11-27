@@ -108,13 +108,15 @@ kalemleriyle gelir (`branchWhereWithShared`): kira, muhasebe, abonelik hiçbir �
 satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur.
 
 **İşletme geneli ekranlar** seçiciden bağımsız, hep "Tümü"yle okur (`withBranchScope(ALL_BRANCHES, …)` ya da
-`loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Ödemeler › Nakit planı ve Genel bakış'ın
-nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Mutabakat (banka
+`loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Mutabakat (banka
 hesabı ve cari hesap firmanın; POS hakedişinde kart satışı şube şube kendi oranıyla; [MUTABAKAT.md](MUTABAKAT.md)), Ayarlar'daki
 tam yedek (Dışa aktar, seçicisiz) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir;
-denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Tedarikçiler başlığın altında
+denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar başlığın altında
 **"Marina seçili: bu ekran firma geneli"** notunu gösterir (`companyWideNote`, `CompanyWideNotice`; şube kapsamı C,
 sahibin varsayılanı: tek firma; 27 Kasım'dan beri kişinin ayarına bağlanıyor: [Şube ayrımı](#şube-ayrımı-27-kasım-2026)).
+**Ödemeler, Nakit planı, Tedarikçiler ve Komisyon** 27 Kasım'dan (şube ayrımı parça 4) beri kişinin şube görünümüyle
+okur: şube kipinde yalnız şubenin ve işletme genelinin kayıtları, firma kipinde bugünkü gibi firmanın tamamı; not yerine
+ekranın çipi ([Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon](#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)).
 Paraşüt ekranı ve Faturalar firma geneli değildir (25 Kasım 2026): seçili şubenin
 Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Genel bakış'ın **Dışa aktar** düğmesi ise
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
@@ -132,8 +134,8 @@ AsilPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işle
 seçiliyken ekran işletmenin raporunu gösterir ve üstte şubenin payını (şube satışı × işletmenin oranı) notuyla ekler.
 Şubenin satışı "Tümü"nün kuralıyla sayılır: ModPOS'ta kalan şubenin Z'si de geçiş ayından itibaren tek kanala yazılmaz
 (föyde markası olan kanalına, kalan markası belirsiz), sonradan açılan şubenin açılış ayı yarım sayılmaz, elle yazılan
-ekstre satışı (işletmenin) şubeye yazılmaz. Zil, Bugün'ün Hakedişler satırı, sabah e-postası ve haftalık özet seçiciden
-bağımsız, işletme genelidir.
+ekstre satışı (işletmenin) şubeye yazılmaz. Sabah e-postası ve haftalık özet seçiciden bağımsız, işletme genelidir; ekran,
+zil ve Bugün'ün Hakedişler satırı 27 Kasım'dan beri Komisyon alanının kipiyle ([şube ayrımı parça 4](#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)).
 
 **E-postalar** da işletme genelidir ve elle tetiklenen yolları sabah işiyle aynı hesaplar: sabah e-postası (önizleme ve
 "Bugünküleri şimdi gönder" dahil, `runReminderDigest`) ile haftalık özet (önizleme ve örnek dahil, `collectWeekly`)
@@ -459,9 +461,10 @@ veritabanı `tests/fatura-sube-db.test.ts`):
   değiştirmez). Tek şube seçiliyken Faturalar ve Paraşüt ekranı "N faturanın şubesi seçilmemiş" uyarısını gösterir.
 - **Süzülenler**: Faturalar (liste ve toplamlar), Gelir-gider, Genel bakış ve Maliyet (`loadModel`; `invoiceScopeWhere`,
   `src/server/invoice-scope.ts`), Paraşüt ekranının fatura sayıları ve bekleyen ürünleri, tahmini stok (yalnız Marina'nın
-  faturaları). Tedarikçiler'de bakiye ve ödemeler **firma geneli** kalır (tek firma); tedarikçi sayfası her faturanın
-  şubesini rozetinde yazar, şube seçiliyken o şubenin fatura sayısını ve tutarını söyler. Vergi, KDV, Nakit planı ve
-  Ödemeler firma geneli (bütün faturalar).
+  faturaları). Tedarikçiler'de bakiye ve ödemeler firma kipinde **firma geneli**, şube kipinde şubenin ve işletme genelinin
+  faturalarıyla (27 Kasım 2026, [şube ayrımı parça 4](#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4));
+  tedarikçi sayfası her faturanın şubesini rozetinde yazar. Vergi ve KDV firma geneli (bütün faturalar); Nakit planı ve
+  Ödemeler kişinin şube görünümüyle.
 - **Geçiş** (`0087_fatura_sube`, `0088_fatura_sube_veri`, `0089`): tahminle şube yazılmadı. Ayrı Paraşüt hesabından
   "işletme geneli" seçimiyle gelmiş faturalar bilinçli işletme geneli sayıldı; tahmini stoğun "Marina'ya gelen faturalar"
   seçimi (`stock_receipts`) faturanın şubesi oldu ve tablo kalktı (tek doğruluk kaynağı `invoices.branch_id`). Gerisi
@@ -639,10 +642,10 @@ geneli**: vergi, SGK, muhasebe gibi). Sabit giderdeki kuralın aynısı:
 | Yeni hatırlatıcı | Formdaki **Şube**; varsayılanı seçili fiziksel şube, "Tümü"nde işletme geneli |
 | Sabit giderden ekle | Kalemin şubesi (Marina'nın kirası Marina'nın ödemesi). Tek şube seçiliyken adaylar şubenin ve işletme genelinin kalemleri; "Tümü"de kalemin şubesi rozette |
 | Ertele (tekrar eden) | Ertelenen dönemin tek seferlik kopyası serinin şubesinde kalır; önceden kopya işletme geneli iniyor, Marina'nın kirası Tuzla'nın Ödemeler'inde görünüyordu (denetim 21 Kasım #17) |
-| Ödenmemiş faturalar ve cari | İşletme geneli (mal alımı şubeye bölünmez), her görünümde |
+| Ödenmemiş faturalar ve cari | Ödemeler ve faturalar alanının kipiyle (27 Kasım 2026, [şube ayrımı parça 4](#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)): şube kipinde şubenin ve işletme genelinin faturaları, şubesi seçilmemiş fatura "N faturanın şubesi seçilmemiş" sayısında, faturasız borç (cari) katlı "İşletme geneli" bölümünde; firma kipinde ve "Tümü"de hepsi |
 | Kasadan tedarikçiye işlenmemiş ödemeler (Teslim, fişsiz alışveriş) | Cari işletme genelidir, **kasa satırı şubenindir** (24 Kasım 2026): zilin sayısı, Tedarikçiler'in uyarısı ve tedarikçinin şeritleri tek şube seçiliyken yalnız o şubenin kasasınınkini gösterir, öbürlerini "Öbür şubenin kasasında N satır daha" diye söyler; birden çok kasa açıkken satır kasasının adını yazar. Liste süzülmez: Tuzla'nın kasasından ödenmiş fatura Marina'da da "kasadan ödenmiş olabilir" diye sessizdir (`cariHints`) |
 | Kasadan faturalı alımlar (e-Arşiv, fatura) | Kasanın şubesinde: zil, Bugün, Genel bakış'ın ayın işleri ve Faturalar › Kontrol bekleyen seçili şubenin kasasından çıkanları gösterir (`scopeCashOutInvoiceState`); birden çok kasa açıkken satır "Kasa 24 Kas · Marina" yazar. Eşleştirme işletme geneli (fatura şubesizdir); Vergi ve bütün şubelerin sabah e-postası bütün şubeler, şubeye bağlı adresin sabah e-postası yalnız şubenin |
-| Sabah e-postası, Nakit planı, Vergi, haftalık özet | Bütün ödemeler: para işletmenindir (`loadUpcoming` şubesiz çağrılır). Sabah e-postasında şubeye bağlı bildirim adresi yalnız şubenin ve işletme genelinin ödemelerini alır ([yukarıda](#şube-kapsamı-c-istekler-uyarılar-e-posta-claude-24-kasım-2026)) |
+| Sabah e-postası, Vergi, haftalık özet | Bütün ödemeler: para işletmenindir (`loadUpcoming` şubesiz çağrılır). Sabah e-postasında şubeye bağlı bildirim adresi yalnız şubenin ve işletme genelinin ödemelerini, 27 Kasım'dan beri şubesine seçilmiş faturaları da yalnız o şubenin alıcısı alır (işletme geneli ve şubesi seçilmemiş fatura her gruba; alıcı grupları yukarıda, Şube kapsamı C'de). Nakit planı kişinin şube görünümüyle ([şube ayrımı parça 4](#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)) |
 
 Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı yönetici formdan taşır.
 
@@ -712,8 +715,10 @@ okunur **Her zaman firma geneli** listesi (gerekçeleriyle). Seçim hemen kayded
   `withBranchScope(await areaScope("vergi"), …)` ile okur), `withBranchView(tercih, fn)` (testler, bağlantı anahtarının
   sahibi); yazma `src/server/actions/branch-view.ts` › `saveBranchView` (`requireUser` + `sube.tumu`; muhasebeci de yazar:
   kendi hesabı). **Müdürün kilidi okumada kalır**: `areaScope` "Tümü" dönse de `currentBranchScope` onu şubesine daraltır.
-- **Bağlantı ve panel asistanı** (parça 4): isteğe bağlı `gorunum: "sube" | "firma"`; verilmezse anahtar sahibinin
-  tercihi (`withBranchView`). Çıktının `kapsam` satırı alanın kipini yazar.
+- **Bağlantı ve panel asistanı** (parça 4): `odemeler` ve `tedarikci_ozeti` isteğe bağlı `gorunum: "sube" | "firma"` alır
+  (`withAreaView`); verilmezse bağlantıda anahtar sahibinin tercihi (`userBranchViewOf` + `withBranchView`,
+  src/server/mcp/server.ts), panel asistanında oturumun. Çıktının `kapsam` satırı alanın kipini yazar ("Marina ·
+  ödemeler ve faturalar: Yalnız şube · nakit planı: Firma geneli"; `areaKapsam`). `tedarikci_ozeti` artık `sube` de alır.
 
 **Sahibin kararı bekleyen**: İşletme geneli giderler için üçüncü kip, **"Ciroya göre pay et"**, eklenmedi: 23 Kasım'daki
 "bölüştürme yok" kararını ve "Σ şube − işletme geneli = Tümü" denetimini bozardı.
@@ -741,7 +746,7 @@ hedefi), `bekliyor` (sonraki parça kapatır). `tests/sube-ayrimi.test.ts`:
 - (b) Şubesi olan tabloların (`cashReports`, `invoices`, `reminders` …) `src/server/{data,bell,notify,ai,mcp,assistant-reads}`
   ve panel sayfalarındaki her `.from(s.X)` ifadesi kapsamla okur (`branchWhere`, `invoiceScopeWhere`, `requestInScope` …)
   ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; parça 1'de 104 ifade, parça 2'den sonra 97,
-  parça 3'ten sonra 93): sayı yalnız azalır. Parça 3'ten beri dört tablonun da şube sütunu var (`BEKLEYEN_KOLON` boş).
+  parça 3'ten sonra 93, parça 4'ten sonra 91): sayı yalnız azalır. Parça 3'ten beri dört tablonun da şube sütunu var (`BEKLEYEN_KOLON` boş).
 - (c) Alanın ekranı çipini çizer (`<BranchViewChip area="…">`); "bu ekran firma geneli" notu yalnız hep firma geneli
   ekranlarda ve çipi henüz gelmemiş alanların ekranlarında (`BEKLEYEN_ALANLAR`).
 - (d) Saf kurallar: yöneticinin varsayılanı her alanda şube, kilitli hesap her alanda şube, tanınmayan tercih düşer.
@@ -825,6 +830,34 @@ Testler: `tests/sube-ayrimi-kolonlar.test.ts` (saf kurallar, kaynağın biçimi,
 reddi, tetikleyici, geri doldurma, işlem geçmişi ve gönderim günlüğünün şubesi, yatırımlar; Tuzla'nın "IZ-TUZLA"
 işaretli kayıtları Marina seçiliyken görünmez).
 
+### Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon (parça 4)
+
+Dört alan kişinin şube görünümüyle okur (`areaScope`); ekranlarında görünüm çipi var, "bu ekran firma geneli" notu kalktı.
+"Tümü"de ve **Firma geneli** kipinde her şey bugünkü gibi; aşağıdakiler tek şube seçili ve **Yalnız şube** kipindeyken.
+Müdür ve şubesine kilitli personel hep şube kipindedir (tercih okunmaz).
+
+| Alan | Yalnız şube kipinde | İşletme geneli (firmanın, ayrı satırda) |
+|---|---|---|
+| **Ödemeler ve faturalar** (`odemeler`): Ödemeler, Bugün, zil, Genel bakış'ın "Yaklaşan ödemeler" kartı ve gecikme satırı, bağlantının `odemeler` aracı | Şubenin ve işletme genelinin hatırlatıcıları ve faturaları (`invoiceInScope`). Şubesi seçilmemiş faturalar listede değil: "N faturanın şubesi seçilmemiş · tutar" uyarısı Faturalar'a götürür. Son ödenenler şubenin ve işletme genelinin faturaları ve hatırlatıcıları (`loadRecentPaid(kapsam)`), Son gönderimler ve bildirim adresleri şubenin ve bütün şubelerin (`loadRecipientsInScope`). Zilin kapalı aya düşen kayıtları şubenin (`heldCounts(db, kapsam)`) | Faturasız borç (cari): katlı **İşletme geneli** bölümü ("İşletme geneli · 2 faturasız borç · tutar"); şubenin listesine ve toplamlarına girmez. Genel bakış'ın cari uyarıları (faturası gelmeyen alım) yalnız firma kipinde ve "Tümü"de |
+| **Nakit planı** (`nakit`): ekran, Genel bakış'ın kartı, `odemeler` aracının nakit planı | **Şubenin nakit akışı** (`loadAreaCashPlan`): şubenin satış tahmini ve kasa devri; şubenin hatırlatıcıları, şubeye seçilmiş faturaları, personelinin maaşı, şubenin kendi sabit giderleri ve mal tahmini. Açılış bakiyesi yok: hafta satırı "Net akış" yazar, karo "Net akış" | Her haftanın **İşletme geneli** satırı (firmanın planından: KDV, vergi, damga, SGK, işletme geneli hatırlatıcı ve fatura, faturasız borç; en büyük üç kalemiyle), şubenin akışına girmez. "Elinizdeki para · Firma geneli" karosu firmanın bakiyesini bilgi olarak yazar (`nakit.bakiye`). Şubesi seçilmemiş fatura hiçbir şubenin akışında yok |
+| **Tedarikçi bakiyeleri** (`tedarikciler`): Tedarikçiler, tedarikçinin sayfası, `tedarikci_ozeti`, ödeme talebi | Kalan borç, vade, 7 gün ve Bu ay ödenen şubenin ve işletme genelinin faturalarıyla (faturanın kalanı ona sayılan ödemeler düşülmüş); ödemeler: şubenin kasasından yapılanın tamamı, öbür ödemenin şubenin faturalarına sayılan kısmı (`branchAccountOf`, src/lib/cari/branch-account.ts). Kapsamda hiçbir şeyi olmayan tedarikçi listede yok (sayfası adresiyle açılır). Ödeme talebi "Ödeme talebi · L'Affogato · Marina" başlar, faturasız alım ve hesaptaki para talebe girmez | Faturasız borç ve hesaptaki (hiçbir kaleme sayılmamış) para: listenin ve sayfanın üstündeki **İşletme geneli** satırı. Şube bakiyeleri + işletme geneli = tedarikçinin carisi ("Tümü"de; şubesi seçilmemiş faturalar yalnız orada). Cari hareketleri, ekstre ve bağlama pencereleri firmanın tek hesabıyla çalışır |
+| **Komisyon ve hakediş** (`komisyon`): ekran, zil, Bugün'ün Hakedişler satırı | Ana görünüm şubenin payı (şube satışı × işletmenin oranı) ve **şubenin o ay satışı olan kanalların** bekleyen hakedişi (`scopeCommissionReport`: kanalın kendi satışı ya da grubun Z'si). Zil ve Bugün aynı süzgeçle: öbür şubenin kullandığı kanalın gecikmesi bu şubede görünmez | İşletmenin raporu (komisyon faturaları, oranlar, bütün kanalların kartları, kanalı bulunamayan faturalar) katlı **İşletmenin raporu** bölümünde. Oran ve hakediş tutarı hep işletmenin (`komisyon.oran`). Sabah e-postasının kutusu firmanın (`eposta.firma`) |
+
+**Sabah e-postası**: şubeye bağlı alıcı grubu artık yalnız kendi şubesine seçilmiş faturaları alır (işletme geneli ve
+şubesi seçilmemiş fatura her gruba; `digestItemBranch`); firmaya giden e-posta değişmedi.
+
+**Bağlantı ve panel asistanı**: `odemeler` ve `tedarikci_ozeti` isteğe bağlı `gorunum` alır; şube kipinde cevapta
+`isletmeGeneli` (faturasız borç, şubesi seçilmemiş faturalar, nakit planının işletme geneli toplamı; tedarikçide faturasız
+borç ve hesaptaki ödeme). Panel asistanında isteğe bağlı alanlar yapılandırılmış girdinin sınırını (24) aştığı için
+`tedarikci_ozeti` strict'siz gider (girdisi yine doğrulanır).
+
+Kayıt: `alan.odemeler`, `alan.nakit`, `alan.tedarikciler`, `alan.komisyon` (her `areaScope` çağrısı), `nakit.bakiye`
+(yalnız firma), `komisyon.oran` (ortak veri); bekleyen `nakit.*` ve `komisyon.*` kayıtları kapandı. Kapsamsız okuma
+93 → 91 (Ödemeler sayfası). Testler: `tests/sube-ayrimi-alanlar.test.ts` (saf kurallar ve kaynağın biçimi),
+`tests/sube-ayrimi-alanlar-db.test.ts` (gerçek Postgres: Tuzla'nın "IZ-TUZLA" işaretli faturası, hatırlatıcısı, kasa
+raporu ve ödemesi Marina'nın şube kipinde Ödemeler'de, nakit planında, tedarikçi bakiyelerinde, bağlantının iki aracında
+ve komisyonun hakedişinde görünmez; firma kipinde görünür; müdürde firma tercihi yazılı olsa da görünmez).
+
 ### Sıra
 
 | Parça | Ne | Durum |
@@ -832,7 +865,7 @@ işaretli kayıtları Marina seçiliyken görünmez).
 | 1 | Altyapı: ayar, migration 0100, `areaScope`, eylem, çip, Hesabım kartı, kayıt ve tarama | Kuruldu (27 Kasım 2026) |
 | 2 | Ayarsız sızıntılar: Bugün ve zil sayıları, onaylar, kişi seçicileri, Paraşüt, asistan, kayıp önleme | Kuruldu (27 Kasım 2026) |
 | 3 | Şube sütunu olmayan tablolar: `checklist_runs`, `activity_log`, `notification_log`, `investments` (migration 0101) | Kuruldu (27 Kasım 2026) |
-| 4 | Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon | Sırada |
+| 4 | Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon | Kuruldu (27 Kasım 2026) |
 | 5 | Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri | Sırada |
 | 6 | Şubeleri yan yana, İşletme geneli giderler, dışa aktarım, e-posta önizlemeleri, kapanış | Sırada |
 

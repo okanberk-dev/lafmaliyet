@@ -18,6 +18,25 @@ export interface SharedPlanIds {
   invoices: ReadonlySet<number>;
 }
 
+/**
+ * İşletme geneli kalemlerin kimlikleri firmanın ödemelerinden (`loadUpcoming`'in "Tümü" okuması): şubesiz hatırlatıcılar
+ * ve işletme geneli faturalar (şubesi seçilmemiş fatura işletme geneli değildir: hiçbir şubenin akışında yok, Tümü'de var)
+ */
+export function sharedPlanIdsOf(up: {
+  reminders: readonly { id: number; branchId: string | null }[];
+  invoiceBranches: ReadonlyMap<number, { branchId: string | null; companyWide: boolean }>;
+}): SharedPlanIds {
+  return {
+    reminders: new Set(up.reminders.filter((r) => !r.branchId).map((r) => r.id)),
+    invoices: new Set([...up.invoiceBranches].filter(([, i]) => i.companyWide && !i.branchId).map(([id]) => id)),
+  };
+}
+
+/** Şubenin akışına giren fatura: yalnız o şubeye seçilmiş fatura (işletme geneli olan İşletme geneli satırında) */
+export function ownPlanInvoice(ref: { branchId: string | null; companyWide: boolean } | undefined, branch: string): boolean {
+  return Boolean(ref && ref.branchId === branch);
+}
+
 /** Firmanın planındaki satır işletme geneli mi (şubenin akışına girmez, İşletme geneli satırında toplanır) */
 export function isSharedPlanLine(l: Pick<PlanLine, "key" | "kind" | "direction">, ids: SharedPlanIds): boolean {
   if (l.direction !== "out") return false;

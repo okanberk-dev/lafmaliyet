@@ -170,14 +170,16 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
   assert.match(note!.text, /cari hesabı firmanındır/);
   // Faturalar firma geneli değil (25 Kasım 2026, docs/SUBE.md › Faturanın şubesi): seçili şubenin faturaları
   assert.doesNotMatch(read("src/app/panel/faturalar/page.tsx"), /<CompanyWideNotice/);
-  // Ekranlar notu çizer (şube kapsamı C P1-12, P2-1)
+  // Ekranlar notu çizer (şube kapsamı C P1-12, P2-1); alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube
+  // ayrımı parça 4: Tedarikçiler, Nakit planı)
   for (const [file, screen] of [
     ["src/app/panel/vergi/page.tsx", "vergi"],
-    ["src/app/panel/tedarikciler/page.tsx", "tedarikciler"],
     ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
   ] as const)
     assert.match(read(file), new RegExp(`<CompanyWideNotice screen="${screen}"`), file);
-  assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\("nakit", scope, branches\)/);
+  assert.match(read("src/app/panel/tedarikciler/page.tsx"), /<BranchViewChip area="tedarikciler"/);
+  assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /<BranchViewChip area="nakit"/);
+  assert.doesNotMatch(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\(/);
 });
 
 test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve bilinmeyen şube seçenekleriyle reddedilir", () => {
@@ -192,8 +194,11 @@ test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve
   assert.deepEqual(mcpBranchScope("hepsi", known), { scope: ALL_BRANCHES });
   assert.deepEqual(mcpBranchScope("Eski", known), { error: 'Şube bulunamadı: "Eski". Seçenekler: Tuzla, Marina, hepsi' });
   const tools = read("src/server/mcp/tools.ts");
-  // Satış, kasa ve ödemeler şubeyle; tedarikçi ve arama firma geneli
-  assert.equal((tools.match(/scoped\((?:args\.)?sube, async \(\) => \{/g) ?? []).length, 5);
-  assert.equal((tools.match(/kapsam: COMPANY_WIDE/g) ?? []).length, 2);
+  // Satış, kasa, ödemeler ve (şube ayrımı parça 4'ten beri) tedarikçi şubeyle; arama firma geneli. Alanı olan iki araç
+  // kapsamı alanın kipiyle yazar (areaKapsam)
+  assert.equal((tools.match(/scoped\((?:args\.)?sube, async \(\) => \{/g) ?? []).length, 4);
+  assert.equal((tools.match(/scoped\(sube, async \(scope, label\) =>/g) ?? []).length, 2);
+  assert.equal((tools.match(/kapsam: areaKapsam\(label, scope, /g) ?? []).length, 2);
+  assert.equal((tools.match(/kapsam: COMPANY_WIDE/g) ?? []).length, 1);
   assert.match(tools, /if \(lock !== null && scope !== lock\) throw new ToolInputError/);
 });

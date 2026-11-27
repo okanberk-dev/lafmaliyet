@@ -1,8 +1,9 @@
-import { ChevronDown, FileQuestion, Scale } from "lucide-react";
+import { Building2, ChevronDown, FileQuestion, Scale } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { FeatureOff } from "@/components/panel/feature-off";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { MonthPicker } from "@/components/panel/month-picker";
@@ -13,7 +14,7 @@ import { Notice } from "@/components/ui/notice";
 import { featureBranches, featureInScope } from "@/lib/branch-features";
 import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
 import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
-import { branchCommissionShare, effectiveSettings, groupOf, shownChannels } from "@/lib/commission/report";
+import { branchCommissionShare, effectiveSettings, groupOf, scopeCommissionReport, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
@@ -28,7 +29,7 @@ import { ChannelCard, FlagList } from "./channel-card";
 import { ChannelSettingsCard } from "./channel-settings";
 import { MealTotalCard } from "./meal-total-card";
 import { PendingCard } from "./pending-card";
-import { branchUnbrandedNote, commissionBranchNote, mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine, unbrandedLine } from "./texts";
+import { branchUnbrandedNote, COMPANY_REPORT_FOLD, commissionBranchModeNote, commissionBranchNote, mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine, unbrandedLine } from "./texts";
 
 export const metadata: Metadata = { title: "Komisyon & hakediş" };
 
@@ -80,7 +81,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
   // Kanallar kartı seçili şubenin sürelerini düzenler ("Tümü"de ve online kanalda varsayılan şubeninkini); raporun son günleri
   // seçiciden bağımsız işletmenin süreleriyle (şubelerin en kısası, businessPayDays; zille aynı)
   const settingsBranch = tillBranches(view.branches).find((b) => b.id === view.scope)?.id ?? DEFAULT_BRANCH_ID;
-  const [{ all: report, branch, scope }, channelView] = await Promise.all([loadCommissionReports(), branchSettingView(COMMISSION_GROUP, settingsBranch)]);
+  const [{ all: report, branch, scope, mode }, channelView] = await Promise.all([loadCommissionReports(), branchSettingView(COMMISSION_GROUP, settingsBranch)]);
   const branchName = branch ? ((await listBranches()).find((b) => b.id === scope)?.name ?? scope) : null;
   const raw = pick(sp.ay);
   const month = raw && report.months.includes(raw) ? raw : report.defaultMonth;
@@ -113,8 +114,97 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
   const open = openPayouts(report.rows);
   const openSub = openPayoutsSub(open);
   const unmatched = report.unmatched.filter((u) => u.date.slice(0, 7) === month);
-  const branchNote = branchName ? commissionBranchNote(branchName) : null;
+  // Komisyon ve hakediş alanının şube kipi (şube ayrımı parça 4): şubenin payı ve şubenin kanallarının hakedişi önde,
+  // işletmenin raporu katlı ekte. Firma kipinde (ve "Tümü"de) bugünkü gibi işletmenin raporu
+  const branchMode = mode === "sube" && branch !== null && branchName !== null;
+  const branchNote = branchName ? (branchMode ? commissionBranchModeNote(branchName) : commissionBranchNote(branchName)) : null;
+  const pending = branchMode ? scopeCommissionReport(report, branch).pending : report.pending;
   const platformUnbranded = unbrandedLine(platform?.unbranded ?? null, "platform");
+
+  const companyReport = (
+    <>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+        <Stat compact label="Kesilen (KDV hariç)" value={money(fees)} sub={`${num(invoiceCount)} fatura`} />
+        <Stat
+          compact
+          label="Yemek kartı oranı"
+          value={meal?.rate != null ? pct(meal.rate) : "–"}
+          tone={overMealLimit(meal?.rate) ? "bad" : "default"}
+          sub={mealStatSub(meal)}
+        />
+        <Stat
+          compact
+          className="col-span-2 lg:col-span-1"
+          label="Bekleyen hakediş"
+          value={open.total !== null ? `~${money(open.total)}` : "–"}
+          sub={openSub.bad ? <span className="text-bad">{openSub.text}</span> : openSub.text}
+        />
+      </div>
+
+      <section aria-label="Yemek kartları">
+        <SectionTitle>Yemek kartları</SectionTitle>
+        {mealTotal || mealChannels.length ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {mealTotal ? <MealTotalCard group={mealTotal} rows={monthRows.filter((r) => r.kind === "meal")} className="lg:col-span-2" /> : null}
+            {mealChannels.map((ch) => (
+              <ChannelCard key={ch} channel={ch} month={month} report={report} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-ink-mute">{monthLabel(month)} ve önceki beş ayda yemek kartı faturası yok.</p>
+        )}
+      </section>
+
+      <section aria-label="Platformlar">
+        <SectionTitle>Platformlar</SectionTitle>
+        <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformTillLine(platform)}</p>
+        {platformUnbranded ? <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformUnbranded}</p> : null}
+        {platform?.flags.length ? (
+          <div className="mb-3">
+            <FlagList flags={platform.flags} />
+          </div>
+        ) : null}
+        {platformChannels.length ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {platformChannels.map((ch) => (
+              <ChannelCard key={ch} channel={ch} month={month} report={report} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-ink-mute">{monthLabel(month)} ve önceki beş ayda platform faturası yok.</p>
+        )}
+      </section>
+
+      {unmatched.length ? (
+        <Card>
+          <CardHeader
+            icon={<FileQuestion />}
+            title="Kanalı bulunamayan komisyon faturaları"
+            description={`${monthLabel(month)} · kategorisi Komisyon ama hiçbir yemek kartı ya da platformla eşleşmedi`}
+          />
+          <ul className="mx-5 divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+            {unmatched.map((u) => (
+              <li key={u.id}>
+                <Link
+                  href={`/panel/faturalar?ara=${encodeURIComponent(u.supplier)}&ay=${u.date.slice(0, 7)}&kategori=${encodeURIComponent(COMMISSION_CATEGORY)}#fatura-listesi`}
+                  className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5 text-sm text-ink outline-none hover:bg-panel/60 focus-visible:ring-2 focus-visible:ring-ink/30"
+                >
+                  <span className="min-w-0 truncate">
+                    {u.supplier} · {dateTR(u.date)}
+                  </span>
+                  <span className="shrink-0 tabular">{money(u.net)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="px-5 pt-3 pb-5 text-[13px] leading-5 text-ink-mute">
+            Bu bir yemek kartı ya da platformsa Tedarikçiler&apos;de o tedarikçinin &quot;Diğer adlar&quot;ına bu adı ekleyin; fatura kanala geçer. Banka POS komisyonu gibi başka
+            bir şeyse dokunmayın.
+          </p>
+        </Card>
+      ) : null}
+    </>
+  );
 
   return (
     <>
@@ -124,6 +214,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
       />
       <HashScroll key={month} />
       <div className="space-y-6">
+        <BranchViewChip area="komisyon" />
         {/* Şube seçili (soldaki seçici): satış o şubenin, faturalar ve hakediş işletmenin (docs/SUBE.md) */}
         {branchNote ? (
           <Notice tone="neutral" size="sm" title={branchNote.title}>
@@ -138,94 +229,41 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
             note={branchUnbrandedNote(groupOf(branch, "meal", month)?.unbranded, groupOf(branch, "platform", month)?.unbranded)}
           />
         ) : null}
-        {report.pending.length ? <PendingCard rows={report.pending} /> : null}
+        {pending.length ? <PendingCard rows={pending} /> : null}
 
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-          <Stat compact label="Kesilen (KDV hariç)" value={money(fees)} sub={`${num(invoiceCount)} fatura`} />
-          <Stat
-            compact
-            label="Yemek kartı oranı"
-            value={meal?.rate != null ? pct(meal.rate) : "–"}
-            tone={overMealLimit(meal?.rate) ? "bad" : "default"}
-            sub={mealStatSub(meal)}
-          />
-          <Stat
-            compact
-            className="col-span-2 lg:col-span-1"
-            label="Bekleyen hakediş"
-            value={open.total !== null ? `~${money(open.total)}` : "–"}
-            sub={openSub.bad ? <span className="text-bad">{openSub.text}</span> : openSub.text}
-          />
-        </div>
-
-        <section aria-label="Yemek kartları">
-          <SectionTitle>Yemek kartları</SectionTitle>
-          {mealTotal || mealChannels.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {mealTotal ? <MealTotalCard group={mealTotal} rows={monthRows.filter((r) => r.kind === "meal")} className="lg:col-span-2" /> : null}
-              {mealChannels.map((ch) => (
-                <ChannelCard key={ch} channel={ch} month={month} report={report} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-ink-mute">{monthLabel(month)} ve önceki beş ayda yemek kartı faturası yok.</p>
-          )}
-        </section>
-
-        <section aria-label="Platformlar">
-          <SectionTitle>Platformlar</SectionTitle>
-          <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformTillLine(platform)}</p>
-          {platformUnbranded ? <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformUnbranded}</p> : null}
-          {platform?.flags.length ? (
-            <div className="mb-3">
-              <FlagList flags={platform.flags} />
-            </div>
-          ) : null}
-          {platformChannels.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {platformChannels.map((ch) => (
-                <ChannelCard key={ch} channel={ch} month={month} report={report} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-ink-mute">{monthLabel(month)} ve önceki beş ayda platform faturası yok.</p>
-          )}
-        </section>
-
-        {unmatched.length ? (
-          <Card>
-            <CardHeader
-              icon={<FileQuestion />}
-              title="Kanalı bulunamayan komisyon faturaları"
-              description={`${monthLabel(month)} · kategorisi Komisyon ama hiçbir yemek kartı ya da platformla eşleşmedi`}
-            />
-            <ul className="mx-5 divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-              {unmatched.map((u) => (
-                <li key={u.id}>
-                  <Link
-                    href={`/panel/faturalar?ara=${encodeURIComponent(u.supplier)}&ay=${u.date.slice(0, 7)}&kategori=${encodeURIComponent(COMMISSION_CATEGORY)}#fatura-listesi`}
-                    className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5 text-sm text-ink outline-none hover:bg-panel/60 focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    <span className="min-w-0 truncate">
-                      {u.supplier} · {dateTR(u.date)}
-                    </span>
-                    <span className="shrink-0 tabular">{money(u.net)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <p className="px-5 pt-3 pb-5 text-[13px] leading-5 text-ink-mute">
-              Bu bir yemek kartı ya da platformsa Tedarikçiler&apos;de o tedarikçinin &quot;Diğer adlar&quot;ına bu adı ekleyin; fatura kanala geçer. Banka POS komisyonu gibi başka
-              bir şeyse dokunmayın.
-            </p>
-          </Card>
-        ) : null}
+        {branchMode ? <CompanyReportFold>{companyReport}</CompanyReportFold> : companyReport}
 
         <ChannelSettingsCard settings={effectiveSettings(channelView.value.channels)} branchId={settingsBranch} branchName={channelView.branchName} link={channelView.link} />
 
         <RulesCard switchDay={report.switchDay} />
       </div>
     </>
+  );
+}
+
+/**
+ * Şube kipinde işletmenin raporu (şube ayrımı parça 4): faturalar, oranlar, bütün kanalların kartları ve kanalı
+ * bulunamayan faturalar katlı ekte (kapalı başlar); ana görünüm şubenin payı ve şubenin kanallarının hakedişi
+ */
+function CompanyReportFold({ children }: { children: ReactNode }) {
+  return (
+    <Card>
+      <details className="group/firm">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 rounded-3xl px-5 py-4 outline-none select-none focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-ink [&>svg]:size-[18px] [&>svg]:stroke-[1.75]">
+              <Building2 />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-base font-semibold tracking-tight text-ink">İşletmenin raporu</span>
+              <span className="block text-[13px] text-ink-mute">{COMPANY_REPORT_FOLD}</span>
+            </span>
+          </span>
+          <ChevronDown size={18} aria-hidden="true" className="shrink-0 text-ink-quiet transition-transform group-open/firm:rotate-180" />
+        </summary>
+        <div className="space-y-6 px-5 pb-5">{children}</div>
+      </details>
+    </Card>
   );
 }
 

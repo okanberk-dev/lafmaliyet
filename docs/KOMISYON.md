@@ -19,8 +19,12 @@ föyünden okunur (ilk rapor, açılış günü ve kapalı günler de şubenin; 
 faturaları, oran, beklenen hakediş ve uyarılar işletmenindir: faturalar şubeye bölünmez, oran bütün şubelerin satışıyla
 hesaplanır. Şube seçiliyken ekran işletmenin raporunu gösterir; üstte "Marina seçili: satış yalnız bu şubenin, faturalar
 ve hakediş işletmenin" notu ve **Marina payı** kartı (kanal kanal şubenin satışı, işletmenin oranı, pay = satış × oran;
-`branchCommissionShare`). Zil, Bugün, sabah e-postası ve haftalık özet seçiciden bağımsız, işletme genelidir
-(`withBranchScope(ALL_BRANCHES, …)`). Önceden ekran seçimi hiç okumuyordu: her şubede bütün şubelerin satışı vardı.
+`branchCommissionShare`). Sabah e-postası ve haftalık özet seçiciden bağımsız, işletme genelidir
+(`withBranchScope(ALL_BRANCHES, …)`). 27 Kasım 2026'dan beri ekran, zil ve Bugün'ün Hakedişler satırı kişinin şube
+görünümüyle ([SUBE.md › Alanlar](SUBE.md#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)): **Yalnız şube**
+kipinde ana görünüm şubenin payı ve şubenin o ay satışı olan kanalların bekleyen hakedişi (`scopeCommissionReport`),
+işletmenin raporu katlı "İşletmenin raporu" bölümünde; zil ve Bugün öbür şubenin kullandığı kanalın gecikmesini
+göstermez. **Firma geneli** kipinde bugünkü gibi. Önceden ekran seçimi hiç okumuyordu: her şubede bütün şubelerin satışı vardı.
 Şubenin payı "Tümü"yle aynı kuralla sayılır, payların toplamı işletmenin faturasını aşmaz:
 
 - **ModPOS'ta kalan şube** (Tuzla) seçiliyken de geçiş ayından itibaren Z'deki yemek kartı ve online tek kanala yazılmaz

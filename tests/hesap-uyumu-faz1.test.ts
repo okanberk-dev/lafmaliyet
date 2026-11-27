@@ -572,7 +572,7 @@ test("şube görünümü: sonradan açılan şubenin (Marina, 13 Kasım) açıl�
 
 import { branchUnbrandedNote, commissionBranchNote, unbrandedLine } from "../src/app/panel/komisyonlar/texts";
 
-test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün notu; zil, Bugün, e-posta ve haftalık özet işletme geneli", () => {
+test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün notu; e-posta ve haftalık özet işletme geneli, zil ve Bugün alanın kipiyle", () => {
   assert.equal(unbrandedLine(null, "meal"), null);
   assert.equal(unbrandedLine({ amount: 0, pre: 0, modpos: 0, loose: 0, fallback: 0 }, "meal"), null);
   assert.equal(
@@ -597,10 +597,12 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
   assert.match(note.text, /payı = şubenin satışı × oran/);
   // Ekran iki raporu okur (işletme + şube); hafif yollar ve haftalık özet "Tümü" ile
   const page = read("src/app/panel/komisyonlar/page.tsx");
-  assert.match(page, /const \[\{ all: report, branch, scope \}, channelView\] = await Promise\.all\(\[loadCommissionReports\(\), branchSettingView\(COMMISSION_GROUP, settingsBranch\)\]\);/);
+  assert.match(page, /const \[\{ all: report, branch, scope, mode \}, channelView\] = await Promise\.all\(\[loadCommissionReports\(\), branchSettingView\(COMMISSION_GROUP, settingsBranch\)\]\);/);
   assert.match(page, /branchCommissionShare\(report, branch, month\)/);
   const data = read("src/server/data/commission.ts");
-  assert.match(data, /return withBranchScope\(ALL_BRANCHES, async \(\) => buildCommissionReport\(await loadCommissionInput\(\{ resolveNames: false, today \}\)\)\);/);
+  // Hafif yol işletmenin raporuyla; Komisyon alanının şube kipinde şubenin satışı olan kanallara süzülür (şube ayrımı parça 4)
+  assert.match(data, /const all = await withBranchScope\(ALL_BRANCHES, async \(\) => buildCommissionReport\(await loadCommissionInput\(\{ resolveNames: false, today \}\)\)\);\s*if \(scope === ALL_BRANCHES\) return all;/);
+  assert.match(data, /return scopeCommissionReport\(all, branch\);/);
   assert.match(data, /\.where\(andWhere\(gte\(s\.cashReports\.date, fromDay\), branchWhere\(s\.cashReports\.branchId, scope\)\)\)/);
   assert.match(data, /const \{ asilpos: switchDay, modpos: modposFrom \} = commissionScopeDays\(switchRow, scope\);/);
   // Şube seçiliyken şubenin açılışı ve ModPOS'ta kalan şubenin föy kuralı loader'dan

@@ -124,34 +124,34 @@ export function CashPlanClient({
                 icon={<Wallet />}
                 label="Elinizdeki para · Firma geneli"
                 value={flow.firmOpening ? tl(flow.firmOpening.amount) : "Girilmedi"}
-                sub="Bakiye firmanın; şubenin akışına girmez"
+                sub={carry ? `${flow.name} kasasında ${tl(carry.amount)} (${shortDate(carry.date)}) · bakiye firmanın` : "Bakiye firmanın; şubenin akışına girmez"}
               />
             ) : (
-            <Stat
-              compact
-              icon={<Wallet />}
-              label="Elinizdeki para"
-              value={opening ? tl(opening.amount) : "Girilmedi"}
-              tone={opening && opening.amount < 0 ? "bad" : "default"}
-              sub={
-                opening ? (
-                  stale ? (
-                    <span className="font-medium text-warn">
-                      {opening.staleDays} gün önce girildi ·{" "}
-                      <button type="button" onClick={() => setBalanceOpen(true)} className="cursor-pointer underline underline-offset-2 pointer-coarse:py-2">
-                        güncelleyin
-                      </button>
-                    </span>
+              <Stat
+                compact
+                icon={<Wallet />}
+                label="Elinizdeki para"
+                value={opening ? tl(opening.amount) : "Girilmedi"}
+                tone={opening && opening.amount < 0 ? "bad" : "default"}
+                sub={
+                  opening ? (
+                    stale ? (
+                      <span className="font-medium text-warn">
+                        {opening.staleDays} gün önce girildi ·{" "}
+                        <button type="button" onClick={() => setBalanceOpen(true)} className="cursor-pointer underline underline-offset-2 pointer-coarse:py-2">
+                          güncelleyin
+                        </button>
+                      </span>
+                    ) : (
+                      `${dayLocativeTR(opening.date)} girildi`
+                    )
                   ) : (
-                    `${dayLocativeTR(opening.date)} girildi`
+                    <Button size="xs" variant="secondary" onClick={() => setBalanceOpen(true)} className="mt-0.5">
+                      Gir
+                    </Button>
                   )
-                ) : (
-                  <Button size="xs" variant="secondary" onClick={() => setBalanceOpen(true)} className="mt-0.5">
-                    Gir
-                  </Button>
-                )
-              }
-            />
+                }
+              />
             )}
             <Stat compact icon={<ArrowDownLeft />} label="Gelecek para" value={tl(totals.in)} sub={plan.basis.online ? "Satışlar ve laffogato.net, tahmini" : "Satışlar, tahmini"} />
             <Stat compact icon={<ArrowUpRight />} label="Ödenecek" value={tl(out)} sub={`Kesin ${tl(totals.outKnown)} · tahmini ${tl(totals.outEstimated)}`} />

@@ -202,14 +202,15 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   await requireAdmin();
   const sp = await searchParams;
   const scope = await currentBranchScope();
+  // "Yaklaşan ödemeler" kartı, ayın işlerinin ödeme olguları ve cari uyarıları Ödemeler ve faturalar alanının kapsamıyla
+  // (Bugün, zil ve Ödemeler gibi; denetim 21 Kasım #27, şube ayrımı parça 4): şube kipinde o şubenin ve işletme genelinin
+  // ödemeleri ve faturaları, firma kipinde ve "Tümü"de bütün şubelerin
+  // şube-ayrımı: alan.odemeler
+  const paymentsArea = scope === ALL_BRANCHES ? ALL_BRANCHES : await areaScope("odemeler");
   const [model, upcoming, branchPayments, parasut, cashOutState, till, branchRows] = await Promise.all([
     loadModel(),
     loadPayments(),
-    // "Yaklaşan ödemeler" kartı ve ayın işlerinin ödeme olguları şube seçimine uyar (Bugün, zil ve Ödemeler gibi;
-    // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri ve faturaları, kişinin şube
-    // görünümü "Firma geneli" ise bütün şubelerin (şube ayrımı parça 4). "Tümü"nde aynı liste
-    // şube-ayrımı: alan.odemeler
-    scope === ALL_BRANCHES ? Promise.resolve(null) : areaScope("odemeler").then((branch) => loadPayments(branch)),
+    paymentsArea === ALL_BRANCHES ? Promise.resolve(null) : loadPayments(paymentsArea),
     loadParasut(),
     // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; seçili şubenin kasasından çıkanlar
     // (docs/SUBE.md › Ödemeler). Okunamazsa liste onsuz
@@ -221,8 +222,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     // Aydan aya rozetler "Tümü"de aynı şubelerle: şubelerin açılış günleri (src/lib/same-branches.ts; okunamazsa ilk verisi)
     listBranches().catch(() => []),
   ]);
-  // Ekrandaki ödeme listesi (kart, gecikme satırı, ayın işleri): seçili şubenin; nakit planı ve cari uyarıları işletmenin
-  const shownPayments = scope === ALL_BRANCHES ? upcoming : branchPayments;
+  // Ekrandaki ödeme listesi (kart, gecikme satırı, ayın işleri): alanın kapsamının (şube kipinde şubenin)
+  const shownPayments = paymentsArea === ALL_BRANCHES ? upcoming : branchPayments;
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
@@ -254,8 +255,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable, priceAlerts.loss.totalLoss) : null;
   // Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen fiyatlar (Hammaddeler › Onay bekleyen fiyatlar)
   const hold = holdAlert((await pendingHoldSummary().catch(() => null))?.items ?? []);
-  // Cari hesap: faturası 45 gündür gelmeyen alımlar ve faturası gelmiş olabilecek faturasız alımlar (§6.7)
-  const cari = upcoming ? cariAlerts(upcoming.cari) : [];
+  // Cari hesap: faturası 45 gündür gelmeyen alımlar ve faturası gelmiş olabilecek faturasız alımlar (§6.7). Faturasız
+  // borç firmanın ("İşletme geneli"): Ödemeler alanının şube kipinde uyarı yok, firma kipinde ve "Tümü"de var
+  const cari = upcoming && paymentsArea === ALL_BRANCHES ? cariAlerts(upcoming.cari) : [];
   const alertItems = [...(hold ? [hold] : []), ...(zam ? [zam] : []), ...cari, ...alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href))];
   const year = Number(month.slice(0, 4));
   const yearMonths = yearTrend(model, year);

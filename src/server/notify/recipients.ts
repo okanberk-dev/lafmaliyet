@@ -1,9 +1,10 @@
 import "server-only";
 
-import { eq, inArray, sql } from "drizzle-orm";
+import { arrayContains, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 
 import { blockReasonOf, emailKey, splitByBlocked, type BlockReason, type DroppedRecipient, type RecipientList } from "@/lib/notify-recipients";
 import { CASH_REPORT_GROUP } from "@/lib/branch-settings/groups";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { PACKAGE_SETTINGS_KEY, parsePackageSettings } from "@/lib/muhasebe/paket-ayar";
 import { resolveForTills } from "@/server/branch-settings";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -41,6 +42,20 @@ export async function blockedAccountEmails(db: Reader, emails: readonly string[]
 /** Gönderim anı: listeyi gidecek ve düşen adreslere ayırır (sıra korunur) */
 export async function sendableRecipients(db: Reader, emails: readonly string[]): Promise<{ to: string[]; dropped: DroppedRecipient[] }> {
   return splitByBlocked(emails, await blockedAccounts(db, emails));
+}
+
+/**
+ * Bildirim adresinin şube koşulu (Ödemeler ve faturalar alanının şube kipi; şube ayrımı parça 4): tek şubede o şubeye
+ * bağlı ve bütün şubelerin (`branch_ids` boş) adresleri; öbür şubeye bağlı adres yok. "Tümü"de koşul yok
+ */
+export function recipientScopeWhere(scope: BranchScope): SQL | undefined {
+  if (scope === ALL_BRANCHES) return undefined;
+  return or(sql`cardinality(${s.notificationRecipients.branchIds}) = 0`, arrayContains(s.notificationRecipients.branchIds, [scope]));
+}
+
+/** Ödemeler › Bildirim adresleri: kapsamın adresleri (recipientScopeWhere), eklenme sırasıyla */
+export async function loadRecipientsInScope(db: Reader, scope: BranchScope) {
+  return db.select().from(s.notificationRecipients).where(recipientScopeWhere(scope)).orderBy(asc(s.notificationRecipients.createdAt));
 }
 
 /** Etkin bildirim adresleri (sabah e-postası, bekçi uyarısı, deneme): eklenme sırasıyla */

@@ -2,9 +2,12 @@ import "server-only";
 
 import { asc, desc, eq, sql } from "drizzle-orm";
 
-import { groupSuppliers, supplierResolver, type PaymentMethod, type SupplierCard, type SupplierRef } from "@/app/panel/tedarikciler/logic";
+import { groupSuppliers, summarize, supplierResolver, type PaymentMethod, type SupplierCard, type SupplierGroup, type SupplierRef } from "@/app/panel/tedarikciler/logic";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { addDays, todayTR } from "@/lib/reminders";
-import { accountOf } from "@/lib/cari/account";
+import { accountOf, type CariAccount } from "@/lib/cari/account";
+import type { CariMethod } from "@/lib/cari/balance";
+import { branchAccountOf, branchPayments, sharedCariOf, sharedCariParts, type SharedCari } from "@/lib/cari/branch-account";
 import { candidateOf, linkCandidates } from "@/lib/cari/match";
 import { DEFAULT_PARASUT_ACCOUNT, parasutKey } from "@/lib/parasut/accounts";
 import { getDb, schema as s } from "@/server/db";
@@ -187,16 +190,35 @@ async function slugGroups() {
   );
 }
 
+/** Tedarikçiler ekranının bir tedarikçisi: grubun alanları ve cari hesabı (şube kipinde şubenin; loadSupplierLedger) */
+export type LedgerGroup = SupplierGroup<LedgerRow, SupplierCard> & {
+  /** Bütün faturaları (şube kipinde `invoices` şubenin ve işletme genelinin) */
+  allInvoices: LedgerRow[];
+  account: CariAccount;
+  /** Şube kipinde İşletme geneli satırı (faturasız borç, hesaptaki para); "Tümü"de ve firma kipinde null */
+  shared: SharedCari | null;
+  lastEntry: string | null;
+  cariPayments: { date: string; amount: number; method: CariMethod; items: number }[];
+};
+
 /**
  * Tedarikçiler ekranının verisi: kartlar, faturalar tedarikçi tedarikçi (src/app/panel/tedarikciler/logic.ts) ve genel
  * vade günü. Bugün Türkiye saatine göre.
+ *
+ * `scope` tek şubeyse (Tedarikçi bakiyeleri alanının şube kipi, `areaScope("tedarikciler")`; şube ayrımı parça 4,
+ * docs/SUBE.md › Şube ayrımı) her tedarikçinin `invoices`'ı şubenin ve işletme genelinin faturalarıdır, `account` onlarla
+ * kurulur (src/lib/cari/branch-account.ts), `shared` firmanın faturasız borcu ve hesaptaki parası (İşletme geneli
+ * satırı); `allInvoices` bütün faturalar (cari düzenleme ve ekstre firmanındır). Kapsamda faturası, faturasız borcu ya
+ * da hesabında parası olmayan tedarikçi listede yok (`keepAll`: tedarikçinin sayfası adresiyle her tedarikçiyi bulur).
+ * "Tümü"de `shared` null, `invoices` = `allInvoices`
  */
-export async function loadSupplierLedger() {
+export async function loadSupplierLedger(scope: BranchScope = ALL_BRANCHES, opts: { keepAll?: boolean } = {}) {
   const [cards, invoices, notify, entries] = await Promise.all([loadSupplierCards(), loadLedgerInvoices(), loadNotifySettings(), loadCardEntries()]);
   const today = todayTR();
+  const single = scope === ALL_BRANCHES ? null : scope;
   // Cari hesap (docs/TEDARIKCILER.md "Hesap hareketleri"): kartın elle kayıtları faturalarıyla birlikte; kayıt yokken
   // `account` faturaların özetiyle aynı
-  const groups = groupSuppliers(invoices, cards, { today, termDays: notify.invoiceTermDays }).map((g) => {
+  const groups = groupSuppliers(invoices, cards, { today, termDays: notify.invoiceTermDays }).flatMap((g): LedgerGroup[] => {
     const mine = g.card ? cardEntries(entries, g.card.id) : null;
     // Faturasız alımın faturası olabilecek fatura (güçlü aday) mahsuptan atlanır (tedarikçi sayfasıyla aynı)
     const quiet =
@@ -208,15 +230,31 @@ export async function loadSupplierLedger() {
             ).strong.map((c) => c.invoiceId),
           )
         : undefined;
-    const account = accountOf({ invoices: g.invoices, ...(mine ?? {}) }, { today, termDays: g.termDays, quietInvoiceIds: quiet });
+    const full = accountOf({ invoices: g.invoices, ...(mine ?? {}) }, { today, termDays: g.termDays, quietInvoiceIds: quiet });
     const lastEntry = mine ? [...mine.debts, ...mine.payments].reduce<string | null>((m, e) => (!m || e.date > m ? e.date : m), null) : null;
-    // Ödeme kayıtları, en yeni önce (Claude'un tedarikci_ozeti'si: gün, tutar, şekil, sayıldığı kalem sayısı)
-    const cariPayments = (mine?.payments ?? [])
-      .map((p) => ({ date: p.date, amount: p.amount, method: p.method, items: mine!.allocations.filter((a) => a.paymentId === p.id).length }))
-      .sort((a, b) => b.date.localeCompare(a.date));
-    return { ...g, account, lastEntry, cariPayments };
+    // Ödeme kayıtları, en yeni önce (bağlantının tedarikci_ozeti'si: gün, tutar, şekil, sayıldığı kalem sayısı)
+    const payments = (p: readonly { id: number; date: string; amount: number; method: CariMethod }[]) =>
+      p.map((x) => ({ date: x.date, amount: x.amount, method: x.method, items: mine!.allocations.filter((a) => a.paymentId === x.id).length })).sort((a, b) => b.date.localeCompare(a.date));
+    if (!single) return [{ ...g, allInvoices: g.invoices, account: full, shared: null, lastEntry, cariPayments: payments(mine?.payments ?? []) }];
+    // Şube kipi: şubenin bakiyesi ve İşletme geneli satırı
+    const branch = branchAccountOf({ invoices: g.invoices, payments: mine?.payments, allocations: mine?.allocations }, single, { today, termDays: g.termDays, quietInvoiceIds: quiet });
+    const shared = sharedCariOf(full);
+    if (!opts.keepAll && !branch.invoices.length && !sharedCariParts(shared)) return [];
+    const mineBranch = mine ? branchPayments(mine.payments, mine.allocations, new Set(branch.invoices.map((i) => i.id)), single) : [];
+    return [
+      {
+        ...g,
+        invoices: branch.invoices,
+        summary: summarize(branch.invoices, { today, termDays: g.termDays }),
+        allInvoices: g.invoices,
+        account: branch.account,
+        shared,
+        lastEntry,
+        cariPayments: payments(mineBranch),
+      },
+    ];
   });
-  return { today, termDays: notify.invoiceTermDays, groups };
+  return { today, termDays: notify.invoiceTermDays, groups, scope };
 }
 
 /** Kartın kayıtları ve onlara (ya da onlardan) yazılan dağıtımlar */

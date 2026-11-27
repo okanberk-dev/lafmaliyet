@@ -96,7 +96,7 @@ export const VIEW_AREAS: Record<ViewArea, ViewAreaDef> = {
     modes: SUBE_FIRMA,
     firmOnly: null,
     defaults: { admin: "sube", accountant: "firma" },
-    screens: ["/panel/tedarikciler"],
+    screens: ["/panel/tedarikciler", "/panel/tedarikciler/[cari]"],
   },
   stok_degeri: {
     label: "Stok değeri (FIFO)",
@@ -234,6 +234,18 @@ export function viewChipText(area: ViewArea, mode: ViewMode, branchName: string)
     : { title: `Firma geneli · ${branchName} seçili`, switchLabel: only, switchTo: "sube", firmOnly: null };
 }
 
+/**
+ * Bağlantının ve panel asistanının `kapsam` satırı (şube ayrımı parça 4): şube seçiliyken alanların kipi de yazılır
+ * ("Marina · ödemeler ve faturalar: Yalnız şube · nakit planı: Firma geneli"); "Tümü"de yalnız "Tümü"
+ */
+export function areaKapsam(label: string, scope: BranchScope, parts: readonly { area: ViewArea; mode: ViewMode }[]): string {
+  if (scope === ALL_BRANCHES || !parts.length) return label;
+  return [label, ...parts.map((p) => `${VIEW_AREAS[p.area].label.toLocaleLowerCase("tr")}: ${VIEW_AREAS[p.area].modes[p.mode]}`)].join(" · ");
+}
+
+/** Okunan kapsamdan alanın kipi: "Tümü" okunduysa firma, tek şube okunduysa şube */
+export const modeOfScope = (read: BranchScope): ViewMode => (read === ALL_BRANCHES ? "firma" : "sube");
+
 /** Hesabım'daki kartın başlığı ve açıklaması */
 export const BRANCH_VIEW_TITLE = "Şube görünümü";
 export const BRANCH_VIEW_DESCRIPTION =
@@ -317,7 +329,8 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
   // Hep firma geneli
   {
     id: "eposta.firma",
-    where: "src/server/notify/digest.ts#runReminderDigest; src/server/actions/reminders.ts#previewDigest; src/server/weekly/collect.ts#collectWeekly",
+    where:
+      "src/server/notify/digest.ts#runReminderDigest; src/server/actions/reminders.ts#previewDigest; src/server/weekly/collect.ts#collectWeekly; src/server/data/commission.ts#loadCommissionDigest",
     kind: "yalniz-firma",
     reason: "Sabah ve haftalık e-postası işletmenin tamamı için kurulur; şubeye bağlı alıcı kendi şubesinin grubunu alır",
   },
@@ -327,14 +340,58 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
   { id: "dataset.companyMonths", where: "src/server/data/dataset.ts#loadDataset", kind: "ortak-veri", reason: "İşletmenin günü: işletme geneli giderler Tümü'nün açık günüyle oranlanır" },
   { id: "dataset.companyWaterSales", where: "src/server/data/dataset.ts#companyWaterSales", kind: "ortak-veri", reason: "Su + buz litre fiyatı tek faturadan, bütün şubelerin litresine bölünür" },
   { id: "asistan.isletme-geneli", where: "src/server/assistant-ops/resolve.ts#expenseBranch", kind: "yazim", reason: "Okuma değil: asistanın yazdığı gider ve hatırlatıcının işletme geneli hedefi" },
-  // Sonraki parçalar (şube ayrımı 3–6; parça 2 kendi üç kaydını kapattı: eşlenmemiş Paraşüt ürünleri, kanal seçiliyken
-  // kasa zili, kayıp önleme)
-  { id: "nakit.sayfa", where: "src/app/panel/hatirlaticilar/nakit/page.tsx#CashPlanContent; src/server/data/cash-plan.ts#loadCashPlan", kind: "bekliyor", area: "nakit", part: 4, reason: "Nakit planı bugün firmanın" },
-  { id: "nakit.genel-bakis", where: "src/app/panel/page.tsx#DashboardContent", kind: "bekliyor", area: "nakit", part: 4, reason: "Genel bakış'ın nakit planı kartı bugün firmanın" },
-  { id: "nakit.mcp", where: "src/server/mcp/tools.ts#odemeler", kind: "bekliyor", area: "nakit", part: 4, reason: "Bağlantının ödemeler aracındaki nakit planı bugün firmanın" },
-  { id: "komisyon.sayfa", where: "src/server/data/commission.ts#loadCommissionReports", kind: "bekliyor", area: "komisyon", part: 4, reason: "Komisyon ekranının ana raporu bugün firmanın" },
-  { id: "komisyon.hafif", where: "src/server/data/commission.ts#loadLightReport", kind: "bekliyor", area: "komisyon", part: 4, reason: "Zil, Bugün ve e-postanın hakediş raporu bugün firmanın" },
-  { id: "vergi.sayfa", where: "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent", kind: "bekliyor", area: "vergi", part: 5, reason: "Vergi ekranları bugün firmanın" },
+  // Alanlar (kişinin tercihi; areaScope): parça 4 Ödemeler, Nakit planı, Tedarikçiler, Komisyon
+  {
+    id: "alan.odemeler",
+    where:
+      "src/app/panel/hatirlaticilar/page.tsx#RemindersContent; src/app/panel/page.tsx#DashboardContent; src/server/data/today.ts#adminFacts; src/server/actions/notifications.ts#loadPanelNotifications; src/server/mcp/tools.ts#odemeler",
+    kind: "alan",
+    area: "odemeler",
+    reason: "Ödemeler, Bugün, zil, Genel bakış ve bağlantının ödemeler aracı: firma kipinde bütün şubelerin ödemeleri ve faturaları",
+  },
+  {
+    id: "alan.nakit",
+    where: "src/app/panel/hatirlaticilar/nakit/page.tsx#CashPlanContent; src/app/panel/page.tsx#DashboardContent; src/server/mcp/tools.ts#odemeler",
+    kind: "alan",
+    area: "nakit",
+    reason: "Nakit planı ekranı, Genel bakış'ın kartı ve bağlantının nakit planı: firma kipinde firmanın planı",
+  },
+  {
+    id: "alan.tedarikciler",
+    where: "src/app/panel/tedarikciler/page.tsx#SuppliersContent; src/app/panel/tedarikciler/[cari]/page.tsx#SupplierContent; src/server/mcp/tools.ts#tedarikci_ozeti",
+    kind: "alan",
+    area: "tedarikciler",
+    reason: "Tedarikçi bakiyeleri: firma kipinde tedarikçinin bütün faturaları ve carisi",
+  },
+  {
+    id: "alan.komisyon",
+    where: "src/server/data/commission.ts#loadCommissionReports; src/server/data/commission.ts#loadCommissionAlerts; src/server/data/commission.ts#loadOverduePayouts",
+    kind: "alan",
+    area: "komisyon",
+    reason: "Komisyon ekranı, zil ve Bugün'ün Hakedişler satırı: firma kipinde bütün kanalların hakedişi",
+  },
+  {
+    id: "nakit.bakiye",
+    where: "src/server/data/cash-plan.ts#loadAreaCashPlan",
+    kind: "yalniz-firma",
+    reason: "Nakit açılış bakiyesi firmanın parası: şubenin akışında da firmanın planından okunur (bakiye ve İşletme geneli satırı)",
+  },
+  {
+    id: "komisyon.oran",
+    where: "src/server/data/commission.ts#loadLightReport; src/server/data/commission.ts#loadCommissionReports",
+    kind: "ortak-veri",
+    reason: "Komisyon oranı ve hakediş işletmenin: bütün faturalar ÷ bütün şubelerin satışı; şubenin payı ve hakediş satırları bununla",
+  },
+  // Sonraki parçalar (şube ayrımı 5–6; parça 2 kendi üç kaydını, parça 4 Nakit planı ve Komisyon kayıtlarını kapattı)
+  {
+    id: "vergi.sayfa",
+    where:
+      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/server/data/cash-plan.ts#loadCashPlan",
+    kind: "bekliyor",
+    area: "vergi",
+    part: 5,
+    reason: "Vergi ekranları (ve Vergi › Özet'in nakit planı) bugün firmanın",
+  },
   { id: "tutarlilik.sayfa", where: "src/app/panel/tutarlilik/page.tsx#ConsistencyContent", kind: "bekliyor", area: "tutarlilik", part: 5, reason: "Tutarlılık bugün firmanın" },
   { id: "stok-degeri.ayarlar", where: "src/app/panel/ayarlar/page.tsx#SettingsContent", kind: "bekliyor", area: "stok_degeri", part: 5, reason: "Ayarlar'ın stok değerleme önizlemesi bugün firmanın" },
   { id: "karsilastirma.sayfa", where: "src/server/data/sube-karsilastirma.ts#loadBranchCompare", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "Şube karşılaştırma bugün şubeleri yan yana okuyor" },

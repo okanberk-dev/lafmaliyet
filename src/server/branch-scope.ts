@@ -223,6 +223,31 @@ export function withBranchView<T>(prefs: BranchViewPrefs, fn: () => Promise<T>):
 }
 
 /**
+ * Kimliği verilen hesabın şube görünümü tercihi (bağlantı anahtarının sahibi: istekte oturum yok, `userBranchView` boş
+ * döner). Okunamazsa boş (rolün varsayılanı)
+ */
+export async function userBranchViewOf(userId: number): Promise<BranchViewPrefs> {
+  try {
+    const [row] = await getDb().select({ v: s.users.branchView }).from(s.users).where(eq(s.users.id, userId)).limit(1);
+    return parseBranchView(row?.v);
+  } catch (e) {
+    console.error("[şube görünümü] hesabın tercihi okunamadı; varsayılan", e);
+    return {};
+  }
+}
+
+/**
+ * Tek alanın kipini bu okuma için değiştirir (bağlantının ve panel asistanının `gorunum` girdisi): `mode` verilirse
+ * `fn` içinde o alanın kipi odur, öteki alanlar kişinin tercihiyle; verilmezse `fn` olduğu gibi. Kilit yine geçerli:
+ * kilitli hesapta `currentBranchView` her alanda "sube" döner (`effectiveView`)
+ */
+export async function withAreaView<T>(area: ViewArea, mode: ViewMode | undefined, fn: () => Promise<T>): Promise<T> {
+  if (!mode) return fn();
+  const base = viewOverride.getStore() ?? (await userBranchView());
+  return viewOverride.run({ ...base, [area]: mode }, fn);
+}
+
+/**
  * Yeni kaydın ineceği tek şube. "Tümü" seçiliyken hedef belirsizdir ve varsayılan şubeye (Tuzla) iner; ekranlar
  * hangi şubeye yazdıklarını kullanıcıya gösterir. İstek dışında da varsayılan şube döner.
  */

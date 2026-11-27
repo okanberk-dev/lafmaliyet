@@ -3,6 +3,7 @@ import "server-only";
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 
 import { fitOutput, ToolInputError } from "@/lib/mcp/answers/common";
+import { userBranchViewOf, withBranchView } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 
 import { logCall, type Principal } from "./store";
@@ -40,7 +41,9 @@ async function withCall(p: Principal, base: string, t: ToolDef, args: unknown): 
   let error: string | null = null;
   let chars: number | null = null;
   try {
-    const text = fitOutput(await t.run(args, { base, now: new Date() }));
+    // Bağlantı anahtarının sahibinin şube görünümü (Hesabım › Şube görünümü; şube ayrımı parça 4): istekte oturum yok
+    const prefs = await userBranchViewOf(p.userId);
+    const text = fitOutput(await withBranchView(prefs, () => t.run(args, { base, now: new Date() })));
     ok = true;
     chars = text.length;
     return { content: [{ type: "text", text }], structuredContent: JSON.parse(text) as Record<string, unknown> };
