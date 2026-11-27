@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, countDistinct, desc, eq, gte, inArray, isNull, lt, sql, sum } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, gte, inArray, isNull, lt, sql, sum, type SQL } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { unmatchedIkramNames } from "@/lib/asilpos/ikram";
@@ -33,8 +33,8 @@ import { receivePosDay, type EndpointResult } from "./ingest";
 
 /**
  * AsilPOS bağlantısının durumu ve onarımı (docs/ASILPOS.md › Durum ve onarım): `POST /api/pos/gun`'un her sonucu burada
- * `integration_state › asilpos`'a yazılır (son başarılı gün, son ret, güne göre açık retler, imzası doğrulanamayan
- * isteklerin sayacı), 200
+ * `integration_state`'in durum satırına (ASILPOS_STATE_KEY, eski adla) yazılır (son başarılı gün, son ret, güne göre açık
+ * retler, imzası doğrulanamayan isteklerin sayacı), 200
  * yanıtına geçiş gününe göre `counted` ve `switchDay` eklenir; Ayarlar'daki "AsilPOS (kasa)" kartının verisi de buradan
  * okunur. Gün sonunun denetimi ve yazımı ingest.ts'te (değişmedi). Durum yazımı hiçbir zaman yanıtı bozmaz.
  */
@@ -57,12 +57,23 @@ export async function readAsilposState(db: DB = getDb()): Promise<AsilposState> 
   return parseAsilposState(row?.value);
 }
 
+/**
+ * Durum satırına tek ifadeyle yazar: eski adlı satıra (ASILPOS_STATE_KEY; yoksa `first` ile açılır) ve varsa yeni adlı
+ * satıra (ASILPOS_STATE_KEY_NEW; temizlik PR'ı A3 yazar, oradan geri dönülürse kalır) aynı değişiklik (`next`, eski değer
+ * `integration_state.value`). Okuma yeni adlıyı önce okur (readAsilposState): yalnız eski adlıya yazılsaydı yeni
+ * sonuçlar görünmezdi
+ */
+function writeState(db: Pick<DB, "execute">, first: SQL, next: SQL) {
+  return db.execute(sql`
+    with yeni as (update integration_state set value = ${next}, updated_at = now() where key = ${ASILPOS_STATE_KEY_NEW})
+    insert into integration_state (key, value) values (${ASILPOS_STATE_KEY}, ${first})
+    on conflict (key) do update set value = ${next}, updated_at = now()`);
+}
+
 /** Üst düzey alanları birleştirerek yazar (aynı anda iki sonuç birbirinin alanını ezmez); hata yanıtı bozmaz */
 async function patchState(db: DB, patch: Partial<Record<keyof AsilposState, unknown>>): Promise<void> {
   try {
-    await db.execute(sql`
-      insert into integration_state (key, value) values (${ASILPOS_STATE_KEY}, ${JSON.stringify(patch)}::jsonb)
-      on conflict (key) do update set value = integration_state.value || ${JSON.stringify(patch)}::jsonb, updated_at = now()`);
+    await writeState(db, sql`${JSON.stringify(patch)}::jsonb`, sql`integration_state.value || ${JSON.stringify(patch)}::jsonb`);
   } catch (e) {
     console.error("[asilpos] durum yazılamadı:", e instanceof Error ? e.message : e);
   }
@@ -71,10 +82,11 @@ async function patchState(db: DB, patch: Partial<Record<keyof AsilposState, unkn
 /** 200: son başarılı gün; o günün açık reddi (409 / 400) kapanır, gün yeniden yazıldı. Hata yanıtı bozmaz */
 async function noteOk(db: DB, ok: AsilposOk): Promise<void> {
   try {
-    await db.execute(sql`
-      insert into integration_state (key, value) values (${ASILPOS_STATE_KEY}, jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb))
-      on conflict (key) do update set value = (integration_state.value #- array['rejections', ${ok.date}::text]) || jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb),
-        updated_at = now()`);
+    await writeState(
+      db,
+      sql`jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb)`,
+      sql`(integration_state.value #- array['rejections', ${ok.date}::text]) || jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb)`,
+    );
   } catch (e) {
     console.error("[asilpos] durum yazılamadı:", e instanceof Error ? e.message : e);
   }
@@ -90,16 +102,19 @@ async function noteDayRejection(db: DB, e: AsilposRejection & { date: string }):
   try {
     await db.transaction(async (tx) => {
       await tx.execute(sql`insert into integration_state (key, value) values (${ASILPOS_STATE_KEY}, '{}'::jsonb) on conflict (key) do nothing`);
-      const [row] = await tx
-        .select({ value: s.integrationState.value })
+      // Eski adlı satır ve varsa yeni adlısı (writeState): her biri kendi retlerine eklenir
+      const rows = await tx
+        .select({ key: s.integrationState.key, value: s.integrationState.value })
         .from(s.integrationState)
-        .where(eq(s.integrationState.key, ASILPOS_STATE_KEY))
-        .for("update")
-        .limit(1);
-      const rejections = withDayRejection(parseAsilposState(row?.value).rejections, e);
-      await tx.execute(sql`
-        update integration_state set value = value || ${JSON.stringify({ lastError: e, rejections })}::jsonb, updated_at = now()
-         where key = ${ASILPOS_STATE_KEY}`);
+        .where(inArray(s.integrationState.key, [ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW]))
+        .orderBy(asc(s.integrationState.key))
+        .for("update");
+      for (const row of rows) {
+        const rejections = withDayRejection(parseAsilposState(row.value).rejections, e);
+        await tx.execute(sql`
+          update integration_state set value = value || ${JSON.stringify({ lastError: e, rejections })}::jsonb, updated_at = now()
+           where key = ${row.key}`);
+      }
     });
   } catch (err) {
     console.error("[asilpos] durum yazılamadı:", err instanceof Error ? err.message : err);
@@ -122,13 +137,14 @@ export async function noteUnverified(db: DB, status: 401 | 413, now: Date = new 
   unverifiedBuffer.lastFlush = now.getTime();
   try {
     const at = now.toISOString();
-    await db.execute(sql`
-      insert into integration_state (key, value)
-        values (${ASILPOS_STATE_KEY}, jsonb_build_object('unverified', jsonb_build_object('count', ${n}::int, 'lastAt', ${at}::text, 'lastStatus', ${status}::int)))
-      on conflict (key) do update set value = integration_state.value || jsonb_build_object('unverified', jsonb_build_object(
+    await writeState(
+      db,
+      sql`jsonb_build_object('unverified', jsonb_build_object('count', ${n}::int, 'lastAt', ${at}::text, 'lastStatus', ${status}::int))`,
+      sql`integration_state.value || jsonb_build_object('unverified', jsonb_build_object(
         'count', coalesce((integration_state.value->'unverified'->>'count')::int, 0) + ${n}::int,
         'lastAt', ${at}::text,
-        'lastStatus', ${status}::int)), updated_at = now()`);
+        'lastStatus', ${status}::int))`,
+    );
   } catch (e) {
     console.error("[asilpos] durum yazılamadı:", e instanceof Error ? e.message : e);
   }

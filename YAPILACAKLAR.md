@@ -52,7 +52,7 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 - **Marina gün sonu e-postası gece kaybolmaz** (dal `claude/peaceful-maxwell-ov7ms7`): 25 Kasım akşamı e-posta gitmedi.
   Pavo beklemesi (#141) sonraki bir tetiğe kalıyordu ve gece tetik yoktu. Bekleme artık aynı istekte biter
   (`settlePavoWait`): sonuç gelmezse e-posta ~38 sn'de Pavo'suz gider. AsilPOS'un `bankPosPending` alanına uyulur;
-  bekleme ilk gelişten sayılır. Ayrıntı: docs/ASILPOS.md "Pavo'yu bekler". AsilPOS tarafı asilpos aynı adlı dalda.
+  bekleme ilk gelişten sayılır. Ayrıntı: docs/ASILPOS.md "Pavo'yu bekler". AsilPOS tarafı AsilPOS deposunda (`lafpos`) aynı adlı dalda.
 - **E-postalar ortak tasarımda** (aynı dal): `src/lib/email-kit.ts`. Ferah kart, telefonda tek sütun; bütün e-postalar
   aynı kabuk ve parçaları kullanır. İçerik, bağlantı ve düz metin aynı kaldı.
 - **Gün sonu zinciri sağlamlaştı** (dal `wt/lm-takip`, 26 Kasım): sabah işi işi bekleyen günleri önce ve yeniden eskiye
@@ -78,7 +78,7 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
 
-- AsilPOS: AsilPOS'un adı her yerde AsilPOS (panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
+- AsilPOS: kasa programının adı her yerde AsilPOS (26 Kasım 2026'ya kadar adı LafPOS; panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
   (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
 - Şube ayrımı: şube seçiliyken her ekranda yalnız o şube; firma geneli ekranlar kullanıcının kendi ayarıyla.
 - P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).

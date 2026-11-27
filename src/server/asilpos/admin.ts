@@ -4,7 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { ASILPOS_GROUP } from "@/lib/branch-settings/groups";
 import { GUN_KILIDI_ONEKI } from "@/lib/asilpos/eski-adlar";
-import { ASILPOS_STATE_KEY } from "@/lib/asilpos/status";
+import { ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW } from "@/lib/asilpos/status";
 import { dayMonthYearTR, isAsilposDay, switchDayProblem } from "@/lib/asilpos/switch";
 import { lockGroup, putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { schema as s, type DB } from "@/server/db";
@@ -88,10 +88,11 @@ export async function removeAsilposDay(db: DB, me: Actor, date: string, zNo: num
     // Geçiş günü AsilPOS'un şubesinin kasasınındır (branchSwitchDay): bu gün o şubenin günü
     const counted = isAsilposDay(date, await switchDayOf(branchId, tx));
     await detachAsilposCashOuts(tx, date, counted ? "release" : "drop", { by: { id: me.id, name: me.name }, branchId });
+    // Durum satırı eski adla; yeni adlı satır varsa (temizlik PR'ından geri dönüş, önce o okunur) o da
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()
-       where key = ${ASILPOS_STATE_KEY}
+       where key in (${ASILPOS_STATE_KEY}, ${ASILPOS_STATE_KEY_NEW})
          and value->'rejections'->${date}::text->>'error' = 'z_conflict'
          and (value->'rejections'->${date}::text->>'zNo')::int = ${rep.z.zNo}::int`);
     return { zNo: rep.z.zNo, lines: lines.length };

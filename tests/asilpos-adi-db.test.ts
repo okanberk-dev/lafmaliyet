@@ -1,6 +1,7 @@
 // Ad değişikliğinin uyumu gerçek Postgres'te (26 Kasım 2026; plan A1, migration 0098): saklanan değerler eski adla
 // yazılır, okunurken yenisi döner; eski adlı tablo görünümleri canlıdaki eski sürümün yazdığı biçimlerle çalışır;
-// tetikleyiciler eski ve yeni sütunu eşit tutar; okuyanlar yeni adlı kaydı (temizlik PR'ından sonra) önce okur.
+// tetikleyiciler eski ve yeni sütunu eşit tutar; okuyanlar yeni adlı kaydı (temizlik PR'ından sonra) önce okur, yazım
+// o kayıt varsa ona da gider; gün sonu fotoğrafının karşılaştırması eski alan adıyla saklanır.
 //
 // Kendi geçici şubesini açar, sonunda siler. ASILPOS_ADI_TEST_DATABASE_URL verilmezse atlanır (migration'ları
 // uygulanmış yerel veritabanı).
@@ -11,10 +12,11 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { DURUM_ANAHTARI, ESKI_KASA_KAYNAGI, ESKI_SUTUNLAR, ESKI_TABLOLAR, KASA_YAZARI, OTOMATIK_YAZAR, SUBE_AYAR_GRUBU } from "../src/lib/asilpos/eski-adlar";
-import { ASILPOS_AUTO_BY } from "../src/lib/asilpos/gun-sonu";
+import { DURUM_ANAHTARI, ESKI_KASA_KAYNAGI, ESKI_SUTUNLAR, ESKI_TABLOLAR, FOTO_SATIR_ALANI, KASA_YAZARI, OTOMATIK_YAZAR, SUBE_AYAR_GRUBU } from "../src/lib/asilpos/eski-adlar";
+import type { AsilposPhotoCheck } from "../src/lib/asilpos/foto";
+import { ASILPOS_AUTO_BY, photoCheckHash, photoCheckHashLegacy, photoRows } from "../src/lib/asilpos/gun-sonu";
 import { ASILPOS_CASH_OUT_BY } from "../src/lib/asilpos/cash-moves";
 import { ASILPOS_GROUP } from "../src/lib/branch-settings/groups";
 import type { DB } from "../src/server/db";
@@ -43,6 +45,7 @@ describe("AsilPOS ad değişikliği: veritabanında", { skip: !URL && "ASILPOS_A
     await db.delete(s.cashOuts).where(eq(s.cashOuts.branchId, branchId));
     await db.delete(s.posDailySales).where(eq(s.posDailySales.branchId, branchId));
     await db.delete(s.asilposDayEnds).where(eq(s.asilposDayEnds.branchId, branchId));
+    await db.delete(s.expenseEntries).where(eq(s.expenseEntries.branchId, branchId));
     await db.delete(s.branchSettings).where(eq(s.branchSettings.branchId, branchId));
     await db.delete(s.branches).where(eq(s.branches.id, branchId));
     await db.$client.end();
@@ -79,6 +82,16 @@ describe("AsilPOS ad değişikliği: veritabanında", { skip: !URL && "ASILPOS_A
     const [{ user_name }] = await raw<{ user_name: string }>(sql`select user_name from activity_log where id = ${log.id}`);
     assert.equal(user_name, OTOMATIK_YAZAR);
     await db.delete(s.activityLog).where(eq(s.activityLog.id, log.id));
+    // Kasadan çıkanın harcama kaydı (expense_entries.created_by; kasanın satırı AsilPOS adıyla yazar)
+    const [cat] = await db.select({ id: s.expenseCategories.id }).from(s.expenseCategories).limit(1);
+    const [e] = await db
+      .insert(s.expenseEntries)
+      .values({ date: "2026-11-27", categoryId: cat.id, amount: 10, branchId, createdBy: ASILPOS_CASH_OUT_BY })
+      .returning({ id: s.expenseEntries.id, createdBy: s.expenseEntries.createdBy });
+    assert.equal(e.createdBy, "AsilPOS");
+    const [{ created_by }] = await raw<{ created_by: string }>(sql`select created_by from expense_entries where id = ${e.id}`);
+    assert.equal(created_by, KASA_YAZARI, "veritabanında eski ad");
+    await db.delete(s.expenseEntries).where(eq(s.expenseEntries.id, e.id));
   });
 
   test("kasa hareketi ve hizmet işareti: eski ve yeni sütun eşit (eski sürüm eskisini yazar)", async () => {
@@ -135,5 +148,75 @@ describe("AsilPOS ad değişikliği: veritabanında", { skip: !URL && "ASILPOS_A
       await db.delete(s.integrationState).where(inArray(s.integrationState.key, [DURUM_ANAHTARI, "asilpos"]));
       if (keep.length) await db.insert(s.integrationState).values(keep);
     }
+  });
+
+  test("şube ayarının yazımı yeni adlı satırı da günceller (temizlik PR'ından geri dönüş): okunan değer yazılanla aynı", async () => {
+    const { putBranchSetting, resolveBranchSetting } = await import("../src/server/branch-settings");
+    const rows = async () =>
+      (await db.select({ grp: s.branchSettings.grp, value: s.branchSettings.value }).from(s.branchSettings).where(eq(s.branchSettings.branchId, branchId)).orderBy(s.branchSettings.grp)).map(
+        (r) => [r.grp, (r.value as { switchDay?: string | null }).switchDay],
+      );
+    try {
+      await db.transaction((tx) => putBranchSetting(tx, ASILPOS_GROUP, branchId, { switchDay: "2026-11-20" }, "test"));
+      assert.deepEqual(await rows(), [[SUBE_AYAR_GRUBU, "2026-11-20"]], "yeni adlı satır açılmaz (yazılan eski ad)");
+      await db.insert(s.branchSettings).values({ branchId, grp: "pos.asilpos", value: { switchDay: "2026-11-15" }, updatedBy: "test" });
+      assert.equal((await resolveBranchSetting(ASILPOS_GROUP, branchId, db)).value.switchDay, "2026-11-15");
+      await db.transaction((tx) => putBranchSetting(tx, ASILPOS_GROUP, branchId, { switchDay: "2026-11-21" }, "test"));
+      assert.equal((await resolveBranchSetting(ASILPOS_GROUP, branchId, db)).value.switchDay, "2026-11-21", "yönetici değişikliği görünür");
+      assert.deepEqual(await rows(), [
+        ["pos.asilpos", "2026-11-21"],
+        [SUBE_AYAR_GRUBU, "2026-11-21"],
+      ]);
+    } finally {
+      await db.delete(s.branchSettings).where(eq(s.branchSettings.branchId, branchId));
+    }
+  });
+
+  test("gün sonu fotoğrafının karşılaştırması: eski sürümün satırı yeni alanla okunur, özet aynı; yazılan eski alan", async () => {
+    const ESKI = FOTO_SATIR_ALANI;
+    const gun = "2026-11-26";
+    // Canlıdaki eski sürümün yazdığı biçim (24 Kasım 2026'dan beri), eski adlı görünümden
+    const stored = {
+      at: "2026-11-26T21:30:00.000Z",
+      photos: 1,
+      state: "fark",
+      source: "kod",
+      model: "ocr",
+      rows: [
+        { label: "Banka POS toplamı", photo: "1.000,00 ₺", [ESKI]: "900,00 ₺", ok: false },
+        { label: "Yazarkasa Z no", photo: "0012", [ESKI]: "gönderilmedi; raporda 0011", ok: false },
+      ],
+      issues: ["Banka POS toplamı: fotoğrafta 1.000,00 ₺; AsilPOS'ta 900,00 ₺"],
+      readBankPos: null,
+    };
+    const t = sql.raw(`"${ESKI_TABLOLAR.gunSonu}"`);
+    await db.execute(sql`insert into ${t} ("date", "branch_id", "photo_check") values (${gun}, ${branchId}, ${JSON.stringify(stored)}::jsonb)`);
+    const where = and(eq(s.asilposDayEnds.date, gun), eq(s.asilposDayEnds.branchId, branchId));
+    const [row] = await db.select({ check: s.asilposDayEnds.photoCheck }).from(s.asilposDayEnds).where(where);
+    const check = row.check!;
+    assert.deepEqual(
+      check.rows.map((r) => r.asilpos),
+      ["900,00 ₺", "gönderilmedi; raporda 0011"],
+    );
+    // Kartın ve e-postanın satırı; özetler (notification_log anahtarı) eski sürümün aynı satırlardan hesapladığıyla aynı
+    assert.match(photoRows(check)[1][1], /AsilPOS'ta 900,00 ₺/);
+    const asNew = { ...stored, rows: stored.rows.map(({ [ESKI]: v, ...r }) => ({ ...r, asilpos: v })) } as unknown as AsilposPhotoCheck;
+    assert.equal(photoCheckHash(check), photoCheckHash(asNew));
+    assert.equal(photoCheckHashLegacy(check), photoCheckHashLegacy(asNew));
+    // Yeni sürümün yazımı: veritabanında eski alan (canlıdaki eski sürüm ve geri dönüş okur)
+    await db.update(s.asilposDayEnds).set({ photoCheck: { ...check, state: "uyumlu" } }).where(where);
+    const [{ photo_check }] = await raw<{ photo_check: { state: string; rows: Record<string, unknown>[] } }>(
+      sql`select photo_check from ${t} where "date" = ${gun} and "branch_id" = ${branchId}`,
+    );
+    assert.equal(photo_check.state, "uyumlu");
+    assert.deepEqual(
+      photo_check.rows.map((r) => [r[ESKI], "asilpos" in r]),
+      [
+        ["900,00 ₺", false],
+        ["gönderilmedi; raporda 0011", false],
+      ],
+    );
+    await db.update(s.asilposDayEnds).set({ photoCheck: null }).where(where);
+    assert.equal((await db.select({ check: s.asilposDayEnds.photoCheck }).from(s.asilposDayEnds).where(where))[0].check, null);
   });
 });

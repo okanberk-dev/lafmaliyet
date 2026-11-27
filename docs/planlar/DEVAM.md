@@ -34,9 +34,10 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - **CI incelemesi:** sahip 27 Kasım'da CI için Anthropic anahtarını ekledi. Yeniden koşturulan inceleme yine düştü
   (`is_error`); depo düzeyindeki `ANTHROPIC_API_KEY` sırrının tarihi 23 Ekim: anahtar kuruluş düzeyinde eklendiyse depo
   sırrı onu gölgeler, depo sırrı yeni anahtarla güncellenmeli. Çalışınca "inceleme" engel sayılmaz ama yorumları okunur.
-- **AsilPOS'un adı AsilPOS** (yazılış "AsilPOS"): panelde ve kasa deposunda her yerde (metin, kod, dosya, tablo, ortam
-  değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar (ASILPOS_* değişkenleri, kasanın çağırdığı yollar, kasa
-  bilgisayarındaki klasör ve görev) bir süre daha tanınır. GitHub deposunun adı `asilpos` kalır.
+- **Kasa programının adı AsilPOS** (yazılış "AsilPOS"; 26 Kasım 2026'ya kadar adı LafPOS): panelde ve kasa deposunda
+  her yerde (metin, kod, dosya, tablo, ortam değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar
+  (ASILPOS_* yerine LAFPOS_* değişkenleri, kasanın çağırdığı yollar, kasa bilgisayarındaki klasör ve görev) bir süre
+  daha tanınır. GitHub deposunun adı `lafpos` kalır.
 - **Marina yalnız AsilPOS:** Marina'da ModPOS tamamen bitti (kütükte kaynak AsilPOS, föy çekilmez).
 - **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "AsilPOS yalnız bir şubenin kasası" sınırı kalkar).
 - **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Vergi, Nakit

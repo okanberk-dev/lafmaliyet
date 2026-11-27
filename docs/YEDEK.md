@@ -45,6 +45,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 |------------|-------|------------------------|
 | Kullanıcıların parola özeti, iki adımlı doğrulama anahtarı, kurtarma kodları, hatalı giriş sayısı, kilit, oturum sürümü | dosya Drive'da ya da indirilenlerde durur | aynı e-posta hedefte varsa onun parolası kalır; yoksa "davet bekliyor" (§ 5) |
 | Davet ve parola sıfırlama bağlantıları (`user_tokens`) | tek kullanımlık | yenisi gönderilir |
+| AsilPOS kurulum bağlantıları (`asilpos_installs`) | kodun özeti ve mühürlü kodu | yenisi Şubeler'den gönderilir ([ASILPOS.md](ASILPOS.md) › Şube kurulumu) |
 | Çıkışta kapatılan oturumlar (`revoked_sessions`) | geçici; çerezin süresiyle gereksizleşir | geri yükleme herkesin oturum sürümünü artırır, eski oturumların hepsi zaten düşer |
 | Bildirim abonelikleri (`push_subscriptions`) | cihaz anahtarları | cihazlar panel açılınca yeniden abone olur |
 | Paraşüt oturumu (`integration_state` › `parasut.token`) | şifreli belirteç, her yenilemede değişir | geri yüklemeden sonra panelden **“Paraşüt hesabını bağla”** ile yeniden bağlanır |
@@ -143,7 +144,9 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
    Tuzla kaydı ondan önce yazılır (0057'deki kaydın aynısı). Kütük geri yüklemeden sonra yalnız Tuzla'dır; Marina ve
    laffogato.net sonraki tohumda gelir (`npm run db:seed`; canlıda her yayında kendiliğinden).
 3. **Tek bir işlemde:** (`--sil` ise) hedefteki tabloları ve `drizzle` şemasını siler, şemayı yedeğin sürümüne kurar,
-   tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
+   tabloları yabancı anahtar sırasıyla yükler (dosyada olsa da § 2'deki yazılmayan tablolar yüklenmez, özete uyarı
+   düşer: ad değişikliğinden önceki sürüm migration 0098'li veritabanında yedek alırsa `asilpos_installs`'u döker;
+   [DEPLOY.md](DEPLOY.md) § 7, asilpos_adi), satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
    ilerletir (hedefteki eski yerlerinin gerisine düşmez, § 5), kalan migration'ları uygular, günlük işlerin izlenmesini
    o andan başlatır, işlem geçmişine **Yedekten geri yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı
    tutmazsa her şey geri alınır, hedef olduğu gibi kalır (`Geri yükleme geri alındı, hedef değişmedi: …`; ardından

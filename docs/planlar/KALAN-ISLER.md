@@ -63,11 +63,11 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | PR (dal `claude/denetim-b04-sayim-hiz`) |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | PR (dal `claude/denetim-b05-canli-guvence`) |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
-| B07 | AsilPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-asilpos-durum`) |
-| B08 | AsilPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-asilpos-satis`) |
-| B09 | AsilPOS 3: kasa raporu ve gün kayıtları AsilPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-asilpos-kasa`) |
-| B10 | AsilPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-asilpos-odeme-ikram`) |
-| B11 | AsilPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 (yanıtlandı) | PR (dal `claude/denetim-b11-asilpos-metin`) |
+| B07 | AsilPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
+| B08 | AsilPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
+| B09 | AsilPOS 3: kasa raporu ve gün kayıtları AsilPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
+| B10 | AsilPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-lafpos-odeme-ikram`) |
+| B11 | AsilPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 (yanıtlandı) | PR (dal `claude/denetim-b11-lafpos-metin`) |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | PR (dal `claude/denetim-b12-senkron-fiyat`) |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | PR (dal `claude/denetim-b13-menu-maliyet`) |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | PR (dal `claude/denetim-b14-urun-onay`) |
@@ -452,7 +452,7 @@ denetimde E-10, B05). Belge `docs/ASILPOS.md`.
 
 **Durum (26 Ekim denetimi):** canlıda bilerek kapalı (E-31; sahip: kafede bugün ModPOS var, AsilPOS bütün sistemlerde
 açılınca kullanılacak): `ASILPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503 `not_configured`, `pos_day_reports`
-ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › asilpos`'a yazar, 200 yanıtı `counted` ve
+ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state`'in `'lafpos'` satırına yazar, 200 yanıtı `counted` ve
 `switchDay` taşır; Ayarlar › AsilPOS (kasa) kartı durumu sakin dille, son reddi ve çözümünü ("Bu günün AsilPOS kaydını
 sil", parolayla), gelen ve gelmeyen günleri gösterir; "AsilPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
 raporunun AsilPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `ASILPOS_SYNC_SECRET` bağlantıyı açmaz.

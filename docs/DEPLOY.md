@@ -455,7 +455,7 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     derlemediği için etkilenmez.
   - **Bekçi yalnız onu içeren commit'te çalışır.** Derleme komutu (`tsx scripts/predeploy.ts && next build`) derlenen
     commit'in kendi dosyalarını çalıştırır; bekçi main'e 27 Eki 2026'da (Denetim B05) geldi. Ondan önce açılmış ve
-    main'le birleştirilmemiş dallar (eski `claude/*` dalları; 26 Ekim'in `claude/asilpos-baglantisi` dağıtımı
+    main'le birleştirilmemiş dallar (eski `claude/*` dalları; 26 Ekim'in `claude/lafpos-baglantisi` dağıtımı
     `dpl_4pdszt…`, commit `593c536` dahil) Production'a yeniden derlenir ya da terfi ettirilirse **durmaz**:
     - dalın birleşmemiş migration'ı canlının en yeni migration'ından eskiyse drizzle onu atlar ve `verifyMigrations`
       derlemeyi `Migration uygulanmadı: …` diye durdurur (bu denetim de 22 Eki 2026'dan, #7'den önce açılmış dallarda
@@ -518,6 +518,16 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
     eklemeli; eski kod onlara dokunmaz. Satış tahmini 4 Kasım 2026'da kalktı: `special_days` (Özel günler) kullanılıyor,
     hava durumu isteği ve `WEATHER_CONTACT` artık yok.
+  - **asilpos_adi** (0098, ad değişikliği; [ASILPOS.md](ASILPOS.md) başı): yalnız genişletme, eski sürüm yeni şemada
+    çalışır (eski adlı görünümler, tetikleyiciler; saklanan değerler eski adla yazılır), Instant Rollback yapılabilir.
+    İki fark kalır:
+    - Yedek: 0098'den önceki sürüm kurulum kodlarının tablosunu yeni adıyla (`asilpos_installs`) tanımaz ve yedeğe
+      döker (özet ve mühürlü kod). Yeni sürümün derlemesi sürerken ve geri dönülmüş eski sürüm yayındayken **elle yedek
+      alınmaz**; o sırada alınmış (otomatik ya da elle) bir dosya paylaşılmaz. Geri yükleme bu tabloyu dosyada olsa da
+      yüklemez ([YEDEK.md](YEDEK.md) § 4).
+    - Kör kasa: yeni sürümün yazdığı otomatik kasa raporu notunda ürünün yeni adı geçer; geri dönülürse eski sürüm bu
+      notlardaki açılış cümlesini (beklenen açılış) personelden gizlemez. Yalnız yeni sürümün yazdığı günler; ileri
+      yayınla düzelir.
 - **Aynı anda iki canlı derleme (26 Kas 2026).** Migration bir danışma kilidi altında çalışır
   (`scripts/migrate.ts`): ikinci derleme `… Başka bir migration sürüyor (pid …); bitmesi bekleniyor, en çok 10 dk`
   yazar, öteki bitince uygulanmış migration'ları **kilidi aldıktan sonra** okur ve `✓ Veritabanı şeması güncel` der.

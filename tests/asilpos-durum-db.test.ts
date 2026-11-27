@@ -1,5 +1,5 @@
 // AsilPOS bağlantısının durumu, onarımı ve geçiş günü, gerçek Postgres'te (docs/ASILPOS.md › Durum ve onarım, Geçiş
-// günü; denetim B07, E-31 ve E-32): uç her sonucu integration_state › asilpos'a yazar (200 son gün; 409 gün ve iki Z; 400
+// günü; denetim B07, E-31 ve E-32): uç her sonucu integration_state'in durum satırına (eski adla) yazar (200 son gün; 409 gün ve iki Z; 400
 // alan; 500 veritabanı; 401 / 413 yalnız sayaç, örnek başına dakikada bir yazım; 503'te hiçbir şey), 200 yanıtı geçiş
 // gününe göre `counted` ve `switchDay` taşır; "Bu günün AsilPOS kaydını sil" iki tabloyu tek işlemde temizler, sonra
 // yeni Z'li gün yazılır; personel silemez, ayarı değiştiremez; Kasa raporu AsilPOS gününü yalnız geçiş gününden sonra
@@ -15,13 +15,13 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { signedHeaders } from "../src/lib/karaoke/signature";
 import { DURUM_ANAHTARI, SUBE_AYAR_GRUBU, TEL_KAYNAK, ZIL_ONEKI } from "../src/lib/asilpos/eski-adlar";
-import { asilposCardSummary } from "../src/lib/asilpos/status";
+import { asilposCardSummary, type AsilposState } from "../src/lib/asilpos/status";
 import { STEP_UP_REQUIRED, WRONG_PASSWORD } from "../src/lib/step-up";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -448,5 +448,34 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
         ["AsilPOS günü silindi", "7 Kasım 2026 · Z 127 · 1 satır", users.admin.id],
       ],
     );
+  });
+
+  test("ad değişikliği: yeni adlı durum satırı varsa (temizlik PR'ından geri dönüş) her yazım ona da gider; yoksa açılmaz", async () => {
+    const YENI = "asilpos";
+    const rows = async () =>
+      Object.fromEntries(
+        (await db.select().from(s.integrationState).where(inArray(s.integrationState.key, [DURUM_ANAHTARI, YENI]))).map((r) => [r.key, r.value as AsilposState]),
+      );
+    await send(push("2026-11-05", 31));
+    assert.deepEqual(Object.keys(await rows()), [DURUM_ANAHTARI], "yeni adlı satır açılmaz (yazılan eski ad)");
+    await db.insert(s.integrationState).values({ key: YENI, value: { lastOk: { at: NOW.toISOString(), date: "2026-11-01", zNo: 1, lines: 0, counted: false } } });
+    // 200
+    await send(push("2026-11-07", 127), { now: later(1) });
+    let r = await rows();
+    assert.deepEqual([r[DURUM_ANAHTARI].lastOk?.date, r[YENI].lastOk?.date], ["2026-11-07", "2026-11-07"]);
+    // 409: güne göre ret iki satırda; okunan (yeni adlı) satır güncel
+    assert.equal((await send(push("2026-11-07", 128), { now: later(2) })).status, 409);
+    r = await rows();
+    for (const k of [DURUM_ANAHTARI, YENI]) assert.deepEqual([r[k].rejections?.["2026-11-07"]?.error, r[k].lastError?.sentZNo], ["z_conflict", 128], k);
+    assert.equal((await status.readAsilposState(db)).rejections["2026-11-07"]?.sentZNo, 128);
+    // Günü silmek reddi iki satırda da kapatır
+    await core.removeAsilposDay(db, users.admin, "2026-11-07", 127, later(3));
+    r = await rows();
+    for (const k of [DURUM_ANAHTARI, YENI]) assert.equal(r[k].rejections?.["2026-11-07"]?.clearedAt, later(3).toISOString(), k);
+    // 401: sayaç iki satırda
+    assert.equal((await send(push("2026-11-09", 50), { signWith: `${SECRET}x`, now: later(4) })).status, 401);
+    r = await rows();
+    for (const k of [DURUM_ANAHTARI, YENI]) assert.equal(r[k].unverified?.count, 1, k);
+    assert.equal((await status.readAsilposState(db)).unverified?.count, 1);
   });
 });

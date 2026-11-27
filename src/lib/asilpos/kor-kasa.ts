@@ -1,4 +1,5 @@
 import { staffAsilposEntryClosed } from "./cash-moves";
+import { ESKI_URUN_ADI } from "./eski-adlar";
 import type { AsilposDay } from "./prefill";
 
 /**
@@ -50,11 +51,14 @@ export const BLIND_TEXT = {
 
 /**
  * Otomatik notun sayımı ele veren cümleleri (src/lib/asilpos/gun-sonu.ts autoNote): açılışın önceki devirden farkı ve
- * AsilPOS'un açılışta beklediği (beklenen + fark = açılış). Kapanış notu ve cihaz boşlukları kalır
+ * AsilPOS'un açılışta beklediği (beklenen + fark = açılış). Kapanış notu ve cihaz boşlukları kalır. Ad değişikliğinden
+ * (26 Kasım 2026) önce yazılmış notlarda ürünün eski adı geçer (ESKI_URUN_ADI): ikisi de tanınır, yoksa eski
+ * raporların notu personele beklenen açılışı gösterirdi
  */
+const AD = `(?:AsilPOS|${ESKI_URUN_ADI})`;
 const OPENING_SENTENCES = [
-  /Açılış önceki raporun devrinden [^;]*; AsilPOS'taki açılış yazıldı\.(?:\s|$)/g,
-  /(?:Neden \(AsilPOS\):|Açılış notu \(AsilPOS\):|Açılış AsilPOS'ta beklenenden) .*?\.(?=\s(?:Kapanış notu \(AsilPOS\):|Eksik:)|\s*$)\s?/g,
+  new RegExp(`Açılış önceki raporun devrinden [^;]*; ${AD}'taki açılış yazıldı\\.(?:\\s|$)`, "g"),
+  new RegExp(`(?:Neden \\(${AD}\\):|Açılış notu \\(${AD}\\):|Açılış ${AD}'ta beklenenden) .*?\\.(?=\\s(?:Kapanış notu \\(${AD}\\):|Eksik:)|\\s*$)\\s?`, "g"),
 ];
 
 /** Raporun notu personele: otomatik notun açılış cümleleri çıkar; geriye bir şey kalmazsa null */

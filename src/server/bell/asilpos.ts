@@ -13,7 +13,7 @@ import { loadAsilposSwitchDay, readAsilposState } from "@/server/asilpos/status"
 
 /*
  * AsilPOS'un reddedilen gün sonunun zil satırı (yalnız yönetici; docs/ASILPOS.md › Durum ve onarım). Ret `POST /api/pos/gun`
- * sonucunda integration_state › asilpos'a güne göre yazılır (src/server/asilpos/status.ts noteDayRejection); bu modül onu
+ * sonucunda integration_state'in durum satırına güne göre yazılır (src/server/asilpos/status.ts noteDayRejection); bu modül onu
  * okur, ayrı kayıt tutmaz. Kurallar saf modülde (src/lib/asilpos/status.ts rejectionBells). Önceden ret yalnız Ayarlar ›
  * AsilPOS kartında görünüyordu, e-posta da gitmiyordu: yönetici günün gelmediğini fark etmeyebilirdi.
  */

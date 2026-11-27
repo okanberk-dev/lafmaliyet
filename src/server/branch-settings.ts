@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { sortBranches, type BranchRow } from "@/lib/branches";
 import { branchSettingGroup, groupReadIds, legacyOwnerId, plainFields, type BranchSettingGroup } from "@/lib/branch-settings/groups";
@@ -181,12 +181,24 @@ async function settingBranch(tx: Tx, branchId: string): Promise<{ branch: Branch
   return { branch, branches };
 }
 
-async function writeRow(tx: Tx, grp: string, branchId: string, set: { value: Record<string, unknown>; secrets: Record<string, string> | null; sameAs: string | null }, by: string) {
-  const values = { branchId, grp, ...set, updatedBy: by, updatedAt: new Date() };
+/**
+ * Şubenin satırını yazar: grubun yazılan adıyla (`id`). Ad değişikliği: aynı şubenin yeni adlı satırı (`readIds`; temizlik
+ * PR'ı A3 yazar, oradan geri dönülürse kalır) varsa o da aynı değeri alır. Okuma onu önce okur (rowsOf): yalnız eski
+ * adlıya yazılsaydı değişiklik sessizce görünmezdi
+ */
+async function writeRow(tx: Tx, group: Pick<BranchSettingGroup, "id" | "readIds">, branchId: string, set: { value: Record<string, unknown>; secrets: Record<string, string> | null; sameAs: string | null }, by: string) {
+  const now = new Date();
+  const fields = { value: set.value, secrets: set.secrets, sameAs: set.sameAs, updatedBy: by, updatedAt: now };
   await tx
     .insert(s.branchSettings)
-    .values(values)
-    .onConflictDoUpdate({ target: [s.branchSettings.branchId, s.branchSettings.grp], set: { value: set.value, secrets: set.secrets, sameAs: set.sameAs, updatedBy: by, updatedAt: new Date() } });
+    .values({ branchId, grp: group.id, ...fields })
+    .onConflictDoUpdate({ target: [s.branchSettings.branchId, s.branchSettings.grp], set: fields });
+  if (group.readIds?.length) {
+    await tx
+      .update(s.branchSettings)
+      .set(fields)
+      .where(and(eq(s.branchSettings.branchId, branchId), inArray(s.branchSettings.grp, [...group.readIds])));
+  }
 }
 
 /** İşlem geçmişi, yazımla aynı işlemde (yalnız ayarın adı ve ne olduğu; değer yazılmaz) */
@@ -227,7 +239,7 @@ export async function putBranchSetting<T extends Record<string, unknown>>(
     } else plain[k] = v;
   }
   const value = group.read({ ...plain }, process.env);
-  await writeRow(tx, group.id, branchId, { value: plainFields(group, value), secrets: Object.keys(sealed).length ? sealed : null, sameAs: null }, by);
+  await writeRow(tx, group, branchId, { value: plainFields(group, value), secrets: Object.keys(sealed).length ? sealed : null, sameAs: null }, by);
   return value;
 }
 
@@ -243,7 +255,7 @@ export async function linkBranchSetting(tx: Tx, group: BranchSettingGroup, branc
   const rows = await rowsOf(tx, group.id);
   const err = settingLinkError(group, branchId, target, rows, branches);
   if (err) throw new UserError(err);
-  await writeRow(tx, group.id, branchId, { value: {}, secrets: null, sameAs: target }, by);
+  await writeRow(tx, group, branchId, { value: {}, secrets: null, sameAs: target }, by);
 }
 
 /**
@@ -256,7 +268,7 @@ export async function unlinkBranchSetting(tx: Tx, group: BranchSettingGroup, bra
   const rows = await rowsOf(tx, group.id);
   if (settingMode(group, branchId, rows).kind === "own") throw new UserError("Bu şubenin zaten kendi ayarı var");
   const current = await resolveWith(tx, group, branchId, rows, branches);
-  await writeRow(tx, group.id, branchId, { value: plainFields(group, current.value), secrets: null, sameAs: null }, by);
+  await writeRow(tx, group, branchId, { value: plainFields(group, current.value), secrets: null, sameAs: null }, by);
   return { secretsLeft: group.secretFields.filter((f) => current.secrets[f] === "saved") };
 }
 

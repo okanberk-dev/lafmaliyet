@@ -41,6 +41,7 @@ import type {
   PosShiftCount,
 } from "../../lib/asilpos/day";
 import type { AsilposPhotoCheck } from "../../lib/asilpos/foto";
+import { photoCheckFromDb, photoCheckToDb } from "../../lib/asilpos/foto-kayit";
 import type { KasaFoyu } from "../../lib/modpos/foy";
 import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
@@ -177,9 +178,9 @@ const posSourceText = customType<{ data: BranchPosSource; driverData: string }>(
   fromDriver: (v) => (v === ESKI_KASA_KAYNAGI ? "asilpos" : v) as BranchPosSource,
 });
 /**
- * Kasanın yazdığı satırların yazar adı (kasa raporu, sürümü, kasadan çıkan, işlem geçmişi; ad değişikliği, plan A1):
- * veritabanına eski ad yazılır (OTOMATIK_YAZAR, KASA_YAZARI; canlıdaki eski sürüm ve geri dönüş onunla karşılaştırır),
- * okunurken ekranda yeni ad görünür. Yalnız bu iki ad çevrilir; kişilerin adları olduğu gibi
+ * Kasanın yazdığı satırların yazar adı (kasa raporu, sürümü, kasadan çıkan ve harcama kaydı, işlem geçmişi; ad
+ * değişikliği, plan A1): veritabanına eski ad yazılır (OTOMATIK_YAZAR, KASA_YAZARI; canlıdaki eski sürüm ve geri dönüş
+ * onunla karşılaştırır), okunurken ekranda yeni ad görünür. Yalnız bu iki ad çevrilir; kişilerin adları olduğu gibi
  */
 const AUTHOR_NEW: Readonly<Record<string, string>> = { [OTOMATIK_YAZAR]: "AsilPOS (otomatik)", [KASA_YAZARI]: "AsilPOS" };
 const AUTHOR_OLD: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(AUTHOR_NEW).map(([eski, yeni]) => [yeni, eski]));
@@ -187,6 +188,17 @@ const authorText = customType<{ data: string; driverData: string }>({
   dataType: () => "text",
   toDriver: (v) => AUTHOR_OLD[v] ?? v,
   fromDriver: (v) => AUTHOR_NEW[v] ?? v,
+});
+
+/**
+ * Gün sonu fotoğrafının karşılaştırması (asilpos_day_ends.photo_check; ad değişikliği, plan A1): satırlarda AsilPOS'taki
+ * değer eski adlı alanla yazılır (canlıdaki eski sürüm ve geri dönüş onu okur), okunurken yeni alana çevrilir
+ * (src/lib/asilpos/foto-kayit.ts). Sütun yine jsonb
+ */
+const photoCheckJson = customType<{ data: AsilposPhotoCheck; driverData: unknown }>({
+  dataType: () => "jsonb",
+  toDriver: (v) => JSON.stringify(photoCheckToDb(v)),
+  fromDriver: (v) => photoCheckFromDb(typeof v === "string" ? JSON.parse(v) : v),
 });
 
 /** CHECK'in kabul ettiği kasa kaynakları: yeni ad ve veritabanındaki eski ad */
@@ -1012,7 +1024,8 @@ export const expenseEntries = pgTable(
     amount: doublePrecision("amount").notNull(),
     paymentMethod: text("payment_method", { enum: ["nakit", "kart", "havale", "diger"] }),
     note: text("note"),
-    createdBy: text("created_by"),
+    /** Yazan kişinin adı; kasadan gelen satırda AsilPOS (veritabanında eski adla, authorText) */
+    createdBy: authorText("created_by"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     /** Fişin fotoğrafı (kasadan çıkan satırıyla aynı fotoğraf) */
@@ -2738,7 +2751,7 @@ export const asilposDayEnds = pgTable(
      * Gün sonu fotoğrafının AsilPOS'la karşılaştırması (src/lib/asilpos/foto.ts asilposPhotoCheck): fotoğraf eklenince ya da
      * AsilPOS yeniden gönderince yenilenir; yalnız yönetici görür. Fotoğraf yokken null
      */
-    photoCheck: jsonb("photo_check").$type<AsilposPhotoCheck>(),
+    photoCheck: photoCheckJson("photo_check"),
     /**
      * Rapor yokken (AsilPOS'ta sayım yok) personelin eklediği gün sonu fotoğrafları: rapor yazılınca ona bağlanır
      * (src/server/asilpos/foto.ts)

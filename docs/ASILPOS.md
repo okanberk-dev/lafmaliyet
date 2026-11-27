@@ -52,7 +52,7 @@ geçmesi sonraki temizlik PR'ının işidir. Eski adlar tek yerde: `src/lib/asil
 
 ## İş bölümü (26 Ekim 2026)
 
-AsilPOS, site (laffogato) ve bu panel tek işletme sisteminin üç parçasıdır (karar: asilpos
+AsilPOS, site (laffogato) ve bu panel tek işletme sisteminin üç parçasıdır (karar: AsilPOS deposunda
 `docs/06-TEK-SISTEM.md`): ürünlerin tek kaynağı sitenin yönetim paneli, satışın ve kasanın kaynağı AsilPOS,
 **maliyet, reçete, stok ve muhasebenin kaynağı bu panel**. AsilPOS maliyeti buradan okur
 (`GET /api/panel/pos/urunler`), gün sonunu buraya iter (`POST /api/pos/gun`). Kasiyer AsilPOS'ta kör kasa
@@ -90,7 +90,7 @@ gün sonu (ve düzeltme)
                                                        ├─ pos_daily_sales: günün satırları silinir, yenisi yazılır
                                                        └─ cash_outs: kasa hareketleri satır satır (Faz 3, sayılan gün)
      ◀── 200 {ok, date, lines, matched, unmatched, counted, switchDay, nextOpening, staff?} · 400 {error, field} · 409 {error, date, zNo} · 409 {error: "wrong_branch", sube, expected} · 401 · 413 · 503
-                                                    └─ sonuç integration_state › asilpos'a (Ayarlar › AsilPOS kartı)
+                                                    └─ sonuç integration_state › 'lafpos' satırına (Ayarlar › AsilPOS kartı)
 
 GET /api/panel/pos/urunler (imzalı)  ─────────▶  maliyet modelinden siteye bağlı ürünler
      ◀── {version: 1, now, items: [{siteMenuId, slot, name, size, costMinor, active}]}
@@ -113,7 +113,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 | Alan | İçerik |
 |------|--------|
 | `version` | `1`; başka sürüm reddedilir |
-| `source` | `"asilpos"` |
+| `source` | `"lafpos"` (kasa bunu gönderir; panel `"asilpos"`'u da kabul eder) |
 | `sube` | İsteğe bağlı: kasanın şube kimliği (2-24 karakter, küçük harfle başlar: harf, rakam, tire); AsilPOS'un şubesi (kütükten; bugün `marina`) değilse gün yazılmaz, 409 `wrong_branch` (aşağıda "Şubeler"). Eski kasa göndermez |
 | `date` | İş günü `YYYY-MM-DD` (gün 05:00'te döner, Kasa raporuyla aynı kural); bugünün iş gününden sonrası reddedilir |
 | `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş, nakit müşteri tahsilatı ve nakit bahşiş; yoksa 0 sayılır; Kasa raporunda "Gün içinde kasaya giren"), `expectedCash` (AsilPOS'un olması gereken nakdi), `cardTips` ve `cardCollections` (kartla bahşiş ve kartla cari tahsilatı; aşağıda "Kart") |
@@ -154,7 +154,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   sayfası) günü gönderilmiş işaretlemez, yeniden dener. Bu iki alan kaldırılmaz; ötekileri durum ekranı için okur,
   eski AsilPOS onları görmez. Faz 2 alanları (aşağıda) 200'ün gövdesini değiştirmez; 200 yalnız kabul edilen gövdenin
   yazıldığını ve sürüm geçmişine girdiğini söyler. Faz 3'ten (23 Kasım 2026) 200 `nextOpening`'i de taşır: ertesi
-  günün beklenen açılışı (`{ "amount": 1279.5, "source": "kasa_raporu" | "asilpos" }`, TL) ya da `null` (aşağıda "Faz 3:
+  günün beklenen açılışı (`{ "amount": 1279.5, "source": "kasa_raporu" | "lafpos" }`, TL) ya da `null` (aşağıda "Faz 3:
   kasa zinciri"); okunamazsa alan yazılmaz, yanıt yine 200. Veritabanı yazamazsa
   `500 {"error":"server_error"}` (AsilPOS yeniden dener). Reddedilen istek gün sonundan hiçbir şey yazmaz; sonucu
   yalnız durum satırına düşer (aşağıda, "Durum ve onarım").
@@ -181,12 +181,13 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   `payments`, `ikram`, `bank_pos`, Faz 2'den `off_device`, `refunds`, `iptal`, `correction`, `revision`, Faz 3'ten
   `cash_moves`; `source`, `received_at`). Faz 2'nin migration'ı `drizzle/0070_lafpos_gun_alanlari.sql` (yalnız ekleme:
   `pos_day_revisions` tablosu, boş olabilen ya da varsayılanlı sütunlar; eski satırlarda boş, gün yeniden gönderilince
-  dolar). Faz 3'ün migration'ı `drizzle/0071_kasa_zinciri.sql` (yalnız ekleme: `cash_outs.asilpos_id text` ve benzersiz
-  `cash_outs_asilpos_uq`, `pos_day_reports.cash_moves jsonb`; ikisi de boş olabilir, var olan satırlarda boş).
+  dolar). Faz 3'ün migration'ı `drizzle/0071_kasa_zinciri.sql` (yalnız ekleme: `cash_outs.lafpos_id text` ve benzersiz
+  indeksi, 0098'den beri eşi `asilpos_id` ve `cash_outs_asilpos_uq`; `pos_day_reports.cash_moves jsonb`; ikisi de boş
+  olabilir, var olan satırlarda boş).
   Migration'lar `drizzle/0040_lafpos_baglantisi.sql` (iki yeni tablo), `drizzle/0041_kasaya_giren.sql` (Kasa raporunun
   "Gün içinde kasaya giren"i: `cash_reports.cash_in double precision NOT NULL DEFAULT 0`; var olan raporlar 0) ve
   `drizzle/0044_lafpos_satir_site_kalemi.sql` (satırın sitedeki kalemi ve boyu: `pos_daily_sales.site_menu_id`, `slot`,
-  boş olabilen iki sütun, ve AsilPOS'un hizmet işareti `asilpos_service boolean NOT NULL DEFAULT false`; yalnız ekleme;
+  boş olabilen iki sütun, ve AsilPOS'un hizmet işareti `lafpos_service boolean NOT NULL DEFAULT false`, 0098'den beri eşi `asilpos_service`; yalnız ekleme;
   eski satırlarda boş / false, sonradan bağlama onlarda yalnız POS adıyla çalışır, gün yeniden gönderilince dolar). 0040 26 Eki 2026'da
   canlıya uygulandı; yeniden üretilmez (`tests/migrations.test.ts` günlükteki zamanını kilitler). Yalnız ekleme: Instant Rollback'te
   eski kod sütunu okumaz, yazdığı raporda 0 kalır; yalnız girenli bir raporun olması gerekenini eski kod girensiz
@@ -244,7 +245,7 @@ okuması `src/server/asilpos/devir.ts` › `asilposNextOpening`:
   rapor hep geçer. Teslim sayılandan büyükse (rapor tutarsız; ör. kişinin yazdığı teslim ile birleştirmenin gövdeden
   aldığı yeni sayım) `null`: eksi devir gönderilmez (AsilPOS'ta tutar ≥ 0, eksi değer yanıtı okunamaz yapardı), AsilPOS
   kendi sayımına döner; rapor düzeltilince doğru devir gelir.
-- Rapor yoksa gövdenin sayımı `{ amount: z.countedCash, source: "asilpos" }`; sayılmadan kapanan günde `null`.
+- Rapor yoksa gövdenin sayımı `{ amount: z.countedCash, source: "lafpos" }` (eski adla: kurulu kasa yalnız onu tanır); sayılmadan kapanan günde `null`.
 
 `POST /api/pos/gun`'un 200'ü (`handlePosDay`, gün yazıldıktan sonra; `receivePosDay`'in gövdesi değişmez) ve imzalı
 `GET /api/panel/pos/devir?date=YYYY-MM-DD` aynı nesneyi döner:
@@ -788,7 +789,7 @@ geçmez).
 - Rapor yoksa ve AsilPOS'ta sayım varsa: "AsilPOS'tan doldur"un eşlemesiyle (Z, ödemeler, ödenmez, indirim, açılış, gün
   içinde giren, gün içinde çıkan: panelin Kasadan çıkanlar'ı girildiyse o, yoksa AsilPOS'un harcama + teslimi; teslim
   edilen 0, sayılan nakit AsilPOS'un sayımı; Faz 2'de gövdede varsa yazarkasa Z no'su; gün sonu tamda Banka POS ve
-  yazarkasa alanları, aşağıda). Gönderen "LafPOS (otomatik)". Not: "AsilPOS gün sonundan otomatik yazıldı." ve yalnız
+  yazarkasa alanları, aşağıda). Gönderen "AsilPOS (otomatik)" (veritabanında eski adıyla). Not: "AsilPOS gün sonundan otomatik yazıldı." ve yalnız
   cihazların boşlukları, tam metniyle ("Eksik: Banka POS: Pavo gün sonu alınamadı (hata 5085: …); AsilPOS'ta Yönetim ›
   Yazarkasa POS › Cihazda gün sonu al."); "panelden ekleyin" yok. AsilPOS'un kapanış notu (`z.closeNote`) da nota
   eklenir. Açılış önceki raporun devrinden farklıysa nota yazılır, AsilPOS'taki
@@ -1070,7 +1071,7 @@ AsilPOS'ta boş), ötekiler `z`, `payments`, `bank_pos` ve `off_device` jsonb'si
 ## Geçiş günü
 
 **Ayarlar › AsilPOS (kasa) › AsilPOS'a geçiş günü** (25 Kasım 2026'dan beri AsilPOS'un şubesinin şube ayarı, grup
-`pos.lafpos`, [SUBE.md](SUBE.md) › Şube başına ayarlar; eski genel kayıt `settings.asilposGecisGunu` yalnız satırı
+`pos.lafpos`, [SUBE.md](SUBE.md) › Şube başına ayarlar; eski genel kayıt `settings.lafposGecisGunu` yalnız satırı
 olmayan Marina'nındır, kasa kaynağı başka şubeye geçerse o şube kendi gününü alır; okuyan her yer
 `asilposSwitchDay`, `src/server/asilpos/branch.ts`; `Settings` tipinde ve `DEFAULT_SETTINGS`'te `null`): Marina'nın kasasında AsilPOS'un kullanılmaya başlandığı ilk iş günü (YYYY-MM-DD, 05:00
 kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026.
@@ -1274,7 +1275,7 @@ gün sonu alınamadı: <neden>" (Z numarası çakıştı / gönderim sözleşmey
 gün, ne olduğu ve ne yapılacağı ("25 Kasım: panelde Z 127 kayıtlı, AsilPOS Z 128 gönderdi. AsilPOS'taki doğruysa Ayarlar ›
 AsilPOS'ta bu günün kaydını silin, sonra AsilPOS'tan o günü Gönder'e basın."); bu karta götürür (`?sube=` AsilPOS'un
 şubesi). Ayrı kayıt yok: satır `rejections`'tan türer (`rejectionBells`, `src/lib/asilpos/status.ts`;
-`src/server/bell/asilpos.ts`). Kimliği gün ve nedenden (`asilpos-ret-<gün>-<hata>`): AsilPOS aynı günü aynı nedenle yeniden
+`src/server/bell/asilpos.ts`). Kimliği gün ve nedenden (`lafpos-ret-<gün>-<hata>`, eski adla: cihazda okundu sayılanlar yeniden okunmamış görünmesin): AsilPOS aynı günü aynı nedenle yeniden
 gönderip yine reddedilse satır yinelenmez, başka bir neden yeni satırdır. Yalnız açık ret (gün yeniden yazılınca ya da
 yönetici kaydı silince kalkar) ve son 7 günde gelen; deneme günü (geçişten önce) zile düşmez. Personelin zilinde yok.
 

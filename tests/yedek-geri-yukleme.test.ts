@@ -37,6 +37,7 @@ const NAMES = {
   d: `laf_yedek_d_${process.pid}`,
   f: `laf_yedek_f_${process.pid}`,
   g: `laf_yedek_g_${process.pid}`,
+  h: `laf_yedek_h_${process.pid}`,
 };
 const INVITE = "!davet-bekliyor";
 
@@ -522,5 +523,32 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     } finally {
       rmSync(ws, { recursive: true, force: true });
     }
+  });
+
+  test("ad değişikliği (0098): eski sürümün yedeği kurulum kodlarını yeni adlı tablodan dökse de geri yükleme yüklemez, uyarır", async () => {
+    // 0098'den önceki sürümün kuralı yalnız tablonun eski adını atlar: 0098'li veritabanında yeni adlıyı tanımaz, döker
+    await sqlA.unsafe(
+      `INSERT INTO asilpos_installs (branch_id, email, token_hash, token_sealed, expires_at)
+         VALUES ((SELECT min(id) FROM branches), 'kasa@ornek.com', 'ozet-eski-surum', 'muhurlu', now() + interval '1 day')`,
+    );
+    const rule = TABLE_RULES.asilpos_installs;
+    const file = join(dir, "eski-surum-0098.json.gz");
+    delete TABLE_RULES.asilpos_installs;
+    try {
+      await writeBackupFile(sqlA, file, { documents: false, createdBy: "eski sürüm", app: "test", now: new Date("2026-11-27T06:15:00Z") });
+    } finally {
+      TABLE_RULES.asilpos_installs = rule;
+      await sqlA.unsafe(`DELETE FROM asilpos_installs WHERE token_hash = 'ozet-eski-surum'`);
+    }
+    const backup = await readBackupFile(file);
+    assert.equal(backup.tables.get("asilpos_installs")?.rows.length, 1, "dosyada kod var");
+    const sqlH = dbs.h!.$client;
+    const r = await restoreBackup(sqlH, backup, { wipe: false });
+    assert.deepEqual(
+      r.warnings.filter((w) => w.includes("yedeğe girmeyen")),
+      [`asilpos_installs tablosu dosyada var ama yedeğe girmeyen bir tablo (${rule.skip}); yüklenmedi.`],
+    );
+    const [{ n }] = await sqlH.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM asilpos_installs`);
+    assert.equal(n, 0, "kurulum kodu geri gelmez");
   });
 });

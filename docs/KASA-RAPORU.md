@@ -521,7 +521,7 @@ satır görünmez, form ve gönderim hiç beklemez. Sitenin günü gece yarısı
 sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz. Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
 
 **Marina (AsilPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu AsilPOS'un gün sonu gelince kendiliğinden yazılır
-(gönderen "LafPOS (otomatik)"; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**
+(gönderen "AsilPOS (otomatik)", veritabanında eski adıyla; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**
 Banka POS Pavo'nun kendi gün sonlarından (günün bütün batch'lerinin toplamı), yazarkasa alanları AsilPOS'un cihaz
 belgelerinden kendiliğinden yazılır; eski "Uydurma değer yok: Banka POS ve yazarkasa alanları boş kalır" kuralı AsilPOS
 günlerinde bunun yerine geçti (Tuzla / ModPOS günleri değişmedi). Cihazın rakamı yoksa (Pavo alınamadı ya da belirsiz,

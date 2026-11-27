@@ -82,6 +82,12 @@ export const RESEND_ONEKI = { gun: "lafpos-gun-", pavo: "lafpos-pavo-" } as cons
 export const OTOMATIK_YAZAR = `${ESKI_URUN_ADI} (otomatik)`;
 /** Kasadan çıkanlar'a kasadan gelen satırın yazarı (cash_outs.created_by_name) */
 export const KASA_YAZARI = ESKI_URUN_ADI;
+/**
+ * Gün sonu fotoğrafının karşılaştırmasında (asilpos_day_ends.photo_check, `rows[]`) AsilPOS'taki değerin alanı: 24
+ * Kasım 2026'dan beri saklanan satırlar ve canlıdaki eski sürüm bu adı okur. Şema okurken yeni alana (`asilpos`)
+ * çevirir, yazarken buna (src/lib/asilpos/foto-kayit.ts)
+ */
+export const FOTO_SATIR_ALANI = "lafpos";
 /** Eski tablolar: migration 0098'de yeni ada taşındı, eski adla görünüm (view) kaldı (canlıdaki eski sürüm için) */
 export const ESKI_TABLOLAR = { kurulum: "lafpos_installs", gunSonu: "lafpos_day_ends" } as const;
 /** Eski sütunlar: yeni sütunla tetikleyiciyle eşit tutulur (eski sürüm yazar) */
@@ -115,6 +121,11 @@ export const ESKI_KAGIT_ADI = "LAFPOS";
 export const HESAP_SOZLESMESI = "docs/hesap-sozlesmesi.md";
 /** Gönderilmiş migration'ların etiketleri (`0095_lafpos_kurulum`): dosya adları, günlük ve yedeğin geri yüklemesi */
 export const ESKI_GOC_ETIKETI = /\d{4}_lafpos_[a-z_]+/g;
+/**
+ * Belgelerdeki eski git dalları (`<önek>/denetim-b07-lafpos-durum`, `<önek>/lafpos-baglantisi`): dallar ve geçmiş
+ * değişmez, adları eski adla kalır. Yalnız ters tırnak içinde, öneki tek parça (dosya yolu eşleşmez)
+ */
+export const ESKI_DAL_ADI = /`[a-z]+\/(?:denetim-b\d+-)?lafpos-[a-z-]+`/g;
 
 /**
  * TypeScript dışındaki dosyalarda (belgeler, betikler, örnek ortam dosyası) eski adın geçebildiği metinler. Satırdan
@@ -144,9 +155,10 @@ export const ESKI_ENV_ADLARI: readonly string[] = [TEL_UZAK_ADRES_ENV, TEL_UZAK_
 
 /**
  * Yalnız belgelerde: tırnaktaki tel ve veritabanı değeri, AsilPOS deposunun adı (depo eski adla kaldı), ad değişikliği
- * notu
+ * notu, zil bildiriminin kimliği
  */
 export const BELGE_ALINTILARI: readonly string[] = [
+  `\`${ZIL_ONEKI}-ret-`,
   `\`${TEL_KAYNAK}\``,
   `"${TEL_KAYNAK}"`,
   `'${TEL_KAYNAK}'`,

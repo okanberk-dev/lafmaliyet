@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { dayTasks, type CashLite, type DayFacts } from "../src/app/panel/bugun/logic";
 import { type CashReportFields } from "../src/lib/cash-report";
 import { ASILPOS_AUTO_BY, autoValuesOf } from "../src/lib/asilpos/gun-sonu";
+import { ESKI_URUN_ADI } from "../src/lib/asilpos/eski-adlar";
 import { BLIND_TEXT, blindAsilposDay, blindNote, blindReport, staffBlindDay } from "../src/lib/asilpos/kor-kasa";
 import { asilposDayOf } from "../src/lib/asilpos/prefill";
 import type { PosDayZ } from "../src/lib/asilpos/day";
@@ -95,6 +96,14 @@ test("rapor: açılış, sayılan, teslim ve fark personelin yükünde yok; notu
   );
   assert.equal(blindNote("Açılış notu (AsilPOS): bozuk para."), null);
   assert.equal(blindNote(null), null);
+  // Ad değişikliğinden (26 Kasım 2026) önce yazılmış notlar ürünün eski adını taşır: onlarda da beklenen açılış çıkar
+  const E = ESKI_URUN_ADI;
+  assert.equal(
+    blindNote(`${E} gün sonundan otomatik yazıldı. Açılış ${E}'ta beklenenden 20,50 ₺ fazla (beklenen 1.279,50 ₺); neden: bozuk. para. Kapanış notu (${E}): sakin. Eksik: Banka POS: ${E}'tan Pavo gün sonu gelmedi.`),
+    `${E} gün sonundan otomatik yazıldı. Kapanış notu (${E}): sakin. Eksik: Banka POS: ${E}'tan Pavo gün sonu gelmedi.`,
+  );
+  assert.equal(blindNote(`Açılış önceki raporun devrinden 20,50 ₺ fazla; ${E}'taki açılış yazıldı. Neden (${E}): bozuk para.`), null);
+  assert.equal(blindNote(`Açılış notu (${E}): bozuk para.`), null);
 });
 
 test("AsilPOS'un gün sonu: personele açılış, sayım ve AsilPOS'un olması gereken satırı gitmez", () => {

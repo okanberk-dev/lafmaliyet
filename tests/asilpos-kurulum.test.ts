@@ -74,7 +74,7 @@ test("kurucuya adres ve kod yazılır; satırlar yoksa (eski kurucu) ya da kod b
 });
 
 test("AsilPOS'un genel kurucusu iki boş satırı taşır (asilpos web-kurucu.ps1 ile aynı yazım)", () => {
-  // Sözleşme: asilpos deposunda scripts/kasa/windows/kurulum/web-kurucu.ps1 bu iki satırı birebir yazar
+  // Sözleşme: AsilPOS deposunda scripts/kasa/windows/kurulum/web-kurucu.ps1 bu iki satırı birebir yazar
   const cmd = "$KurulumAdresi = ''\n$KurulumKodu = ''\n";
   assert.doesNotThrow(() => kurucuWithCode(cmd, "https://ladmin.laffogato.net", KOD));
 });

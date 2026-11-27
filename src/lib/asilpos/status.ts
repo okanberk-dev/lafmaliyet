@@ -20,7 +20,8 @@ import { dayMonthYearTR, daysUntilText, isAsilposDay } from "./switch";
 
 /**
  * integration_state anahtarı: eski adla yazılır (src/lib/asilpos/eski-adlar.ts DURUM_ANAHTARI; geri dönüş güvenli, plan
- * A1). Okurken önce yeni ad (ASILPOS_STATE_KEY_NEW; temizlik PR'ı A3 taşıdıktan sonra o vardır)
+ * A1). Okurken önce yeni ad (ASILPOS_STATE_KEY_NEW; temizlik PR'ı A3 taşıdıktan sonra o vardır); o satır varsa her yazım
+ * ona da gider (src/server/asilpos/status.ts writeState), yoksa A3'ten geri dönülünce yazımlar görünmezdi
  */
 export const ASILPOS_STATE_KEY = DURUM_ANAHTARI;
 export const ASILPOS_STATE_KEY_NEW = "asilpos";
