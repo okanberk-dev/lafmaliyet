@@ -1,14 +1,14 @@
 -- Çok şubeli AsilPOS (27 Kasım 2026; plan B1): yalnız veri, idempotent (iki kez çalışsa da aynı sonuç). Production'da
 -- `npm run build` sırasında, eski sürüm hâlâ hizmet verirken çalışır: eski sürüm AsilPOS'un şubesini kütükten türetir
 -- (kasa kaynağı AsilPOS olan şube, yoksa Marina) ve geçiş gününü şubenin ayarından okur; ikisi de bu göçten sonra yine
--- Marina ve aynı gün olur. Değerler eski adla yazılır (pos_source, ayar grubu, durum anahtarı; src/lib/asilpos/eski-adlar.ts).
+-- Marina ve aynı gün olur. Değerler eski adla yazılır (pos_source, ayar grubu; src/lib/asilpos/eski-adlar.ts).
 --
 -- (a) Eski genel geçiş günü (settings; yeni adlı kayıt varsa o) Marina'nın kendi ayar satırına kopyalanır. Var olan
 --     satır kazanır (açıkça boş bırakılmış gün dahil), saklanan anahtar korunur.
 -- (b) Marina'nın kasa kaynağı AsilPOS olur (sahibin kararı: Marina'da ModPOS tamamen bitti, föyü çekilmez). Yalnız
 --     Marina'nın geçiş günü varsa: geçiş günü olmayan kurulumda (geliştirme, test) föyün çekimi kesilmez.
--- (c) Bağlantının durum satırı Marina'nın şube satırına kopyalanır (eski genel satır imzası tutmayan istek sayacı için
---     kalır).
+-- Bağlantının durum satırı taşınmaz: Marina'nınki genel satırda kalır (canlıdaki eski sürüm ve geri dönüş onu okur),
+-- öteki kasalar kendi şube satırını açar (src/lib/asilpos/status.ts stateKeysOf).
 
 INSERT INTO "branch_settings" ("branch_id", "grp", "value", "updated_by")
 SELECT 'marina', 'pos.lafpos', jsonb_build_object('switchDay', st."value" #>> '{}'), 'göç 0099'
@@ -31,9 +31,4 @@ WHERE "id" = 'marina' AND "kind" = 'fiziksel' AND "pos_source" = 'modpos'
     SELECT 1 FROM "branch_settings" bs
     WHERE bs."branch_id" = 'marina' AND bs."grp" IN ('pos.lafpos', 'pos.asilpos') AND bs."same_as" IS NULL
       AND (bs."value" ->> 'switchDay') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-  );--> statement-breakpoint
-
-INSERT INTO "integration_state" ("key", "value")
-SELECT 'lafpos:marina', "value" FROM "integration_state"
-WHERE "key" = (CASE WHEN EXISTS (SELECT 1 FROM "integration_state" WHERE "key" = 'asilpos') THEN 'asilpos' ELSE 'lafpos' END)
-ON CONFLICT ("key") DO NOTHING;
+  );

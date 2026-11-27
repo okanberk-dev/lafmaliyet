@@ -707,8 +707,11 @@ export interface Dataset {
     switchDay: string;
     /** Kasaların en erken sayılma günü (metinler) */
     countFrom: string;
-    /** Kasa başına AsilPOS satışlarının sayıldığı ilk gün (çok şube; para hesapları bunu okur: listDiscountOf) */
-    froms: PosFroms;
+    /**
+     * Kasa başına AsilPOS satışlarının sayıldığı ilk gün (çok şube; para hesapları bunu okur: listDiscountOf). Okuyucu her
+     * zaman verir; verilmemiş eski veride (tek kasa) Marina'nın `countFrom`'u (salesFroms)
+     */
+    froms?: PosFroms;
     months: AsilposSalesMonth[];
   };
   /**

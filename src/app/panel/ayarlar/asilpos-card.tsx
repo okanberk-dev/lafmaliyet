@@ -77,7 +77,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
       // Geçiş günü seçildiyse "ModPOS sayılır" cümlesi geçmişi anlatır: yalnız seçilmeden önce (sahibin isteği 24.11.2026)
       description={
         anySwitch
-          ? "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir; her şubenin kasası kendi anahtarıyla, kendi geçiş gününden itibaren sayılır."
+          ? "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir."
           : "Kafenin kasası AsilPOS her iş gününü kapanışta buraya gönderir. Geçiş günü seçilene kadar kasa ModPOS sayılır: AsilPOS'un gönderdiği günler yalnız burada görünür, hiçbir hesaba girmez."
       }
     >

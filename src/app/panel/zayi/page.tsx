@@ -12,7 +12,7 @@ import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
-import { ASILPOS_IKRAM_TEXT, asilposReasonText, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/asilpos/ikram";
+import { ASILPOS_IKRAM_TEXT, asilposReasonText, ikramTillDays, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/asilpos/ikram";
 import { tillDayKey } from "@/lib/pos/tills";
 import { monthSource } from "@/lib/asilpos/switch";
 import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
@@ -247,7 +247,7 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
   const [model, entries] = await Promise.all([loadModel(), wasteEntriesBetween(`${month}-01`, end)]);
   const sum = model.wasteSummary(month);
   // Gün sonu gelen (şube, gün) anahtarları (çok şube: kayıt yalnız kendi kasasının günü geldiyse düşer)
-  const asilposDays = new Set(model.ds.asilposIkram?.tillDays ?? []);
+  const asilposDays = ikramTillDays(model.ds.asilposIkram);
   // Kalem başına: adet / miktar ve malzeme maliyeti (ürün: reçetenin malzeme toplamı, fire payı olmadan)
   const rows = new Map<string, { kind: WasteKind; asilpos: boolean; name: string; unit: string; qty: number; cost: number; count: number }>();
   const add = (key: string, base: { kind: WasteKind; asilpos: boolean; name: string; unit: string }, qty: number, cost: number) => {

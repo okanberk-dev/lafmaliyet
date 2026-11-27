@@ -109,6 +109,12 @@ export function posFromOf(froms: PosFroms | null | undefined, branchId: string |
   return froms?.[branchId ?? DEFAULT_BRANCH_ID] ?? null;
 }
 
+/** Veri kümesinin kasa başına sayılma günleri; `froms` verilmemiş eski veride (tek kasa) Marina'nın `countFrom`'u */
+export function salesFroms(sales: { countFrom: string; froms?: PosFroms } | null | undefined): PosFroms | null {
+  if (!sales) return null;
+  return sales.froms ?? { [LEGACY_POS_BRANCH_ID]: sales.countFrom };
+}
+
 /** (şube, gün) anahtarı: aynı güne iki kasanın satırı düşer, gün tek başına anahtar olamaz */
 export function tillDayKey(branchId: string | null | undefined, date: string): string {
   return `${branchId ?? DEFAULT_BRANCH_ID}|${date}`;

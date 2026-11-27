@@ -15,7 +15,8 @@ import { channelOf } from "../commission/channels";
 import { paidWithholdingRate } from "../tax/rules";
 import { money, monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
-import { panelWasteCounts } from "../asilpos/ikram";
+import { ikramTillDays, panelWasteCounts } from "../asilpos/ikram";
+import { salesFroms } from "../pos/tills";
 import { periodKasa } from "../asilpos/kasa";
 import { asilposWorkedDays, asilposWorkedUnseen } from "../asilpos/personel";
 import { dayRangeTR } from "../asilpos/sales";
@@ -1410,7 +1411,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
   // kaynak; src/lib/asilpos/ikram.ts). AsilPOS'un "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa
   // asilposIkram yok: kayıtlar bugünkü gibi yalnız panelden
   // Gün sonu gelen (şube, gün) anahtarları (çok şube: kayıt yalnız kendi şubesinin kasasının günü geldiyse düşer)
-  const asilposIkramDays = new Set(ds.asilposIkram?.tillDays ?? []);
+  const asilposIkramDays = ikramTillDays(ds.asilposIkram);
   const countedWaste: WasteEntry[] = [
     ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, asilposIkramDays)),
     ...(ds.asilposIkram?.lines ?? []).map(
@@ -1502,7 +1503,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
    * Geçiş günü yoksa ayın indirimi (Month.discounts)
    */
   function listDiscounts(month: string): number {
-    return listDiscountOf(monthInfo.get(month), ds.asilposSales?.froms ?? null);
+    return listDiscountOf(monthInfo.get(month), salesFroms(ds.asilposSales));
   }
 
   /** Ayın "aynı gider iki kez" bulguları (pnlMonth'un hesabından; duplicate-expense.ts) */

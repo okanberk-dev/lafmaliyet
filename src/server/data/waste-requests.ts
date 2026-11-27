@@ -7,7 +7,7 @@ import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, namedTill, requestIn
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
-import { productIkramRefusal, recordedOffRevenue } from "@/lib/asilpos/ikram";
+import { ikramTillDays, productIkramRefusal, recordedOffRevenue } from "@/lib/asilpos/ikram";
 import { switchDayFor, tillDayKey } from "@/lib/pos/tills";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -374,7 +374,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
       });
       const menu = p.kind === "ikram" ? productPrice(model, p.productId) : null;
       const ikramRecorded = p.kind === "ikram" ? ikramValueOf(model, p.date) : null;
-      const asilposDays = new Set(model.ds.asilposIkram?.tillDays ?? []);
+      const asilposDays = ikramTillDays(model.ds.asilposIkram);
       return [
         {
           ...base,
@@ -391,9 +391,9 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
           otherPending: [...new Set(others)],
           report: { exists: !!report, emailed: !!report?.emailedAt, offRevenue: report?.offRevenue ?? null },
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
-          ikramFromAsilpos: asilposDays.has(p.date),
+          ikramFromAsilpos: asilposDays.has(tillDayKey(sube, p.date)),
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
-          asilposRefusal: productIkramRefusal(p, switchDayFor(switchDays, p.branchId), { received: asilposDays.has(tillDayKey(p.branchId, p.date)), today }, "onay"),
+          asilposRefusal: productIkramRefusal(p, switchDayFor(switchDays, p.branchId), { received: asilposDays.has(tillDayKey(sube, p.date)), today }, "onay"),
         },
       ];
     }

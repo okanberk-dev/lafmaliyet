@@ -18,7 +18,7 @@ import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { commonListText, dayRangeTR, asilposMonthNotes, asilposMonthStatus, type AsilposMonthNotes } from "@/lib/asilpos/sales";
 import { monthSource } from "@/lib/asilpos/switch";
-import { posFromOf, switchDayFor } from "@/lib/pos/tills";
+import { posFromOf, salesFroms, switchDayFor } from "@/lib/pos/tills";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
@@ -378,7 +378,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
               // AsilPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi AsilPOS'unsa
               asilposList={
                 !formBranch && formInfo
-                  ? asilposListPart(formInfo, info?.byBranch ? posFromOf(model.ds.asilposSales?.froms, writeId) : (model.ds.asilposSales?.countFrom ?? null))
+                  ? asilposListPart(formInfo, info?.byBranch ? posFromOf(salesFroms(model.ds.asilposSales), writeId) : (model.ds.asilposSales?.countFrom ?? null))
                   : null
               }
               currentMonth={model.currentMonth}

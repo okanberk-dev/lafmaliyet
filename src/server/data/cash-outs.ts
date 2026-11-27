@@ -15,8 +15,6 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 /** Gün içinde kasadan çıkan bir satır (ekranda; bağlı harcama kaydı ve kategorisiyle) */
 export interface CashOutDTO {
   id: number;
-  /** Satırın kasasının şubesi */
-  branchId?: string;
   date: string;
   kind: CashOutKind;
   amount: number;
@@ -71,7 +69,6 @@ const columns = {
   categoryId: s.expenseEntries.categoryId,
   categoryName: s.expenseCategories.name,
   asilposId: s.cashOuts.asilposId,
-  branchId: s.cashOuts.branchId,
 };
 
 /**
@@ -89,9 +86,14 @@ export async function cashOutsBetween(from: string, to: string, branchId?: strin
     .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to), sube))
     .orderBy(asc(s.cashOuts.date), asc(s.cashOuts.createdAt), asc(s.cashOuts.id))
     .limit(2000);
+  // Satırın şubesi yalnız kategori denetimi için (çok şube: her satır kendi şubesinin gün sonuyla); istemciye gitmez
+  const fromPos = rows.filter((r) => r.asilposId !== null).map((r) => r.id);
+  const branchOf = fromPos.length
+    ? new Map((await getDb().select({ id: s.cashOuts.id, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(inArray(s.cashOuts.id, fromPos))).map((r) => [r.id, r.branchId]))
+    : new Map<number, string>();
   const awaiting = await asilposAwaitingCategoryIds(
     getDb(),
-    rows.map((r) => ({ ...r, hasExpense: r.expenseEntryId !== null })),
+    rows.map((r) => ({ ...r, branchId: branchOf.get(r.id) ?? "", hasExpense: r.expenseEntryId !== null })),
   );
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(), asilposAwaitingCategory: awaiting.has(r.id) }));
 }

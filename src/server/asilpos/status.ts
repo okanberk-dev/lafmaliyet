@@ -22,7 +22,7 @@ import { sentWorkedStaffRefs } from "@/lib/asilpos/day";
 import type { NextOpening } from "@/lib/asilpos/devir";
 import type { WorkedStaffAnswer } from "@/lib/asilpos/personel";
 import { isAsilposDay } from "@/lib/asilpos/switch";
-import { LEGACY_POS_BRANCH_ID, singleTill } from "@/lib/pos/tills";
+import { singleTill } from "@/lib/pos/tills";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadAsilposIkram } from "@/server/data/asilpos-ikram";
@@ -42,8 +42,8 @@ import { receivePosDay, type EndpointResult } from "./ingest";
  */
 
 /**
- * Bir kasanın durumu (çok şube): şubenin satırı (yeni adlı önce); eski tek kasalı kurulumun şubesinde satır yokken genel
- * satır. İmzası doğrulanamayan isteklerin sayacı (`unverified`) her zaman genel satırdan
+ * Bir kasanın durumu (çok şube; stateKeysOf): şubenin satırı (yeni adlı önce; Marina'nınki genel satır). İmzası
+ * doğrulanamayan isteklerin sayacı (`unverified`) her zaman genel satırdan
  */
 export async function readAsilposState(db: DB, branchId: string): Promise<AsilposState> {
   const keys = stateKeysOf(branchId).read;
@@ -51,10 +51,9 @@ export async function readAsilposState(db: DB, branchId: string): Promise<Asilpo
   const rows = await db
     .select({ key: s.integrationState.key, value: s.integrationState.value })
     .from(s.integrationState)
-    .where(inArray(s.integrationState.key, [...keys, ...global]));
+    .where(inArray(s.integrationState.key, [...new Set([...keys, ...global])]));
   const pick = (ks: readonly string[]) => ks.map((k) => rows.find((r) => r.key === k)).find((r) => r !== undefined);
-  const own = pick(keys) ?? (branchId === LEGACY_POS_BRANCH_ID ? pick(global) : undefined);
-  const state = parseAsilposState(own?.value);
+  const state = parseAsilposState(pick(keys)?.value);
   const unverified = parseAsilposState(pick(global)?.value).unverified;
   return { ...state, unverified };
 }

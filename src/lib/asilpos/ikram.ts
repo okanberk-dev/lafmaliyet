@@ -3,7 +3,7 @@ import { money } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 
 import type { PosDayZ, PosIkram, PosIptal } from "./day";
-import { tillDayKey } from "@/lib/pos/tills";
+import { LEGACY_POS_BRANCH_ID, tillDayKey } from "@/lib/pos/tills";
 
 import { isAsilposDay } from "./switch";
 
@@ -146,8 +146,11 @@ export interface AsilposIkramData {
   switchDay: string;
   /** Gün sonu gelen günler (tarihler, tekil) */
   days: string[];
-  /** Gün sonu gelen (şube, gün) anahtarları (src/lib/pos/tills.ts tillDayKey): panelWasteCounts bunlara bakar */
-  tillDays: string[];
+  /**
+   * Gün sonu gelen (şube, gün) anahtarları (src/lib/pos/tills.ts tillDayKey): panelWasteCounts bunlara bakar. Okuyucu
+   * her zaman verir; verilmemiş eski veri (tek kasa) ikramTillDays ile Marina'nın günleri sayılır
+   */
+  tillDays?: string[];
   lines: AsilposIkramLine[];
 }
 
@@ -159,6 +162,12 @@ export interface AsilposIkramData {
  */
 export function panelWasteCounts(w: { date: string; kind: "zayi" | "ikram"; productId: number | null; branchId?: string | null }, tillDays: ReadonlySet<string>): boolean {
   return !(w.kind === "ikram" && w.productId !== null && tillDays.has(tillDayKey(w.branchId, w.date)));
+}
+
+/** Gün sonu gelen (şube, gün) anahtarları; `tillDays` verilmemiş eski veride (tek kasa) Marina'nın günleri */
+export function ikramTillDays(data: Pick<AsilposIkramData, "days" | "tillDays"> | null | undefined): Set<string> {
+  if (!data) return new Set();
+  return new Set(data.tillDays ?? data.days.map((d) => tillDayKey(LEGACY_POS_BRANCH_ID, d)));
 }
 
 /** Zayi & ikram'ın metinleri (ekran, eylemlerin reddi, kasa e-postası) */

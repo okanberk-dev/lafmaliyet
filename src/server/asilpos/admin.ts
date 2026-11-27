@@ -4,10 +4,9 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { ASILPOS_GROUP } from "@/lib/branch-settings/groups";
 import { GUN_KILIDI_ONEKI } from "@/lib/asilpos/eski-adlar";
-import { ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW, stateKeysOf } from "@/lib/asilpos/status";
+import { stateKeysOf } from "@/lib/asilpos/status";
 import { dayMonthYearTR, isAsilposDay, switchAffectedMonths, switchDayProblem } from "@/lib/asilpos/switch";
 import { lockRefusal } from "@/lib/closed-period";
-import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import { lockGroup, putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { loadClosedPeriods } from "@/server/closed-period";
 import { schema as s, type DB } from "@/server/db";
@@ -44,7 +43,8 @@ export async function writeAsilposSwitchDay(db: DB, me: Actor, branchId: string,
   }
   const [branch] = await db.select({ id: s.branches.id, name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
   if (!branch) throw new UserError("Şube bulunamadı; sayfayı yenileyin");
-  if (!(await loadPosTillIds(db, Date.now(), true)).ids.includes(branchId)) {
+  const { ids: tillIds } = await loadPosTillIds(db, Date.now(), true);
+  if (!tillIds.includes(branchId)) {
     throw new UserError(`${branch.name} şubesinin kasası AsilPOS değil; geçiş günü yalnız kasası AsilPOS olan şubeye yazılır (Ayarlar › Şubeler › kasa kaynağı)`);
   }
   const result = await db.transaction(async (tx) => {
@@ -58,7 +58,8 @@ export async function writeAsilposSwitchDay(db: DB, me: Actor, branchId: string,
     );
     if (refusal) throw new UserError(refusal);
     await putBranchSetting(tx, ASILPOS_GROUP, branchId, { switchDay: day }, me.name);
-    return `${branch.name}: AsilPOS'a geçiş günü: ${switchText(prev)} → ${switchText(day)}`;
+    // Birden çok kasada işlem geçmişi şubenin adıyla
+    return `${tillIds.length > 1 ? `${branch.name}: ` : ""}AsilPOS'a geçiş günü: ${switchText(prev)} → ${switchText(day)}`;
   });
   if (result) forgetPosBranches();
   return result;
@@ -91,8 +92,8 @@ export async function removeAsilposDay(db: DB, me: Actor, branchId: string, date
     // Şubenin kendi kasasının geçiş günü (kasası AsilPOS değilse gün deneme)
     const counted = isAsilposDay(date, await switchDayOf(branchId, tx));
     await detachAsilposCashOuts(tx, date, counted ? "release" : "drop", { by: { id: me.id, name: me.name }, branchId });
-    // Kasanın durum satırı (stateKeysOf; eski adla, yeni adlı satır varsa o da); eski kurulumun şubesinde genel satır da
-    const keys = [...stateKeysOf(branchId).read, ...(branchId === LEGACY_POS_BRANCH_ID ? [ASILPOS_STATE_KEY, ASILPOS_STATE_KEY_NEW] : [])];
+    // Kasanın durum satırı (stateKeysOf; eski adla, yeni adlı satır varsa o da; Marina'nınki genel satır)
+    const keys = stateKeysOf(branchId).read;
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()

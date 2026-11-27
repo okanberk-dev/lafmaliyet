@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
+
 import { DURUM_ANAHTARI, ZIL_ONEKI } from "./eski-adlar";
 
 import { dateTimeTR } from "@/lib/format";
@@ -27,12 +29,13 @@ export const ASILPOS_STATE_KEY = DURUM_ANAHTARI;
 export const ASILPOS_STATE_KEY_NEW = "asilpos";
 
 /**
- * Bir kasanın durum satırının anahtarları (çok şube, 27 Kasım 2026): `<ad>:<şube>`, yeni adlı önce okunur, eski adlı
- * yazılır (`write`). Genel satır (ASILPOS_STATE_KEY) imzası doğrulanamayan isteklerin sayacını taşır (imza tutmayan istek
- * bir şubeye bağlanamaz) ve eski tek kasalı kurulumun şubesinin (Marina) satırı yokken onun durumu olarak okunur (göç 0099
- * Marina'nınkini kopyalar)
+ * Bir kasanın durum satırının anahtarları (çok şube, 27 Kasım 2026); yeni adlı önce okunur, eski adlı yazılır (`write`).
+ * Eski tek kasalı kurulumun şubesi (Marina) genel satırda kalır (ASILPOS_STATE_KEY: canlıdaki eski sürüm ve geri dönüş
+ * onu okur), öteki kasalar `<ad>:<şube>` satırında. İmzası doğrulanamayan isteklerin sayacı genel satırdadır (imza tutmayan
+ * istek bir şubeye bağlanamaz), her kasanın durumunda okunur
  */
 export function stateKeysOf(branchId: string): { read: [string, string]; write: string } {
+  if (branchId === LEGACY_POS_BRANCH_ID) return { read: [ASILPOS_STATE_KEY_NEW, ASILPOS_STATE_KEY], write: ASILPOS_STATE_KEY };
   return { read: [`${ASILPOS_STATE_KEY_NEW}:${branchId}`, `${ASILPOS_STATE_KEY}:${branchId}`], write: `${ASILPOS_STATE_KEY}:${branchId}` };
 }
 
