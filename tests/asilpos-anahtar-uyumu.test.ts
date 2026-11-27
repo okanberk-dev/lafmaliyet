@@ -325,7 +325,7 @@ test("sınama: kasanın imzasıyla (karşı taraf doğrular), gövde okunmaz; 40
   // Uzaktan'da açık durum ucu da (imzasız), sitede yalnız imzalı uç
   assert.equal(seen[1].url, `https://${KANAL_ALANI}/api/health`);
   assert.equal(seen[1].headers?.[SIGNATURE_HEADER], undefined, "açık durum ucuna imza gitmez");
-  const siteUrls = seen.filter((x) => x.url.startsWith("https://laffogato.net")).map((x) => x.url);
+  const siteUrls = seen.filter((x) => new URL(x.url).origin === "https://laffogato.net").map((x) => x.url);
   assert.deepEqual(siteUrls, ["https://laffogato.net/api/pos/orders/version"]);
   // İstek anahtarı taşımaz (yalnız imzası)
   assert.ok(!JSON.stringify(seen).includes(CLOUD) && !JSON.stringify(seen).includes(SITE), "anahtar istekte değil");
