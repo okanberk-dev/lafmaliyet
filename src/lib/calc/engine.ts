@@ -12,7 +12,7 @@ import { listDiscountOf } from "../cash-month";
 import { duplicateCellWarn, duplicateExpenses as findDuplicateExpenses, type DuplicateExpense } from "./duplicate-expense";
 import { fixedIdOfKey } from "../fixed-expense-rules";
 import { channelOf } from "../commission/channels";
-import { paidWithholdingRate } from "../tax/rules";
+import { paidWithholdingRate } from "../bordro/stopaj";
 import { money, monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { ikramTillDays, panelWasteCounts } from "../asilpos/ikram";
@@ -540,7 +540,7 @@ export function fixedForMonth(fe: Pick<FixedExpense, "period" | "amount">, st: S
   return (fixedMonthly(fe, st) * days) / dim;
 }
 
-/** Kira stopajı oranı (yılın vergi kuralından; 2026: %20) */
+/** Kira stopajı oranı (yılın kuralından, src/lib/bordro/rules.ts; 2026: %20) */
 export function rentWithholdingRate(month: string): number {
   return paidWithholdingRate("kira", Number(month.slice(0, 4)));
 }
@@ -2706,7 +2706,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
 
   const pnlCache = new Map<string, PnlMonthCalc>();
   /**
-   * Ayın kasa cirosunun KDV hariç tutarı ve KDV'si (Gelir-gider'in AYLIK CİRO (KDV hariç)'i, KDV tahmini; hesap
+   * Ayın kasa cirosunun KDV hariç tutarı ve KDV'si (Gelir-gider'in AYLIK CİRO (KDV hariç)'i; hesap
    * sözleşmesi, 23 Kasım 2026). Ciro kasadan geliyor ve ayda AsilPOS'un şubesinin günü varsa gün gün (`byDay`): AsilPOS
    * gününün KDV'si AsilPOS'un kendi dökümünden (z.vat; yeniden hesaplanmaz), ModPOS günü günün oranıyla (satış KDV'si,
    * %10) ayrı ayrı kuruşa yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu).

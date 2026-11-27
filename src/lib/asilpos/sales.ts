@@ -14,7 +14,7 @@ import { asilposCountFrom, asilposSalesFrom, modposListCounts, monthSource } fro
  * AsilPOS satışlarının aylık maliyet modeline girmesi (docs/ASILPOS.md › Günlük satış; denetim E-08). Model satışı ay ay
  * okur (sales_lines biçimi). Geçiş gününden itibaren AsilPOS'un günlük satırları (pos_daily_sales) (ay, POS adı, ürün,
  * hizmet) başına ay toplamına çevrilip ModPOS listesinin yanına konur; motor (engine.ts) değişmez, Satışlar, Tutarlılık,
- * Ürünler, Analiz, Genel bakış ve KDV tahmini aynı satırları okur.
+ * Ürünler, Analiz ve Genel bakış aynı satırları okur.
  *
  * Kural: her gün tek kaynak. ModPOS listesi aylık toplamdır, gün gün bölünemez; bu yüzden geçiş ayında listenin son günü
  * (kapsam) belirleyicidir: liste kendi son gününe kadar bütünüyle, AsilPOS ondan sonraki günden (geçiş gününden önce

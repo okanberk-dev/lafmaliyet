@@ -559,8 +559,8 @@ export const invoices = pgTable(
     /** Faturayı cari ödemelerin dağıtımı kapattı (ödendi): karşılık düşerse defter yeniden açar; elle ✓'ye dokunulmaz */
     paidByLedger: boolean("paid_by_ledger").notNull().default(false),
     /**
-     * Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi; yalnız vergi hesabı okur, Paraşüt eşitlemesi
-     * dokunmaz (docs/VERGI.md)
+     * Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi; Paraşüt eşitlemesi dokunmaz. Kullanılmıyor:
+     * Vergi bölümü 27 Kasım 2026'da kaldırıldı, değer yerinde (docs/arsiv/VERGI.md)
      */
     taxNotAsset: boolean("tax_not_asset").notNull().default(false),
     /**
@@ -939,24 +939,27 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   endMonth: text("end_month"),
   sortOrder: integer("sort_order").notNull().default(0),
   /**
-   * Vergi: giderin belgesi (boş = sınıflandırılmadı). `bordro` yalnız personel bölümünde, `yok` personel bölümünde değil
-   * (eylem denetler; docs/VERGI.md)
+   * Vergi: giderin belgesi (boş = sınıflandırılmadı). `bordro` yalnız personel bölümünde, `yok` personel bölümünde değil.
+   * Kullanılmıyor: Vergi bölümü 27 Kasım 2026'da kaldırıldı, değer yerinde (docs/arsiv/VERGI.md)
    */
   taxDoc: text("tax_doc", { enum: ["fatura", "belgeli", "yok", "bordro"] }),
-  /** Vergi: ödemeden kesilen stopaj ya da sorumlu sıfatıyla KDV (boş = seçilmedi; muhtasar "en az" sayar) */
+  /**
+   * Stopaj profili: ödemeden kesilen stopaj ya da yurt dışı hizmet (boş = seçilmedi). Nakit planı ve Ödemeler okur
+   * (src/lib/bordro/stopaj.ts); seçildiği ekran (Vergi › sınıflandırma) 27 Kasım 2026'da kaldırıldı, değer yerinde
+   */
   taxWithholding: text("tax_withholding", {
     enum: ["yok", "kira", "serbest_meslek", "internet_reklam", "internet_reklam_yurtdisi", "yurt_disi_hizmet"],
   }),
   /**
    * Kira: resmi (sözleşmedeki) aylık kira; boşsa yok. Gelir-gider "Kira stopajı" = resmi brüt × kira stopajı oranı;
-   * vergide kira gideri yalnız resmi brüt (src/lib/calc/engine.ts officialRentGross; docs/VERGI.md)
+   * src/lib/calc/engine.ts officialRentGross
    */
   officialAmount: doublePrecision("official_amount"),
   /** Resmi kira brüt mü net mi (net: brüt = net ÷ 0,8) */
   officialBasis: text("official_basis", { enum: ["brut", "net"] }),
   /**
    * Kira: ev sahibi şahıs mı şirket mi (Faz 5; boş = seçilmedi, bugünkü kural). Şahıs: KDV yok, stopaj %20 resmi kiradan;
-   * şirket: %20 KDV, stopaj yok, belgesi fatura (src/lib/constants.ts fixedVatRate; docs/VERGI.md)
+   * şirket: %20 KDV, stopaj yok, belgesi fatura (src/lib/constants.ts fixedVatRate)
    */
   landlordType: text("landlord_type", { enum: ["sahis", "sirket"] }),
   /** Açık güne göre oranla; false: biten ayda tam ay (kira varsayılanı) */
@@ -1015,7 +1018,7 @@ export const expenseCategories = pgTable("expense_categories", {
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: createdAt(),
-  /** Vergi: kategorideki harcamaların belgesi (boş = sınıflandırılmadı; docs/VERGI.md) */
+  /** Vergi: kategorideki harcamaların belgesi (boş = sınıflandırılmadı). Kullanılmıyor: Vergi bölümü kaldırıldı, değer yerinde */
   taxDoc: text("tax_doc", { enum: ["fatura", "belgeli", "yok"] }),
 });
 
@@ -1043,7 +1046,7 @@ export const expenseEntries = pgTable(
     updatedAt: updatedAt(),
     /** Fişin fotoğrafı (kasadan çıkan satırıyla aynı fotoğraf) */
     photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
-    /** Fişteki toplam KDV: yalnız bilgi (tutar KDV dahil kalır; KDV tahmini perakende fişin KDV'sini düşmez) */
+    /** Fişteki toplam KDV: yalnız bilgi (tutar KDV dahil kalır) */
     vat: doublePrecision("vat"),
     /** Bu kaydı yazan kasadan çıkan satırı */
     cashOutId: integer("cash_out_id").references(() => cashOuts.id, { onDelete: "set null" }),
@@ -1909,7 +1912,7 @@ export const cashOuts = pgTable(
     description: text("description"),
     receiptDate: text("receipt_date"),
     receiptNo: text("receipt_no"),
-    /** Fişteki toplam KDV: yalnız bilgi (KDV tahmini perakende fişin KDV'sini düşmez) */
+    /** Fişteki toplam KDV: yalnız bilgi */
     vat: doublePrecision("vat"),
     docType: text("doc_type", { enum: ["fis", "e_arsiv", "fatura", "yok"] }).notNull().default("yok"),
     photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
@@ -2893,7 +2896,9 @@ export const modposCashSheets = pgTable(
   ],
 );
 
-// ---------------------------------------------------------------- Vergi (docs/VERGI.md)
+// ---------------------------------------------------------------- Vergi (docs/arsiv/VERGI.md)
+// Kullanılmıyor: Vergi bölümü 27 Kasım 2026'da kaldırıldı (vergiyi muhasebeci yürütüyor). Tablolar ve kayıtlar bilerek
+// silinmedi (sahibin isteği "veriler silinmesin"); yedek onları da alır. Tanımlar burada durur ki drizzle-kit DROP üretmesin
 /** Demirbaş ve özel maliyet: vergi amortismanı; faturaya bağlanan maliyet o faturanın giderinden düşer */
 export const taxAssets = pgTable(
   "tax_assets",
@@ -2935,7 +2940,7 @@ export const taxFilings = pgTable(
     payable: doublePrecision("payable").notNull(),
     /** Beyanname damgası */
     stamp: doublePrecision("stamp").notNull().default(0),
-    /** Türüne göre değerler (src/lib/tax/corporate.ts, muhtasar.ts, pnl.ts) */
+    /** Türüne göre değerler (eski Vergi bölümünün hesapları) */
     values: jsonb("values").$type<Record<string, unknown>>().notNull().default({}),
     note: text("note"),
     enteredBy: integer("entered_by").references(() => users.id, { onDelete: "set null" }),

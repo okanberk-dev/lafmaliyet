@@ -275,7 +275,7 @@ export function usePaymentActions(hide: (key: string) => void) {
           if (!r.ok) return void toast.error(r.error);
           const { next, prev, amountCleared, clearedKind } = r.data;
           // Tekrarlı KDV, muhtasar ya da geçici vergi hatırlatıcısının tutarı o döneme aitti: sıradaki dönem için silindi
-          // (geri al geri yazar; docs/VERGI.md)
+          // (geri al geri yazar; src/lib/reminders.ts taxAmountTravels)
           const cleared = amountCleared ? AMOUNT_CLEARED_TEXT[clearedKind ?? "kdv"] : null;
           const nextText = next ? `Sıradaki tarih ${dateTR(next)}.${cleared ? ` ${cleared}` : ""}` : "Tek seferlikti; hatırlatıcı kapandı.";
           toast.success(`${item.title} ödendi`, {

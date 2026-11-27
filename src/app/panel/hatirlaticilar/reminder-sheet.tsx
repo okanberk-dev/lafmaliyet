@@ -76,7 +76,7 @@ export interface FixedRow {
   section: FixedSection;
   /** Kalemin kendi KDV oranı; boşsa bölümün varsayılanı */
   vatRate: number | null;
-  /** Ödemeden kesilen stopaj oranı (Vergi › sınıflandırma; 0 = yok): tutar bankadan çıkan net (docs/VERGI.md) */
+  /** Ödemeden kesilen stopaj oranı (saklı stopaj profili, src/lib/bordro/stopaj.ts; 0 = yok): tutar bankadan çıkan net */
   withholdingRate: number;
   versions: { fromMonth: string; period: FixedPeriod; amount: number }[];
   /** Bitiş ayı (bu ay ya da sonrası; bitmişler listelenmez): ilk ödeme en geç bu ayda (E-62) */
@@ -157,7 +157,7 @@ export function isPresetKey(key: string | null | undefined): key is string {
 /**
  * Yeni hatırlatıcı ve düzenleme. Yenide önce şablon kartları (KDV, Muhtasar, SGK, Geçici vergi, Maaş, Kira,
  * Abonelik, kurumlar vergisi, ÇTV, ilan-reklam, Özel) ve "Sabit giderlerden ekle"; şablon başlık, gün, tekrar ve haber
- * gününü doldurur. `initialPreset` (Vergi › takvimin "Ödemeler'e ekle"si, `?yeni=<şablon>`) formu o şablonla açar.
+ * gününü doldurur. `initialPreset` (şablonlu bağlantı, `?yeni=<şablon>`) formu o şablonla açar.
  */
 export function ReminderSheet({
   reminder,

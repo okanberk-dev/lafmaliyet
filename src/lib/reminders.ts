@@ -404,7 +404,8 @@ export const REMINDER_PRESETS: {
   { key: "maas", title: "Maaş ödemesi", kind: "maas", repeat: "monthly", dueDay: 1, remindDaysBefore: 2, note: "Personel maaşları." },
   { key: "kira", title: "Kira", kind: "kira", repeat: "monthly", dueDay: 1, remindDaysBefore: 3, note: "Dükkân kirası." },
   { key: "abonelik", title: "Abonelik", kind: "fatura", repeat: "monthly", dueDay: 15, remindDaysBefore: 2, note: "İnternet, POS, yazılım, müzik gibi aylık abonelik." },
-  // Vergi bölümünün yıllık şablonları (docs/VERGI.md): kurumlar vergisi ve belediyenin tahakkuk ettirdiği yerel vergiler
+  // Yıllık vergi şablonları: kurumlar vergisi ve belediyenin tahakkuk ettirdiği yerel vergiler (düz hatırlatıcı; vergiyi
+  // muhasebeci yürütür, panel tahmin yapmaz)
   { key: "kv", title: "Kurumlar vergisi beyannamesi ve ödemesi", kind: "vergi", repeat: "yearly", dueDay: "son", months: [4], remindDaysBefore: 14, note: "Önceki yılın kurumlar vergisi; Nisan'ın son günü." },
   { key: "ctv1", title: "Çevre temizlik vergisi (1. taksit)", kind: "vergi", repeat: "yearly", dueDay: "son", months: [5], remindDaysBefore: 7, note: CTV_NOTE },
   { key: "ctv2", title: "Çevre temizlik vergisi (2. taksit)", kind: "vergi", repeat: "yearly", dueDay: "son", months: [11], remindDaysBefore: 7, note: CTV_NOTE },
@@ -525,9 +526,9 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
  * "Ödendi" tutarı sıradaki dönemin sürümüne taşır). Yalnız dönemi sonradan değişen kalemde (aylık → yıllık) tutar
  * yazılmaz: tutarsız hatırlatıcıya plan her ayın sürümünü dönemine çevirerek taşır. Tutar 0 ise de yazılmaz.
  *
- * Stopajlı kalemde (`withholdingRate`, Vergi › sınıflandırma; şahsa kira, serbest meslek, şahsa internet reklamı)
- * ödemeden kesilen stopaj düşülür: bankadan çıkan net tutardır, stopaj muhtasarla ödenir (docs/VERGI.md; kira 160.000
- * brüt → 128.000). `gross` o ayın bankadan çıkan tutarıdır (KDV dahil, stopaj düşülmüş).
+ * Stopajlı kalemde (`withholdingRate`, saklı stopaj profili, src/lib/bordro/stopaj.ts; şahsa kira, serbest meslek, şahsa
+ * internet reklamı) ödemeden kesilen stopaj düşülür: bankadan çıkan net tutardır, stopajı muhasebeci muhtasarla öder
+ * (kira 160.000 brüt → 128.000). `gross` o ayın bankadan çıkan tutarıdır (KDV dahil, stopaj düşülmüş).
  */
 export function fixedReminderAt(
   f: { amount: number; period: FixedPeriod; section: FixedSection; vatRate?: number | null; withholdingRate?: number | null },
@@ -674,7 +675,7 @@ export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">)
 }
 
 /**
- * KDV ödemesi hatırlatıcısı (nakit planının KDV tahmini, docs/NAKIT-PLANI.md): başlıkta "KDV" ya da "katma değer".
+ * KDV ödemesi hatırlatıcısı (Ödendi'de tutarın silinmesi, şubenin nakit akışının dışı): başlıkta "KDV" ya da "katma değer".
  * Kira ve maaş türü ("Kira KDV'si"), SGK başlıkları, KDV tevkifatı ("2 No.lu KDV", "KDV2") ve yalnız damga vergisi
  * ("KDV damga vergisi") KDV ödemesi sayılmaz.
  */
@@ -686,8 +687,8 @@ export function isVatReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
 
 /**
  * Tekrarlı KDV ve KDV-2 (tevkifat) hatırlatıcısının tutarı yalnız o döneme aittir (her ay o ayın satışından ve
- * faturalarından): "Ödendi" ve ertelemede seriden silinir, geri al geri yazar. Silinmezse Eylül'ün tutarı Kasım'da da
- * kesin görünür, o dönemin tahminini de kapatırdı. Yalnız damga vergisi ikisi de değildir, tutarı kalır.
+ * faturalarından): "Ödendi" ve ertelemede seriden silinir, geri al geri yazar. Silinmezse Eylül'ün tutarı nakit planında
+ * Kasım'da da kesin görünürdü. Yalnız damga vergisi ikisi de değildir, tutarı kalır.
  */
 export function vatAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount" | "repeat">): boolean {
   return r.repeat !== "none" && r.amount !== null && (isVatReminder(r) || isVatWithholdingReminder(r));
@@ -695,8 +696,7 @@ export function vatAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount
 
 /**
  * Yalnız beyanname damgası hatırlatıcısı ("KDV damga vergisi", "KDV2 damga vergisi"): hangi beyannamenin damgası; damga
- * değilse ya da KDV'ye bağlı değilse null. Nakit planı bu ayın KDV ya da KDV-2 damga satırını bunun varken çizmez
- * (hatırlatıcı kendi satırını çizer; docs/NAKIT-PLANI.md)
+ * değilse ya da KDV'ye bağlı değilse null (vergi hatırlatıcısı: şubenin nakit akışının dışı, src/lib/cash-plan-branch.ts)
  */
 export function vatStampReminder(r: Pick<ReminderRow, "kind" | "title">): "kdv" | "kdv2" | null {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return null;
@@ -707,23 +707,13 @@ export function vatStampReminder(r: Pick<ReminderRow, "kind" | "title">): "kdv" 
 }
 
 /**
- * Muhtasar hatırlatıcısı (Vergi ve nakit planı sınıfı; docs/VERGI.md): başlıkta "muhtasar" ya da "stopaj"; KDV, KDV-2,
- * SGK ve yalnız damga vergisi değil. "Kira stopajı" da muhtasarla ödenir
+ * Muhtasar hatırlatıcısı (vergi hatırlatıcısı; şubenin nakit akışının dışı): başlıkta "muhtasar" ya da "stopaj"; KDV,
+ * KDV-2, SGK ve yalnız damga vergisi değil. "Kira stopajı" da muhtasarla ödenir
  */
 export function isMuhtasarReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   const t = foldTR(r.title);
   if (!/muhtasar|stopaj/.test(t) || stampOnly(t)) return false;
   return !isVatReminder(r) && !isVatWithholdingReminder(r) && reminderCategory(r.kind, r.title) !== "sgk";
-}
-
-/**
- * Kira stopajı hatırlatıcısı ("Kira stopajı"; başlıkta "kira" ve "stopaj", "muhtasar" değil): muhtasar sınıfındadır ama
- * sabit tutarı muhtasarın yalnız kira stopajı kısmıdır (denetim VG-02). Tutarlıysa dönemi sahiplenmez: muhtasarın
- * kalanı (ücret vergileri, öteki stopajlar, damga) ayrıca girer
- */
-export function isRentWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
-  const t = foldTR(r.title);
-  return isMuhtasarReminder(r) && /kira/.test(t) && /stopaj/.test(t) && !/muhtasar/.test(t);
 }
 
 /** Geçici vergi hatırlatıcısı: başlıkta "geçici vergi" */
@@ -732,9 +722,9 @@ export function isProvisionalTaxReminder(r: Pick<ReminderRow, "title">): boolean
 }
 
 /**
- * Tekrarlı hatırlatıcının tutarı yalnız o döneme mi ait (K26): KDV ve KDV-2 (vatAmountTravels) ile başlığında "muhtasar"
- * ya da "geçici vergi" geçen tutarlı hatırlatıcı. "Ödendi" ve erteleme tutarı seriden siler, geri al geri yazar.
- * "Stopaj" yalnız nakit planı sınıfıdır: sabit tutarlı "Kira stopajı"nın tutarı kalır
+ * Tekrarlı hatırlatıcının tutarı yalnız o döneme mi ait: KDV ve KDV-2 (vatAmountTravels) ile başlığında "muhtasar" ya
+ * da "geçici vergi" geçen tutarlı hatırlatıcı. "Ödendi" ve erteleme tutarı seriden siler, geri al geri yazar. Sabit
+ * tutarlı "Kira stopajı"nın tutarı kalır
  */
 export function taxAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount" | "repeat">): boolean {
   if (vatAmountTravels(r)) return true;

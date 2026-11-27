@@ -89,7 +89,7 @@ const zam: Collector = {
   },
 };
 
-/** Nakit planı (insight; KDV satırları planın içinde): ilk eksi gün */
+/** Nakit planı (insight): ilk eksi gün */
 const nakit: Collector = {
   source: "nakit",
   timeoutMs: 4_000,

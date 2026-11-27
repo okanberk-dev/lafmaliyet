@@ -14,8 +14,6 @@
 
 import type { Model } from "./calc/engine";
 import type { Dataset, Invoice } from "./calc/types";
-import { taxMonths, taxPnlInputFromModel } from "./tax/pnl";
-import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "./tax/settings";
 
 /** Eski kuralın faturası: kalem yok, işletme geneli ayrımı yok, harcama payı şubeye yazılmaz */
 function oldInvoice(i: Invoice): Invoice {
@@ -71,33 +69,6 @@ export function monthNumbers(model: Model, month: string, labels?: Map<string, s
   put("isletme-geneli", "İşletme geneli payı (bilgi)", pm.shared.total);
   for (const [b, v] of Object.entries(pm.byBranch)) put(`sube:${b}`, `Şube kırılımı · ${b}`, v);
   put("basabas-sabit", "Başabaşın sabit gideri", model.breakEvenFixedFor(month));
-  return out;
-}
-
-/**
- * Vergiye göre gelir-giderin ayları (firma geneli; yalnız "Tümü"nün modeliyle): SMM'nin alışı, fatura giderleri, gider
- * toplamı ve sonuç. Demirbaş listesi, düzeltme ve beyan boş: yalnız faturaların payı karşılaştırılır
- */
-export function taxNumbers(model: Model, years: readonly number[], today: string, settings: TaxSettings = DEFAULT_TAX_SETTINGS, labels?: Map<string, string>): Map<string, MonthNumbers> {
-  const input = taxPnlInputFromModel(model, { settings, today, adjustments: [], assets: [], filings: [] });
-  const out = new Map<string, MonthNumbers>();
-  for (const y of years) {
-    for (const m of taxMonths(input, y, today)) {
-      out.set(
-        m.month,
-        new Map([
-          ["vergi:alis", r2(m.expense.purchases)],
-          ["vergi:faturalar", r2(m.expense.invoices)],
-          ["vergi:gider", r2(m.expense.total)],
-          ["vergi:sonuc", r2(m.result)],
-        ]),
-      );
-    }
-  }
-  labels?.set("vergi:alis", "Vergi · SMM alışı");
-  labels?.set("vergi:faturalar", "Vergi · fatura giderleri");
-  labels?.set("vergi:gider", "Vergi · gider toplamı");
-  labels?.set("vergi:sonuc", "Vergi · sonuç");
   return out;
 }
 

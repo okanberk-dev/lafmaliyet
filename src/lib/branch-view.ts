@@ -5,9 +5,9 @@
  * değiştirilebilir yap, isteyen istediği gibi ayarlasın".
  *
  * **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım 2026: "Vergi ile ilgili olan kısımları tamamen çıkar, o bölüm
- * olmadan ilerleyelim; hem sistemi bölmez, yanlış hesaplama riskini de azaltmış oluruz"): Vergi'nin alanı yok, ekranları
- * her kipte firmanın (`ALWAYS_COMPANY_WIDE`); nakit planının şube kipinde vergi ve SGK ödemeleri yok
- * (src/lib/cash-plan-branch.ts). Eski sürümün yazdığı `vergi` anahtarı okurken düşer (`parseBranchView`).
+ * olmadan ilerleyelim; hem sistemi bölmez, yanlış hesaplama riskini de azaltmış oluruz"): Vergi'nin alanı yok; Vergi
+ * bölümü aynı gün tümden kaldırıldı (vergiyi muhasebeci yürütüyor). Nakit planının şube kipinde vergi hatırlatıcıları ve
+ * SGK yok (src/lib/cash-plan-branch.ts). Eski sürümün yazdığı `vergi` anahtarı okurken düşer (`parseBranchView`).
  *
  * Saf: kurallar burada; okuma `src/server/branch-scope.ts` (`currentBranchView`, `areaScope`), yazma
  * `src/server/actions/branch-view.ts` (`saveBranchView`), ekran Hesabım › Şube görünümü ve ekranların çipi
@@ -176,7 +176,7 @@ export function viewScope(scope: BranchScope, mode: ViewMode): BranchScope {
 
 /**
  * Hesabım'daki kartta rolün satırları: bütün şubeleri gören rolde, açabildiği ekranları olan alanlar (muhasebeci:
- * İşletme geneli giderler; Vergi'nin alanı yok, hep firma geneli). Öteki roller boş
+ * İşletme geneli giderler). Öteki roller boş
  */
 export function viewAreasFor(role: Role): ViewArea[] {
   if (!can(role, "sube.tumu")) return [];
@@ -320,8 +320,8 @@ export function bulkViewPatch(kind: BulkView, role: Role): BranchViewPrefs | nul
 export const ALWAYS_COMPANY_WIDE: readonly { title: string; reason: string }[] = [
   { title: "Tam yedek", reason: "Geri yüklenebilir yedek bütün veritabanını ister (ortak tablolar ve aralarındaki bağlar)." },
   {
-    title: "Vergi ve SGK: Vergi'nin bütün sekmeleri, nakit planındaki vergi ve SGK ödemeleri, dışa aktarımın Vergi sekmesi",
-    reason: "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez.",
+    title: "Vergi ve SGK ödemeleri: Ödemeler'deki vergi hatırlatıcıları ve SGK, nakit planında",
+    reason: "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez (vergiyi muhasebeci yürütür).",
   },
   { title: "Banka ve cari ekstresi, nakit açılış bakiyesi", reason: "Firmanın hesabı ve parasıdır." },
   { title: "Paraşüt eşitlemesi", reason: "Hesap başınadır; ortak hesap “hesap geneli” yazar." },
@@ -340,7 +340,7 @@ export const ALWAYS_COMPANY_WIDE: readonly { title: string; reason: string }[] =
 
 /**
  * Şube seçiliyken de firmanın tamamını okuyan yerlerin türü:
- * - `yalniz-firma`: hep firmanın (vergi, ekstre, firmaya giden e-posta, tam yedek);
+ * - `yalniz-firma`: hep firmanın (ekstre, nakit açılış bakiyesi, firmaya giden e-posta, tam yedek);
  * - `alan`: kişinin tercihine bağlı (`areaScope(alan)`);
  * - `butunluk`: silme engeli gibi denetim, veri olarak gösterilmez;
  * - `ortak-veri`: şubelerin ortak verisi ya da işletmenin günü;
@@ -428,15 +428,6 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
     where: "src/server/data/cash-plan.ts#loadAreaCashPlan",
     kind: "yalniz-firma",
     reason: "Nakit açılış bakiyesi firmanın parası: şubenin akışında da firmanın planından okunur (bakiye ve İşletme geneli satırı)",
-  },
-  // Vergi: şubeye bölünmez (sahibin kararı 27 Kasım 2026; alanı yok)
-  {
-    id: "vergi.beyan",
-    where:
-      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/server/data/cash-plan.ts#loadCashPlan; src/app/api/export/route.ts#exportWorkbook",
-    kind: "yalniz-firma",
-    reason:
-      "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez: Vergi'nin bütün sekmeleri (KDV, muhtasar, geçici ve kurumlar vergisi, takvim, eksik belgeler, demirbaş), nakit planının vergi beslemesi ve dışa aktarımın Vergi sekmesi her kipte bütün şubelerle",
   },
   // Alanlar: parça 5 Tutarlılık, Mutabakat, Stok değeri
   {

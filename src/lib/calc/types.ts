@@ -3,7 +3,6 @@
 // hem sunucuda hem tarayıcıda (canlı hesap) kullanılabilir.
 
 import type { SiteSalesMonth } from "../site-sales/schema";
-import type { TaxDoc, Withholding } from "../tax/rules";
 
 import type { AsilposIkramData } from "../asilpos/ikram";
 import type { AsilposWorked } from "../asilpos/personel";
@@ -14,6 +13,12 @@ import type { PurchaseLot } from "./fifo";
 export type Unit = "gr" | "ml" | "adet" | "dilim";
 export type CountUnit = "KG" | "LT" | "ADET" | "DİLİM";
 export type Size = "M" | "L" | "Tek";
+/**
+ * Sabit giderin stopaj profili (saklı sütun `fixed_expenses.tax_withholding`): şahsa kira, serbest meslek ve şahsa
+ * internet reklamında ödemeden stopaj kesilir; doğrudan yurt dışına ödenende KDV yok (src/lib/bordro/stopaj.ts)
+ */
+export type Withholding = "yok" | "kira" | "serbest_meslek" | "internet_reklam" | "internet_reklam_yurtdisi" | "yurt_disi_hizmet";
+
 export type FixedSection = "personel" | "faturalar" | "kira" | "genel";
 export type FixedPeriod = "aylik" | "gunluk" | "haftalik" | "yillik";
 export type PriceSource = "manual" | "water";
@@ -196,14 +201,6 @@ export interface TillMonth {
    */
   dayVat?: { known: { days: number; revenue: number; base: number; vat: number }; days: number[] };
   /**
-   * Ayın satışlı günlerinin KDV kaynağı (KDV tahmini; src/lib/cash-month.ts vatDaysOf, src/lib/kdv.ts; Dalga 2, 26 Kasım
-   * 2026). `asilpos`: KDV'si AsilPOS'un dökümünden gelen günler (dayVat.known ile aynı günler). `z`: kasa raporunda
-   * yazarkasa Z'sinin KDV'si girilmiş öteki günler: `revenue` günlerin cirosu, `covered` o cironun yazarkasadan geçen
-   * kısmı (yazarkasa toplamıyla sınırlı), `vat` Z'lerin KDV toplamı. `estimate`: ikisi de olmayan günler (oranla).
-   * Gün sayıları satırdır ("Tümü"de şube × gün). Yoksa (eski kayıt, test) bütün ay oranla
-   */
-  vatDays?: { z: { days: number; revenue: number; covered: number; vat: number }; asilpos: number; estimate: number };
-  /**
    * [from, to] içinde raporu olmayan günler. Yalnız ilk kasa raporundan (ya da AsilPOS gün sonundan) itibaren aranır:
    * raporlar başlamadan önceki ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek)
    */
@@ -311,8 +308,8 @@ export interface Invoice {
   /** Ödenecek, KDV dahil */
   payable: number;
   /**
-   * Faturanın KDV toplamı, tevkifat düşülmemiş (Paraşüt `total_vat`). İçe aktarılmışlarda 0. KDV tahmini indirilecek
-   * KDV'yi ve 2 No.lu beyannamenin tevkifatını bundan okur (src/lib/kdv.ts)
+   * Faturanın KDV toplamı, tevkifat düşülmemiş (Paraşüt `total_vat`). İçe aktarılmışlarda 0. Dışa aktarımın indirilecek
+   * KDV'si ve tevkifatı bundan okunur (src/lib/kdv.ts)
    */
   vat?: number;
   unpaid: boolean;
@@ -345,8 +342,6 @@ export interface Invoice {
    * POS komisyonu uyarısı okur ("kanalı bulunamayan" fatura iki ekranda aynı)
    */
   channelNames?: string[];
-  /** Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi (yalnız vergi hesabı; docs/VERGI.md) */
-  taxNotAsset?: boolean;
   /** Tedarikçinin VKN / TCKN'si (dışa aktarımın Faturalar sekmesi; hesaplarda kullanılmaz) */
   supplierTaxNumber?: string | null;
   /** E-faturanın ETTN'si (dışa aktarımın Faturalar sekmesi; hesaplarda kullanılmaz) */
@@ -442,8 +437,10 @@ export interface FixedExpense extends MonthRange {
   amount: number;
   /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (constants.ts fixedVatRate). Yalnız nakit planı kullanır */
   vatRate?: number | null;
-  /** Vergi belgesi ve stopaj profili (yalnız vergi hesabı ve nakit planı; boş = seçilmedi; docs/VERGI.md) */
-  taxDoc?: TaxDoc | null;
+  /**
+   * Stopaj profili (saklı `tax_withholding`; eski Vergi › sınıflandırma, ekranı 27 Kasım 2026'da kaldırıldı): nakit
+   * planı ve Ödemeler'in ödemeden kesilen stopajı (src/lib/bordro/stopaj.ts); boş = stopaj yok
+   */
   taxWithholding?: Withholding | null;
   /**
    * Kira: resmi (sözleşmedeki) aylık kira; boşsa yok. Gelir-gider'de "Kira stopajı" satırı = resmi brüt × kira stopajı
@@ -554,8 +551,6 @@ export interface ExpenseCategory {
   monthly: boolean;
   active: boolean;
   sortOrder: number;
-  /** Vergi belgesi: kategorinin kayıtları vergide nasıl sayılır (boş = seçilmedi; docs/VERGI.md) */
-  taxDoc?: Exclude<TaxDoc, "bordro"> | null;
 }
 
 /** Aylık harcama kaydı: ödenen tutar gider sayılır (KDV ayrılmaz) */
@@ -567,10 +562,10 @@ export interface ExpenseEntry {
   amount: number;
   paymentMethod: PaymentMethod | null;
   note: string | null;
-  /** Kasadan çıkan bir satırdan geldiyse onun kimliği ve belgesi (vergide kaydın belgesi; docs/VERGI.md) */
+  /** Kasadan çıkan bir satırdan geldiyse onun kimliği ve belgesi (fiş, e-Arşiv, fatura, yok) */
   cashOutId?: number | null;
   docType?: "fis" | "e_arsiv" | "fatura" | "yok" | null;
-  /** Cari hesaptaki faturasız bir borca aitse onun kimliği (dalga 11; vergide "belgesi yok") */
+  /** Cari hesaptaki faturasız bir borca aitse onun kimliği (dalga 11) */
   supplierEntryId?: number | null;
   /** Şube; null = işletme geneli (aynı gider iki kez: sabit giderin şubesiyle karşılaştırılır) */
   branchId?: string | null;

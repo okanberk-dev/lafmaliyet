@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 /**
  * "Hammadde değil" denince kategori sorulur (sahibin isteği, 25 Kasım 2026; src/lib/invoice-split.ts): Sarf, Demirbaş,
  * Hizmet ya da Deneme. Neden kalemin gelir-giderde nereye yazılacağını belirler (Sarf → Temizlik & Sarf gideri,
- * Demirbaş → Kuruluş & Demirbaş ve Vergi › Demirbaş'ta öneri, Hizmet → Hizmet, Deneme → mal alışı). "Bu tedarikçinin
+ * Demirbaş → Kuruluş & Demirbaş, Hizmet → Hizmet, Deneme → mal alışı). "Bu tedarikçinin
  * hep" işaretlenirse tedarikçi kuralı da açılır: tedarikçinin bağlanmamış kalemleri bekleyenlere düşmez.
  */
 export function NotIngredientDialog({

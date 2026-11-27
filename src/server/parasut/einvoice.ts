@@ -104,7 +104,7 @@ export function eInvoiceToDraft(r: Resource<EInvoiceAttrs>): EInvoiceDraft {
 
 /**
  * Tevkifatlı e-faturaya bağlı içe aktarılmış / elle kaydın boş KDV'si için belgedeki tam KDV (`total_vat`). Liste tevkifat
- * düşülmüş ödenecek tutarı verir, kayıtta KDV yoksa KDV tahmini (src/lib/kdv.ts) "ödenecek − tutar"a düşer ve
+ * düşülmüş ödenecek tutarı verir, kayıtta KDV yoksa indirilecek KDV (src/lib/kdv.ts purchaseVat) "ödenecek − tutar"a düşer ve
  * tevkifatı göremez (Eylül 2026 reklam faturası: 4.200 indirildi, 6.000 indirilmeliydi). Kayıttaki KDV'ye
  * dokunulmaz; ödenecek tutar e-faturayı tutmuyorsa (elle değişmiş) ya da iadeyse null.
  */

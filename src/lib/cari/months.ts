@@ -1,6 +1,6 @@
 /**
  * Cari işlemlerinin aylara etkisi (saf; tests/cari-ay.test.ts): geçmiş ayın giderini değiştiren işlem o ayı adıyla
- * sorar (K18), "Faturası geldi" önizlemesi gideri ve KDV tahminini ay ay söyler.
+ * sorar (K18), "Faturası geldi" önizlemesi gideri ay ay söyler.
  */
 import { monthLabel, tl } from "../format";
 import { round2 } from "./balance";
@@ -91,20 +91,18 @@ export interface LinkPreviewInput {
   /** Bağlamanın sildiği gider kayıtları ("gider" ve "mevcut" borçların kayıtları) */
   removed: readonly { date: string; amount: number; categoryName: string }[];
   /**
-   * Fatura: gün, KDV hariç net, KDV (KDV tahmininin saydığı indirilecek KDV), Ödenecek; `goods` mal alışı (mal
-   * kategorileri); `withheld` KDV tevkifatı (2 No.lu beyannameye); `counted: false` kategorisi Gelir-gider'de hiçbir
-   * kaleme bağlı değil (fatura kafenin giderinde sayılmıyor)
+   * Fatura: gün, KDV hariç net, Ödenecek; `goods` mal alışı (mal kategorileri); `counted: false` kategorisi Gelir-gider'de
+   * hiçbir kaleme bağlı değil (fatura kafenin giderinde sayılmıyor)
    */
-  invoice: { date: string; net: number; vat: number; payable: number; goods: boolean; withheld?: number; counted?: boolean };
+  invoice: { date: string; net: number; payable: number; goods: boolean; counted?: boolean };
   /** Bağlanan borçların toplamı */
   debtTotal: number;
   today: string;
 }
 
 /**
- * "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Kasım mal alışı faturada 545,45 ₺ (KDV hariç; zaten sayılıyor) · KDV
- * tahmini Kasım +54,55 ₺ · fark faturada +0,00 ₺". Silinen gider ay ve kategori başına bir parça; fatura zaten gider
- * olduğu için tutarı yalnız söylenir.
+ * "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Kasım mal alışı faturada 545,45 ₺ (KDV hariç; zaten sayılıyor) · fark
+ * faturada +0,00 ₺". Silinen gider ay ve kategori başına bir parça; fatura zaten gider olduğu için tutarı yalnız söylenir.
  */
 export function linkPreview(p: LinkPreviewInput): string {
   const groups = new Map<string, { month: string; category: string; amount: number }>();
@@ -122,10 +120,5 @@ export function linkPreview(p: LinkPreviewInput): string {
     p.invoice.counted === false && !p.invoice.goods
       ? `${im} faturası ${tl(round2(p.invoice.net), 2)} (KDV hariç) Gelir-gider'de hiçbir kalemde sayılmıyor; bağlarsanız bu alımın gideri düşer`
       : `${im} ${p.invoice.goods ? "mal alışı" : "gideri"} faturada ${tl(round2(p.invoice.net), 2)} (KDV hariç; zaten sayılıyor)`;
-  const withheld = round2(p.invoice.withheld ?? 0);
-  return [
-    [...removed, invoice].join(", "),
-    `KDV tahmini ${im} ${signed(round2(p.invoice.vat))}${withheld > 0.005 ? ` (tevkifat ${tl(withheld, 2)}, 2 No.lu beyannamede)` : ""}`,
-    `fark faturada ${signed(round2(p.invoice.payable - p.debtTotal))}`,
-  ].join(" · ");
+  return [[...removed, invoice].join(", "), `fark faturada ${signed(round2(p.invoice.payable - p.debtTotal))}`].join(" · ");
 }

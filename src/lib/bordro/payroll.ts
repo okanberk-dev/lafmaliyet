@@ -1,18 +1,18 @@
 /**
- * Vergi bordrosu (plan docs/planlar/vergi.md §3.4, K16): netten brüt, yıl içindeki kümülatif matrahla ücretin gelir
- * vergisi, asgari ücret gelir ve damga vergisi istisnası, ücret damgası, prime esas kazancın alt ve üst sınırı; SGK
- * oranları kural tablosundan (yasal 2026: işçi %14 + %1, işveren %19,75 + %2; `sgk.isverenOran` elle değişebilir).
- * Ayarlar'daki oranlar yalnız Gelir-gider'de kalır (engine.ts staffCost değişmez, K17). Aylar tam sayılır (personelin
- * giriş günü panelde yok). Ek ödemeler ve yemek kartı (Faz 5) vergisiz, brütleştirilmeden maliyete eklenir; part-time'ın
- * günlük ücreti (Faz 5) brütleştirilmez, bütün maliyeti ek ödeme gibi girer (brüt 0, asgari ücret desteği yok). Saf modül;
- * tests/vergi-bordro.test.ts.
+ * Yasal bordro (nakit planının maaş ve SGK satırı; eski Vergi bölümünden, 27 Kasım 2026): netten brüt, yıl içindeki
+ * kümülatif matrahla ücretin gelir vergisi, asgari ücret gelir ve damga vergisi istisnası, ücret damgası, prime esas
+ * kazancın alt ve üst sınırı; SGK oranları kural tablosundan (yasal 2026: işçi %14 + %1, işveren %19,75 + %2;
+ * `sgk.isverenOran` saklı ayardan elle değişebilir). Ayarlar'daki oranlar yalnız Gelir-gider ve Maaşlar'da kalır
+ * (engine.ts staffCost değişmez). Aylar tam sayılır (personelin giriş günü panelde yok). Ek ödemeler ve yemek kartı
+ * vergisiz, brütleştirilmeden maliyete eklenir; part-time'ın günlük ücreti brütleştirilmez, bütün maliyeti ek ödeme gibi
+ * girer (brüt 0, asgari ücret desteği yok). Saf modül; tests/bordro.test.ts.
  */
 
 import type { Model } from "../calc/engine";
 import { inRange, isPartTime, mealCardOf, shiftMonth, staffCost } from "../calc/engine";
 
-import { type Bracket, r2, rulesFor, type TaxOverrides, type TaxYearRules } from "./rules";
-import type { TaxSettings } from "./settings";
+import { type Bracket, type PayrollYearRules, r2, type RuleOverrides, rulesFor } from "./rules";
+import type { PayrollSettings } from "./settings";
 
 export interface PayrollRates {
   isciSgk: number;
@@ -31,7 +31,7 @@ export interface PayrollRates {
 }
 
 /** Kural tablosundan bordro oranları (elle `sgk.isverenOran` rulesFor'da uygulanmış) */
-export function payrollRates(rules: TaxYearRules): PayrollRates {
+export function payrollRates(rules: PayrollYearRules): PayrollRates {
   return {
     isciSgk: rules.sgk.isciOran.value,
     isciIssizlik: rules.sgk.isciIssizlik.value,
@@ -71,7 +71,7 @@ export function minWageBase(rates: PayrollRates): number {
  * Ay `month`'un (1–12) asgari ücret istisnası (GVK 23/18): gelir vergisinde asgari matrahın o aya kadarki kümülatif
  * tarife farkı (Ocak–Haziran 4.211,33; Temmuz 4.537,75; Ağustos–Aralık 5.615,10), damga vergisinde asgari ücretin damgası
  */
-export function minWageExemption(month: number, rules: TaxYearRules | PayrollRates): { gv: number; dv: number } {
+export function minWageExemption(month: number, rules: PayrollYearRules | PayrollRates): { gv: number; dv: number } {
   const rates = "brackets" in rules ? rules : payrollRates(rules);
   const base = minWageBase(rates);
   return {
@@ -131,7 +131,7 @@ const ZERO_SLIP = (month: number, cumPrev: number, extras: number): Payslip => (
   cost: r2(extras),
 });
 
-/** Brütten bordro (§3.4) */
+/** Brütten bordro */
 export function payslipFromGross(gross: number, ctx: SlipCtx): Payslip {
   const { rates, month, cumPrev } = ctx;
   const extras = ctx.extras ?? 0;
@@ -226,11 +226,6 @@ export interface PayrollMonth {
   estimated: boolean;
 }
 
-/** Bordronun notları (Bordro dökümü penceresi, §4.5-e) */
-export const PAYROLL_NOTE = "Hesap 2026 yasal SGK oranları ve gelir vergisi tarifesiyle yapıldı; kesin tutar bordronuzdadır.";
-export const PAYROLL_FULL_MONTH_NOTE = "Personel: işe giriş günü bilinmediği için ay tam sayıldı";
-export const PAYROLL_EXTRAS_NOTE = "Ek ödemeler vergisiz sayıldı (yemek ve yol istisnası içindeyse doğru); prim ise brüte eklenmeli";
-
 function totalsOf(people: readonly PayrollPerson[], rates: PayrollRates, minWageSupport: boolean): PayrollTotals {
   const s = (f: (p: PayrollPerson) => number) => r2(people.reduce((a, p) => a + f(p), 0));
   const sgk4 = s((p) => p.isciSgk + p.isciIssizlik + p.isverenSgk + p.isverenIssizlik);
@@ -256,10 +251,10 @@ function totalsOf(people: readonly PayrollPerson[], rates: PayrollRates, minWage
  * Yılın bordrosu, ay ay: her kişi yılbaşında (ya da ilk ayında) sıfır kümülatif matrahla başlar. `from` ("YYYY-MM")
  * hesabın ilk ayıdır (hesap döneminin başı); daha önceki aylar hesaplanmaz. Ayın kimsesi yoksa ay yoktur.
  */
-export function taxPayroll(
+export function payrollByMonth(
   staff: readonly StaffMonths[],
   year: number,
-  rules: TaxYearRules,
+  rules: PayrollYearRules,
   opts: { minWageSupport: boolean; from: string; estimated?: boolean },
 ): Map<string, PayrollMonth> {
   const rates = payrollRates(rules);
@@ -294,15 +289,15 @@ export function firstSalesMonth(model: Pick<Model, "monthInfo">): string | null 
 }
 
 /**
- * Modelden yılın vergi bordrosu (K16, K18): personel `staffAtMonth`'ın maaşıyla, aralığındaki aylarda. Kişinin ilk ayı
+ * Modelden yılın bordrosu (nakit planı): personel `staffAtMonth`'ın maaşıyla, aralığındaki aylarda. Kişinin ilk ayı
  * başlangıç ayı, boşsa ilk satış ayı; hesap döneminin ayından önce olamaz. Oranlar kural tablosundan, elle
  * `sgk.isverenOran` uygulanmış; Ayarlar'daki SGK oranları kullanılmaz.
  */
-export function taxPayrollFromModel(
+export function payrollFromModel(
   model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth"> & Partial<Pick<Model, "calledDaysOf" | "asilposMealDaysOf">>,
   year: number,
-  settings: Pick<TaxSettings, "periodStart" | "minWageSupport" | "overrides">,
-  overrides: TaxOverrides = settings.overrides,
+  settings: Pick<PayrollSettings, "periodStart" | "minWageSupport" | "overrides">,
+  overrides: RuleOverrides = settings.overrides,
 ): Map<string, PayrollMonth> {
   const { rules, estimated } = rulesFor(year, overrides);
   const periodMonth = settings.periodStart.slice(0, 7);
@@ -316,18 +311,18 @@ export function taxPayrollFromModel(
       if (!inRange(s, m)) continue;
       const at = model.staffAtMonth(s, m);
       if (isPartTime(at)) {
-        // Part-time (Faz 5): günlük ücret işletmenin gün başına maliyetidir, yasal bordroda brütleştirilmez; ayın Vardiya
+        // Part-time: günlük ücret işletmenin gün başına maliyetidir, yasal bordroda brütleştirilmez; ayın Vardiya
         // planındaki bütün çalışma günleriyle (ücret + yemek kartı + ek) ek ödeme gibi maliyete. Bağlantısızsa yalnız ek
         const days = model.calledDaysOf?.(at, m, { planned: true }) ?? null;
         months.push({ month: m, net: 0, extras: staffCost(at, model.ds.settings, { calledDays: days }).total });
         continue;
       }
-      // Yemek kartı (Faz 5) ek ödeme gibi: vergisiz, brütleştirilmeden maliyete (Ayarlar'daki günlük tutar × gün; biten
+      // Yemek kartı ek ödeme gibi: vergisiz, brütleştirilmeden maliyete (Ayarlar'daki günlük tutar × gün; biten
       // ayda AsilPOS'ta çalıştığı gün biliniyorsa o gün, Gelir-gider ve Maaşlar gibi: LM-4b, model.asilposMealDaysOf)
       const asilposDays = model.asilposMealDaysOf?.(at, m) ?? null;
       months.push({ month: m, net: at.netSalary, extras: at.extras + mealCardOf(at, model.ds.settings, asilposDays ?? undefined) });
     }
     return { id: s.id, name: s.name, months };
   });
-  return taxPayroll(staff, year, rules, { minWageSupport: settings.minWageSupport, from, estimated });
+  return payrollByMonth(staff, year, rules, { minWageSupport: settings.minWageSupport, from, estimated });
 }

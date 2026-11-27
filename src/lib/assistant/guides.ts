@@ -123,7 +123,7 @@ export const OP_GUIDES: readonly OpGuide[] = [
     kind: "rehber",
     topic: "Kapalı tek seferlik hatırlatıcıyı yeniden açmak",
     keywords: ["hatırlatıcıyı aç", "yeniden aç", "kapalı hatırlatıcı"],
-    why: "Ödendi ve KDV ödendi kayıtlarını kalıcı siler.",
+    why: "Ödendi kaydını kalıcı siler.",
     path: "/panel/hatirlaticilar",
     steps: ["Ödemeler › kapalı hatırlatıcılar listesini açın.", "Satır › Aç'a basın; ödendi kaydının silineceğini kontrol edin."],
     actions: ["setReminderActive(true)"],
@@ -175,16 +175,6 @@ export const OP_GUIDES: readonly OpGuide[] = [
     steps: ["Faturalar › Fatura ekle (ya da satır › Düzenle).", "Tedarikçi, tarih, tutar ve KDV'yi girin › Kaydet."],
     instead: "Faturayı ödendi işaretlemeyi asistan onay kartıyla hazırlayabilir (fatura_odendi).",
     actions: ["saveInvoice"],
-  },
-  {
-    id: "kdv-odendi-kaldir",
-    kind: "rehber",
-    topic: "KDV ödendi kaydını kaldırmak",
-    keywords: ["kdv ödendi", "kdv kaydını kaldır"],
-    why: "Ödeme kaydını siler, geri alınamaz.",
-    path: "/panel/hatirlaticilar/nakit#kdv",
-    steps: ["Nakit planı › KDV kartı (şube seçiliyken: Tümü ya da Firma geneli).", "Dönemi bulun › “Ödendi kaydını kaldır”."],
-    actions: ["forgetVatPayment"],
   },
   // ---------------------------------------------------------------- Kasa
   {
@@ -357,16 +347,6 @@ export const OP_GUIDES: readonly OpGuide[] = [
     steps: ["Aylık harcamalar › kaydı bulun › Düzenle.", "Tutarı ya da kategoriyi değiştirin › Kaydet."],
     instead: "Yeni gider kaydını asistan onay kartıyla hazırlayabilir (harcama_ekle).",
     actions: ["saveExpenseEntry(id≠null)"],
-  },
-  {
-    id: "vergi",
-    kind: "rehber",
-    topic: "Vergi sınıflandırma, düzeltme, demirbaş, muhasebeci kaydı",
-    keywords: ["vergi", "demirbaş", "sınıflandır", "muhasebeci", "beyanname"],
-    why: "Muhasebe yargısı ve toplu kayıt; üzerine yazınca önceki değer dönmez.",
-    path: "/panel/vergi",
-    steps: ["Vergi › Gelir-gider (ya da Demirbaş) sekmesi.", "Türü muhasebecinin söylediği gibi seçin › Kaydet."],
-    actions: ["saveTaxClassifications", "saveTaxAdjustment", "saveTaxAsset", "saveTaxFiling"],
   },
   // ---------------------------------------------------------------- Operasyon
   {
@@ -588,16 +568,16 @@ export const OP_GUIDES: readonly OpGuide[] = [
   {
     id: "oran-kurallari",
     kind: "haric",
-    topic: "Komisyon, personel oranları, SGK, vergi kuralları, karaoke saatleri, fotoğraf okuma ayarı",
-    keywords: ["komisyon oranı", "sgk oranı", "vergi kuralı", "karaoke saatleri", "fotoğraf okuma", "personel oranı"],
+    topic: "Komisyon, personel oranları, SGK, karaoke saatleri, fotoğraf okuma ayarı",
+    keywords: ["komisyon oranı", "sgk oranı", "karaoke saatleri", "fotoğraf okuma", "personel oranı"],
     why: "Sistem geneli oran ve kurallar; geçmiş dahil bütün hesapları etkiler.",
     path: "/panel/komisyonlar",
     steps: [
       "Komisyon: Komisyonlar › kanal ayarları.",
-      "Personel oranları: Personel; SGK: Gelir-gider'deki SGK notu; vergi: Vergi › Kurallar.",
+      "Personel ve SGK oranları: Maaşlar › SGK oranları.",
       "Karaoke saatleri: Karaoke › Doluluk › Saatler; fotoğraf okuma: Ayarlar › Fotoğraf.",
     ],
-    actions: ["saveCommissionSettings", "saveStaffRates", "setEmployerSgkRate", "saveTaxSettings", "saveTaxOverride", "saveKaraokeHours", "updatePhotoReading"],
+    actions: ["saveCommissionSettings", "saveStaffRates", "saveKaraokeHours", "updatePhotoReading"],
   },
   {
     id: "cihaz-anahtari",

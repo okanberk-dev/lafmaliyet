@@ -292,10 +292,11 @@ export function cariResetBlock(entries: number, wipe: boolean, backupFile: strin
  * db:reset'in vergi demirbaş listesi notu (dalga 12, K32; saf): `tax_assets` faturalara bağlı olduğu için `TRUNCATE
  * invoices … CASCADE` onu da boşaltır. Elle girilmiş liste durdurmaz (yedekte kalır), silineceği söylenir. Vergi
  * kayıtları (muhasebecinin rakamları, düzeltmeler) ve vergi ayarları kalır; sabit gider ve aylık harcama kategorisinin
- * vergi belgesi kendi satırıyla birlikte gider ya da kalır (sabit giderler başlangıç verisinden yeniden yüklenir, sınıflandırmasız)
+ * vergi belgesi kendi satırıyla birlikte gider ya da kalır (sabit giderler başlangıç verisinden yeniden yüklenir, sınıflandırmasız).
+ * Vergi bölümü 27 Kasım 2026'da kaldırıldı; tablolar ve kayıtlar yerinde, ekranı yok: liste yalnız yedekten geri gelir
  */
 export function taxAssetsResetNote(assets: number): string | null {
-  return assets ? `Vergi demirbaş listesi de silinecek (${assets} varlık; yedekte duruyor, Vergi › Demirbaş'tan yeniden girilir).` : null;
+  return assets ? `Vergi demirbaş listesi de silinecek (${assets} varlık; yedekte duruyor, yedekten geri yüklenir; Vergi bölümü kaldırıldı).` : null;
 }
 
 /** drizzle/*_sayim_yeni_kalemler.sql: sayım listesine sonradan eklenen sekiz kalem (tek ifade, korumalı) */

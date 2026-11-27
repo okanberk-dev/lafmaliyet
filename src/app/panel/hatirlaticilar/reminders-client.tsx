@@ -164,7 +164,7 @@ function RemindersView({
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(monthRaw) ? monthRaw : thisMonth;
 
   const [editing, setEditing] = useState<{ reminder: Reminder | null; date?: string } | null>(null);
-  // `?yeni=<şablon>` (Vergi › takvimin "Ödemeler'e ekle"si): ekleme sayfası o şablonla dolu açılır; kapanınca adres
+  // `?yeni=<şablon>` (şablonlu bağlantı): ekleme sayfası o şablonla dolu açılır; kapanınca adres
   // temizlenir (yenileme yeniden açmasın). Bilinmeyen şablon yok sayılır
   const [yeni, setYeni] = useQueryState<string>("yeni", "");
   const urlPreset = isPresetKey(yeni) ? yeni : null;

@@ -28,7 +28,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import type { FixedPeriod, FixedSection, LandlordType } from "@/lib/calc/types";
 import { FIXED_PERIODS, FIXED_SECTION_VAT, FIXED_SECTIONS, FIXED_VAT_RATES, fixedVatRate, LANDLORD_TYPES } from "@/lib/constants";
 
-/** Kira stopajı oranı (formun önizlemesi; hesap yılın vergi kuralından: engine.ts rentWithholdingRate) */
+/** Kira stopajı oranı (formun önizlemesi; hesap yılın kuralından: engine.ts rentWithholdingRate, src/lib/bordro/rules.ts) */
 const KIRA_STOPAJ = 0.2;
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -1371,7 +1371,7 @@ function FixedDialog({
           <Field
             label="Ev sahibi"
             htmlFor="fx-landlord"
-            tip="Şahsa kira: KDV yok, stopaj %20 resmi kiradan (muhtasarla ödenir; resmi kira yoksa tutardan, ödemeden kesilir). Şirkete kira: faturalı, %20 KDV, stopaj yok. Seçilmezse KDV aşağıdaki seçimden, stopaj Vergi'deki profilden."
+            tip="Şahsa kira: KDV yok, stopaj %20 resmi kiradan (muhtasarla ödenir; resmi kira yoksa tutardan, ödemeden kesilir). Şirkete kira: faturalı, %20 KDV, stopaj yok. Seçilmezse KDV aşağıdaki seçimden, stopaj kayıtlı stopaj profilinden."
             hint={`${LANDLORD_TYPES.find((t) => t.value === f.landlord)?.hint ?? "Seçilmedi: KDV ve stopaj eski kuralla."}${
               landlordType === "sirket" && officialGross ? ` Kayıtlı resmi kira (${money(official ?? 0)}) saklanır; şirkette stopaja girmez, şahsa dönülünce yine kullanılır.` : ""
             }`}
@@ -1430,7 +1430,7 @@ function FixedDialog({
               label="Resmi (sözleşme) kira, aylık"
               htmlFor="fx-of"
               error={officialError}
-              tip="Kira sözleşmesindeki tutar. Stopaj (muhtasar) bundan hesaplanır; vergi kârında kira gideri yalnız resmi brüt kiradır, gerçek kirayla farkı belgesiz sayılır."
+              tip="Kira sözleşmesindeki tutar. Stopaj (muhtasar) bundan hesaplanır; muhasebeciniz muhtasarla öder."
               hint={
                 officialGross
                   ? `Stopaj aylık ${money(officialGross * KIRA_STOPAJ)} (brüt ${money(officialGross)} × %20): Gelir-gider'de "Kira stopajı", muhtasarla izleyen ayın 26'sında.`

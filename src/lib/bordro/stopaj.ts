@@ -1,0 +1,49 @@
+/**
+ * Sabit giderin ödemeden kesilen stopajı (nakit planı, Ödemeler'in "Sabit giderlerden ekle"si ve tutar karşılaştırması;
+ * Gelir-gider'in "Kira stopajı" maliyeti). Profil (`Withholding`) sabit giderin saklı sütunudur (`tax_withholding`; eski
+ * Vergi › sınıflandırma, ekranı 27 Kasım 2026'da kaldırıldı, değerler yerinde). Türkiye'deki şahsa ödenen kira, serbest
+ * meslek ve internet reklamında bankadan net çıkar (kira 160.000 brüt → 128.000); stopajı muhasebeci muhtasarla öder,
+ * nakit planı vergi tahmini yapmaz. Doğrudan yurt dışına ödenen reklam ve hizmette yabancı firma Türk KDV'si kesmez:
+ * tutar olduğu gibi gider (KDV oranı 0). Saf modül; tests/bordro.test.ts.
+ */
+
+import type { Withholding } from "../calc/types";
+
+import { type PayrollYearRules, rulesFor } from "./rules";
+
+/** Profilin gelir vergisi stopajı oranı */
+export function withholdingRate(w: Withholding | null | undefined, rules: PayrollYearRules): number {
+  switch (w) {
+    case "kira":
+      return rules.stopaj.kira.value;
+    case "serbest_meslek":
+      return rules.stopaj.serbestMeslek.value;
+    case "internet_reklam":
+    case "internet_reklam_yurtdisi":
+      return rules.stopaj.internetReklam.value;
+    default:
+      return 0;
+  }
+}
+
+/** Doğrudan yurt dışına ödenen profil: yabancı firma Türk KDV'si kesmez, stopaj ödemeden düşülmez */
+export function isForeignWithholding(w: Withholding | null | undefined): boolean {
+  return w === "internet_reklam_yurtdisi" || w === "yurt_disi_hizmet";
+}
+
+/**
+ * Ödemeden kesilen stopaj oranı: Türkiye'deki şahsa ödenen kira, serbest meslek ve internet reklamında. Doğrudan yurt
+ * dışına ödenende 0. Yılın kuralı yoksa en son bilinen yılınki
+ */
+export function paidWithholdingRate(w: Withholding | null | undefined, year: number): number {
+  if (!w || isForeignWithholding(w)) return 0;
+  return withholdingRate(w, rulesFor(year).rules);
+}
+
+/**
+ * Sabit giderin bankadan çıkan tutarının oranları: ödemeden kesilen stopaj (paidWithholdingRate) ve faturadaki KDV.
+ * Doğrudan yurt dışına ödenen reklam ve hizmette KDV oranı 0 (bölümün varsayılan %20'si eklenmez)
+ */
+export function paidFixedRates<T extends { taxWithholding?: Withholding | null; vatRate?: number | null }>(f: T, year: number): T & { withholdingRate: number } {
+  return { ...f, ...(isForeignWithholding(f.taxWithholding) ? { vatRate: 0 } : {}), withholdingRate: paidWithholdingRate(f.taxWithholding, year) };
+}

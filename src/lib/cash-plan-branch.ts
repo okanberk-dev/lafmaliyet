@@ -10,9 +10,10 @@
  *   şubenin akışına girmez (bilgi); "Tümü"de hepsi firmanın planında.
  *
  * **Vergi ve SGK şubeye bölünmez** (sahibin kararı 27 Kasım 2026: "Vergi ile ilgili olan kısımları tamamen çıkar"):
- * KDV, KDV-2, muhtasar (stopajlı sabit giderin stopajı da), geçici ve kurumlar vergisi, damga, yerel vergiler ve SGK ne
- * şubenin akışında ne İşletme geneli satırında; şubenin planında KDV tahmini ve SGK tahmini de yok
- * (`branchPlanWithoutTax`). Ekran tek not yazar: "Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür" (`FIRM_TAX_NOTE`).
+ * Ödemeler'deki vergi hatırlatıcıları (KDV, KDV-2, muhtasar, geçici ve kurumlar vergisi, damga, yerel vergiler) ve SGK ne
+ * şubenin akışında ne İşletme geneli satırında; şubenin planında SGK tahmini de yok (`branchPlanWithoutTax`). Panel vergi
+ * tahmini yapmaz (Vergi bölümü aynı gün kaldırıldı). Ekran tek not yazar: "Vergi ve SGK ödemeleri firma geneli: Tümü'de
+ * görünür" (`FIRM_TAX_NOTE`).
  */
 
 import { type CashPlan, FIRM_TAX_NOTE, type PlanLine } from "./cash-plan";
@@ -73,14 +74,12 @@ export function isTaxPlanReminder(r: Pick<ReminderRow, "kind" | "title">): boole
 }
 
 /**
- * Firmanın planındaki satır işletme geneli mi (şubenin akışına girmez, İşletme geneli satırında toplanır). Vergi, KDV ve
- * SGK satırları değil: vergi şubeye bölünmez (Tümü'de görünür)
+ * Firmanın planındaki satır işletme geneli mi (şubenin akışına girmez, İşletme geneli satırında toplanır). SGK satırı
+ * ve vergi hatırlatıcıları değil: vergi ve SGK şubeye bölünmez (Tümü'de görünür)
  */
 export function isSharedPlanLine(l: Pick<PlanLine, "key" | "kind" | "direction">, ids: SharedPlanIds): boolean {
   if (l.direction !== "out") return false;
   switch (l.kind) {
-    case "kdv":
-    case "vergi":
     case "sgk":
       return false;
     case "reminder": {
@@ -144,31 +143,19 @@ export function branchCashFlow(company: Pick<CashPlan, "weeks" | "opening">, ids
   };
 }
 
-/** Şube kipinde planın dışında tutulan tahminler: KDV, vergi ve SGK firmanın (şubeye bölünmez, Tümü'de görünür) */
-export const BRANCH_PLAN_EXCLUDED = ["kdv", "vergi", "sgk"] as const;
+/** Şube kipinde planın dışında tutulan tahmin: SGK firmanın (şubeye bölünmez, Tümü'de görünür) */
+export const BRANCH_PLAN_EXCLUDED = ["sgk"] as const;
 
 const TAX_ESTIMATES: ReadonlySet<string> = new Set(BRANCH_PLAN_EXCLUDED);
 
 /**
- * Şubenin planından vergiyi kaldırır (sahibin kararı 27 Kasım 2026): KDV tahmini kartı yok (`vat`), "Tahmine
- * katılanlar"da KDV, vergi ve SGK satırı yok, "Nasıl hesaplandı" tek not yazar (`taxFirmWide`). Satırlar zaten vergisiz
- * kurulur (src/server/data/cash-plan.ts › loadCashPlan: vergi ve SGK hatırlatıcıları, KDV, vergi ve SGK tahmini, vergi
- * beslemesi yok; stopajlı sabit gider net)
+ * Şubenin planından SGK'yı kaldırır (sahibin kararı 27 Kasım 2026: vergi ve SGK şubeye bölünmez): "Tahmine
+ * katılanlar"da SGK satırı yok, "Nasıl hesaplandı" tek not yazar (`taxFirmWide`). Satırlar zaten vergisiz ve SGK'sız
+ * kurulur (src/server/data/cash-plan.ts › loadCashPlan: vergi ve SGK hatırlatıcıları ve SGK tahmini yok)
  */
 export function branchPlanWithoutTax(plan: CashPlan): CashPlan {
-  return { ...plan, vat: null, estimates: plan.estimates.filter((r) => !TAX_ESTIMATES.has(r.key)), taxFirmWide: true };
+  return { ...plan, estimates: plan.estimates.filter((r) => !TAX_ESTIMATES.has(r.key)), taxFirmWide: true };
 }
-
-/**
- * Şube kipinde KDV tahmini kartının yerindeki not (`taxFirmWide`; ekranda `#kdv` çapası bunda): Vergi takviminin,
- * Yardım'ın ve asistanın rehberinin "KDV tahmini" bağlantısı boşa inmesin. Düğmesi Nakit planı'nı Firma geneli görünüme
- * geçirir (ekranın çipiyle aynı eylem)
- */
-export const BRANCH_VAT_NOTE = {
-  title: "KDV tahmini, devreden KDV ve Ödendi kayıtları firma geneli",
-  text: "Tümü'de ya da Firma geneli görünümde; vergi şubeye bölünmez.",
-  action: "Firma geneline geç",
-} as const;
 
 /** Şubenin akışının açıklaması (ekranın notu) */
 export function branchFlowNote(name: string): { title: string; text: string } {

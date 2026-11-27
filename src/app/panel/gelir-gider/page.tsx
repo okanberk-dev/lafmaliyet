@@ -1,6 +1,5 @@
 import { Banknote, Percent, PiggyBank, Wallet } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 
 import { HashScroll } from "@/components/panel/hash-scroll";
@@ -25,19 +24,16 @@ import { can } from "@/lib/roles";
 import { periodSalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
-import { employerRateNotice, rateText } from "@/lib/tax/edit";
 import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
 import { loadModel } from "@/server/data/dataset";
-import { loadTaxSettings } from "@/server/data/tax";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
 import { readSalesState, SITE_SALES_FIRST_MONTH } from "@/server/site-sales/sync";
 
 import { pnlRowLabel, revenueBreakdown, yearBreakdowns } from "./breakdowns";
 import { CountUp, PnlGrid, YearPicker, type GridSection, type StripMonth } from "./pnl-grid";
-import { SgkRateNotice } from "./sgk-rate-notice";
 import { SiteSalesCard, type SiteSalesCardData } from "./site-sales-card";
 
 export const metadata: Metadata = { title: "Gelir-gider" };
@@ -88,14 +84,9 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // istemciye (PnlGrid, ay görünümü) ipucu ve uyarısıyla gider, metin motorda kişisiz kurulur
   const personal = can(viewer.role, "maas");
   const sp = await searchParams;
-  // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
-  const [model, salesState, taxSettings, monthWrite, branchList] = await Promise.all([
+  const [model, salesState, monthWrite, branchList] = await Promise.all([
     loadModel({ personal }),
     readSalesState(),
-    loadTaxSettings().catch((e) => {
-      console.error("[gelir-gider] vergi ayarları", e);
-      return null;
-    }),
     // Ay hücrelerinin (ciro, açık gün, ay notu) yazdığı şube ve yazılamıyorsa nedeni: "Tümü"de (birden çok kasa açıkken)
     // şubelerin toplamıdır, online kanalın kasa satışı yok. Hücre şubeyi gönderir (gönderim anındaki seçime değil);
     // okunamazsa hücreler kilitli
@@ -292,8 +283,6 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     ),
   };
   // Yıl kartlarının notu: toplama girmeyen aylar ve sayımı olmayan aylar (tablo bu ayları yine gösterir)
-  // Ayarlar'daki işveren SGK oranı (bu tablo ve dışa aktarım) vergi ve nakit planının yasal oranından farklıysa (K17, K19)
-  const sgkNotice = taxSettings ? employerRateNotice(model.settings.isverenSgk, taxSettings, Number(current.slice(0, 4))) : null;
   const yearNotes = [
     ...yt.missingRevenue.map(missingRevenueText),
     ...(yt.uncounted.length ? [`Ay sonu sayımı yok: ${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}`] : []),
@@ -322,14 +311,6 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       />
       {/* ⌘K "Kâr / zarar" (#kar-zarar) başka sayfadan gelince içerik akınca iner */}
       <HashScroll key={`capa-${year}`} />
-      {/* Vergi bölümündeki karşılığı (dalga 12, docs/VERGI.md) */}
-      <p className="-mt-2 mb-4 text-[13px] text-ink-mute">
-        Vergi hesabındaki karşılığı:{" "}
-        <Link href="/panel/vergi/gelir-gider" className="font-medium text-ink underline underline-offset-2">
-          Vergi kârı ›
-        </Link>
-      </p>
-      {sgkNotice ? <SgkRateNotice text={sgkNotice.text} target={sgkNotice.target} targetText={rateText(sgkNotice.target)} currentText={rateText(sgkNotice.current)} canApply={sgkNotice.canApply} /> : null}
       {/* ⌘K "Kâr / zarar" buraya iner (docs/planlar/ux-sade.md §3.7) */}
       <div id="kar-zarar" className="mb-6 grid scroll-mt-20 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown

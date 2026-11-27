@@ -8,7 +8,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
  * Kasanın günlük ürün satışı (docs/planlar/CRITIQUE2.md R18): gün gün ürün dökümü. ModPOS'un dökümü hiç gelmedi; ağzı
  * AsilPOS doldurur: her iş gününün satış listesi gün sonunda `POST /api/pos/gun` ile gelir ve `pos_daily_sales`'e yazılır
  * (docs/ASILPOS.md). Aylık maliyet modeli bu satırları geçiş gününden itibaren ay toplamı olarak okur
- * (src/server/data/asilpos-sales.ts; Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, KDV tahmini, tatlı payı).
+ * (src/server/data/asilpos-sales.ts; Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, tatlı payı).
  * Satırları gün gün okuyan bugün yok (satış tahmini 4 Kasım 2026'da kalktı). Günlük pencereye geçecek okuyucu (ör. hafta gününe göre tatlı oranı) bu
  * ağızdan okur ve geçiş gününden önceki deneme günlerini kendisi ayırır (isAsilposDay, src/lib/asilpos/switch.ts): ağız
  * bütün günleri döner. Aralıkta satır yoksa null.

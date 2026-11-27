@@ -38,8 +38,7 @@ export function EstimatesSheet({ rows, excluded, onClose }: { rows: EstimateRow[
     onClose();
   }
 
-  // KDV satırının notu tutarı zaten yazar ("Ekim için ≈ 42.100 ₺"): "ayda" ayrıca yazılmaz
-  const describe = (r: EstimateRow) => [r.monthly >= 1 && r.key !== "kdv" ? `ayda ${tl(r.monthly)}` : null, r.note].filter(Boolean).join(" · ");
+  const describe = (r: EstimateRow) => [r.monthly >= 1 ? `ayda ${tl(r.monthly)}` : null, r.note].filter(Boolean).join(" · ");
 
   return (
     <Sheet

@@ -15,7 +15,6 @@ import { round2 } from "@/lib/cari/balance";
 import { LINK_WINDOW } from "@/lib/cari/match";
 import { linkPreview, type MonthEffect } from "@/lib/cari/months";
 import { GOODS_CATEGORIES } from "@/lib/constants";
-import { purchaseVat, purchaseWithheld } from "@/lib/kdv";
 import { dateTR, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -40,8 +39,6 @@ export interface LinkInvoice {
   amount: number;
   discount: number;
   category: string;
-  /** KDV toplamı (tevkifat düşülmemiş; KDV tahmininin saydığı) */
-  vat?: number;
 }
 
 /** Başka tedarikçide görünen fatura (R3d): kartsız adda diğer ad önerisi, başka kartta o kartın adı */
@@ -49,8 +46,8 @@ type ForeignInvoice = LinkInvoice & { supplier: string; owner: { cardId: number;
 
 /**
  * Faturası geldi / Faturaya bağla (§5.2): bir ya da birkaç faturasız alım tek faturaya bağlanır. Önerilen faturalar
- * en eski alımdan 7 gün önce ile en yeni alımdan 45 gün sonra arasındakiler. Önizleme giderin ve KDV tahmininin ay ay
- * nasıl değişeceğini söyler; eski borç seçildiyse çift sayım uyarısı çıkar. Geçmiş ayın gideri değişecekse onay ister.
+ * en eski alımdan 7 gün önce ile en yeni alımdan 45 gün sonra arasındakiler. Önizleme giderin ay ay nasıl değişeceğini
+ * söyler; eski borç seçildiyse çift sayım uyarısı çıkar. Geçmiş ayın gideri değişecekse onay ister.
  */
 export function LinkDialog({
   cardId,
@@ -112,8 +109,6 @@ export function LinkDialog({
           invoice: {
             date: invoice.date,
             net,
-            vat: round2(purchaseVat(invoice)),
-            withheld: round2(purchaseWithheld(invoice)),
             payable: invoice.payable,
             goods: GOODS_CATEGORIES.includes(invoice.category),
             counted: countedCategories.includes(invoice.category),

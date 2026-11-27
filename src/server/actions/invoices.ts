@@ -393,8 +393,7 @@ type LinkGuardRow = Pick<typeof s.invoices.$inferSelect, "id" | "supplier" | "in
 
 /**
  * Faturasız alımı bağlı fatura bağlanamaz bir hâle geçemez (denetim E-45): kafe dışı (karaoke box, Alp Koç), komisyon
- * ya da iade. Bağlama alımın gider kaydını sildi; geçseydi alım gelir-giderden, mal maliyetinden ve KDV tahmininden
- * sessizce düşerdi. Satırlar çağıranda kilitli olmalı (linkDebts de faturayı kilitleyip kuralı okur: biri ötekini bekler).
+ * ya da iade. Bağlama alımın gider kaydını sildi; geçseydi alım gelir-giderden ve mal maliyetinden sessizce düşerdi. Satırlar çağıranda kilitli olmalı (linkDebts de faturayı kilitleyip kuralı okur: biri ötekini bekler).
  */
 async function assertLinkedStayLinkable(
   tx: Tx,

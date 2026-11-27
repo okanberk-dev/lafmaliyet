@@ -158,8 +158,8 @@ export function CashOutInvoicesCard({
         description={
           visible.length ? (
             <>
-              Kasa&apos;ya e-Arşiv ya da faturalı alışveriş girildi; Aylık harcamalar&apos;a yazılmadı, faturası da Faturalar&apos;da yok: gelir-gidere, mal
-              maliyetine ve KDV tahminine girmedi.
+              Kasa&apos;ya e-Arşiv ya da faturalı alışveriş girildi; Aylık harcamalar&apos;a yazılmadı, faturası da Faturalar&apos;da yok: gelir-gidere ve mal
+              maliyetine girmedi.
               <span className="max-sm:hidden"> Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar.</span>
             </>
           ) : (
