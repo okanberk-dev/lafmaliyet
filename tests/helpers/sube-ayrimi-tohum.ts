@@ -98,9 +98,10 @@ export async function seedSubeAyrimi(db: DB, today: string): Promise<SubeTohum> 
 
   // Kasa raporları (iki gün), sayım, kasadan çıkan, zayi
   await db.insert(s.cashReports).values([
-    { date: d1, branchId: "marina", zNo: "101", receipts: 41, zTotal: 2_100, cash: 900, card: 1_000, mealCard: 200, openingCash: 500, countedCash: 1_400, submittedByName: "Ayşe Marina", note: "Marina kasa notu" },
+    // Yazarkasa Z'sinin KDV dökümü (d1): muhasebeci paketinin Z KDV dökümü ve kasa raporları şubenin kendi Z'sinden
+    { date: d1, branchId: "marina", zNo: "101", receipts: 41, zTotal: 2_100, cash: 900, card: 1_000, mealCard: 200, openingCash: 500, countedCash: 1_400, submittedByName: "Ayşe Marina", note: "Marina kasa notu", okcZNo: "41", okcVatTotal: 190.91, okcVat: [{ rate: 10, total: 2_100, vat: 190.91 }] },
     { date: d2, branchId: "marina", zNo: "100", receipts: 38, zTotal: 2_200, cash: 1_000, card: 1_000, mealCard: 200, openingCash: 500, countedCash: 1_500, submittedByName: "Ayşe Marina" },
-    { date: d1, branchId: "tuzla", zNo: "9191", receipts: 919, zTotal: 91_901.01, cash: 91_921.01, card: 91_931.01, mealCard: 91_941.01, openingCash: 91_951.01, countedCash: 91_961.01, submittedByName: `${TZ_MARK} Can`, note: `${TZ_MARK} kasa notu` },
+    { date: d1, branchId: "tuzla", zNo: "9191", receipts: 919, zTotal: 91_901.01, cash: 91_921.01, card: 91_931.01, mealCard: 91_941.01, openingCash: 91_951.01, countedCash: 91_961.01, submittedByName: `${TZ_MARK} Can`, note: `${TZ_MARK} kasa notu`, okcZNo: "9192", okcVatTotal: 8_360.97, okcVat: [{ rate: 10, total: 91_970.7, vat: 8_360.97 }] },
     { date: d2, branchId: "tuzla", zNo: "9190", receipts: 918, zTotal: 91_902.02, cash: 91_922.02, card: 91_932.02, mealCard: 91_942.02, openingCash: 91_952.02, countedCash: 91_962.02, submittedByName: `${TZ_MARK} Can` },
   ]);
   await db.insert(s.cashCounts).values([

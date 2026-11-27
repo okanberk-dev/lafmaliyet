@@ -28,6 +28,7 @@ import { ALL_BRANCHES, branchPnlEntry, branchViewNote } from "../src/lib/branche
 import { createModel, SHARED_KEY } from "../src/lib/calc/engine";
 import { breakEvenOf, dashboard } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, FixedExpense } from "../src/lib/calc/types";
+import { purchaseVat } from "../src/lib/kdv";
 import { packageFileName } from "../src/lib/muhasebe/paket";
 import { digestPreviewGroup, previewGroupText, weeklyPreviewNote } from "../src/lib/notify-recipients";
 import { taxViewInputFromModel, type TaxInputs } from "../src/lib/tax/inputs";
@@ -260,7 +261,9 @@ test("dışa aktarım: Vergi sekmesi şube dosyasında da firmanın (Firma genel
   assert.equal(text.replace(/\nFirma geneli · beyan:[^\n]*/, ""), all);
 });
 
-test("dışa aktarım: şube dosyasının Faturalar TOPLAM'ında KDV, KDV-2 ve ödenen KDV toplamı yok, altında tek gri satır; Tümü dosyasında var", () => {
+test("dışa aktarım: şube dosyasının Faturalar TOPLAM'ında KDV, KDV-2 ve ödenen KDV toplamı Tümü dosyasındaki gibi; altında tek gri satır (KDV beyanı firma geneli)", () => {
+  // Sahibin açıklaması (27 Kasım 2026): ürün ve fatura KDV'si şubenin kendi kayıtlarının gerçeği, şube dosyasında doğru
+  // kalır; yalnız matrah ve beyan firma geneli. Aynı model iki dosyada: TOPLAM satırı birebir aynı, şube dosyasında not
   const invoices = (wb: ExcelJS.Workbook) => wb.getWorksheet("Faturalar")!;
   const totalOf = (ws: ExcelJS.Worksheet) => {
     let row: ExcelJS.Row | undefined;
@@ -270,23 +273,24 @@ test("dışa aktarım: şube dosyasının Faturalar TOPLAM'ında KDV, KDV-2 ve �
     assert.ok(row, "TOPLAM satırı");
     return row;
   };
-  assert.ok(model.ds.invoices.length > 0, "fixture'da fatura var");
+  assert.ok(model.ds.invoices.some((i) => purchaseVat(i) > 0), "fixture'da KDV'li fatura var");
   const all = invoices(buildWorkbook(model, "2026-09", extras()));
   const branch = invoices(buildWorkbook(model, "2026-09", extras({ scope: { label: "Marina", branch: true } })));
   const ta = totalOf(all);
   const tb = totalOf(branch);
   for (const k of ["v", "w", "pv"]) {
-    assert.match(String((ta.getCell(k).value as { formula?: string } | null)?.formula ?? ""), /^SUBTOTAL\(109,/, `Tümü dosyasında ${k} toplamı`);
-    assert.equal(tb.getCell(k).value, null, `şube dosyasında ${k} toplamı yok`);
+    assert.match(String((tb.getCell(k).value as { formula?: string } | null)?.formula ?? ""), /^SUBTOTAL\(109,/, `şube dosyasında ${k} toplamı`);
   }
-  // Öbür toplamlar ve sütunlar aynı (Aylık Alımlar'ın SUMIFS'i H, E, K'yı harfle okur)
-  for (const k of ["a", "i", "n", "p", "ob", "pp"]) assert.deepEqual(tb.getCell(k).value, ta.getCell(k).value, k);
+  // Bütün toplamlar ve sütunlar aynı (Aylık Alımlar'ın SUMIFS'i H, E, K'yı harfle okur)
+  for (const k of ["a", "i", "n", "v", "p", "ob", "pp", "w", "pv"]) assert.deepEqual(tb.getCell(k).value, ta.getCell(k).value, k);
+  const vatTotal = (tb.getCell("v").value as { result?: number }).result ?? 0;
+  assert.ok(Math.abs(vatTotal - model.ds.invoices.reduce((t, i) => t + Math.round(purchaseVat(i) * 100) / 100, 0)) < 0.01, "KDV toplamı faturaların KDV'si");
   assert.deepEqual(branch.getRow(1).values, all.getRow(1).values);
   assert.equal(tb.number, ta.number);
   // Tek gri satır TOPLAM'ın altında; Tümü dosyasında yok
   const note = branch.getRow(tb.number + 1);
   assert.equal(note.getCell("d").value, BRANCH_INVOICE_VAT_NOTE);
-  assert.equal(BRANCH_INVOICE_VAT_NOTE, "Şube dosyası: KDV toplamı yok, vergi şubeye bölünmez; beyan için Tümü dosyası");
+  assert.equal(BRANCH_INVOICE_VAT_NOTE, "KDV beyanı firma geneli: beyan için Tümü dosyası");
   assert.equal(note.getCell("d").font?.color?.argb, "FF71717A");
   assert.equal(branch.rowCount, tb.number + 1);
   assert.equal(all.rowCount, ta.number);

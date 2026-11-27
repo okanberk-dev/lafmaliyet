@@ -406,8 +406,14 @@ kurumlar vergisi, damga ve SGK ne şubenin akışında ne İşletme geneli satı
 düğmesiyle (çipin eylemi; `BRANCH_VAT_NOTE`, `FirmVatNotice`). Vergi takviminin, Yardım'ın ve asistanın `#kdv`
 bağlantısı bu nota iner. "Tahmine katılanlar"da KDV, vergi ve SGK satırı yok; "Nasıl hesaplandı" bunların yerine tek
 not yazar: **"Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür."** (`branchPlanWithoutTax`, `FIRM_TAX_NOTE`).
-Bordronun neti Vergi › Kurallar'daki ayarlarla (hesap dönemi, asgari ücret desteği), firmanın planındaki gibi. Stopajlı sabit gider şubenin akışında net ödenir (stopaj muhtasarla
-firmanın). Bağlantının `odemeler` aracının nakit planı da aynı notu taşır. Tümü ve Firma geneli kipi değişmedi.
+Bordronun neti Vergi › Kurallar'daki ayarlarla (hesap dönemi, asgari ücret desteği), firmanın planındaki gibi; ayarlar
+okunamazsa varsayılanlar. Stopajlı sabit gider şubenin akışında net ödenir (stopaj muhtasarla firmanın). Bağlantının
+`odemeler` aracının nakit planı da aynı notu taşır. Tümü ve Firma geneli kipi değişmedi.
+
+Firma geneli olan **KDV beyanı ve ödemesi**dir (sahibin açıklaması 27 Kasım 2026: "ürün KDV'si falan hesaplansın, nasıl
+doğruysa öyle olsun"); şubenin kendi ödemelerindeki KDV şubenin akışında durur, Tümü'deki gibi: şubeye seçilmiş faturanın
+ödenecek tutarı KDV dahil (tevkifatlı faturada tedarikçiye ödenen kısım; tevkifat 2 No.lu KDV'yle firmanın), şubenin
+sabit giderine faturadaki KDV eklenir, mal tahmini ve satış tahmini KDV dahil tutarlarla.
 
 ## Kod
 

@@ -13,7 +13,7 @@ import { sharedCariLine, sharedTotals } from "../src/app/panel/tedarikciler/shar
 import { areaKapsam, modeOfScope, VIEW_AREAS } from "../src/lib/branch-view";
 import { ALL_BRANCHES } from "../src/lib/branches";
 import { branchAccountOf, branchCariNote, branchPayments, sharedCariOf, sharedCariParts } from "../src/lib/cari/branch-account";
-import { branchCashFlow, branchFlowNote, branchPlanWithoutTax, isSharedPlanLine, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf } from "../src/lib/cash-plan-branch";
+import { BRANCH_VAT_NOTE, branchCashFlow, branchFlowNote, branchPlanWithoutTax, isSharedPlanLine, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf } from "../src/lib/cash-plan-branch";
 import { FIRM_TAX_NOTE, type PlanLine } from "../src/lib/cash-plan";
 import { hasBranchSales, scopeCommissionReport, type ChannelMonth, type CommissionReport } from "../src/lib/commission/report";
 import { sharedPaymentsAnswer } from "../src/lib/mcp/answers/payments";
@@ -206,6 +206,19 @@ test("nakit planı şube kipi: vergi ve SGK hatırlatıcısı tanınır; şubeni
   assert.deepEqual(own.estimates.map((e) => e.key), ["sales", "salary", "goods", "fixed:4"]);
   assert.equal(own.taxFirmWide, true);
   assert.equal(FIRM_TAX_NOTE, "Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür");
+});
+
+test("nakit planı şube kipi: KDV kartının yerinde #kdv notu, Firma geneline geç düğmesiyle (Vergi takviminin ve rehberin bağlantısı boşa inmez)", () => {
+  assert.deepEqual(BRANCH_VAT_NOTE, {
+    title: "KDV tahmini, devreden KDV ve Ödendi kayıtları firma geneli",
+    text: "Tümü'de ya da Firma geneli görünümde; vergi şubeye bölünmez.",
+    action: "Firma geneline geç",
+  });
+  const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
+  assert.match(card, /export function FirmVatNotice\(\)[\s\S]*?saveBranchView\(\{ area: "nakit", mode: "firma" \}\)[\s\S]*?id="kdv"/);
+  assert.match(read("src/app/panel/hatirlaticilar/nakit/cash-plan-client.tsx"), /plan\.vat \? <VatCard [^>]*\/> : plan\.taxFirmWide \? <FirmVatNotice \/> : null/);
+  // Bağlantıların hedefi
+  assert.match(read("src/lib/assistant/guides.ts"), /path: "\/panel\/hatirlaticilar\/nakit#kdv"/);
 });
 
 // ---------------------------------------------------------------- Tedarikçi bakiyeleri

@@ -22,10 +22,16 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   (**Firma geneline geç** / **Yalnız Marina'yı göster**) aynı ayarı o ekran için yazar. Yöneticinin varsayılanı her
   yerde "Yalnız şube", muhasebecininki ekranına göre (İşletme geneli giderler "Tutarla göster"); müdür ve şubesine
   kilitli personel hep kendi şubesinde (ayar yok). **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım: "Vergi ile ilgili
-  olan kısımları tamamen çıkar"): Vergi'nin üç sekmesi her kipte firmanın (ayarı yok, şubenin payı ve matraha katkı
-  kartları kalktı), nakit planının şube kipinde vergi ve SGK hiç yok ("Vergi ve SGK ödemeleri firma geneli: Tümü'de
-  görünür"; İşletme geneli satırında da yok), dışa aktarımın şube dosyasında Vergi sekmesi firmanın, muhasebeci paketinin
-  şube dosyasında KDV yok. Hep firma geneli kalanlar (tam yedek, vergi ve SGK, banka
+  olan kısımları tamamen çıkar"; açıklaması: "gelir vergisi matrah vs o kısımdan bahsettim, sidebar değil; ürün KDV'si
+  falan hesaplansın, nasıl doğruysa öyle olsun"): matrah, vergi kârı, geçici vergi, beyanlar (KDV, muhtasar), vergi
+  takvimi, devreden KDV ve KDV ödemesi tahmini firma geneli. Vergi'nin üç sekmesi her kipte firmanın (menüde yerinde;
+  ayarı yok, şubenin payı ve matraha katkı kartları kalktı), nakit planının şube kipinde vergi ve SGK hiç yok ("Vergi ve
+  SGK ödemeleri firma geneli: Tümü'de görünür"; İşletme geneli satırında da yok; KDV kartının yerinde "Firma geneline
+  geç" notu), dışa aktarımın şube dosyasında Vergi sekmesi firmanın. **Ürün ve fatura KDV'si şubede doğru kalır**:
+  ürünün KDV dahil ve hariç fiyatı, satışların, şubenin faturalarının ve yazarkasa Z'sinin KDV'si Tümü'deki gibi; dışa
+  aktarımın şube dosyasında Faturalar'ın KDV toplamları, şubenin muhasebeci paketinde KDV sütunları, Özet'in KDV
+  satırları ve Z KDV dökümü durur, altlarında "KDV beyanı firma geneli: beyan için Tümü dosyası / bütün şubelerin
+  paketi" notu. Hep firma geneli kalanlar (tam yedek, vergi ve SGK, banka
   ekstresi ve açılış bakiyesi, Paraşüt eşitlemesi, menü, reçete, hammadde fiyatı, tedarikçi kütüğü, site siparişleri)
   Hesabım'da gerekçesiyle listeli. Göç 0101 (şube görünümü; kontrol listesi kaydı, işlem geçmişi, gönderim
   günlüğü ve yatırıma şube). Bağımsız doğrulama (iki şubenin işaretli kayıtlarıyla 259 sınama, Tuzla silinince

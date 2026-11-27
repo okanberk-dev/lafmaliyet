@@ -819,6 +819,119 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     });
   });
 
+  describe("6. ürün ve fatura KDV'si şubede doğru (sahibin açıklaması 27 Kasım 2026)", () => {
+    // "KDV olayları site genelinde kalsın ama ben sana gelir vergisi matrah vs o kısımdan bahsettim; ürün KDV'si falan
+    // hesaplansın, nasıl doğruysa öyle olsun": beyan, matrah ve takvim firma geneli (5. bakış); ürünün ve faturanın KDV'si
+    // şubenin kayıtlarının gerçeği, şube seçiliyken Tümü'deki gibi hesaplanır ve dosyalarda durur.
+    const book = async (q: string) => {
+      const { GET } = await import("../src/app/api/export/route");
+      const res = await GET({ nextUrl: new URL(`http://panel.test/api/export?ay=${month()}${q}`) } as never);
+      assert.equal(res.status, 200);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await res.arrayBuffer());
+      return wb;
+    };
+    const valueOf = (c: ExcelJS.Cell) => {
+      const v = c.value;
+      return typeof v === "number" ? v : v && typeof v === "object" && "result" in v ? Number(v.result ?? 0) : null;
+    };
+
+    test("veri kümesi: Marina'nın ve işletme genelinin faturalarının KDV'si, ürünün KDV dahil ve hariç fiyatı Tümü'dekiyle aynı", async () => {
+      const { loadModel } = await import("../src/server/data/dataset");
+      const { purchaseVat } = await import("../src/lib/kdv");
+      const read = async () => {
+        const m = await loadModel();
+        const inv = new Map(m.ds.invoices.map((i) => [i.id, { amount: i.amount, discount: i.discount, vat: i.vat, payable: i.payable, purchaseVat: purchaseVat(i) }]));
+        const products = new Map(m.products.map((p) => [p.product.id, { price: p.price, net: p.net, suggestedPrice: p.suggestedPrice }]));
+        return { inv, products, kdv: m.settings.kdv, kdvHizmet: m.settings.kdvHizmet };
+      };
+      await signIn(seed.users.admin, ALL_BRANCHES);
+      const all = await read();
+      await signIn(seed.users.admin, "marina");
+      const marina = await read();
+      assert.equal(marina.inv.get(seed.invoices.marina)?.vat, 130, "Marina'nın faturasının KDV'si");
+      assert.equal(marina.inv.get(seed.invoices.marina)?.purchaseVat, 130);
+      for (const id of [seed.invoices.marina, seed.invoices.shared]) assert.deepEqual(marina.inv.get(id), all.inv.get(id), `fatura ${id}`);
+      assert.equal(marina.inv.has(seed.invoices.tuzla), false, "Tuzla'nın faturası yok");
+      assert.deepEqual([marina.kdv, marina.kdvHizmet], [all.kdv, all.kdvHizmet], "satışın KDV oranları");
+      assert.ok(marina.products.size > 0);
+      assert.deepEqual(marina.products, all.products, "ürünün KDV dahil fiyatı, net (KDV hariç) fiyatı ve önerilen fiyatı");
+    });
+
+    test("kasa raporları ve muhasebeci paketi: Marina'nın Z KDV dökümü ve faturalarının KDV'si kendi kayıtlarından, Tümü'nün aynı satırlarıyla birebir; toplamların altında not", async () => {
+      const { cashReportsBetween } = await import("../src/server/data/cash-reports");
+      const { loadPackageData } = await import("../src/server/muhasebe/paket");
+      const { BRANCH_PACKAGE_VAT_NOTE, buildPackageWorkbook, packageSummary } = await import("../src/lib/muhasebe/paket");
+      const now = new Date();
+      await signIn(seed.users.admin, ALL_BRANCHES);
+      const all = await loadPackageData(month(), now);
+      await signIn(seed.users.admin, "marina");
+      const till = await scope.currentTillBranch();
+      const reports = await scope.withBranchScope(till, () => cashReportsBetween(`${month()}-01`, today, "admin", "admin"));
+      assert.deepEqual(
+        reports.filter((r) => r.okcVat?.length).map((r) => ({ branch: r.branchId, vat: r.okcVat })),
+        [{ branch: "marina", vat: [{ rate: 10, total: 2_100, vat: 190.91 }] }],
+        "kasa raporlarında yalnız Marina'nın Z KDV dökümü",
+      );
+      const marina = await loadPackageData(month(), now, "marina");
+      assert.equal(marina.branchFile, true);
+      assert.deepEqual(marina.vat, all.vat.filter((v) => v.branch === "Marina"), "Z KDV dökümü Tümü'nün Marina satırlarıyla aynı");
+      assert.deepEqual(marina.vat.map((v) => [v.rate, v.total, v.vat]), [[10, 2_100, 190.91]]);
+      const own = marina.invoices.find((i) => i.supplier === "Marina Süt AŞ");
+      assert.ok(own, "Marina'nın faturası pakette");
+      assert.equal(own.vat, all.invoices.find((i) => i.supplier === "Marina Süt AŞ")?.vat);
+      assert.equal(own.vat, 130);
+      const sum = packageSummary(marina);
+      assert.ok(Math.abs(sum.invoiceVat - marina.invoices.filter((i) => !i.held && i.accountDate.slice(0, 7) === month()).reduce((t, i) => t + i.vat, 0)) < 0.01, "Özet'in KDV'si paketin faturalarından");
+      assert.deepEqual(sum.vatByRate, [{ rate: 10, total: 2_100, vat: 190.91 }]);
+      const wb = buildPackageWorkbook(marina);
+      assert.ok(wb.getWorksheet("Z KDV dökümü"), "Z KDV dökümü sekmesi");
+      const text = (name: string) => {
+        const out: string[] = [];
+        wb.getWorksheet(name)!.eachRow((r) => r.eachCell((c) => out.push(String(c.value ?? ""))));
+        return out;
+      };
+      assert.ok(text("Faturalar").includes("KDV") && text("Faturalar").includes(BRANCH_PACKAGE_VAT_NOTE));
+      assert.ok(text("Z KDV dökümü").includes(BRANCH_PACKAGE_VAT_NOTE));
+      assert.ok(text("Özet").includes("Faturaların KDV'si") && text("Özet").includes("Yazarkasa KDV %10"));
+      assert.equal(tzLeaks(marina), null);
+    });
+
+    test("dışa aktarım: Marina dosyasının Faturalar'ında satır satır KDV Tümü dosyasıyla aynı, TOPLAM KDV'yi taşır, altında not", async () => {
+      const { BRANCH_INVOICE_VAT_NOTE } = await import("../src/app/api/export/workbook");
+      const rows = (wb: ExcelJS.Workbook) => {
+        const ws = wb.getWorksheet("Faturalar")!;
+        const col = (h: string) => {
+          let n = 0;
+          ws.getRow(1).eachCell((c, i) => (c.value === h ? (n = i) : null));
+          assert.ok(n, `sütun: ${h}`);
+          return n;
+        };
+        const [sup, vat, pay] = [col("Tedarikçi"), col("KDV"), col("Ödenecek (KDV dahil)")];
+        const out = new Map<string, number | null>();
+        let total: ExcelJS.Row | null = null;
+        ws.eachRow((r, i) => {
+          if (i === 1) return;
+          if (r.getCell(1).value === "TOPLAM") total = r;
+          else if (!total && r.getCell(sup).value) out.set(`${r.getCell(sup).value}|${valueOf(r.getCell(pay))}`, valueOf(r.getCell(vat)));
+        });
+        assert.ok(total, "TOPLAM satırı");
+        const t = total as ExcelJS.Row;
+        return { ws, out, total: valueOf(t.getCell(vat)), totalRow: t.number };
+      };
+      await signIn(seed.users.admin, ALL_BRANCHES);
+      const all = rows(await book(""));
+      await signIn(seed.users.admin, "marina");
+      const marina = rows(await book("&sube=marina"));
+      assert.equal(marina.out.get("Marina Süt AŞ|1430"), 130, "Marina'nın faturasının KDV'si");
+      for (const [k, v] of marina.out) assert.equal(v, all.out.get(k), `satır: ${k}`);
+      const sum = [...marina.out.values()].reduce<number>((t, v) => t + (v ?? 0), 0);
+      assert.ok(marina.total !== null && Math.abs(marina.total - sum) < 0.01, `TOPLAM KDV satırların toplamı (${marina.total} / ${sum})`);
+      assert.equal(marina.ws.getRow(marina.totalRow + 1).getCell(1).value, BRANCH_INVOICE_VAT_NOTE);
+      assert.notEqual(all.ws.getRow(all.totalRow + 1).getCell(1).value, BRANCH_INVOICE_VAT_NOTE, "Tümü dosyasında not yok");
+    });
+  });
+
   describe("4. fark: Tuzla'nın satırları silinince Marina'nın görünümü değişmez", () => {
     test("Tuzla'nın satırları silinir", async () => {
       await deleteBranchRows(db, "tuzla");

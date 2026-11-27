@@ -110,10 +110,11 @@ describe("şube ayrımı parça 6: veritabanında", { skip: !SERVER_URL && "SUBE
     ids.ali = await user("Ali", "ali@ornek.com", "admin", null);
     ids.mert = await user("Mert", "mert@ornek.com", "manager", "marina");
 
-    // Kasa raporları (dün): Marina'nın ve Tuzla'nın işaretli tutarlı raporu
+    // Kasa raporları (dün): Marina'nın ve Tuzla'nın işaretli tutarlı raporu; ikisinde de yazarkasa Z'sinin KDV dökümü
+    // (muhasebeci paketinin Z KDV dökümü şubenin kendi Z'lerinden)
     await db.insert(s.cashReports).values([
-      { date: day, branchId: "marina", zTotal: 2_000, cash: 1_000, card: 1_000, receipts: 40, submittedByName: "Arda" },
-      { date: day, branchId: "tuzla", zTotal: AMOUNT, cash: AMOUNT, card: 0, receipts: 70, submittedByName: "Can" },
+      { date: day, branchId: "marina", zTotal: 2_000, cash: 1_000, card: 1_000, receipts: 40, submittedByName: "Arda", okcZNo: "41", okcVatTotal: 181.82, okcVat: [{ rate: 10, total: 2_000, vat: 181.82 }] },
+      { date: day, branchId: "tuzla", zTotal: AMOUNT, cash: AMOUNT, card: 0, receipts: 70, submittedByName: "Can", okcZNo: "71", okcVatTotal: 7_070.71, okcVat: [{ rate: 10, total: AMOUNT, vat: 7_070.71 }] },
     ]);
     // Personel: Tuzla'nınki işaretli
     await db.insert(s.staff).values([
@@ -276,9 +277,11 @@ describe("şube ayrımı parça 6: veritabanında", { skip: !SERVER_URL && "SUBE
     const marina = await loadPackageData(month, new Date(), "marina");
     assert.equal(marina.scope, "Marina");
     assert.equal(leaks(marina), false);
-    // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): şubenin paketinde Z KDV dökümü yok, çalışma kitabı KDV'siz
+    // Ürün ve fatura KDV'si şubede doğru kalır (sahibin açıklaması 27 Kasım 2026): Z KDV dökümü Marina'nın kendi Z'sinden,
+    // çalışma kitabında KDV toplamlarının altında "KDV beyanı firma geneli" notu (branchFile)
     assert.equal(marina.branchFile, true);
-    assert.deepEqual(marina.vat, []);
+    assert.deepEqual(marina.vat, [{ date: day, branch: "Marina", zNo: "41", rate: 10, total: 2_000, vat: 181.82 }]);
+    assert.deepEqual(marina.cash.map((c) => c.okcVat), [181.82]);
     assert.deepEqual(
       marina.invoices.map((i) => i.supplier),
       ["Sütaş"],
@@ -301,6 +304,14 @@ describe("şube ayrımı parça 6: veritabanında", { skip: !SERVER_URL && "SUBE
     assert.equal(all.scope, "Bütün şubeler");
     assert.equal(all.branchFile, undefined);
     assert.equal(leaks(all), true);
+    // Şubenin KDV'si Tümü'nün aynı satırlarıyla birebir: Z KDV dökümü ve faturaların KDV'si
+    assert.deepEqual(all.vat.filter((v) => v.branch === "Marina"), marina.vat);
+    assert.equal(all.vat.length, 2);
+    for (const i of marina.invoices) {
+      const same = all.invoices.find((x) => x.supplier === i.supplier && x.date === i.date && x.amount === i.amount);
+      assert.ok(same, i.supplier);
+      assert.equal(i.vat, same.vat, `${i.supplier}: faturanın KDV'si`);
+    }
   });
 
   test("sabah e-postasının önizlemesi: Marina seçiliyken Marina'ya bağlı alıcıların e-postası; Tümü'de firmanınki", async () => {
