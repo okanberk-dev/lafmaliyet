@@ -249,7 +249,7 @@ test("ay bilgisi kaydedildi: bütün alanlar boşalınca kasa raporu olan ay 'bo
   });
   assert.deepEqual(monthSavedToast({ removed: true, kasa: false }, "Kasım 2026"), { title: "Ay bilgileri boşaltıldı", description: "Kasım 2026 için kayıtlı bilgi kalmadı." });
   const action = readFileSync(join(root, "src/server/actions/sales.ts"), "utf8");
-  // Kasadan gelen satır: kasa raporu ya da (açıksa) LafPOS gün sonu veya sayılan ModPOS föyü (hasTillRowsIn)
+  // Kasadan gelen satır: kasa raporu ya da (açıksa) AsilPOS gün sonu veya sayılan ModPOS föyü (hasTillRowsIn)
   assert.match(action, /const kasa = await hasTillRowsIn\(data\.month, db\);[\s\S]*?return \{ removed, kasa \};/);
 });
 

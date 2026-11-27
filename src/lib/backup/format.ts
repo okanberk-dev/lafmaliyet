@@ -15,6 +15,7 @@
  * anahtarı ya burada dışarıda bırakılır ya da testte gizli olmadığı yazılır (tests/yedek.test.ts).
  */
 
+import { ESKI_TABLOLAR } from "@/lib/asilpos/eski-adlar";
 import { formatBytes } from "@/lib/documents";
 
 export const BACKUP_FORMAT = "laffogato-yedek";
@@ -94,7 +95,9 @@ const MCP_SKIP = "Claude bağlantıları; geri yüklemeden sonra Claude'da yenid
 
 export const TABLE_RULES: Record<string, TableRule> = {
   user_tokens: { skip: "tek kullanımlık bağlantılar (özet); yenisi gönderilir" },
-  lafpos_installs: { skip: "LafPOS kurulum bağlantıları (özet ve mühürlü kod); yenisi Şubeler'den gönderilir" },
+  asilpos_installs: { skip: "AsilPOS kurulum bağlantıları (özet ve mühürlü kod); yenisi Şubeler'den gönderilir" },
+  // Aynı tablonun migration 0098'den önceki adı (ESKI_TABLOLAR; şimdi görünüm, dökülmez): 0098 uygulanmamış veritabanında
+  [ESKI_TABLOLAR.kurulum]: { skip: "AsilPOS kurulum bağlantıları, tablonun eski adı (özet ve mühürlü kod); yenisi Şubeler'den gönderilir" },
   // Giriş bilgileri gibi (USER_CREDENTIAL_COLUMNS): bilinen cihazların hata sayacı ve kilidi geçicidir
   login_device_locks: { skip: "bilinen cihazların giriş deneme sayaçları (geçici)" },
   // Çıkışta kapatılan oturumların kimlikleri: geri yükleme herkesin oturum sürümünü artırır, eski çerezlerin hepsi düşer

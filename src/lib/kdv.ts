@@ -7,7 +7,7 @@
  *   yani karaoke hizmet oranıyla; engine.ts pnlMonth). Süren ayın cirosu Genel bakış'taki ay sonu tahminiyle aya
  *   tamamlanır.
  * - Yazarkasa Z'si (Dalga 2, 26 Kasım 2026): kasa raporunda yazarkasa Z'sinin KDV'si girilmiş günün KDV'si Z'den
- *   (cironun yazarkasadan geçen kısmı için; kalanı oranla), LafPOS'un dökümü olan gün LafPOS'tan, öteki günler yukarıdaki
+ *   (cironun yazarkasadan geçen kısmı için; kalanı oranla), AsilPOS'un dökümü olan gün AsilPOS'tan, öteki günler yukarıdaki
  *   oranla (`posVatByDays`). Kaynak ekranda yazar: "12 gün yazarkasa Z'sinden, 3 gün tahmin" (`vatSourceText`).
  *   Gelir-gider'in KDV hariç cirosu (engine.ts posNet) değişmez.
  * - laffogato.net: sitenin saklı KDV'si ve oranı bilinmeyenin panel oranıyla KDV'si (site-sales/calc.ts siteVat).
@@ -76,39 +76,39 @@ export function posVat(revenue: number, serviceRevenue: number, kdv: number, kdv
 export interface PosVatSource {
   /** Kasa raporundaki yazarkasa Z'sinin KDV'sinden */
   z: number;
-  /** LafPOS'un KDV dökümünden */
-  lafpos: number;
+  /** AsilPOS'un KDV dökümünden */
+  asilpos: number;
   /** Oranla tahmin (ikisi de yok) */
   estimate: number;
 }
 
 /**
  * Ayın kasa KDV'si, günlerin kaynağıyla: yazarkasa Z'si girilmiş günlerde cironun yazarkasadan geçen kısmının (`covered`)
- * oranla tahmini çıkar, yerine Z'lerin KDV'si girer; LafPOS'un dökümünden gelen günler (`lafposKnown`, motorun gün gün
+ * oranla tahmini çıkar, yerine Z'lerin KDV'si girer; AsilPOS'un dökümünden gelen günler (`asilposKnown`, motorun gün gün
  * hesabından) ve öteki günler olduğu gibi kalır. `vat`: ayın bugünkü yöntemle KDV'si (engine.ts posNet ya da posVat).
- * Oran, LafPOS dışı cironun bugünkü yöntemdeki etkin oranıdır (karaoke payı ay toplamında olduğu için gün gün ayrılamaz).
- * Z'li ya da LafPOS'lu gün yoksa kaynak null, KDV değişmez
+ * Oran, AsilPOS dışı cironun bugünkü yöntemdeki etkin oranıdır (karaoke payı ay toplamında olduğu için gün gün ayrılamaz).
+ * Z'li ya da AsilPOS'lu gün yoksa kaynak null, KDV değişmez
  */
 export function posVatByDays(o: {
   revenue: number;
   vat: number;
-  lafposKnown: { revenue: number; vat: number } | null;
+  asilposKnown: { revenue: number; vat: number } | null;
   days: TillMonth["vatDays"] | null | undefined;
 }): { vat: number; source: PosVatSource | null } {
   const d = o.days;
-  if (!d || d.z.days + d.lafpos === 0) return { vat: o.vat, source: null };
-  const source: PosVatSource = { z: d.z.days, lafpos: d.lafpos, estimate: d.estimate };
-  const rest = o.revenue - (o.lafposKnown?.revenue ?? 0);
+  if (!d || d.z.days + d.asilpos === 0) return { vat: o.vat, source: null };
+  const source: PosVatSource = { z: d.z.days, asilpos: d.asilpos, estimate: d.estimate };
+  const rest = o.revenue - (o.asilposKnown?.revenue ?? 0);
   if (!d.z.days || !(rest > 0)) return { vat: o.vat, source };
-  const rate = Math.max(0, (o.vat - (o.lafposKnown?.vat ?? 0)) / rest);
+  const rate = Math.max(0, (o.vat - (o.asilposKnown?.vat ?? 0)) / rest);
   const covered = Math.min(d.z.covered, rest);
   return { vat: Math.round((o.vat - covered * rate + d.z.vat) * 100) / 100, source };
 }
 
 /** "12 gün yazarkasa Z'sinden, 3 gün tahmin"; kaynak yoksa (bütün ay oranla) null */
 export function vatSourceText(s: PosVatSource | null | undefined): string | null {
-  if (!s || s.z + s.lafpos === 0) return null;
-  return [s.z ? `${num(s.z)} gün yazarkasa Z'sinden` : null, s.lafpos ? `${num(s.lafpos)} gün LafPOS'un KDV dökümünden` : null, s.estimate ? `${num(s.estimate)} gün tahmin` : null]
+  if (!s || s.z + s.asilpos === 0) return null;
+  return [s.z ? `${num(s.z)} gün yazarkasa Z'sinden` : null, s.asilpos ? `${num(s.asilpos)} gün AsilPOS'un KDV dökümünden` : null, s.estimate ? `${num(s.estimate)} gün tahmin` : null]
     .filter(Boolean)
     .join(", ");
 }
@@ -180,13 +180,13 @@ export function vatMonthInputs(model: Model, today: string): { months: VatMonthI
     let pos: VatMonthInput["pos"] = null;
     if (revenue > 0) {
       const service = Math.min(revenue, model.monthSales(m).serviceRevenue);
-      // Gelir-gider'in kuralıyla (engine.ts posNet): LafPOS'un şubesinin günleri gün gün, LafPOS gününün KDV'si kendi dökümünden
+      // Gelir-gider'in kuralıyla (engine.ts posNet): AsilPOS'un şubesinin günleri gün gün, AsilPOS gününün KDV'si kendi dökümünden
       const net = model.posNet(m);
       const rated = net?.byDay ? net.vat : posVat(revenue, service, st.kdv, st.kdvHizmet);
       // Ciro kasa raporlarından geliyorsa günlerin KDV kaynağı: yazarkasa Z'si girilmiş gün Z'den (posVatByDays). Elle
       // yazılan ciroda kasa günleri ayın tamamı olmayabilir: bugünkü gibi oranla
       const till = info?.sources?.posRevenue === "kasa" ? info.kasa?.till : null;
-      const byDays = posVatByDays({ revenue, vat: rated, lafposKnown: net?.byDay ? (till?.dayVat?.known ?? null) : null, days: till?.vatDays });
+      const byDays = posVatByDays({ revenue, vat: rated, asilposKnown: net?.byDay ? (till?.dayVat?.known ?? null) : null, days: till?.vatDays });
       pos = { revenue, vat: byDays.vat, openDays: info?.openDays ?? null, serviceRevenue: service, ...(byDays.source ? { source: byDays.source } : {}) };
     }
     const rec = model.siteSales(m);
@@ -244,7 +244,7 @@ export interface VatEstimate {
     invoices: number;
     separate: number;
     inProgress: boolean;
-    /** Kasa KDV'sinin gün gün kaynağı (yazarkasa Z'si, LafPOS dökümü, tahmin); bütün ay oranla tahminse yok */
+    /** Kasa KDV'sinin gün gün kaynağı (yazarkasa Z'si, AsilPOS dökümü, tahmin); bütün ay oranla tahminse yok */
     posSource?: PosVatSource;
   };
 }

@@ -15,7 +15,7 @@
 //   listedeyken müdüre indirilen hesap giriş e-postasını değiştiremez (eski kutusu bütün şubelerin paketini yeniden
 //   alırdı), Kullanıcılar uyarır, zil söyler, "Şimdi gönder" yalnız muhasebeciye gider.
 //
-// BILDIRIM_TEST_DATABASE_URL (yoksa LAFPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu (geçici
+// BILDIRIM_TEST_DATABASE_URL (yoksa ASILPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu (geçici
 // veritabanı onun üstünde açılır).
 // Çalıştırma: BILDIRIM_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/bildirim-alicilari-db.test.ts
 
@@ -34,7 +34,7 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { dalCapabilities } from "./helpers/dal-stub";
 
-const SERVER_URL = process.env.BILDIRIM_TEST_DATABASE_URL ?? process.env.LAFPOS_TEST_DATABASE_URL;
+const SERVER_URL = process.env.BILDIRIM_TEST_DATABASE_URL ?? process.env.ASILPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_bildirim_${process.pid}`;
 const PASSWORD = "Bildirim-Deneme-2026";
 

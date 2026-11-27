@@ -182,7 +182,7 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.match(read("src/server/actions/cash-out-requests.ts"), /reviewCashOutRequestCore\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\), /);
     assert.match(read("src/app/panel/kasa/page.tsx"), /cashOutCategories\(allCategories \? "admin" : "staff"\)/);
     assert.match(read("src/app/panel/onaylar/kasa-section.tsx"), /const allCategories = can\(me\.role, "kategori\.tum"\);[\s\S]*cashOutCategories\(allCategories \? "admin" : "staff"\)/);
-    // Çekirdeğe giden kişi gerçek rolünü taşır; elle kurulan kişide (LafPOS, fatura eşleme) düzeyin kendisi
+    // Çekirdeğe giden kişi gerçek rolünü taşır; elle kurulan kişide (AsilPOS, fatura eşleme) düzeyin kendisi
     assert.deepEqual(asActor({ id: 1, role: "manager" as Role }, "admin"), { id: 1, role: "admin", realRole: "manager" });
     assert.equal(realRoleOf(asActor(asActor({ id: 1, role: "manager" as Role }, "admin"), "staff")), "manager");
     assert.equal(realRoleOf({ role: "admin" }), "admin");
@@ -254,8 +254,8 @@ describe("müdür: şubesinin günlük işletmesi", () => {
         createdByName: "Ali",
         createdAt: "2026-11-03T10:00:00.000Z",
         updatedAt: "2026-11-03T10:00:00.000Z",
-        lafposId: null,
-        lafposAwaitingCategory: false,
+        asilposId: null,
+        asilposAwaitingCategory: false,
         ...o,
       }) satisfies CashOutDTO;
     const rows = [
@@ -268,7 +268,7 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.deepEqual(byDate["2026-11-03"], [{ id: 7, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: null }]);
     assert.deepEqual(byDate["2026-11-04"], [{ id: 8, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: 5 }]);
     // Tarayıcıya giden prop (RSC yükü): kategorinin adı ve kimliği, harcama kaydı, yazanı yok
-    assert.doesNotMatch(JSON.stringify(byDate), /Maaş|Kira|categoryName|categoryId|expenseEntryId|createdBy|lafposId/);
+    assert.doesNotMatch(JSON.stringify(byDate), /Maaş|Kira|categoryName|categoryId|expenseEntryId|createdBy|asilposId/);
     // Müdürün satırları önce ownerRowsAmountOnly'den geçer: yöneticinin kategorisindeki (12 maaş; 13 personelin) satırın
     // yalnız türü ve tutarı, açıklaması ve fişi gitmez (davranışı tests/roller-db.test.ts)
     const manager = sheetCashOutsByDate(ownerRowsAmountOnly(rows, new Set([13])));
@@ -283,16 +283,16 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     // Gün görünümü: müdürün satırları, formun özeti ve WhatsApp metni de aynı süzgeçten
     assert.match(page, /const shownOuts = await cashOutsShownTo\(user\.role, outs\);/);
     assert.match(page, /: shownOuts\.map\(\(o\) => lockRow\(hideName\(o\)\)\)/);
-    assert.match(page, /extrasFrom\(photoInfo, shownOuts, report, lafposState\)/);
+    assert.match(page, /extrasFrom\(photoInfo, shownOuts, report, asilposState\)/);
     // İstemci bileşeni sunucunun satır tipini almaz
     assert.doesNotMatch(read("src/app/panel/kasa/cash-history.tsx"), /CashOutDTO/);
   });
 
-  test("açamadığı ekrana bağlantı çizilmez: Vardiya'nın Şube ayarları ve Ayarlar bağlantıları, Zayi'nin Ayarlar › LafPOS'u (bulgu E2)", () => {
+  test("açamadığı ekrana bağlantı çizilmez: Vardiya'nın Şube ayarları ve Ayarlar bağlantıları, Zayi'nin Ayarlar › AsilPOS'u (bulgu E2)", () => {
     // Bağlantının kuralı ekranın kuralı (canOpen); sorgu ve çapa yola girmez
     assert.equal(openableHref("admin", "/panel/subeler/tuzla#vardiya"), "/panel/subeler/tuzla#vardiya");
     assert.equal(openableHref("manager", "/panel/subeler/tuzla#vardiya"), null);
-    assert.equal(openableHref("manager", "/panel/ayarlar#lafpos"), null);
+    assert.equal(openableHref("manager", "/panel/ayarlar#asilpos"), null);
     assert.equal(openableHref("manager", "/panel/kasa?gun=2026-11-03#ozet"), "/panel/kasa?gun=2026-11-03#ozet");
     assert.equal(openableHref("manager", "/panel/onaylar#istek-3"), "/panel/onaylar#istek-3");
     assert.equal(openableHref("staff", "/panel/onaylar#istek-3"), null);
@@ -319,13 +319,13 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.match(grid, /action=\{draftState === "off" && links\.settings \? <NoticeLink href=\{links\.settings\}>/);
     assert.match(grid, /draftState === "nokey" && links\.settings \? \(/);
 
-    // Zayi: müdür LafPOS satırlarını "admin" düzeyinde görür; bağlanmamış satırın notu kalır, Ayarlar bağlantısı gitmez.
+    // Zayi: müdür AsilPOS satırlarını "admin" düzeyinde görür; bağlanmamış satırın notu kalır, Ayarlar bağlantısı gitmez.
     // Başlığın sekmeleri gerçek rolle: Tutarlılık yok (bulgu 4)
     const zayi = read("src/app/panel/zayi/page.tsx");
-    assert.match(zayi, /settingsHref: openableHref\(user\.role, "\/panel\/ayarlar#lafpos"\)/);
+    assert.match(zayi, /settingsHref: openableHref\(user\.role, "\/panel\/ayarlar#asilpos"\)/);
     const board = read("src/app/panel/zayi/waste-board.tsx");
     assert.doesNotMatch(board, /href="\/panel\/ayarlar/);
-    assert.match(board, /\{l\.unmatched && lafpos\.settingsHref \? \(/);
+    assert.match(board, /\{l\.unmatched && asilpos\.settingsHref \? \(/);
     assert.ok(!sectionTabsFor("stok", "manager").some((t) => t.href === "/panel/tutarlilik"));
     assert.ok(sectionTabsFor("stok", "admin").some((t) => t.href === "/panel/tutarlilik"));
   });
@@ -336,15 +336,15 @@ test("müdür başkasının fotoğrafını bağlayamaz ('admin' düzeyi değil g
   assert.equal(linksAnyPhoto(manager), false);
   assert.equal(linksAnyPhoto(manager, true), true, "onayladığı isteğin tuttuğu fotoğraf");
   assert.equal(linksAnyPhoto(asActor({ id: 1, role: "admin" as Role }, "admin")), true);
-  assert.equal(linksAnyPhoto({ role: "admin" }), true, "elle kurulan yönetici (LafPOS, fatura eşleme)");
+  assert.equal(linksAnyPhoto({ role: "admin" }), true, "elle kurulan yönetici (AsilPOS, fatura eşleme)");
   assert.equal(linksAnyPhoto({ role: "staff" }, true), false);
   // Fotoğraf sahipliğinin dört yeri aynı kurala bakar
   assert.match(read("src/server/cash/report-store.ts"), /\(!linksAnyPhoto\(actor, o\.heldBy !== undefined\) && p\.createdBy !== actor\.id\)/);
   const write = read("src/server/cash-outs/write.ts");
   assert.match(write, /const foreign = !linksAnyPhoto\(me, o\.heldBy !== undefined\) && p\?\.createdBy !== me\.id/);
   assert.match(write, /\(!linksAnyPhoto\(me\) && p\.createdBy !== me\.id\)\) throw new UserError\(PHOTO_GONE\)/);
-  assert.match(read("src/server/lafpos/foto.ts"), /\(!linksAnyPhoto\(me\) && p\.createdBy !== me\.id\)/);
-  for (const f of ["src/server/cash/report-store.ts", "src/server/cash-outs/write.ts", "src/server/lafpos/foto.ts"]) {
+  assert.match(read("src/server/asilpos/foto.ts"), /\(!linksAnyPhoto\(me\) && p\.createdBy !== me\.id\)/);
+  for (const f of ["src/server/cash/report-store.ts", "src/server/cash-outs/write.ts", "src/server/asilpos/foto.ts"]) {
     assert.doesNotMatch(read(f), /role !== "admin" && p\??\.createdBy !== /, f);
   }
 });

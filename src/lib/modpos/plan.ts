@@ -16,8 +16,8 @@ import { finalAfter } from "./z";
  *    yeniden eskiye.
  * 4. Hiçbiri yoksa **son 7 günün en eski kontrol edilen kesin föyü** (kapanıştan sonra düzeltme olduysa görünsün).
  *
- * Bugün (açık gün) hiçbir zaman kendiliğinden çekilmez: tutarlar değişir, hak harcanır. LafPOS'a geçiş gününden
- * (`until`) itibaren kasa LafPOS'tur: o günler hiç çekilmez (föyü hiçbir yer okumaz). **Alınamayan gün** (`failed`:
+ * Bugün (açık gün) hiçbir zaman kendiliğinden çekilmez: tutarlar değişir, hak harcanır. AsilPOS'a geçiş gününden
+ * (`until`) itibaren kasa AsilPOS'tur: o günler hiç çekilmez (föyü hiçbir yer okumaz). **Alınamayan gün** (`failed`:
  * bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler; geçmiş onda takılmaz, sıradaki
  * eksik güne geçer. Dün bundan muaftır (her sabah bir kez denenir).
  */
@@ -36,7 +36,7 @@ export interface PlanInput {
   have: ReadonlyMap<string, StoredDay>;
   /** Bu çalışmada kullanılabilecek hak */
   left: number;
-  /** LafPOS'a geçiş günü: bu gün ve sonrası çekilmez (null: geçiş yok) */
+  /** AsilPOS'a geçiş günü: bu gün ve sonrası çekilmez (null: geçiş yok) */
   until?: string | null;
   /** Alınamayan günler: kaç kez, en son ne zaman (src/lib/modpos/status.ts dayErrors) */
   failed?: Readonly<Record<string, { count: number; lastAt: string }>>;
@@ -154,7 +154,7 @@ export function backfillOrder(from: string, last: string): string[] {
 }
 
 /**
- * Geçmişte eksik günler, çekilecekleri sırayla (`from`'dan düne, LafPOS'a geçiş gününden önceye; kesinleşmemiş dün
+ * Geçmişte eksik günler, çekilecekleri sırayla (`from`'dan düne, AsilPOS'a geçiş gününden önceye; kesinleşmemiş dün
  * dahil değil): yeniden eskiye (planFoyDays'in 2. adımı). Kartın sayısı buradan
  */
 export function missingFoyDays(from: string, have: ReadonlyMap<string, StoredDay>, now: Date, until: string | null = null): string[] {

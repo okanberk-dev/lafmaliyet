@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
 import { cashOutWritesExpense, isInvoiceDoc, staffCategory, staffExpenseLocked, staffToExpenses, type CashOutSnapshot } from "@/lib/cash-outs";
-import { LAFPOS_CASH_OUT_TEXT, lafposCashOutChange } from "@/lib/lafpos/cash-moves";
+import { ASILPOS_CASH_OUT_TEXT, asilposCashOutChange } from "@/lib/asilpos/cash-moves";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import type { Role } from "@/lib/constants";
@@ -14,7 +14,7 @@ import { can, linksAnyPhoto, realRoleOf } from "@/lib/roles";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { currentTillBranch } from "@/server/branch-scope";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
-import { lafposAwaitingCategoryIds } from "@/server/data/cash-outs";
+import { asilposAwaitingCategoryIds } from "@/server/data/cash-outs";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
@@ -38,7 +38,7 @@ export interface CashOutActor {
   role: "admin" | "staff";
   /**
    * Gerçek rol (src/lib/roles.ts › asActor): müdür "admin" düzeyinde yazar ama bütün kategorileri seçemez, başkasının
-   * fotoğrafını bağlayamaz. Elle kurulan kişide (LafPOS, fatura eşleme) yok: düzeyin kendisi sayılır
+   * fotoğrafını bağlayamaz. Elle kurulan kişide (AsilPOS, fatura eşleme) yok: düzeyin kendisi sayılır
    */
   realRole?: Role;
 }
@@ -89,7 +89,7 @@ export async function lockCashOut(tx: CashOutTx, id: number): Promise<CashOutRow
 
 /**
  * Bütün kategorileri (maaş, kira, reklam) yazar mı: düzey "admin" ve gerçek rol `kategori.tum` (yönetici evet, "admin"
- * düzeyindeki müdür hayır). Elle kurulan kişi (LafPOS, fatura eşleme) yöneticidir
+ * düzeyindeki müdür hayır). Elle kurulan kişi (AsilPOS, fatura eşleme) yöneticidir
  */
 const writesAllCategories = (me: CashOutActor) => me.role === "admin" && can(realRoleOf(me), "kategori.tum");
 
@@ -131,10 +131,10 @@ export interface WriteCashOutOptions {
   /** İşlemin içinde kilitlenmiş satır (düzeltmede; verilmezse burada kilitlenir) */
   prev?: CashOutRow | null;
   /**
-   * LafPOS'un kasa hareketinin eşitlemesi (src/server/lafpos/cash-moves.ts; başka çağıran vermez): LafPOS satırının
+   * AsilPOS'un kasa hareketinin eşitlemesi (src/server/asilpos/cash-moves.ts; başka çağıran vermez): AsilPOS satırının
    * kilidi bu yazıma uygulanmaz; yeni satıra hareketin kimliği ve anı yazılır
    */
-  lafpos?: { id: string; at: Date };
+  asilpos?: { id: string; at: Date };
 }
 
 /**
@@ -152,20 +152,20 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
   const harcama = d.kind === "harcama";
   const prev = o.prev !== undefined ? o.prev : d.id ? await lockCashOut(tx, d.id) : null;
   if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
-  // LafPOS satırı (Faz 3): tutar, tür ve gün LafPOS'undur; yönetici de değiştiremez (yeniden gönderim geri yazardı)
-  const lafposLock = prev && !o.lafpos ? lafposCashOutChange(prev, d) : null;
-  if (lafposLock) throw new UserError(lafposLock);
+  // AsilPOS satırı (Faz 3): tutar, tür ve gün AsilPOS'undur; yönetici de değiştiremez (yeniden gönderim geri yazardı)
+  const asilposLock = prev && !o.asilpos ? asilposCashOutChange(prev, d) : null;
+  if (asilposLock) throw new UserError(asilposLock);
   const [existing] = prev ? await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, prev.id)).limit(1) : [];
   const mode = o.restore ? "restore" : prev ? "edit" : "new";
   // Personel faturalı satırı fişe düzeltiyor: satır hâlâ faturasını bekliyorsa kayıt açılır (faturası geldiyse ya da
   // yönetici kapattıysa açılmaz: iki kez sayılırdı). Bakış yazımdan önce, satırın kayıtlı hâliyle
   const leavesInvoice = !admin && mode === "edit" && prev !== null && !existing && isInvoiceDoc(prev.docType) && staffToExpenses(d.kind, d.docType);
   const awaitingInvoice = leavesInvoice ? (await loadPendingCashOutInvoices(tx, { ids: [prev.id] })).length > 0 : undefined;
-  // Kategorisini bekleyen LafPOS harcaması (Faz 3; inceleme LM-3): LafPOS'un kategorisiz yazdığı harcamada personel
-  // kategori seçince kayıt açılır. Kaydı yöneticinin kaldırdığı LafPOS satırı ve sahiplenilen elle satır beklemez
-  const lafposAwaiting =
-    !admin && mode === "edit" && prev?.lafposId && !existing && d.kind === "harcama"
-      ? (await lafposAwaitingCategoryIds(tx, [{ ...prev, hasExpense: false }])).has(prev.id)
+  // Kategorisini bekleyen AsilPOS harcaması (Faz 3; inceleme LM-3): AsilPOS'un kategorisiz yazdığı harcamada personel
+  // kategori seçince kayıt açılır. Kaydı yöneticinin kaldırdığı AsilPOS satırı ve sahiplenilen elle satır beklemez
+  const asilposAwaiting =
+    !admin && mode === "edit" && prev?.asilposId && !existing && d.kind === "harcama"
+      ? (await asilposAwaitingCategoryIds(tx, [{ ...prev, hasExpense: false }])).has(prev.id)
       : false;
   const toExpenses = cashOutWritesExpense({
     admin,
@@ -176,7 +176,7 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     hasExpense: Boolean(existing),
     prevDocType: prev?.docType ?? null,
     awaitingInvoice,
-    lafposAwaitingCategory: lafposAwaiting,
+    asilposAwaitingCategory: asilposAwaiting,
   });
 
   // Yöneticinin kategorisindeki kayıt (maaş, kira; gerçek role göre). Personel tutarı düzeltir, kaydı kaldıramaz
@@ -219,8 +219,8 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     vat: harcama ? d.vat : null,
     docType: harcama ? d.docType : ("yok" as const),
     photoId: d.photoId,
-    // LafPOS'un eşitlemesi: hareketin kimliği ve anı (satırın saati hareketinki)
-    ...(o.lafpos ? { lafposId: o.lafpos.id, createdAt: o.lafpos.at } : {}),
+    // AsilPOS'un eşitlemesi: hareketin kimliği ve anı (satırın saati hareketinki)
+    ...(o.asilpos ? { asilposId: o.asilpos.id, createdAt: o.asilpos.at } : {}),
   };
   const author = o.author ?? { id: me.id, name: me.name };
   const [row] = prev
@@ -286,11 +286,11 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
 /**
  * Satırı siler (bağlı harcama kaydıyla, işlemin içinde); fotoğraf 7 gün daha saklanır. Satırın bekleyen istekleri
  * kapanır ("Satır silindi"; silmeyi onaylanan istek `exceptRequestId` hariç). Silinenin kopyası döner ("Geri al" ve
- * işlem geçmişi). Satır kilitli okunmuş olmalı (`row`). LafPOS satırı silinmez (gün yeniden gönderilince geri gelirdi);
- * yalnız LafPOS'un eşitlemesi (`lafpos`) gövdeden kalkan hareketin satırını siler.
+ * işlem geçmişi). Satır kilitli okunmuş olmalı (`row`). AsilPOS satırı silinmez (gün yeniden gönderilince geri gelirdi);
+ * yalnız AsilPOS'un eşitlemesi (`asilpos`) gövdeden kalkan hareketin satırını siler.
  */
-export async function removeCashOut(tx: CashOutTx, row: CashOutRow, o: { exceptRequestId?: number; lafpos?: boolean } = {}): Promise<CashOutSnapshot> {
-  if (row.lafposId && !o.lafpos) throw new UserError(LAFPOS_CASH_OUT_TEXT.delete);
+export async function removeCashOut(tx: CashOutTx, row: CashOutRow, o: { exceptRequestId?: number; asilpos?: boolean } = {}): Promise<CashOutSnapshot> {
+  if (row.asilposId && !o.asilpos) throw new UserError(ASILPOS_CASH_OUT_TEXT.delete);
   const [entry] = await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, row.id)).returning();
   await tx.delete(s.cashOuts).where(eq(s.cashOuts.id, row.id));
   if (row.photoId) await releasePhoto(row.photoId, RELEASED_DAYS, tx);

@@ -1,8 +1,8 @@
 // ModPOS kasa föyü ay rakamına yedek, gerçek Postgres'te (docs/MODPOS-API.md › Ay rakamına yedek;
 // src/server/data/cash-reports.ts modposTillRows, firstModposTillDay, tillRows): anahtar (settings › modposAyYedegi)
 // kapalıyken föy tablosu hiç okunmaz ve ay rakamı bugünkü gibidir; açıkken yalnız kapanmış föy (ve kasası açılmadan
-// satış yapılmış föysüz gün) LafPOS'a geçiş gününden önceki raporsuz güne yedek satır olur; açık kasalı föy ve satışsız
-// boş gün girmez; rapor ve LafPOS gün sonu kazanır; Gelir-gider'in veri kümesi ile Kasa'nın ay satırı aynı rakamı verir.
+// satış yapılmış föysüz gün) AsilPOS'a geçiş gününden önceki raporsuz güne yedek satır olur; açık kasalı föy ve satışsız
+// boş gün girmez; rapor ve AsilPOS gün sonu kazanır; Gelir-gider'in veri kümesi ile Kasa'nın ay satırı aynı rakamı verir.
 //
 // Föyler kitapçığın örneğinden (tests/fixtures/modpos/belge-ornegi.xml; kafenin verisi değil). Test kendi geçici
 // veritabanını açar (MODPOS_TEST_DATABASE_URL'in sunucusunda), migration'ları uygular, sonunda siler.
@@ -21,14 +21,14 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { kasaMonthLine, resolveMonth, tillMonths } from "../src/lib/cash-month";
-import { parsePosDay } from "../src/lib/lafpos/day";
+import { parsePosDay } from "../src/lib/asilpos/day";
 import { parseKasaFoyu, type KasaFoyu } from "../src/lib/modpos/foy";
 import { MODPOS_FALLBACK_KEY } from "../src/lib/modpos/status";
 import { addDays } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { ASILPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.MODPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_modpos_ay_${process.pid}`;
@@ -58,7 +58,7 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
   let db: DB;
   let reports: typeof import("../src/server/data/cash-reports");
   let store: typeof import("../src/server/modpos/store");
-  let ingest: typeof import("../src/server/lafpos/ingest");
+  let ingest: typeof import("../src/server/asilpos/ingest");
   let dataset: typeof import("../src/server/data/dataset");
 
   const setting = async (key: string, value: unknown) => {
@@ -93,7 +93,7 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     await seedBranches(db);
     reports = await import("../src/server/data/cash-reports");
     store = await import("../src/server/modpos/store");
-    ingest = await import("../src/server/lafpos/ingest");
+    ingest = await import("../src/server/asilpos/ingest");
     dataset = await import("../src/server/data/dataset");
   });
 
@@ -106,7 +106,7 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
   beforeEach(async () => {
     await db.execute(sql`TRUNCATE modpos_cash_sheets, cash_reports, pos_daily_sales, pos_day_reports, special_days RESTART IDENTITY CASCADE`);
     await fallback(undefined);
-    await setting("lafposGecisGunu", undefined);
+    await setting("asilposGecisGunu", undefined);
   });
 
   test("anahtar kapalıyken (yok, false, bozuk) föy tablosu okunmaz: yedek satır yok, ay satırları bugünkü gibi", async () => {
@@ -165,23 +165,23 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     assert.equal(await reports.firstModposTillDay(db), "2026-10-01");
   });
 
-  test("LafPOS'a geçiş günü: föy yalnız ondan önceki günlerde; geçiş gününden itibaren LafPOS gün sonu", async () => {
-    // LafPOS'un şubesi (Marina): ModPOS'u yedek olarak çekilmeye devam eder, föyü yalnız geçiş gününden önce sayılır
-    for (const day of ["2026-10-01", "2026-10-03", "2026-10-05", "2026-10-06"]) await save(kapali(day), LAFPOS_SUBE);
+  test("AsilPOS'a geçiş günü: föy yalnız ondan önceki günlerde; geçiş gününden itibaren AsilPOS gün sonu", async () => {
+    // AsilPOS'un şubesi (Marina): ModPOS'u yedek olarak çekilmeye devam eder, föyü yalnız geçiş gününden önce sayılır
+    for (const day of ["2026-10-01", "2026-10-03", "2026-10-05", "2026-10-06"]) await save(kapali(day), ASILPOS_SUBE);
     await fallback(true);
-    await setting("lafposGecisGunu", "2026-10-05");
+    await setting("asilposGecisGunu", "2026-10-05");
     assert.deepEqual(
       (await reports.modposTillRows(db)).map((r) => [r.date, r.branchId]),
       [
-        ["2026-10-01", LAFPOS_SUBE],
-        ["2026-10-03", LAFPOS_SUBE],
+        ["2026-10-01", ASILPOS_SUBE],
+        ["2026-10-03", ASILPOS_SUBE],
       ],
     );
     assert.deepEqual(await reports.modposTillRows(db, "2026-10-05", "2026-10-31"), [], "aralık geçiş gününden sonra");
-    // LafPOS'un 5 Ekim gün sonu: aynı gün föy değil LafPOS sayılır (föy zaten sınırın dışında)
+    // AsilPOS'un 5 Ekim gün sonu: aynı gün föy değil AsilPOS sayılır (föy zaten sınırın dışında)
     const body = {
       version: 1,
-      source: "lafpos",
+      source: "asilpos",
       date: "2026-10-05",
       z: { zNo: 3, receipts: 50, zTotal: 15_000, cash: 5_000, card: 10_000, mealCard: 0, online: 0, other: 0, offRevenue: 0, discounts: 0, openingCash: 500, cashOut: 0, countedCash: 5_500, handedOver: 0, cashDiff: 0, cashIn: 0, expectedCash: 5_500 },
       lines: [],
@@ -192,26 +192,26 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     const day = parsePosDay(JSON.stringify(body), now);
     assert.ok(day.ok, "gövde geçerli");
     assert.equal((await ingest.storePosDay(db, day.data, now)).ok, true);
-    await report("2026-10-03", 9_000, LAFPOS_SUBE);
+    await report("2026-10-03", 9_000, ASILPOS_SUBE);
     // 2 Ekim'in föyü yok: ilk rapordan (3 Ekim) önceki föy kesintisiz değil, 1 Ekim sayılmaz
     assert.deepEqual(days(await reports.tillRows(db)), [
       ["2026-10-03", "rapor"],
-      ["2026-10-05", "lafpos"],
+      ["2026-10-05", "asilpos"],
     ]);
-    await save(kapali("2026-10-02"), LAFPOS_SUBE);
+    await save(kapali("2026-10-02"), ASILPOS_SUBE);
     const marina = await reports.tillRows(db);
     assert.deepEqual(days(marina), [
       ["2026-10-01", "modpos"],
       ["2026-10-02", "modpos"],
       ["2026-10-03", "rapor"],
-      ["2026-10-05", "lafpos"],
+      ["2026-10-05", "asilpos"],
     ]);
-    assert.deepEqual([...new Set(marina.map((r) => r.branchId))], [LAFPOS_SUBE]);
+    assert.deepEqual([...new Set(marina.map((r) => r.branchId))], [ASILPOS_SUBE]);
     // Geçiş günü ilk izinli gündeyse föy hiç sayılmaz
-    await setting("lafposGecisGunu", "2026-10-01");
+    await setting("asilposGecisGunu", "2026-10-01");
     assert.deepEqual(await reports.modposTillRows(db), []);
     assert.equal(await reports.firstModposTillDay(db), null);
-    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır: ModPOS'ta kalan şubenin (Tuzla) föyü geçiş gününden sonra da
+    // Geçiş günü yalnız AsilPOS'un şubesinin kasasınındır: ModPOS'ta kalan şubenin (Tuzla) föyü geçiş gününden sonra da
     // ay rakamına yedektir
     for (const day of ["2026-10-05", "2026-10-06"]) await save(kapali(day));
     assert.deepEqual(
@@ -225,8 +225,8 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     assert.deepEqual(
       (await reports.tillRows(db)).map((r) => [r.date, r.branchId, r.source ?? "rapor"]),
       [
-        ["2026-10-03", LAFPOS_SUBE, "rapor"],
-        ["2026-10-05", LAFPOS_SUBE, "lafpos"],
+        ["2026-10-03", ASILPOS_SUBE, "rapor"],
+        ["2026-10-05", ASILPOS_SUBE, "asilpos"],
         ["2026-10-05", MODPOS_SUBE, "modpos"],
         ["2026-10-06", MODPOS_SUBE, "modpos"],
       ],
@@ -267,7 +267,7 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     assert.deepEqual([on.posRevenue, on.sources?.posRevenue, on.openDays], [t.posRevenue, "kasa", 30]);
     assert.equal(kasaMonthLine(on), "Bu ayın açık gün ve cirosu kasa raporlarından (15 gün ModPOS API'den sayıldı)");
 
-    // Kasa sayfasının hesabı (ayın raporları + LafPOS + föy, ilk satır ve ilk kasa raporu ayrı): aynı satır
+    // Kasa sayfasının hesabı (ayın raporları + AsilPOS + föy, ilk satır ve ilk kasa raporu ayrı): aynı satır
     const monthRows = (await reports.tillRows(db)).filter((r) => r.date.slice(0, 7) === "2026-10" && !r.source);
     const monthModpos = await reports.modposTillRows(db, "2026-10-01", "2026-10-31");
     const firstEver = await reports.firstCashReportDate();

@@ -3,7 +3,7 @@ import "server-only";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 
 import { sortBranches, type BranchRow } from "@/lib/branches";
-import { legacyOwnerId, plainFields, type BranchSettingGroup } from "@/lib/branch-settings/groups";
+import { branchSettingGroup, groupReadIds, legacyOwnerId, plainFields, type BranchSettingGroup } from "@/lib/branch-settings/groups";
 import { settingCloseError, settingLinkError, settingMode, settingSource, type SettingLink, type SettingMode } from "@/lib/branch-settings/rules";
 import { UserError } from "@/server/actions/util";
 import { currentVia } from "@/server/activity-via";
@@ -57,13 +57,31 @@ async function branchesOf(db: Reader): Promise<BranchRow[]> {
   return sortBranches(rows);
 }
 
+/**
+ * Grubun satırları. Ad değişikliği (grubun `readIds`'i, AsilPOS): yeni adlı satırlar da okunur, bir şubede ikisi varsa
+ * yeni adlı geçer; satırların `grp`'si grubun yazılan adına (`id`) çevrilir
+ */
 async function rowsOf(db: Reader, grp: string): Promise<Row[]> {
-  return db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, grp));
+  const group = branchSettingGroup(grp);
+  const ids = group ? groupReadIds(group) : [grp];
+  if (ids.length === 1) return db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, grp));
+  const rows = await db.select().from(s.branchSettings).where(inArray(s.branchSettings.grp, ids));
+  const rank = (r: Row) => ids.indexOf(r.grp);
+  const best = new Map<string, Row>();
+  for (const r of rows) {
+    const prev = best.get(r.branchId);
+    if (!prev || rank(r) < rank(prev)) best.set(r.branchId, r);
+  }
+  return [...best.values()].map((r) => ({ ...r, grp: group!.id }));
 }
 
 /** Eski genel kayıt: integration_state'teki anahtar ve (varsa) settings tablosundaki alanlar */
-async function legacyRaw(db: Reader, group: Pick<BranchSettingGroup, "legacyKey" | "legacySettings">): Promise<Record<string, unknown>> {
-  const fields = Object.entries(group.legacySettings ?? {});
+async function legacyRaw(db: Reader, group: Pick<BranchSettingGroup, "legacyKey" | "legacySettings" | "legacySettingsNew">): Promise<Record<string, unknown>> {
+  // Ad değişikliği: alanın yeni settings anahtarı (legacySettingsNew) önce okunur, yoksa eskisi
+  const fields = Object.entries(group.legacySettings ?? {}).flatMap(([field, key]) => {
+    const yeni = group.legacySettingsNew?.[field];
+    return yeni ? [[field, key] as const, [field, yeni] as const] : [[field, key] as const];
+  });
   const [state, settings] = await Promise.all([
     group.legacyKey ? db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, group.legacyKey)).limit(1) : Promise.resolve([]),
     fields.length ? db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings).where(inArray(s.settings.key, fields.map(([, k]) => k))) : Promise.resolve([]),
@@ -252,11 +270,13 @@ export async function branchSettingsCloseError(db: Reader, branch: Pick<BranchRo
     db
       .select({ grp: s.branchSettings.grp, branchId: s.branchSettings.branchId, sameAs: s.branchSettings.sameAs })
       .from(s.branchSettings)
-      .where(inArray(s.branchSettings.grp, groups.map((g) => g.id))),
+      .where(inArray(s.branchSettings.grp, groups.flatMap((g) => groupReadIds(g)))),
     branchesOf(db),
   ]);
   const byGroup = new Map<string, SettingLink[]>();
-  for (const r of rows) byGroup.set(r.grp, [...(byGroup.get(r.grp) ?? []), r]);
+  // Yeni adlı satır grubun yazılan adına sayılır (ad değişikliği; groupReadIds)
+  const idOf = (grp: string) => groups.find((g) => groupReadIds(g).includes(grp))?.id ?? grp;
+  for (const r of rows) byGroup.set(idOf(r.grp), [...(byGroup.get(idOf(r.grp)) ?? []), r]);
   const err = settingCloseError(groups, branch, byGroup, branches);
   if (err) return err;
   // Kapalı şubeye bağlı satır kalmasın (kapalı şubeden de olsa: silmede yabancı anahtar reddeder)

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
-import { dayMonthYearTR } from "@/lib/lafpos/switch";
+import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import { dayAblativeTR, dayMonthTR, todayTR } from "@/lib/reminders";
 
 import { MODPOS_DAILY_QUOTA, quotaLeft, quotaRenewsAt, renewText, type ModposQuota } from "./request";
@@ -178,7 +178,7 @@ export interface ModposCardSummary {
 }
 
 /**
- * Kartın özeti. Sakin dil (LafPOS kartıyla aynı kural): kurulmamış bağlantı gri "Kurulmadı"dır, hata değil; kırmızı
+ * Kartın özeti. Sakin dil (AsilPOS kartıyla aynı kural): kurulmamış bağlantı gri "Kurulmadı"dır, hata değil; kırmızı
  * yalnız anahtar çalışmadığında (geçersiz, süresi dolmuş, IP, yetki). Hak dolması turuncu değil mavidir: olağandır;
  * hak yenilendiyse son denemenin KOTA_DOLDU'su hiç anılmaz (tests/modpos-foy.test.ts).
  */
@@ -312,7 +312,7 @@ export function timeText(iso: string, now: Date): string {
 
 /**
  * Ay rakamına yedek (settings › `modposAyYedegi`, varsayılan kapalı; docs/MODPOS-API.md › Ay rakamı): açıkken kasa
- * raporu (ve LafPOS gün sonu) olmayan günün cirosu, kartı, yemek kartı ve ödenmezi kapanmış ModPOS föyünden aya girer;
+ * raporu (ve AsilPOS gün sonu) olmayan günün cirosu, kartı, yemek kartı ve ödenmezi kapanmış ModPOS föyünden aya girer;
  * gün yine "rapor yok" sayılır. Kapalıyken föy hiçbir hesaba girmez, yalnız yöneticinin ekranlarında görünür.
  */
 export const MODPOS_FALLBACK_KEY = "modposAyYedegi";

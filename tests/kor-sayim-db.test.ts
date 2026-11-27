@@ -1,8 +1,8 @@
 // Kör sayım ve teslim defteri, gerçek Postgres'te (Dalga 2, 25 Kasım 2026; docs/KASA-RAPORU.md › Kör sayım, Teslim
 // defteri): Tuzla'da (varsayılan açık) personel sayımı kilitlemeden raporu yazamaz, raporun sayılanı kilitli sayıma eşit
 // olmalı; değişiklik nedeniyle yeni satır olur ve işlem geçmişine düşer; yönetici kör değildir; şube ayarı kapatılınca kilit
-// beklenmez; Marina (LafPOS'un şubesi) varsayılan kapalı. Teslimin "Kime"si (yönetici, banka, ad) zorunlu ve kaydedilir;
-// defter iki şubenin raporlarını ve Kasadan çıkanlar'ın teslim satırlarını (LafPOS'unkiler dahil) birlikte okur. Günler
+// beklenmez; Marina (AsilPOS'un şubesi) varsayılan kapalı. Teslimin "Kime"si (yönetici, banka, ad) zorunlu ve kaydedilir;
+// defter iki şubenin raporlarını ve Kasadan çıkanlar'ın teslim satırlarını (AsilPOS'unkiler dahil) birlikte okur. Günler
 // 2033: yerel verinin raporlarıyla çakışmaz. Kendi kullanıcılarını ve kayıtlarını açar, sonunda siler.
 //
 // KOR_SAYIM_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
@@ -94,7 +94,7 @@ describe("Kör sayım ve teslim defteri: veritabanında", { skip: !URL && "KOR_S
       users[k].id = u.id;
     }
     savedSettings = await db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, "kasa.kor"));
-    // Varsayılan: Tuzla'da açık, Marina'da (LafPOS'un şubesi) kapalı
+    // Varsayılan: Tuzla'da açık, Marina'da (AsilPOS'un şubesi) kapalı
     await setBlind("tuzla", null);
     await setBlind("marina", null);
   });
@@ -167,7 +167,7 @@ describe("Kör sayım ve teslim defteri: veritabanında", { skip: !URL && "KOR_S
     await refused(blind.lockCashCountCore(db, users.ayse, { date: day, branchId: "tuzla", amount: 1 }, tr(`${day}T22:00`)), BLIND_COUNT_TEXT.off);
     assert.equal((await save(users.ayse, day, { openingCash: 0 })).kind, "saved");
     await setBlind("tuzla", null);
-    // Marina (LafPOS'un şubesi): varsayılan kapalı
+    // Marina (AsilPOS'un şubesi): varsayılan kapalı
     assert.equal(await blind.blindCountApplies(db, day, "marina"), false);
     const marina = await scope.withBranchScope("marina", () => save(users.ayse, day, { openingCash: 0 }));
     assert.equal(marina.kind, "saved");
@@ -197,17 +197,17 @@ describe("Kör sayım ve teslim defteri: veritabanında", { skip: !URL && "KOR_S
     await setBlind("tuzla", null);
   });
 
-  test("defter: iki şubenin sayımdan sonra teslimi ve gün içindeki teslim satırları (LafPOS'unkiler dahil)", async () => {
+  test("defter: iki şubenin sayımdan sonra teslimi ve gün içindeki teslim satırları (AsilPOS'unkiler dahil)", async () => {
     const day = dates[3];
-    // Marina'nın LafPOS'tan gelen teslimi (Kime'si LafPOS'un alıcısı) ve Tuzla'nın elle girilen teslim satırı
+    // Marina'nın AsilPOS'tan gelen teslimi (Kime'si AsilPOS'un alıcısı) ve Tuzla'nın elle girilen teslim satırı
     await db.insert(s.cashOuts).values([
-      { branchId: "marina", date: day, kind: "teslim", amount: 4_000, store: "Patron", description: null, docType: "yok", createdBy: null, createdByName: "LafPOS", lafposId: `01KORSAYIM${tag.replace(/[^0-9A-Z]/gi, "").toUpperCase().slice(0, 16).padEnd(16, "0")}` },
+      { branchId: "marina", date: day, kind: "teslim", amount: 4_000, store: "Patron", description: null, docType: "yok", createdBy: null, createdByName: "AsilPOS", asilposId: `01KORSAYIM${tag.replace(/[^0-9A-Z]/gi, "").toUpperCase().slice(0, 16).padEnd(16, "0")}` },
       { branchId: "tuzla", date: day, kind: "teslim", amount: 300, store: "Sütaş şoförü", description: null, docType: "yok", createdBy: users.ayse.id, createdByName: "Ayşe" },
       { branchId: "tuzla", date: day, kind: "harcama", amount: 90, store: "Migros", description: "süt", docType: "fis", createdBy: users.ayse.id, createdByName: "Ayşe" },
     ]);
     const all = (await scope.withBranchScope(ALL_BRANCHES, () => ledger.handoverLedger(day.slice(0, 7)))).filter((r) => r.date === day);
     assert.deepEqual(
-      all.map((r) => [r.branchId, r.kind, r.amount, r.to, r.lafpos]),
+      all.map((r) => [r.branchId, r.kind, r.amount, r.to, r.asilpos]),
       [
         ["marina", "gun-ici", 4_000, "Patron", true],
         ["tuzla", "gun-ici", 300, "Sütaş şoförü", false],

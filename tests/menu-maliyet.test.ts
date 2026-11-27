@@ -412,7 +412,7 @@ test("E-57: online satılan su kullanan ürün litreyi artırır, litre fiyatı 
   const cost = (m: Model, id: number) => m.products.find((p) => p.product.id === id)!.cost;
   assert.ok(cost(after, americano.id) < cost(before, americano.id));
   close(cost(after, latte.id), cost(before, latte.id), "suyu olmayan Latte aynı");
-  // LafPOS'un satırları satış listesinin içinde (ingredientUsage): ayrıca eklenmez
+  // AsilPOS'un satırları satış listesinin içinde (ingredientUsage): ayrıca eklenmez
   close(litersOf(after.ingredientUsage(M)) + litersOf(after.onlineUsage(M)), after.water.liters, "iki kaynak");
 });
 

@@ -8,7 +8,7 @@ import { SectionCard } from "./section-card";
 import type { SettingsSectionId } from "./sections";
 
 /**
- * Seçili şubede kullanılmayan kasa sisteminin kartı (Ayarlar › LafPOS ve ModPOS; şube kapsamı C P2-2): kapalıyken tek
+ * Seçili şubede kullanılmayan kasa sisteminin kartı (Ayarlar › AsilPOS ve ModPOS; şube kapsamı C P2-2): kapalıyken tek
  * satır "Bu şubede kullanılmıyor", açılınca sistemin hangi şubenin kasası olduğu ve o şubeyi seçtiren bağlantı
  * (`?sube=`, seçici çereze benimsetir; bölüm adresle açılır). Veri okunmaz: kartın durumu o şube seçiliyken görünür.
  * Sunucu bileşeni; düğmeler bağlantıdır (44 px).
@@ -20,10 +20,10 @@ export function PosElsewhereCard({
   system,
   users,
 }: {
-  id: Extract<SettingsSectionId, "lafpos" | "modpos">;
+  id: Extract<SettingsSectionId, "asilpos" | "modpos">;
   icon: ReactNode;
   title: string;
-  /** Metindeki adı: "LafPOS", "ModPOS" */
+  /** Metindeki adı: "AsilPOS", "ModPOS" */
   system: string;
   /** Sistemin kullanıldığı şubeler */
   users: readonly { id: string; name: string }[];

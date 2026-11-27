@@ -687,6 +687,13 @@
       "when": 1795720318771,
       "tag": "0097_roller",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795744165958,
+      "tag": "0098_asilpos_adi",
+      "breakpoints": true
     }
   ]
 }

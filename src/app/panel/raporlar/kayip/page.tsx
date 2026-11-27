@@ -28,14 +28,14 @@ const PATH = "/panel/raporlar/kayip";
 const TITLE = "Kayıp önleme";
 const DESCRIPTION = "Kasa farkı, iptal, ikram ve indirimin kişiye göre sapması.";
 const MORE =
-  "Kasa farkı kasayı sayana göre (kasa raporunun Kasayı sayan'ı), kör sayımın sonradan değişmesi değiştirene göre, zayi ve ikram kaydı girene göre: bunlar doğrudan kişinindir. İptal, ikram ve indirimi kimin yaptığını LafPOS göndermiyor; bunlar kişinin çalıştığı günlerin günlük ortalamasıyla, aynı şubede çalışmadığı günlerinki karşılaştırılarak gösterilir. Kişiye yazılmaz, tek başına kanıt değildir: aynı gün çalışanların hepsi aynı sapmayı alır.";
+  "Kasa farkı kasayı sayana göre (kasa raporunun Kasayı sayan'ı), kör sayımın sonradan değişmesi değiştirene göre, zayi ve ikram kaydı girene göre: bunlar doğrudan kişinindir. İptal, ikram ve indirimi kimin yaptığını AsilPOS göndermiyor; bunlar kişinin çalıştığı günlerin günlük ortalamasıyla, aynı şubede çalışmadığı günlerinki karşılaştırılarak gösterilir. Kişiye yazılmaz, tek başına kanıt değildir: aynı gün çalışanların hepsi aynı sapmayı alır.";
 
-/** LafPOS'tan gelmeyen alanlar (ekranda ve raporda açıkça) */
-const NOT_FROM_LAFPOS = [
+/** AsilPOS'tan gelmeyen alanlar (ekranda ve raporda açıkça) */
+const NOT_FROM_ASILPOS = [
   "iptali yapan",
   "ikramı ve ödenmezi veren (ödenmezde yalnız kişinin türü gelir: personel, müşteri, patron)",
   "indirimi yapan",
-  "LafPOS'ta kasayı sayan (LafPOS'un kendiliğinden yazdığı kasa raporlarında kişi yok; vardiya devri sayımlarında da)",
+  "AsilPOS'ta kasayı sayan (AsilPOS'un kendiliğinden yazdığı kasa raporlarında kişi yok; vardiya devri sayımlarında da)",
 ];
 
 const PICKER_MONTHS = 24;
@@ -92,8 +92,8 @@ async function LossContent({ searchParams }: { searchParams: PageProps<"/panel/r
         {dateTR(data.from)} – {dateTR(data.to)} · {data.branches.map((b) => b.name).join(", ")}
       </p>
       <CompanyWideNotice screen="raporlar" className="mb-4" />
-      <Notice tone="neutral" size="sm" className="mb-6" title="LafPOS'tan gelmeyenler: kişiye yazılamaz">
-        LafPOS şunları göndermiyor: {NOT_FROM_LAFPOS.join("; ")}. ModPOS (föy ve kasa raporu) iptal göndermez. Bu yüzden iptal, ikram ve indirim aşağıda kişinin
+      <Notice tone="neutral" size="sm" className="mb-6" title="AsilPOS'tan gelmeyenler: kişiye yazılamaz">
+        AsilPOS şunları göndermiyor: {NOT_FROM_ASILPOS.join("; ")}. ModPOS (föy ve kasa raporu) iptal göndermez. Bu yüzden iptal, ikram ve indirim aşağıda kişinin
         çalıştığı günlerle karşılaştırılır; kasa farkı, kör sayımın değişmesi ve panelde girilen zayi / ikram doğrudan kişinindir.
       </Notice>
       <div className="space-y-6">
@@ -167,7 +167,7 @@ function CashCard({ data, nameOf }: { data: LossData; nameOf: (id: string) => st
         <p className="px-5 pb-4 text-xs text-pretty text-ink-mute">
           {branches
             .filter((b) => b.unknown)
-            .map((b) => `${nameOf(b.branchId)}: ${num(b.unknown)} rapor LafPOS'tan kendiliğinden yazıldı, kasayı sayan bilinmiyor (toplam fark ${signed(b.unknownTotal)})`)
+            .map((b) => `${nameOf(b.branchId)}: ${num(b.unknown)} rapor AsilPOS'tan kendiliğinden yazıldı, kasayı sayan bilinmiyor (toplam fark ${signed(b.unknownTotal)})`)
             .join(" · ")}
           . Bu raporlar aşağıda çalıştığı günlere göre bölümünde sayılır.
         </p>
@@ -232,7 +232,7 @@ function WasteCard({ data, nameOf }: { data: LossData; nameOf: (id: string) => s
     <Card>
       <CardHeader
         title="Zayi & ikram · kaydı girene göre"
-        description="Panelde girilen zayi ve ikram kayıtları, malzeme maliyetiyle (KDV hariç). Kaydı giren, ikramı yapan olmayabilir; LafPOS'tan gelen satırlarda kişi yok."
+        description="Panelde girilen zayi ve ikram kayıtları, malzeme maliyetiyle (KDV hariç). Kaydı giren, ikramı yapan olmayabilir; AsilPOS'tan gelen satırlarda kişi yok."
       />
       {rows.length ? (
         <TableWrap>
@@ -295,7 +295,7 @@ function DaysCard({ data, nameOf }: { data: LossData; nameOf: (id: string) => st
     <Card>
       <CardHeader
         title="Çalıştığı günlere göre · kişiye yazılmaz"
-        description={`Kişinin çalıştığı günlerin günlük ortalaması ve aynı şubede çalışmadığı günlerinkinden sapması (iki tarafta da en az ${MIN_DAYS} gün). Çalışanlar LafPOS'un gün sonundaki listesinden, yoksa Vardiya planından. ▲: sapma kötü yönde ve şubenin günden güne oynamasından büyük.`}
+        description={`Kişinin çalıştığı günlerin günlük ortalaması ve aynı şubede çalışmadığı günlerinkinden sapması (iki tarafta da en az ${MIN_DAYS} gün). Çalışanlar AsilPOS'un gün sonundaki listesinden, yoksa Vardiya planından. ▲: sapma kötü yönde ve şubenin günden güne oynamasından büyük.`}
       />
       {rows.length ? (
         <TableWrap>
@@ -331,13 +331,13 @@ function DaysCard({ data, nameOf }: { data: LossData; nameOf: (id: string) => st
           </Table>
         </TableWrap>
       ) : (
-        <p className="px-5 pb-4 text-sm text-ink-mute">Bu dönemde çalışanı bilinen gün yok: LafPOS&apos;un personel bağlantısı ya da Vardiya planı gerekir.</p>
+        <p className="px-5 pb-4 text-sm text-ink-mute">Bu dönemde çalışanı bilinen gün yok: AsilPOS&apos;un personel bağlantısı ya da Vardiya planı gerekir.</p>
       )}
       <p className="px-5 pb-4 text-xs text-pretty text-ink-mute">
         {branches
           .map(
             (b) =>
-              `${nameOf(b.branchId)}: çalışanı bilinen ${num(b.days)} gün (${num(b.lafposDays)} LafPOS, ${num(b.vardiyaDays)} Vardiya), bilinmeyen ${num(b.unknownDays)}${
+              `${nameOf(b.branchId)}: çalışanı bilinen ${num(b.days)} gün (${num(b.asilposDays)} AsilPOS, ${num(b.vardiyaDays)} Vardiya), bilinmeyen ${num(b.unknownDays)}${
                 b.missingMetrics.length ? `; ${b.missingMetrics.map((m) => LOSS_METRIC_LABEL[m].toLocaleLowerCase("tr-TR")).join(", ")} bu şubede gelmiyor` : ""
               }`,
           )

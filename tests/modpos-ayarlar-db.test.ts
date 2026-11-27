@@ -22,7 +22,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { dayMonthYearTR } from "../src/lib/lafpos/switch";
+import { dayMonthYearTR } from "../src/lib/asilpos/switch";
 import { MODPOS_DAY_INVALID, MODPOS_KEY_BROKEN, MODPOS_NOT_CONFIGURED, MODPOS_PREVIEW, modposDayBadges } from "../src/lib/modpos/ayarlar";
 import { finalAfter } from "../src/lib/modpos/z";
 import { addDays, todayTR } from "../src/lib/reminders";

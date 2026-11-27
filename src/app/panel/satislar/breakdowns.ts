@@ -2,7 +2,7 @@ import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
 import type { MonthSales, SalesLineCalc, SalesPosCommission } from "@/lib/calc/engine";
 import type { Settings } from "@/lib/calc/types";
 import { money, num, pct, tl } from "@/lib/format";
-import { dayRangeTR } from "@/lib/lafpos/sales";
+import { dayRangeTR } from "@/lib/asilpos/sales";
 
 /** Dökümün kullandığı ay satışı alanları (`model.monthSales`); sayfanın zaten yüklediği veri, yeni sorgu yok */
 export type SalesMonth = Pick<

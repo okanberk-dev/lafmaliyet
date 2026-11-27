@@ -45,7 +45,7 @@ const COOKIE = 12;
 function base(over: Partial<StockEstimateInput> = {}): StockEstimateInput {
   return {
     today: "2026-12-10",
-    lafposFrom: "2026-11-22",
+    asilposFrom: "2026-11-22",
     // 5 Aralık gün sonu gelmedi, 7 Aralık kapalı işaretli
     receivedDays: ["2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-06", "2026-12-08", "2026-12-09"],
     closedDays: ["2026-12-07"],
@@ -83,7 +83,7 @@ function base(over: Partial<StockEstimateInput> = {}): StockEstimateInput {
     ],
     panelWaste: [
       { date: "2026-12-02", kind: "zayi", productId: null, ingredientId: SUT, name: "Süt", qty: 1.5, factor: 1000 },
-      // LafPOS'un gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz (LafPOS'taki sayılır)
+      // AsilPOS'un gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz (AsilPOS'taki sayılır)
       { date: "2026-12-03", kind: "ikram", productId: LATTE, ingredientId: null, name: "Latte M", qty: 2, factor: 1 },
       // Gün sonu gelmeyen günde panelin ürün ikramı sayılır
       { date: "2026-12-05", kind: "ikram", productId: LATTE, ingredientId: null, name: "Latte M", qty: 1, factor: 1 },
@@ -93,7 +93,7 @@ function base(over: Partial<StockEstimateInput> = {}): StockEstimateInput {
       // Sayımdan önce
       { date: "2026-11-28", kind: "zayi", productId: null, ingredientId: SUT, name: "Süt", qty: 5, factor: 1000 },
     ],
-    lafposWaste: [
+    asilposWaste: [
       { date: "2026-12-08", kind: "ikram", posName: "LATTE M", productId: LATTE, productName: "Latte M", qty: 1 },
       { date: "2026-12-08", kind: "zayi", posName: "ESPRESSO", productId: ESPRESSO, productName: "Espresso", qty: 2 },
       { date: "2026-12-09", kind: "ikram", posName: "TADIM", productId: null, qty: 1 },
@@ -127,7 +127,7 @@ test("hesap: son sayım + gelen − satış × (1 + fire) − zayi ve ikram, mal
   close(sut.counted, 10_000, "süt sayım (10 LT)");
   close(sut.purchased, 11_000, "süt alış (12 LT − 1 LT iade)");
   close(sut.sold, 2000 * 1.05, "süt satış (10 Latte × 200 ml × 1,05)");
-  // 1,5 LT zayi + 5 Aralık panel ikramı + 6 Aralık ürün zayisi + 8 Aralık LafPOS ikramı (3 Latte × 200 ml)
+  // 1,5 LT zayi + 5 Aralık panel ikramı + 6 Aralık ürün zayisi + 8 Aralık AsilPOS ikramı (3 Latte × 200 ml)
   close(sut.wasted, 1500 + 600, "süt zayi ve ikram");
   close(sut.estimate, 10_000 + 11_000 - 2100 - 2100, "süt tahmini");
 
@@ -135,7 +135,7 @@ test("hesap: son sayım + gelen − satış × (1 + fire) − zayi ve ikram, mal
   close(kahve.counted, 2000, "çekirdek: Kasım sayımı (süren ayın sayımı girmez)");
   close(kahve.purchased, 0, "çekirdek: sayımdan önceki fatura girmez");
   close(kahve.sold, (10 * 18 + 20 * 9) * 1.05, "çekirdek satış");
-  // 3 Latte (5, 6, 8 Aralık) × 18 gr + LafPOS'ta zayi yazılan 2 Espresso × 9 gr
+  // 3 Latte (5, 6, 8 Aralık) × 18 gr + AsilPOS'ta zayi yazılan 2 Espresso × 9 gr
   close(kahve.wasted, 3 * 18 + 2 * 9, "çekirdek zayi ve ikram (fire eklenmez)");
   close(kahve.estimate, 2000 - 378 - 72, "çekirdek tahmini");
 
@@ -145,7 +145,7 @@ test("hesap: son sayım + gelen − satış × (1 + fire) − zayi ve ikram, mal
 
   assert.equal(r.from, "2026-12-01");
   assert.equal(r.lastDay, "2026-12-09");
-  assert.deepEqual(r.counts, { tahmin: 3, "sayim-yok": 1, "lafpos-oncesi": 0 });
+  assert.deepEqual(r.counts, { tahmin: 3, "sayim-yok": 1, "asilpos-oncesi": 0 });
 });
 
 test("son sayım yoksa 'sayım yok': rakam yok, eşik olsa da uyarı yok", () => {
@@ -163,28 +163,28 @@ test("son sayım yoksa 'sayım yok': rakam yok, eşik olsa da uyarı yok", () =>
   assert.equal(only.critical.length, 0);
 });
 
-test("sayım LafPOS'tan önceyse tahmin yok: o günlerin satışı gün gün bilinmiyor", () => {
-  // Dönem 1 Aralık'ta başlıyor, LafPOS 2 Aralık'tan sayılıyor
-  const late = estimateStock(base({ lafposFrom: "2026-12-02" }));
+test("sayım AsilPOS'tan önceyse tahmin yok: o günlerin satışı gün gün bilinmiyor", () => {
+  // Dönem 1 Aralık'ta başlıyor, AsilPOS 2 Aralık'tan sayılıyor
+  const late = estimateStock(base({ asilposFrom: "2026-12-02" }));
   for (const l of late.lines.filter((x) => x.countMonth)) {
-    assert.equal(l.status, "lafpos-oncesi", l.name);
+    assert.equal(l.status, "asilpos-oncesi", l.name);
     assert.equal(l.estimate, null);
     assert.equal(l.critical, false);
   }
   assert.equal(late.from, null);
   assert.deepEqual(late.missingDays, []);
   assert.equal(late.unmatched.lines, 0);
-  // Geçiş günü yok: LafPOS hiç sayılmıyor
-  const off = estimateStock(base({ lafposFrom: null }));
+  // Geçiş günü yok: AsilPOS hiç sayılmıyor
+  const off = estimateStock(base({ asilposFrom: null }));
   assert.ok(off.lines.every((l) => l.estimate === null));
-  assert.deepEqual(off.counts, { tahmin: 0, "sayim-yok": 1, "lafpos-oncesi": 3 });
+  assert.deepEqual(off.counts, { tahmin: 0, "sayim-yok": 1, "asilpos-oncesi": 3 });
 });
 
 test("reçetesiz ve ürüne bağlı olmayan satırlar atlanır ve sayılır; hizmet satırı sayılmaz", () => {
   const r = estimateStock(base());
   // Cookie: 5 satış + 1 panel zayisi
   assert.deepEqual(r.noRecipe, { lines: 2, qty: 6, names: 1, top: ["Cookie"] });
-  // PUMPKIN LATTE satışı ve LafPOS'un bağlanmamış ikramı; karaoke (hizmet) ve sayımdan önceki satır yok
+  // PUMPKIN LATTE satışı ve AsilPOS'un bağlanmamış ikramı; karaoke (hizmet) ve sayımdan önceki satır yok
   assert.deepEqual(r.unmatched, { lines: 2, qty: 4, names: 2, top: ["PUMPKIN LATTE", "TADIM"] });
   // Reçetesiz ürün hiçbir malzemeyi azaltmaz
   const without = estimateStock(base({ sales: base().sales.filter((s) => s.productId !== COOKIE) }));
@@ -192,19 +192,19 @@ test("reçetesiz ve ürüne bağlı olmayan satırlar atlanır ve sayılır; hiz
 });
 
 test("zayi ve ikram: her gün tek kaynak, ürün reçeteden, hammadde çarpanıyla, sayımdan öncekiler girmez", () => {
-  const none = estimateStock(base({ panelWaste: [], lafposWaste: [] }));
+  const none = estimateStock(base({ panelWaste: [], asilposWaste: [] }));
   close(line(none, SUT).wasted, 0, "kayıt yok");
   // Yalnız hammadde zayisi: 1,5 LT = 1500 ml
-  const raw = estimateStock(base({ panelWaste: [base().panelWaste[0]], lafposWaste: [] }));
+  const raw = estimateStock(base({ panelWaste: [base().panelWaste[0]], asilposWaste: [] }));
   close(line(raw, SUT).wasted, 1500, "hammadde zayisi");
   // Gün sonu gelen günde panelin ürün ikramı sayılmaz; aynı gün zayisi sayılır
   const day = "2026-12-03";
-  const ikram = estimateStock(base({ panelWaste: [{ date: day, kind: "ikram", productId: LATTE, ingredientId: null, name: "Latte M", qty: 4, factor: 1 }], lafposWaste: [] }));
-  close(line(ikram, SUT).wasted, 0, "LafPOS günündeki panel ürün ikramı");
-  const zayi = estimateStock(base({ panelWaste: [{ date: day, kind: "zayi", productId: LATTE, ingredientId: null, name: "Latte M", qty: 4, factor: 1 }], lafposWaste: [] }));
-  close(line(zayi, SUT).wasted, 800, "LafPOS günündeki panel ürün zayisi");
-  // Hammadde ikramı (personele süt) LafPOS gününde de sayılır
-  const staffMilk = estimateStock(base({ panelWaste: [{ date: day, kind: "ikram", productId: null, ingredientId: SUT, name: "Süt", qty: 0.5, factor: 1000 }], lafposWaste: [] }));
+  const ikram = estimateStock(base({ panelWaste: [{ date: day, kind: "ikram", productId: LATTE, ingredientId: null, name: "Latte M", qty: 4, factor: 1 }], asilposWaste: [] }));
+  close(line(ikram, SUT).wasted, 0, "AsilPOS günündeki panel ürün ikramı");
+  const zayi = estimateStock(base({ panelWaste: [{ date: day, kind: "zayi", productId: LATTE, ingredientId: null, name: "Latte M", qty: 4, factor: 1 }], asilposWaste: [] }));
+  close(line(zayi, SUT).wasted, 800, "AsilPOS günündeki panel ürün zayisi");
+  // Hammadde ikramı (personele süt) AsilPOS gününde de sayılır
+  const staffMilk = estimateStock(base({ panelWaste: [{ date: day, kind: "ikram", productId: null, ingredientId: SUT, name: "Süt", qty: 0.5, factor: 1000 }], asilposWaste: [] }));
   close(line(staffMilk, SUT).wasted, 500, "hammadde ikramı");
 });
 
@@ -216,7 +216,7 @@ test("alış: yalnız dönemin içindeki fatura, iade düşer", () => {
 
 test("birim dönüşümü: sayım çarpanı, ekrandaki birim, eşik alanı", () => {
   // Sayıldığı çarpanla: eskiden gr ile sayılmış (çarpan 1) kalem bugün KG'de olsa da 500 gr
-  const r = estimateStock(base({ counts: [{ month: "2026-11", ingredientId: KAHVE, qty: 500, factor: 1 }], sales: [], panelWaste: [], lafposWaste: [], purchases: [] }));
+  const r = estimateStock(base({ counts: [{ month: "2026-11", ingredientId: KAHVE, qty: 500, factor: 1 }], sales: [], panelWaste: [], asilposWaste: [], purchases: [] }));
   close(line(r, KAHVE).counted, 500, "eski çarpan korunur");
   close(line(r, KAHVE).estimate, 500, "hareket yok");
   assert.equal(line(r, KAHVE).unit, "KG");
@@ -351,7 +351,7 @@ test("online: kasadan geçmeyen sipariş reçeteyle × (1 + fire) düşülür; d
   const r = estimateStock(base({ online: ONLINE }));
   const sut = line(r, SUT);
   close(sut.online, 5 * 200 * 1.05, "süt online (5 Latte × 200 ml × 1,05)");
-  close(sut.sold, 2000 * 1.05, "LafPOS satışı değişmez");
+  close(sut.sold, 2000 * 1.05, "AsilPOS satışı değişmez");
   close(sut.estimate, 10_000 + 11_000 - 2100 - 1050 - 2100, "süt tahmini online düşülmüş");
   close(line(r, KAHVE).online, 5 * 18 * 1.05, "çekirdek online");
   close(line(r, BARDAK).online, 5 * 1.05, "bardak online");
@@ -370,7 +370,7 @@ test("online: kasadan geçmeyen sipariş reçeteyle × (1 + fire) düşülür; d
   assert.deepEqual(onlyNov.online?.missingMonths, ["2026-12"], "dönemin ayının kaydı yok");
 });
 
-test("online: kasada ödenen ve elle girilen sipariş LafPOS'la çift sayılmaz (yalnız bilgi); site bağlı değilse düşülmez ve uyarı yok", () => {
+test("online: kasada ödenen ve elle girilen sipariş AsilPOS'la çift sayılmaz (yalnız bilgi); site bağlı değilse düşülmez ve uyarı yok", () => {
   const a = estimateStock(base({ online: ONLINE }));
   const b = estimateStock(base({ online: { months: ONLINE.months.map((m) => ({ ...m, tillOrders: m.tillOrders + 40 })) } }));
   close(line(b, SUT).estimate, line(a, SUT).estimate as number, "kasadan geçen sipariş tahmini değiştirmez");

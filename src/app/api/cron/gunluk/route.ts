@@ -13,7 +13,7 @@ import { runQuotaCheck } from "@/server/db-quota/check";
 import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
-import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
+import { catchUpAsilposDayEnds } from "@/server/asilpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
 import { purgeExpiredStatements } from "@/server/mutabakat/store";
 import { isModposConfigured } from "@/server/modpos/client";
@@ -188,14 +188,14 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       { error: "süre doldu" },
     );
-  // LafPOS gün sonu (docs/LAFPOS.md › Gün sonu otomasyonu): son 7 günün Kasa raporu ve gün sonu e-postası eksikse
+  // AsilPOS gün sonu (docs/ASILPOS.md › Gün sonu otomasyonu): son 7 günün Kasa raporu ve gün sonu e-postası eksikse
   // tamamlanır (gece gönderilemeyen e-posta, geçiş günü sonradan girildiyse eksik günler); işlenmiş gün bir şey göndermez.
   // İşi bekleyen günler önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona; son ana az kalınca yeni güne
   // başlanmaz (başlanamayan bekleyen gün adımda hata). E-posta tek deneme, kuyruğun 55 sn'sini aşmadan
   const gunSonuTask = () => {
     const deadlineAt = tailStepDeadline(jobStart);
     return capped(
-      catchUpLafposDayEnds(getDb(), new Date(), { attempts: 1, deadlineAt }).catch((e: Error) => ({ error: e.message })),
+      catchUpAsilposDayEnds(getDb(), new Date(), { attempts: 1, deadlineAt }).catch((e: Error) => ({ error: e.message })),
       deadlineAt - Date.now() + 500,
       { error: "süre doldu" },
     );

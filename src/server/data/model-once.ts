@@ -12,7 +12,7 @@ export const loadModelOnce = cache(loadModel);
 
 /**
  * Bir şubenin maliyet modeli istek başına bir kez (React cache; anahtar şubenin kimliği). Onaylar › Zayi ve ikram
- * kartının bağlamı (kayıtlı ikram, LafPOS günleri) isteğin şubesinden okunur, yöneticinin seçiminden değil (denetim
+ * kartının bağlamı (kayıtlı ikram, AsilPOS günleri) isteğin şubesinden okunur, yöneticinin seçiminden değil (denetim
  * 21 Kasım #28; src/server/data/waste-requests.ts loadWasteRequestQueue).
  */
 export const loadBranchModelOnce = cache((branchId: string) => loadModel({ scope: branchId }));

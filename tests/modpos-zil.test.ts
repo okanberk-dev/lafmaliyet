@@ -83,13 +83,13 @@ test("föyünden farklı: aynı yazılan rapor uyarı değil; nakit farklıysa t
   assert.deepEqual(modposMismatches([report(D, { zNo: "0312", cash: 8210.01 })], [sheet(D)], null), []);
 });
 
-test("föyünden farklı: yalnız ModPOS günü (LafPOS'a geçiş gününden önce ya da geçiş günü boşken)", () => {
-  // LafPOS'un şubesi Marina (21 Kasım kararı): geçiş günü yalnız onun kasasını keser
+test("föyünden farklı: yalnız ModPOS günü (AsilPOS'a geçiş gününden önce ya da geçiş günü boşken)", () => {
+  // AsilPOS'un şubesi Marina (21 Kasım kararı): geçiş günü yalnız onun kasasını keser
   const bad = [report(D, { cash: 8190, branchId: "marina" })];
   const foy = [{ ...sheet(D), branchId: "marina" }];
   assert.equal(modposMismatches(bad, foy, null).length, 1, "geçiş günü boş");
   assert.equal(modposMismatches(bad, foy, "2026-11-10").length, 1, "geçiş gününden önce");
-  assert.deepEqual(modposMismatches(bad, foy, D), [], "geçiş günü LafPOS'tur");
+  assert.deepEqual(modposMismatches(bad, foy, D), [], "geçiş günü AsilPOS'tur");
   assert.deepEqual(modposMismatches(bad, foy, "2026-10-20"), [], "geçiş gününden sonra");
   // ModPOS'ta kalan Tuzla'nın (şubesiz eski rapor da Tuzla'nın) raporu geçiş gününden sonra da föyüyle karşılaştırılır
   assert.equal(modposMismatches([report(D, { cash: 8190 })], [sheet(D)], D).length, 1, "Tuzla, geçiş günü");
@@ -145,7 +145,7 @@ test("zilin satırı: kimlik raporun ve föyün sürümünden, gövde gün · fa
   assert.equal(modposMismatchBell(many).id, "kasa-modpos-2026-11-02-r1-s5");
 });
 
-test("zilin satırı: gövde en çok 220 harf (LafPOS satırıyla aynı), kesilince üç nokta", () => {
+test("zilin satırı: gövde en çok 220 harf (AsilPOS satırıyla aynı), kesilince üç nokta", () => {
   const wrong = report(D2, { zNo: "999", receipts: 1, zTotal: 1, cash: 1, card: 1, mealCard: 1, online: 1, other: 1, offRevenue: 1, openingCash: 1, countedCash: 1 });
   const [m] = modposMismatches([wrong], [sheet(D2)], null);
   assert.ok(m.diffs.length >= 10);
@@ -242,7 +242,7 @@ test("kaynak: saf modül sunucuya bağlı değil; sunucu modülü yalnız okur (
 test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personelin dalında ModPOS yok", () => {
   const bell = read("src/server/bell/kasa.ts");
   const fn = bell.slice(bell.indexOf("async function cashIntegrityNotifications"), bell.indexOf("async function requestNotifications"));
-  assert.match(fn, /Promise\.all\(\[loadModposSheets\(oldest\.date, day\), loadLafposSwitchDay\(\), lafposBranchId\(\)\]\)\.catch\(\(\) => null\),/);
+  assert.match(fn, /Promise\.all\(\[loadModposSheets\(oldest\.date, day\), loadAsilposSwitchDay\(\), asilposBranchId\(\)\]\)\.catch\(\(\) => null\),/);
   assert.match(fn, /for \(const m of modpos \? modposMismatches\(reports, modpos\[0\], modpos\[1\], modpos\[2\]\) : \[\]\) \{/);
   // Birden çok kasa açıkken gövdede şubenin adı
   assert.match(fn, /out\.push\(\{ \.\.\.modposMismatchBell\(m, t\.named \? t\.name : undefined\), kind: "warning", timeLabel: timeLabel\(m\.report\.date\), unread: true, group: "kasa" \}\);/);
@@ -272,7 +272,7 @@ test("kaynak: anahtarın zil satırı yalnız yönetici dalında, Sistem başlı
   assert.match(digest, /pastCountDigestLines\(now, scope\), modposDigestLines\(now, scope\)\]\)/);
   // Şubeye bağlı alıcının e-postası: ModPOS föy farkı ve anahtar uyarısı yalnız o şubenin (şube kapsamı C P1-11)
   const mp = read("src/server/bell/modpos.ts");
-  assert.match(mp, /modposMismatches\(reports, sheets, switchDay, lafposBranchOf\(branches\)\)\.filter\(\(m\) => inScope\(m\.report\.branchId\)\)/);
+  assert.match(mp, /modposMismatches\(reports, sheets, switchDay, asilposBranchOf\(branches\)\)\.filter\(\(m\) => inScope\(m\.report\.branchId\)\)/);
   assert.match(mp, /\.then\(\(all\) => all\.filter\(\(k\) => inScope\(k\.branchId\)\)\)/);
   assert.match(digest, /\.\.\.count\.lines, \.\.\.modpos\.lines\]/);
   assert.match(digest, /\{ title: "ModPOS API", lines, href: modpos\.href \?\? "\/panel\/kasa"/);

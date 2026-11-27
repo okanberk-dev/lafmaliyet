@@ -1,5 +1,5 @@
 // Kasada bekleyen fiyat şube başına (şube kapsamı A3, 24 Kasım 2026; docs/FIYATLAR.md › Kasaya işle), gerçek Postgres'te:
-// - göç (0078 + 0079): ürünün eski pos_stale_* değerleri Tuzla'ya olduğu gibi, Marina'ya (LafPOS'un şubesi) yalnız
+// - göç (0078 + 0079): ürünün eski pos_stale_* değerleri Tuzla'ya olduğu gibi, Marina'ya (AsilPOS'un şubesi) yalnız
 //   okuyucunun süzgecine uyanlar kopyalanır; eski işaretler Tuzla'nın olur, ürün sütunlarına dokunulmaz;
 // - fiyat yazımı her etkin fiziksel şubenin satırını açar (online kanal ve pasif şube yok), fiyat geri dönünce siler;
 // - Marina'da işaretlenince Tuzla'nın listesi kalır; geri alma yalnız o şubede ve "son işaret" şube başına;
@@ -129,9 +129,9 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     await admin?.end();
   });
 
-  test("göç: Tuzla'ya her işaret, Marina'ya yalnız LafPOS'un işi; eski işaretler Tuzla'nın, ürün sütunları yerinde", async () => {
+  test("göç: Tuzla'ya her işaret, Marina'ya yalnız AsilPOS'un işi; eski işaretler Tuzla'nın, ürün sütunları yerinde", async () => {
     // Eski kurulum (0077): tek kasanın durumu ürün satırında; geçiş günü 22 Kasım, bugün 24 Kasım
-    await db.execute(sql`INSERT INTO settings (key, value) VALUES ('lafposGecisGunu', '"2026-11-22"')`);
+    await db.execute(sql`INSERT INTO settings (key, value) VALUES ('asilposGecisGunu', '"2026-11-22"')`);
     await db.execute(sql`INSERT INTO categories (id, name) VALUES (900, 'Göç')`);
     await db.execute(sql`INSERT INTO products (id, category_id, name, size, price, site_menu_id, site_menu_slot, pos_stale_price, pos_stale_since) VALUES
       (901, 900, 'Latte', 'M', 205, null, null, 195, '2026-11-01T10:00:00Z'),
@@ -153,7 +153,7 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     assert.deepEqual(
       rows.map((r) => [r.branch_id, r.product_id, r.stale_price]),
       [
-        // Marina: yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra panelde değişen (Latte)
+        // Marina: yalnız siteye bağlı olmayan ve fiyatı AsilPOS başladıktan sonra panelde değişen (Latte)
         [MARINA, 901, 195],
         [TUZLA, 901, 195],
         [TUZLA, 902, 205],
@@ -188,7 +188,7 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     beforeEach(async () => {
       me = users.ali;
       await db.execute(sql`TRUNCATE products, categories, product_prices, pos_marks, pos_stale, activity_log RESTART IDENTITY CASCADE`);
-      await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
+      await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
       const [c] = await db.insert(s.categories).values({ name: "Kahve", sortOrder: 1 }).returning({ id: s.categories.id });
       categoryId = c.id;
     });

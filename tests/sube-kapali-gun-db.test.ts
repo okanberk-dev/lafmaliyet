@@ -137,7 +137,7 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
     await db.execute(
       sql`TRUNCATE cash_reports, cash_outs, staff_requests, special_days, activity_log, photos, pos_day_reports, checklist_templates, notification_log, karaoke_sessions RESTART IDENTITY CASCADE`,
     );
-    await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
+    await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
     await db.update(s.branches).set({ active: true });
   });
 
@@ -259,20 +259,20 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
     assert.ok(!unknown.ok);
   });
 
-  test("LafPOS'un gün sonu kanıtı şube şube: şube verilmezse LafPOS'un şubesininki; ModPOS'taki şubenin eski satırı kanıt değil", async () => {
+  test("AsilPOS'un gün sonu kanıtı şube şube: şube verilmezse AsilPOS'un şubesininki; ModPOS'taki şubenin eski satırı kanıt değil", async () => {
     const D = "2026-11-11";
-    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: "2026-11-01" });
+    await db.insert(s.settings).values({ key: "asilposGecisGunu", value: "2026-11-01" });
     const z = (zNo: number) => ({ zNo, receipts: 40, zTotal: 9_000, cash: 4_000, card: 5_000, mealCard: 0, online: 0, other: 0, offRevenue: 0, discounts: 0, openingCash: 500, cashOut: 0, countedCash: 4_500, handedOver: 0, cashDiff: 0 });
-    const pos = (branchId: string, zNo: number) => db.insert(s.posDayReports).values({ date: D, branchId, z: z(zNo), payments: [], ikram: [], source: "lafpos" });
-    // Tuzla'nın kasası ModPOS'ta: şubesi Tuzla olan eski bir deneme satırı LafPOS'un kanıtı sayılmaz
+    const pos = (branchId: string, zNo: number) => db.insert(s.posDayReports).values({ date: D, branchId, z: z(zNo), payments: [], ikram: [], source: "asilpos" });
+    // Tuzla'nın kasası ModPOS'ta: şubesi Tuzla olan eski bir deneme satırı AsilPOS'un kanıtı sayılmaz
     await pos("tuzla", 7);
-    assert.equal((await closed.closedDayEvidence(db, D)).lafpos, null, "şubesiz okuma Tuzla'nın satırını kanıt saymaz");
-    assert.equal((await closed.closedDayEvidence(db, D, "tuzla")).lafpos, null);
+    assert.equal((await closed.closedDayEvidence(db, D)).asilpos, null, "şubesiz okuma Tuzla'nın satırını kanıt saymaz");
+    assert.equal((await closed.closedDayEvidence(db, D, "tuzla")).asilpos, null);
     await pos("marina", 14);
     const marina = { zNo: 14, receipts: 40, zTotal: 9_000 };
-    assert.deepEqual((await closed.closedDayEvidence(db, D)).lafpos, marina);
-    assert.deepEqual((await closed.closedDayEvidence(db, D, "marina")).lafpos, marina);
-    assert.equal((await closed.closedDayEvidence(db, D, "tuzla")).lafpos, null, "Marina'nın gün sonu Tuzla'nın kanıtı değil");
+    assert.deepEqual((await closed.closedDayEvidence(db, D)).asilpos, marina);
+    assert.deepEqual((await closed.closedDayEvidence(db, D, "marina")).asilpos, marina);
+    assert.equal((await closed.closedDayEvidence(db, D, "tuzla")).asilpos, null, "Marina'nın gün sonu Tuzla'nın kanıtı değil");
   });
 
   test("kanıt şube şube (24 Kasım şube kapsamı): Tuzla'nın listesi, kilitli personeli ve karaokesi Marina'nın bildirimini kapatmaz; Tuzla'da kırmızı kalır", async () => {

@@ -48,7 +48,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import type { Size } from "@/lib/calc/types";
 import { RECIPE_COST_NOTE, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
-import type { MonthKasa } from "@/lib/lafpos/kasa";
+import type { MonthKasa } from "@/lib/asilpos/kasa";
 import { priceReminder } from "@/lib/prices/pos";
 import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
@@ -429,7 +429,7 @@ export function ProductsTable({
   target: number;
   /** laffogato.net menü bağlantısı açık: "Sitede" ürünlerin fiyatı sitede de değişir */
   siteConfigured?: boolean;
-  /** Ayın kasası, parantez içinde (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", "ModPOS / LafPOS"; E-39) */
+  /** Ayın kasası, parantez içinde (src/lib/asilpos/kasa.ts monthKasa: "ModPOS", "AsilPOS", "ModPOS / AsilPOS"; E-39) */
   kasa?: MonthKasa["both"];
 }) {
   const reduce = useCalmMotion();

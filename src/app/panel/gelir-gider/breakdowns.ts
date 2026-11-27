@@ -102,7 +102,7 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 export function yearBreakdowns(
   sections: GridSection[],
   calcs: YearMonthCalc[],
-  /** Ayların kasası (src/lib/lafpos/kasa.ts periodKasa; geçiş günü boşken ModPOS) */
+  /** Ayların kasası (src/lib/asilpos/kasa.ts periodKasa; geçiş günü boşken ModPOS) */
   kasa: string = "ModPOS",
 ): { cogs: BreakdownGroup[]; expenses: BreakdownGroup[]; profit: BreakdownGroup[] } {
   const rowsOf = (key: string): BreakdownRow[] =>

@@ -57,18 +57,18 @@ import {
   type SalesParseResult,
 } from "@/lib/calc/pos-paste";
 import type { MonthField, TillMonth } from "@/lib/calc/types";
-import { missingSentence, MONTH_FIELDS, partialSentence, type LafposListPart } from "@/lib/cash-month";
+import { missingSentence, MONTH_FIELDS, partialSentence, type AsilposListPart } from "@/lib/cash-month";
 import { num, pct, tl } from "@/lib/format";
 import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
-  applyLafposMatches,
+  applyAsilposMatches,
   applyLineMatches,
   clearMonthSales,
   deleteLine,
   importSales,
-  matchLafposName,
+  matchAsilposName,
   parseSalesFile,
   saveLine,
   saveMonthInfo,
@@ -117,10 +117,10 @@ export interface BranchOption {
 export interface SalesRow {
   id: number;
   /**
-   * LafPOS'un ay toplamı satırıysa satırın geçtiği gün sayısı (docs/LAFPOS.md › Günlük satış): salt okunur, düzenlenmez ve
-   * silinmez, eşleştirmesi POS adıyla (matchLafposName). ModPOS listesinin satırında null
+   * AsilPOS'un ay toplamı satırıysa satırın geçtiği gün sayısı (docs/ASILPOS.md › Günlük satış): salt okunur, düzenlenmez ve
+   * silinmez, eşleştirmesi POS adıyla (matchAsilposName). ModPOS listesinin satırında null
    */
-  lafposDays: number | null;
+  asilposDays: number | null;
   posName: string;
   qty: number;
   revenue: number;
@@ -140,11 +140,11 @@ export interface SalesRow {
   avgPrice: number;
   menuPrice: number | null;
   /**
-   * LafPOS satırının indirimden önceki liste değeri (Faz 2; `revenue` indirimden sonradır); bilinmiyorsa ya da ModPOS
+   * AsilPOS satırının indirimden önceki liste değeri (Faz 2; `revenue` indirimden sonradır); bilinmiyorsa ya da ModPOS
    * listesinin satırıysa (liste zaten indirimden önce) null. Tablonun Brüt ve İndirimli sütunları (discountColumns)
    */
   gross: number | null;
-  /** LafPOS satırında içeceğin seçeneğinden ayrılan ek parçası (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
+  /** AsilPOS satırında içeceğin seçeneğinden ayrılan ek parçası (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
   isAddon: boolean;
 }
 
@@ -225,7 +225,7 @@ export function MonthInfoForm({
   settingsCardShare,
   listTotal,
   listPeriod = null,
-  lafposList = null,
+  asilposList = null,
   currentMonth,
   recordedIkram,
   className,
@@ -256,15 +256,15 @@ export function MonthInfoForm({
    */
   listPeriod?: { label: string; posRevenue: number; discounts: number } | null;
   /**
-   * Ayın indiriminin LafPOS satırlarında zaten düşülmüş kısmı (cash-month.ts lafposListPart): liste ↔ POS kutusu onu
+   * Ayın indiriminin AsilPOS satırlarında zaten düşülmüş kısmı (cash-month.ts asilposListPart): liste ↔ POS kutusu onu
    * listeden bir daha düşmez. Geçiş günü yoksa null
    */
-  lafposList?: LafposListPart | null;
+  asilposList?: AsilposListPart | null;
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
   /** Personelin bu ay panele girdiği ikram (Zayi & ikram): ödenmez tutarına öneri, ModPOS'un rakamı esas */
-  /** Ayın kayıtlı ikramı (`lafpos`: geçiş gününden itibaren LafPOS'tan gelen satır sayısı, count'un içinde) */
-  recordedIkram?: { count: number; menuValue: number; lafpos?: number };
+  /** Ayın kayıtlı ikramı (`asilpos`: geçiş gününden itibaren AsilPOS'tan gelen satır sayısı, count'un içinde) */
+  recordedIkram?: { count: number; menuValue: number; asilpos?: number };
   className?: string;
 }) {
   const kasaValues = kasa?.values ?? null;
@@ -293,14 +293,14 @@ export function MonthInfoForm({
   // Liste kasa raporlarından kısaysa listenin günleriyle (motorun kuralı: açık gün ve ciro kasadan gelirken)
   const byList = listPeriod && modes.posRevenue === "kasa" && modes.openDays === "kasa" ? listPeriod : null;
   const posNum = byList ? byList.posRevenue : effective("posRevenue");
-  // Listenin dönemindeki kasa indirimi zaten yalnız ModPOS günlerinin; öteki durumda LafPOS günlerininki düşülür
+  // Listenin dönemindeki kasa indirimi zaten yalnız ModPOS günlerinin; öteki durumda AsilPOS günlerininki düşülür
   const fromList = byList !== null && modes.discounts === "kasa";
   const list = listTotal ?? 0;
   const { discount: discNum, diff } = listVsPos({
     list,
     discount: (fromList ? byList.discounts : effective("discounts")) ?? 0,
     pos: posNum,
-    lafpos: fromList ? null : lafposList,
+    asilpos: fromList ? null : asilposList,
   });
   const consistent = diff !== null && Math.abs(diff) < 1000;
   const dim = daysInMonth(month);
@@ -514,7 +514,7 @@ export function MonthInfoForm({
                 undefined,
                 recordedIkram?.count ? (
                   <span>
-                    {recordedIkram.lafpos ? "Kayıtlı ikram (LafPOS dahil)" : "Panelde kayıtlı ikram"}: {num(recordedIkram.count)} kayıt, menü fiyatıyla {tl(recordedIkram.menuValue)}.{" "}
+                    {recordedIkram.asilpos ? "Kayıtlı ikram (AsilPOS dahil)" : "Panelde kayıtlı ikram"}: {num(recordedIkram.count)} kayıt, menü fiyatıyla {tl(recordedIkram.menuValue)}.{" "}
                     {Math.abs(offValue - recordedIkram.menuValue) >= 1 ? (
                       <button
                         type="button"
@@ -590,7 +590,7 @@ type SortKey = "ad" | "adet" | "ciro" | "maliyet" | "kom" | "kar" | "marj";
 const COMPARE: Record<SortKey, (a: SalesRow, b: SalesRow) => number> = {
   ad: (a, b) => a.posName.localeCompare(b.posName, "tr"),
   adet: (a, b) => a.qty - b.qty,
-  // İndirimden önceki tutar (Brüt sütunu): ModPOS satırında ciro, LafPOS'ta brüt (bilinmiyorsa ciro)
+  // İndirimden önceki tutar (Brüt sütunu): ModPOS satırında ciro, AsilPOS'ta brüt (bilinmiyorsa ciro)
   ciro: (a, b) => (discountColumns(a).before ?? a.revenue) - (discountColumns(b).before ?? b.revenue),
   maliyet: (a, b) => a.cost - b.cost,
   kom: (a, b) => a.commission - b.commission,
@@ -696,7 +696,7 @@ export function SalesTable({
   products,
   mappings,
   month,
-  lafposMonth = false,
+  asilposMonth = false,
   lineBranches,
   totals,
 }: {
@@ -705,11 +705,11 @@ export function SalesTable({
   /** POS adı hafızası (Satır ekle penceresinde "otomatik bağlanacak" ipucu için) */
   mappings: MappingLite[];
   month: string;
-  /** Ayın tamamı LafPOS'tan (geçiş gününden sonra): elle ModPOS satırı eklenmez */
-  lafposMonth?: boolean;
+  /** Ayın tamamı AsilPOS'tan (geçiş gününden sonra): elle ModPOS satırı eklenmez */
+  asilposMonth?: boolean;
   /**
    * "Satır ekle"nin yazabileceği şubeler (docs/SUBE.md › Yazarken hangi şube): tek şubede o şube; "Tümü"de birden
-   * çoksa pencere şubeyi sorar (varsayılan yok). Boşsa satır eklenmez (online kanal; ayı LafPOS'tan gelen şube)
+   * çoksa pencere şubeyi sorar (varsayılan yok). Boşsa satır eklenmez (online kanal; ayı AsilPOS'tan gelen şube)
    */
   lineBranches: BranchOption[];
   totals: Totals;
@@ -743,9 +743,9 @@ export function SalesTable({
   const scale = useMemo(() => marginScale(serverRows.filter(inMarginScale).map((r) => r.margin)), [serverRows]);
   const suggestions = useMemo(() => collectSuggestions(rows, products), [rows, products]);
   /** Rapora yanlışlıkla girmiş toplam satırları ("TOPLAM 2.543 441.955"): ciroyu iki kez sayar (yalnız ModPOS listesi) */
-  const summaryRows = rows.filter((r) => r.lafposDays === null && isSummaryRow(r.posName));
-  const hasLafpos = rows.some((r) => r.lafposDays !== null);
-  // Elle satır yalnız ModPOS listesi tutan şubeye (ayı LafPOS'tan gelen şube lineBranches'ta yok)
+  const summaryRows = rows.filter((r) => r.asilposDays === null && isSummaryRow(r.posName));
+  const hasAsilpos = rows.some((r) => r.asilposDays !== null);
+  // Elle satır yalnız ModPOS listesi tutan şubeye (ayı AsilPOS'tan gelen şube lineBranches'ta yok)
   const canAdd = lineBranches.length > 0;
 
   // Durum çiplerinin sayaçları aramaya göre (arama yazılıyken "kaç eşleşmeyen var" görünsün)
@@ -819,10 +819,10 @@ export function SalesTable({
     startTransition(async () => {
       // Reçetesi boş ürün (maliyeti 0): sunucu yanıtına kadar da tahmini maliyetli satır gibi görünsün
       applyOptimistic({ kind: "match", id: row.id, ...v, label: p ? `${p.name} · ${p.size}` : null, noRecipe: !!p && !v.isService && !(p.cost > 0) });
-      if (row.lafposDays !== null) {
-        // LafPOS satırı: bu ay toplamının satırları, o ayın aynı adlı ürünsüz satırları ve ad hafızası (başka aylardaki
+      if (row.asilposDays !== null) {
+        // AsilPOS satırı: bu ay toplamının satırları, o ayın aynı adlı ürünsüz satırları ve ad hafızası (başka aylardaki
         // ürünsüz satırlar da bağlanır; aynı adın başka ürüne bağlı satırı değişmez)
-        const res = await matchLafposName({
+        const res = await matchAsilposName({
           month,
           posName: row.posName,
           productId: v.productId,
@@ -836,8 +836,8 @@ export function SalesTable({
         toast.success(v.isService ? "HİZMET olarak işaretlendi" : v.productId ? "Eşleştirildi" : "Eşleşme kaldırıldı", {
           description:
             v.productId || v.isService
-              ? `“${row.posName}” bu ayın LafPOS satırlarına uygulandı; sonraki gün sonlarında otomatik tanınacak.`
-              : `“${row.posName}” bu ayın LafPOS satırlarında ürünsüz kaldı ve hafızadan silindi.`,
+              ? `“${row.posName}” bu ayın AsilPOS satırlarına uygulandı; sonraki gün sonlarında otomatik tanınacak.`
+              : `“${row.posName}” bu ayın AsilPOS satırlarında ürünsüz kaldı ve hafızadan silindi.`,
         });
         return;
       }
@@ -872,13 +872,13 @@ export function SalesTable({
   async function applySuggestions() {
     setBulkBusy(true);
     keepScroll();
-    // ModPOS satırları satır kimliğiyle, LafPOS'un ay toplamları POS adıyla (iki ayrı eylem)
-    const modpos = suggestions.filter((x) => x.row.lafposDays === null);
-    const laf = suggestions.filter((x) => x.row.lafposDays !== null);
+    // ModPOS satırları satır kimliğiyle, AsilPOS'un ay toplamları POS adıyla (iki ayrı eylem)
+    const modpos = suggestions.filter((x) => x.row.asilposDays === null);
+    const laf = suggestions.filter((x) => x.row.asilposDays !== null);
     const results = await tryAction(async () =>
       [
         modpos.length ? await applyLineMatches(month, modpos.map((x) => ({ lineId: x.row.id, productId: x.product.id }))) : null,
-        laf.length ? await applyLafposMatches(month, laf.map((x) => ({ posName: x.row.posName, productId: x.product.id }))) : null,
+        laf.length ? await applyAsilposMatches(month, laf.map((x) => ({ posName: x.row.posName, productId: x.product.id }))) : null,
       ].filter((r) => r !== null),
     );
     setBulkBusy(false);
@@ -934,9 +934,9 @@ export function SalesTable({
     );
   };
 
-  // LafPOS'un ay toplamı salt okunur: düzenleme ve silme yok (gün sonu LafPOS'ta düzeltilip yeniden gönderilir)
+  // AsilPOS'un ay toplamı salt okunur: düzenleme ve silme yok (gün sonu AsilPOS'ta düzeltilip yeniden gönderilir)
   const rowActions = (r: SalesRow, coarse?: boolean) =>
-    r.lafposDays !== null ? null : (
+    r.asilposDays !== null ? null : (
       <>
         <IconButton label="Düzenle" onClick={() => setEditing(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
           <Pencil size={15} />
@@ -946,12 +946,12 @@ export function SalesTable({
         </IconButton>
       </>
     );
-  /** LafPOS satırının kaynağı (adın altında) */
-  const lafposNote = (r: SalesRow) =>
-    r.lafposDays !== null ? (
-      <p className="flex items-center gap-1 text-xs text-info" title="LafPOS'un gün sonlarından, ay toplamı; salt okunur">
+  /** AsilPOS satırının kaynağı (adın altında) */
+  const asilposNote = (r: SalesRow) =>
+    r.asilposDays !== null ? (
+      <p className="flex items-center gap-1 text-xs text-info" title="AsilPOS'un gün sonlarından, ay toplamı; salt okunur">
         <Store size={12} className="shrink-0" aria-hidden="true" />
-        LafPOS · {num(r.lafposDays)} gün{r.isAddon ? " · ek" : ""}
+        AsilPOS · {num(r.asilposDays)} gün{r.isAddon ? " · ek" : ""}
       </p>
     ) : null;
 
@@ -962,8 +962,8 @@ export function SalesTable({
         icon={<ListChecks />}
         title="Satış satırları"
         description={
-          hasLafpos
-            ? "Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve otomatik uygulanır. LafPOS satırları salt okunur."
+          hasAsilpos
+            ? "Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve otomatik uygulanır. AsilPOS satırları salt okunur."
             : "Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve sonraki aylarda otomatik uygulanır."
         }
         meta={
@@ -995,7 +995,7 @@ export function SalesTable({
                 <Wand2 size={15} /> {num(suggestions.length)} öneriyi uygula
               </Button>
             ) : null}
-            {/* Asıl yol içe aktarma; elle satır ikincil eylem (LafPOS ayında yok: satırlar gün sonlarından) */}
+            {/* Asıl yol içe aktarma; elle satır ikincil eylem (AsilPOS ayında yok: satırlar gün sonlarından) */}
             {canAdd ? (
               <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-11">
                 <Plus size={16} /> Satır ekle
@@ -1121,10 +1121,10 @@ export function SalesTable({
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium break-words text-ink">{r.posName}</p>
-                      {lafposNote(r)}
+                      {asilposNote(r)}
                       <p className="mt-0.5 text-[13px] text-ink-mute tabular">
                         {num(r.qty)} adet · {tl(r.revenue)}
-                        {r.lafposDays !== null && r.gross !== null && Math.abs(r.gross - r.revenue) >= 0.005 ? ` · indirimden önce ${tl(r.gross)}` : ""}
+                        {r.asilposDays !== null && r.gross !== null && Math.abs(r.gross - r.revenue) >= 0.005 ? ` · indirimden önce ${tl(r.gross)}` : ""}
                       </p>
                       {Math.abs(priceGap) > 0.03 ? (
                         <p className="text-xs text-warn tabular">
@@ -1189,7 +1189,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="indirimden önce">
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="KDV dahil. ModPOS ürün listesi indirimden öncedir. LafPOS satırında indirimden önceki liste değeri; eski bir günü brütsüz geldiyse boş. Ortalama satış fiyatı menü fiyatından %3'ten fazla saparsa uyarı görünür." />
+                        <InfoTip text="KDV dahil. ModPOS ürün listesi indirimden öncedir. AsilPOS satırında indirimden önceki liste değeri; eski bir günü brütsüz geldiyse boş. Ortalama satış fiyatı menü fiyatından %3'ten fazla saparsa uyarı görünür." />
                         <SortButton numeric dir={dirOf("ciro")} onClick={() => toggleSort("ciro")}>
                           Brüt
                         </SortButton>
@@ -1199,7 +1199,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="indirimden sonra">
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="KDV dahil. LafPOS satırı indirimden sonradır (adisyonun indirimi satırlara bölünür). ModPOS listesinde satır başına indirim bilinmez: ayın indirimi kasa raporlarından. Altındaki “KDV hariç” hesaba giren cironun KDV hariç tutarı." />
+                        <InfoTip text="KDV dahil. AsilPOS satırı indirimden sonradır (adisyonun indirimi satırlara bölünür). ModPOS listesinde satır başına indirim bilinmez: ayın indirimi kasa raporlarından. Altındaki “KDV hariç” hesaba giren cironun KDV hariç tutarı." />
                         İndirimli
                       </span>
                     </HeadLabel>
@@ -1265,7 +1265,7 @@ export function SalesTable({
                           </IconTile>
                           <div className="min-w-0">
                             <p className="font-medium break-words">{r.posName}</p>
-                            {lafposNote(r)}
+                            {asilposNote(r)}
                             {r.note ? (
                               <p className="truncate text-xs text-ink-mute" title={r.note}>
                                 {r.note}
@@ -1387,14 +1387,14 @@ export function SalesTable({
             }
           />
         </div>
-      ) : lafposMonth ? (
+      ) : asilposMonth ? (
         <EmptyState
           icon={<Store />}
-          title="Bu ay LafPOS'tan satış gelmedi"
-          description="Ürün satışları her gün sonunda LafPOS'tan kendiliğinden gelir. Gün sonu gelmediyse bağlantının durumuna Ayarlar › LafPOS (kasa) kartından bakın."
+          title="Bu ay AsilPOS'tan satış gelmedi"
+          description="Ürün satışları her gün sonunda AsilPOS'tan kendiliğinden gelir. Gün sonu gelmediyse bağlantının durumuna Ayarlar › AsilPOS (kasa) kartından bakın."
           action={
-            <ButtonLink href="/panel/ayarlar#lafpos" variant="secondary">
-              <Store size={16} /> LafPOS kartını aç
+            <ButtonLink href="/panel/ayarlar#asilpos" variant="secondary">
+              <Store size={16} /> AsilPOS kartını aç
             </ButtonLink>
           }
         />
@@ -1720,14 +1720,14 @@ export function ImportCard({
   month,
   label,
   lineCount,
-  lafposLines = 0,
+  asilposLines = 0,
   mappings,
   products,
   hasInfo,
   running,
   coveredThrough,
   listDays,
-  lafpos = null,
+  asilpos = null,
   branches,
   scope,
   clearCount,
@@ -1738,7 +1738,7 @@ export function ImportCard({
   label: string;
   /**
    * Listenin yüklenebileceği şubeler ve her birinin bu ayki ModPOS satırları ("Yenisiyle değiştir" yalnız o şubenin
-   * listesini değiştirir). Tek şubede o şube; "Tümü"de birden çoksa kart şubeyi sorar (varsayılan yok). Ayı LafPOS'tan
+   * listesini değiştirir). Tek şubede o şube; "Tümü"de birden çoksa kart şubeyi sorar (varsayılan yok). Ayı AsilPOS'tan
    * gelen şube listede yok
    */
   branches: (BranchOption & { lines: number })[];
@@ -1750,8 +1750,8 @@ export function ImportCard({
   clearCount: number;
   /** Ayın ModPOS (Satışlar'a yüklenen) satırları; yükleme ve "Ayı temizle" yalnız bunlara dokunur */
   lineCount: number;
-  /** Tablodaki LafPOS satırları (geçiş ayı): metinler iki kaynağı ayrı söyler, yükleme ve temizleme onlara dokunmaz */
-  lafposLines?: number;
+  /** Tablodaki AsilPOS satırları (geçiş ayı): metinler iki kaynağı ayrı söyler, yükleme ve temizleme onlara dokunmaz */
+  asilposLines?: number;
   mappings: MappingLite[];
   products: ProductOption[];
   /** Ayda ciro / açık gün / not gibi bilgi var mı ("Ayı temizle" penceresinde seçenek olarak) */
@@ -1766,16 +1766,16 @@ export function ImportCard({
   /** Liste kasa raporlarından kısa bir dönemi kapsıyorsa dönemi ("1–15 Kasım"); yoksa null */
   listDays?: string | null;
   /**
-   * LafPOS'a geçildiyse ayın kaynağı (docs/LAFPOS.md › Günlük satış): geçiş ayında liste en çok geçiş gününden önceki
-   * güne kadardır (`running` o sınırla gelir, `throughHint` gün alanının açıklaması); LafPOS ayında liste yüklenmez,
+   * AsilPOS'a geçildiyse ayın kaynağı (docs/ASILPOS.md › Günlük satış): geçiş ayında liste en çok geçiş gününden önceki
+   * güne kadardır (`running` o sınırla gelir, `throughHint` gün alanının açıklaması); AsilPOS ayında liste yüklenmez,
    * kart gelen günleri söyler (`lineCount` sayılmayan eski listenin satırları). Geçiş günü yoksa null
    */
-  lafpos?: { source: "gecis"; throughHint: string } | { source: "lafpos"; days: number; last: string | null } | null;
+  asilpos?: { source: "gecis"; throughHint: string } | { source: "asilpos"; days: number; last: string | null } | null;
   className?: string;
 }) {
   const reduce = useCalmMotion();
   const hasLines = lineCount > 0;
-  const lafposOnly = lafpos?.source === "lafpos" ? lafpos : null;
+  const asilposOnly = asilpos?.source === "asilpos" ? asilpos : null;
   const [source, setSource] = useState<"file" | "paste">("file");
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState<Parsed | null>(null);
@@ -1916,23 +1916,23 @@ export function ImportCard({
 
   return (
     <Card className={className}>
-      {lafposOnly ? (
-        // Ayın tamamı LafPOS'tan: liste yüklenmez; sayılmayan eski liste "Ayı temizle" ile silinir
-        <motion.div key="lafpos" {...fade} className="flex flex-1 flex-col">
-          <CardHeader icon={<Store />} title="LafPOS'tan geliyor" description={`${label.split(" ")[0]} satışları her gün sonunda LafPOS'tan kendiliğinden gelir; ModPOS listesi yüklenmez.`} />
+      {asilposOnly ? (
+        // Ayın tamamı AsilPOS'tan: liste yüklenmez; sayılmayan eski liste "Ayı temizle" ile silinir
+        <motion.div key="asilpos" {...fade} className="flex flex-1 flex-col">
+          <CardHeader icon={<Store />} title="AsilPOS'tan geliyor" description={`${label.split(" ")[0]} satışları her gün sonunda AsilPOS'tan kendiliğinden gelir; ModPOS listesi yüklenmez.`} />
           <CardContent className="flex flex-1 flex-col gap-3 text-sm text-ink-soft">
             <Notice
               tone="neutral"
               title={
-                lafposOnly.days && lafposOnly.last
-                  ? `${num(lafposOnly.days)} gün sonu geldi, son gün ${dayMonthTR(lafposOnly.last)}. Satırlar aşağıda; eşleşmeyen adları ürüne bağlayın.`
+                asilposOnly.days && asilposOnly.last
+                  ? `${num(asilposOnly.days)} gün sonu geldi, son gün ${dayMonthTR(asilposOnly.last)}. Satırlar aşağıda; eşleşmeyen adları ürüne bağlayın.`
                   : "Bu ay için henüz gün sonu gelmedi; geldikçe satırlar aşağıda görünür."
               }
             />
             <p className="text-[13px] text-ink-mute">
               Gelen ve gelmeyen günler, retler:{" "}
-              <Link href="/panel/ayarlar#lafpos" className="font-medium text-ink underline-offset-2 hover:underline">
-                Ayarlar › LafPOS (kasa)
+              <Link href="/panel/ayarlar#asilpos" className="font-medium text-ink underline-offset-2 hover:underline">
+                Ayarlar › AsilPOS (kasa)
               </Link>
               .
             </p>
@@ -1941,7 +1941,7 @@ export function ImportCard({
             <CardFooter className="mt-auto">
               <span>
                 {hasLines
-                  ? `Bu aya daha önce yüklenmiş ${num(lineCount)} satırlık ModPOS listesi sayılmıyor (ay LafPOS'tan); silebilirsiniz.`
+                  ? `Bu aya daha önce yüklenmiş ${num(lineCount)} satırlık ModPOS listesi sayılmıyor (ay AsilPOS'tan); silebilirsiniz.`
                   : "Bu ayda elle yazılmış ay bilgileri var."}
               </span>
               <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11" onClick={() => setConfirmClear(true)}>
@@ -2012,9 +2012,9 @@ export function ImportCard({
             <CardFooter className="mt-auto">
               <span>
                 {hasLines
-                  ? `Bu ayda ${num(lineCount)} ${lafposLines ? "ModPOS satırı" : "satır"} var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}${lafposLines ? `, ayrıca LafPOS'tan ${num(lafposLines)} satır` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
-                  : lafposLines
-                    ? `Bu ayda ModPOS listesi yok; LafPOS'tan ${num(lafposLines)} satır var (yükleme ve "Ayı temizle" onlara dokunmaz).`
+                  ? `Bu ayda ${num(lineCount)} ${asilposLines ? "ModPOS satırı" : "satır"} var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}${asilposLines ? `, ayrıca AsilPOS'tan ${num(asilposLines)} satır` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
+                  : asilposLines
+                    ? `Bu ayda ModPOS listesi yok; AsilPOS'tan ${num(asilposLines)} satır var (yükleme ve "Ayı temizle" onlara dokunmaz).`
                     : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
                 {hasLines && listDays
                   ? ` Kasa raporları daha ileride: Genel bakış ve Tutarlılık listeye dayanan hesapları (günlük ortalama, POS cirosuyla karşılaştırma, sabit gider) ${listDays} günleriyle yapar.`
@@ -2168,7 +2168,7 @@ export function ImportCard({
               {targetLines > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[13px] text-ink-mute">
-                    {askBranch && target ? `${target.name} şubesinin bu aydaki` : "Bu aydaki"} {num(targetLines)} {lafposLines ? "ModPOS satırı (LafPOS'unkiler kalır)" : "satır"}:
+                    {askBranch && target ? `${target.name} şubesinin bu aydaki` : "Bu aydaki"} {num(targetLines)} {asilposLines ? "ModPOS satırı (AsilPOS'unkiler kalır)" : "satır"}:
                   </span>
                   <Segmented
                     label="Mevcut satırlar"
@@ -2186,8 +2186,8 @@ export function ImportCard({
                     ? "Önce şubeyi seçin."
                     : askBranch && target
                       ? `${target.name} şubesinin bu ay listesi yok; satırlar doğrudan yüklenir.`
-                      : lafposLines
-                        ? `Bu ayda ModPOS listesi yok; satırlar doğrudan yüklenir (LafPOS'un ${num(lafposLines)} satırına dokunulmaz).`
+                      : asilposLines
+                        ? `Bu ayda ModPOS listesi yok; satırlar doğrudan yüklenir (AsilPOS'un ${num(asilposLines)} satırına dokunulmaz).`
                         : "Bu ay boş; satırlar doğrudan yüklenir."}
                 </span>
               )}
@@ -2201,8 +2201,8 @@ export function ImportCard({
                     </label>
                     <InfoTip
                       text={
-                        lafpos?.source === "gecis"
-                          ? lafpos.throughHint
+                        asilpos?.source === "gecis"
+                          ? asilpos.throughHint
                           : "Ay sürerken yüklenen satış listesi o güne kadardır; kasa raporları her akşam ilerler. Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı ve reçeteye göre kârın sabit giderini listenin günleriyle hesaplar. Ay bitince ayın tamamının listesini yükleyin."
                       }
                     />
@@ -2264,16 +2264,16 @@ export function ImportCard({
         <div className="space-y-3 pb-2 text-sm text-ink-mute">
           <p>
             {/* Sayı sunucunun sileceği ve denetlediği satırlar (clearCount: kapsamdaki bütün liste satırları, sayılmayan
-                eski ModPOS listesi dahil); LafPOS'un satırları ayrı tabloda, silinmez */}
+                eski ModPOS listesi dahil); AsilPOS'un satırları ayrı tabloda, silinmez */}
             {clearCount ? (
               <>
                 <span className="font-medium text-ink">
-                  {num(clearCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
+                  {num(clearCount)} {asilpos ? "ModPOS" : "satış"} satırı silinecek.
                 </span>{" "}
-                Eşleştirme hafızası ve Gelir-gider girişleri silinmez{lafpos ? "; LafPOS'tan gelen satırlar kalır" : ""}.
+                Eşleştirme hafızası ve Gelir-gider girişleri silinmez{asilpos ? "; AsilPOS'tan gelen satırlar kalır" : ""}.
               </>
-            ) : lafposLines ? (
-              `Bu ayda ModPOS satırı yok; LafPOS'tan gelen ${num(lafposLines)} satır silinmez.`
+            ) : asilposLines ? (
+              `Bu ayda ModPOS satırı yok; AsilPOS'tan gelen ${num(asilposLines)} satır silinmez.`
             ) : (
               "Bu ayda satış satırı yok."
             )}

@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, inArray, isNull, max, min, notExists } from "drizzle-orm";
 
 import { posMatchKey } from "@/lib/calc/pos-paste";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import { POS_UNDO_WINDOW_MS, type MyPosMark, type PosSummaryLite, type StaffPosItem } from "@/lib/prices/pos";
 import { getDb, schema as s, type DB } from "@/server/db";
 
@@ -15,43 +15,43 @@ import { type BranchTill, loadTillScope, posStaleJoin, tillProductFilter, tillSi
  * eski satış fiyatı ve ne zamandan beri, sırası ve etkinliği; kategorinin adı ve sırası; kasadaki (ModPOS) ad;
  * personelin kendi işaretlerinin kimliği, fiyatı ve anı. Yalnız etkin ürünler. Fiyat geçmişi, değişikliğin kaynağı ve
  * kimin yaptığı, not, site alanları ve maliyet okunmaz (geçiş gününden itibaren siteye bağlı ürünler yalnız süzgeçte
- * ayrılır, LafPOS onların fiyatını siteden alır: till-scope.ts; site alanı satıra okunmaz). Kasa şube başınadır
+ * ayrılır, AsilPOS onların fiyatını siteden alır: till-scope.ts; site alanı satıra okunmaz). Kasa şube başınadır
  * (pos_stale; şube kapsamı A3): her okuma bir şubenin kasasına bakar.
  */
 
 /**
- * Kasadaki (ModPOS) adların süzgeci: POS adı hafızası ModPOS listeleriyle LafPOS'un ortak hafızasıdır (Satışlar ve
- * Ayarlar › LafPOS › Bağla aynı tabloya yazar). Yalnız LafPOS'tan gelmiş, hiçbir ModPOS listesinde geçmeyen ad
+ * Kasadaki (ModPOS) adların süzgeci: POS adı hafızası ModPOS listeleriyle AsilPOS'un ortak hafızasıdır (Satışlar ve
+ * Ayarlar › AsilPOS › Bağla aynı tabloya yazar). Yalnız AsilPOS'tan gelmiş, hiçbir ModPOS listesinde geçmeyen ad
  * ModPOS'ta yoktur; kasadaki fiyat listesinde "Kasada: …" diye gösterilmez (denetim B08 incelemesi). Hiçbir tabloda
  * geçmeyen ad (ör. ayı temizlenmiş listeden) bugünkü gibi kalır. Anahtar posMatchKey (büyük / küçük harf, boşluk farkı yok).
  */
 // ŞUBEYE GÖRE SÜZÜLMEZ: "bu ad ModPOS döneminden mi" sorusu işletme geneli; şubeye bakmak, şubesi yeni açılmış
 // bir kafede bütün adları ModPOS dönemine sayardı.
 export async function modposNameFilter(db: DB): Promise<(posName: string) => boolean> {
-  const [modpos, lafpos] = await Promise.all([
+  const [modpos, asilpos] = await Promise.all([
     db.select({ posName: s.salesLines.posName }).from(s.salesLines).groupBy(s.salesLines.posName),
     db.select({ posName: s.posDailySales.posName }).from(s.posDailySales).groupBy(s.posDailySales.posName),
   ]);
-  if (!lafpos.length) return () => true;
+  if (!asilpos.length) return () => true;
   const inModpos = new Set(modpos.map((r) => posMatchKey(r.posName)));
-  const onlyLafpos = new Set(lafpos.map((r) => posMatchKey(r.posName)).filter((k) => !inModpos.has(k)));
-  return (posName) => !onlyLafpos.has(posMatchKey(posName));
+  const onlyAsilpos = new Set(asilpos.map((r) => posMatchKey(r.posName)).filter((k) => !inModpos.has(k)));
+  return (posName) => !onlyAsilpos.has(posMatchKey(posName));
 }
 
 /**
- * Günün kasasındaki adların süzgeci ("Kasada: …"): ModPOS gününde modposNameFilter; LafPOS gününde (geçiş gününden
- * itibaren; denetim E-39) yalnız LafPOS'un gün sonlarında geçen adlar (ModPOS'un adı LafPOS'ta aranmaz)
+ * Günün kasasındaki adların süzgeci ("Kasada: …"): ModPOS gününde modposNameFilter; AsilPOS gününde (geçiş gününden
+ * itibaren; denetim E-39) yalnız AsilPOS'un gün sonlarında geçen adlar (ModPOS'un adı AsilPOS'ta aranmaz)
  */
 export async function kasaNameFilter(db: DB, kasa: KasaName): Promise<(posName: string) => boolean> {
   if (kasa === "ModPOS") return modposNameFilter(db);
   const rows = await db.select({ posName: s.posDailySales.posName }).from(s.posDailySales).groupBy(s.posDailySales.posName);
-  const inLafpos = new Set(rows.map((r) => posMatchKey(r.posName)));
-  return (posName) => inLafpos.has(posMatchKey(posName));
+  const inAsilpos = new Set(rows.map((r) => posMatchKey(r.posName)));
+  return (posName) => inAsilpos.has(posMatchKey(posName));
 }
 
 /**
  * Şubenin kasasında (ModPOS) değişecek satış fiyatları, kategori ve ürün sırasıyla gruplanmak üzere (yalnız etkin
- * ürünler; LafPOS gününde yalnız siteye bağlı olmayanlar)
+ * ürünler; AsilPOS gününde yalnız siteye bağlı olmayanlar)
  */
 export async function loadStaffPosList(scope?: BranchTill): Promise<StaffPosItem[]> {
   const db = getDb();

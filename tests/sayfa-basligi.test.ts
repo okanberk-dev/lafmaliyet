@@ -275,7 +275,7 @@ test("§8: yeni açıklamalar tek cümle, en çok 100 harf; eski uzun metin ⓘ'
   assert.match(header, /<InfoTip text=\{more\} label="Nasıl çalışır\?" \/>/);
   assert.match(read("src/app/panel/karaoke/page.tsx"), /more=\{role === "admin" \? MORE : undefined\}/);
   const kasa = read("src/app/panel/kasa/page.tsx");
-  // Personel: LafPOS'un otomatik gününde yalnız fotoğrafı isteyen cümle (LAFPOS_STAFF_DESCRIPTION), öteki günlerde eskisi
-  assert.match(kasa, /if \(!can\(user\.role, "kasa\.rakam"\)\) return \(await staffLafposDescription\(searchParams\)\) \?\? STAFF_DESCRIPTION;/);
+  // Personel: AsilPOS'un otomatik gününde yalnız fotoğrafı isteyen cümle (ASILPOS_STAFF_DESCRIPTION), öteki günlerde eskisi
+  assert.match(kasa, /if \(!can\(user\.role, "kasa\.rakam"\)\) return \(await staffAsilposDescription\(searchParams\)\) \?\? STAFF_DESCRIPTION;/);
   for (const f of ["src/app/panel/receteler/page.tsx", "src/app/panel/kontrol/page.tsx", "src/app/panel/zayi/page.tsx", "src/app/panel/hatirlaticilarim/page.tsx"]) assert.doesNotMatch(read(f), /\bmore=/, f);
 });

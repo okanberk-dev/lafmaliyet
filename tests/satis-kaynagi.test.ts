@@ -1,4 +1,4 @@
-// Satış kaynağı tek yerden (docs/planlar/ux-sade.md §10, K20): ModPOS raporu, LafPOS, geçiş ayı ve ileride ModPOS
+// Satış kaynağı tek yerden (docs/planlar/ux-sade.md §10, K20): ModPOS raporu, AsilPOS, geçiş ayı ve ileride ModPOS
 // bağlantısı. Ekranların hiçbiri "satış = ay sonunda elle yüklenen ModPOS raporu" varsaymaz; başlığın altındaki satır,
 // "yükleyin" metinleri ve Genel bakış'ın Satış raporu işi `salesSourceOf`'tan okur. Personel dosyaları içe aktarmaz.
 // Çalıştırma: npx tsx --test tests/satis-kaynagi.test.ts
@@ -8,7 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import type { LafposSalesMonth } from "../src/lib/calc/types";
+import type { AsilposSalesMonth } from "../src/lib/calc/types";
 import { periodSalesSource, salesSourceOf } from "../src/lib/sales-source";
 
 const root = join(__dirname, "..");
@@ -22,11 +22,11 @@ function walk(dir: string): string[] {
   });
 }
 
-const gecis: LafposSalesMonth = {
+const gecis: AsilposSalesMonth = {
   month: "2026-11",
   source: "gecis",
   from: "2026-11-10",
-  lafpos: { days: 5, last: "2026-11-14" },
+  asilpos: { days: 5, last: "2026-11-14" },
   modpos: { lines: 40, revenue: 120_000, through: "2026-11-09", counted: true },
   modposZ: null,
   gap: null,
@@ -43,13 +43,13 @@ test("dört kaynak: kısa ad, başlığın altındaki satır, veri yokken ne yap
     manual: true,
   });
   const laf = salesSourceOf("2026-12", "2026-11-10", { months: [] });
-  assert.deepEqual(laf, { kind: "lafpos", label: "LafPOS", line: "Satışlar: LafPOS (her gece kendiliğinden)", missing: "LafPOS gün sonları her gece gelir", manual: false });
+  assert.deepEqual(laf, { kind: "asilpos", label: "AsilPOS", line: "Satışlar: AsilPOS (her gece kendiliğinden)", missing: "AsilPOS gün sonları her gece gelir", manual: false });
   const g = salesSourceOf("2026-11", "2026-11-10", { months: [gecis] });
   assert.equal(g.kind, "gecis");
-  assert.equal(g.label, "ModPOS raporu + LafPOS");
-  assert.equal(nb(g.line), "Satışlar: Kasa (ModPOS 1–9 Kasım · LafPOS 10–14 Kasım)");
+  assert.equal(g.label, "ModPOS raporu + AsilPOS");
+  assert.equal(nb(g.line), "Satışlar: Kasa (ModPOS 1–9 Kasım · AsilPOS 10–14 Kasım)");
   assert.equal(g.manual, true);
-  assert.match(g.missing, /ModPOS raporunu yükleyin; LafPOS gün sonları her gece gelir$/);
+  assert.match(g.missing, /ModPOS raporunu yükleyin; AsilPOS gün sonları her gece gelir$/);
   const bag = salesSourceOf("2026-10", null, undefined, new Set(["2026-10"]));
   assert.deepEqual(bag, {
     kind: "modpos-baglanti",
@@ -63,30 +63,30 @@ test("dört kaynak: kısa ad, başlığın altındaki satır, veri yokken ne yap
 test("geçiş günü yokken her ay ModPOS raporu; geçişten önceki ay da; bağlantı gelince o ay bağlantıdan (öncelik)", () => {
   for (const m of ["2025-12", "2026-01", "2026-10", "2027-03"]) assert.equal(salesSourceOf(m, null, undefined).kind, "modpos-rapor", m);
   assert.equal(salesSourceOf("2026-10", "2026-11-10", { months: [gecis] }).kind, "modpos-rapor");
-  // Bağlantının getirdiği ay LafPOS ve geçiş ayından da önce gelir; getirmediği ay eski kuralla
+  // Bağlantının getirdiği ay AsilPOS ve geçiş ayından da önce gelir; getirmediği ay eski kuralla
   const connected = new Set(["2026-11", "2026-12"]);
   assert.equal(salesSourceOf("2026-11", "2026-11-10", { months: [gecis] }, connected).kind, "modpos-baglanti");
   assert.equal(salesSourceOf("2026-12", "2026-11-10", { months: [] }, connected).kind, "modpos-baglanti");
-  assert.equal(salesSourceOf("2027-01", "2026-11-10", { months: [] }, connected).kind, "lafpos");
-  // Geçiş ayının listesi ayın tamamını kapsıyorsa (LafPOS sayılmıyor) ay ModPOS'tur: monthKasa ile aynı kural
+  assert.equal(salesSourceOf("2027-01", "2026-11-10", { months: [] }, connected).kind, "asilpos");
+  // Geçiş ayının listesi ayın tamamını kapsıyorsa (AsilPOS sayılmıyor) ay ModPOS'tur: monthKasa ile aynı kural
   assert.equal(salesSourceOf("2026-11", "2026-11-10", { months: [{ ...gecis, from: null }] }).kind, "modpos-rapor");
 });
 
-test("birden çok ay (Gelir-gider'in yılı): hepsi aynı türdense sonuncusu, karışıksa \"Satışlar: ModPOS / LafPOS\"", () => {
+test("birden çok ay (Gelir-gider'in yılı): hepsi aynı türdense sonuncusu, karışıksa \"Satışlar: ModPOS / AsilPOS\"", () => {
   const year = (y: number) => Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
   // Geçiş günü yok: bütün ay ModPOS raporu
   assert.equal(periodSalesSource(year(2026), null, undefined).line, "Satışlar: ModPOS raporu (ay sonunda elle yüklenir)");
-  // Geçiş 10 Kasım 2026: 2026 yılı Ocak–Ekim ModPOS, Kasım geçiş, Aralık LafPOS → karışık. Eski satır yalnız Aralık'ın
-  // ("LafPOS") ya da bu ayın kaynağını yazıyordu
+  // Geçiş 10 Kasım 2026: 2026 yılı Ocak–Ekim ModPOS, Kasım geçiş, Aralık AsilPOS → karışık. Eski satır yalnız Aralık'ın
+  // ("AsilPOS") ya da bu ayın kaynağını yazıyordu
   const mixed = periodSalesSource(year(2026), "2026-11-10", { months: [gecis] });
-  assert.equal(mixed.line, "Satışlar: ModPOS / LafPOS");
-  assert.equal(salesSourceOf("2026-12", "2026-11-10", { months: [gecis] }).line, "Satışlar: LafPOS (her gece kendiliğinden)");
+  assert.equal(mixed.line, "Satışlar: ModPOS / AsilPOS");
+  assert.equal(salesSourceOf("2026-12", "2026-11-10", { months: [gecis] }).line, "Satışlar: AsilPOS (her gece kendiliğinden)");
   // Bu aya kadarki aylar (Ekim 2026): hepsi ModPOS
   assert.equal(periodSalesSource(year(2026).slice(0, 10), "2026-11-10", { months: [gecis] }).kind, "modpos-rapor");
   // Ocak–Kasım: ModPOS + geçiş ayı → karışık
-  assert.equal(periodSalesSource(year(2026).slice(0, 11), "2026-11-10", { months: [gecis] }).line, "Satışlar: ModPOS / LafPOS");
-  // Bütün yıl LafPOS
-  assert.equal(periodSalesSource(year(2027), "2026-11-10", { months: [] }).line, "Satışlar: LafPOS (her gece kendiliğinden)");
+  assert.equal(periodSalesSource(year(2026).slice(0, 11), "2026-11-10", { months: [gecis] }).line, "Satışlar: ModPOS / AsilPOS");
+  // Bütün yıl AsilPOS
+  assert.equal(periodSalesSource(year(2027), "2026-11-10", { months: [] }).line, "Satışlar: AsilPOS (her gece kendiliğinden)");
   assert.throws(() => periodSalesSource([], null, undefined));
 });
 
@@ -98,7 +98,7 @@ test("bağlananlar: altı yönetici ekranının başlığında satır; yükleyin
     assert.match(src, /salesSourceOf\(|periodSalesSource\(/, f);
   }
   // Gelir-gider bir yılın tablosu: satır yılın bu aya kadarki aylarından (yalnız bir ayın kaynağı değil)
-  assert.match(read("src/app/panel/gelir-gider/page.tsx"), /periodSalesSource\(sourceMonths, model\.settings\.lafposGecisGunu, model\.ds\.lafposSales\)/);
+  assert.match(read("src/app/panel/gelir-gider/page.tsx"), /periodSalesSource\(sourceMonths, model\.settings\.asilposGecisGunu, model\.ds\.asilposSales\)/);
   // Kaynağı sormayan metinler "yükle" demez: satış verisi gelince (Genel bakış, Hammaddeler ve Ayarlar'ın su metni, Tutarlılık)
   for (const f of ["src/app/panel/page.tsx", "src/app/panel/hammaddeler/breakdowns.ts", "src/app/panel/ayarlar/water-text.ts", "src/app/panel/tutarlilik/page.tsx"]) {
     assert.doesNotMatch(read(f), /[sS]atış raporu yüklenince|[sS]atış listesini yükleyin|Bu ay(?: için)? satış raporu yok/, f);
@@ -111,8 +111,8 @@ test("bağlananlar: altı yönetici ekranının başlığında satır; yükleyin
   }
   assert.match(read("src/app/panel/tutarlilik/consistency-client.tsx"), /salesSource\.manual \? "Satış raporu yükle" : "Satışlar'a git"/);
   const tasks = read("src/app/panel/dashboard-tasks.tsx");
-  assert.match(tasks, /salesSourceOf\(month, lp\?\.switchDay \?\? model\.settings\.lafposGecisGunu, lp\)/);
-  assert.match(tasks, /s\.source \? !s\.source\.manual : s\.lafpos\?\.source === "lafpos"/);
+  assert.match(tasks, /salesSourceOf\(month, lp\?\.switchDay \?\? model\.settings\.asilposGecisGunu, lp\)/);
+  assert.match(tasks, /s\.source \? !s\.source\.manual : s\.asilpos\?\.source === "asilpos"/);
   // Satışlar'ın açıklaması kaynağa göre; eski uzun metinler ⓘ'de, "Patron (ModPOS)" yerine "ModPOS"
   const sales = read("src/app/panel/satislar/page.tsx");
   assert.match(sales, /description=\{DESCRIPTION\[source\.kind\]\}/);

@@ -9,7 +9,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { ToggleRow } from "@/components/ui/toggle-row";
-import { dayMonthYearTR } from "@/lib/lafpos/switch";
+import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import { modposFetchConfirmLines } from "@/lib/modpos/ayarlar";
 import { fetchModposDay, saveModposFallback } from "@/server/actions/modpos";
 
@@ -172,11 +172,11 @@ export function ModposFallbackSwitch({
         description={
           confirm ? (
             <p>
-              Kasa raporu (ya da LafPOS gün sonu) olmayan günün kapanmış ModPOS API verisi ayın açık gün, ciro, ödenmez ve kart payına girer; gün yine &quot;rapor
+              Kasa raporu (ya da AsilPOS gün sonu) olmayan günün kapanmış ModPOS API verisi ayın açık gün, ciro, ödenmez ve kart payına girer; gün yine &quot;rapor
               yok&quot; sayılır ve rapor girilince rapor kazanır. ModPOS API&apos;de indirim olmadığı için o günlerin indirimi bilinmez; elle yazılan ay bilgisi her zaman kazanır.
             </p>
           ) : (
-            <p>ModPOS API verisi yeniden hiçbir hesaba girmez; ayın rakamı yalnız kasa raporlarından (ve LafPOS&apos;tan) hesaplanır. Hiçbir kayıt silinmez.</p>
+            <p>ModPOS API verisi yeniden hiçbir hesaba girmez; ayın rakamı yalnız kasa raporlarından (ve AsilPOS&apos;tan) hesaplanır. Hiçbir kayıt silinmez.</p>
           )
         }
         onConfirm={() => save(confirm ?? false)}

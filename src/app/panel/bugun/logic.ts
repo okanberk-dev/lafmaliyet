@@ -24,10 +24,10 @@ import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
-import { LAFPOS_PHOTO_TEXT, LAFPOS_STAFF_BEFORE_DAY_END_TEXT } from "@/lib/lafpos/foto";
-import { LAFPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/lafpos/gun-sonu";
-import type { KasaName } from "@/lib/lafpos/kasa";
-import { kasaName } from "@/lib/lafpos/switch";
+import { ASILPOS_PHOTO_TEXT, ASILPOS_STAFF_BEFORE_DAY_END_TEXT } from "@/lib/asilpos/foto";
+import { ASILPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/asilpos/gun-sonu";
+import type { KasaName } from "@/lib/asilpos/kasa";
+import { kasaName } from "@/lib/asilpos/switch";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
 import { pendingSummary } from "@/lib/recipe-change";
 import { addDays, dayMonthTR, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
@@ -97,11 +97,11 @@ export interface CashLite {
   /** Yalnız yönetici: kasanın bütünlük uyarıları (CASH_FLAGS); varsa satır "sorun var" olur */
   flags?: string[];
   /**
-   * LafPOS gününün otomatik raporu (gün sonu tam, 24 Kasım 2026; src/lib/lafpos/foto.ts): personelin tek işi gün sonu
+   * AsilPOS gününün otomatik raporu (gün sonu tam, 24 Kasım 2026; src/lib/asilpos/foto.ts): personelin tek işi gün sonu
    * fotoğrafı. "pending" istenen fotoğraf eklenmedi (ya da okunamadı); "done" eklendi. Elle girilen raporda yok
    */
-  lafposPhoto?: "pending" | "done";
-  /** Kör kasa (bulgu 0; personelin LafPOS günü): fark sıfırlanmış gelir, satır farkı yazmaz */
+  asilposPhoto?: "pending" | "done";
+  /** Kör kasa (bulgu 0; personelin AsilPOS günü): fark sıfırlanmış gelir, satır farkı yazmaz */
   blind?: true;
 }
 
@@ -118,12 +118,12 @@ export interface CashTill {
    */
   closed?: NonNullable<DayFacts["closed"]>["yesterday"];
   /**
-   * LafPOS gününde gün sonu geldi ama çekmece sayılmadı, rapor yazılmadı (dün ve bugünden; lafposNoCountDays): "girilmedi"
-   * yerine "Sayım yok" ve LafPOS'ta nereden sayılacağı
+   * AsilPOS gününde gün sonu geldi ama çekmece sayılmadı, rapor yazılmadı (dün ve bugünden; asilposNoCountDays): "girilmedi"
+   * yerine "Sayım yok" ve AsilPOS'ta nereden sayılacağı
    */
   noCount?: string[];
-  /** Şubenin LafPOS'a geçiş günü (yalnız metinler); verilmezse DayFacts.lafposSwitch */
-  lafposSwitch?: string | null;
+  /** Şubenin AsilPOS'a geçiş günü (yalnız metinler); verilmezse DayFacts.asilposSwitch */
+  asilposSwitch?: string | null;
   /**
    * Şubenin kasa raporunun beklendiği saat (şube ayarı isletme.takvim): "Tümü"de her kasanın akşamı kendi saatiyle (zil
    * de kasa kasa bakar). Verilmezse DayFacts.eveningHour
@@ -148,10 +148,10 @@ export interface DayFacts {
    */
   eveningHour?: number;
   /**
-   * LafPOS'a geçiş günü (iki rol; yalnız metinler: günün kasası "ModPOS" ya da "LafPOS", src/lib/lafpos/switch.ts
+   * AsilPOS'a geçiş günü (iki rol; yalnız metinler: günün kasası "ModPOS" ya da "AsilPOS", src/lib/asilpos/switch.ts
    * kasaName). Yoksa ya da null her metin bugünkü gibi ModPOS der
    */
-  lafposSwitch?: string | null;
+  asilposSwitch?: string | null;
   /**
    * Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı. Personelde kendi kasasının (raporu yazdığı
    * şube). `tills`: yalnız yönetici, "Tümü"de birden çok kasa açıkken her şubenin kasası; verilince kasa satırları şube
@@ -159,10 +159,10 @@ export interface DayFacts {
    */
   cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null; tills?: CashTill[]; noCount?: string[] } | null;
   /**
-   * Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti); `lafpos`: iş günü LafPOS
-   * günü (ürün ikramı LafPOS'ta işaretlenir; yoksa ya da false bugünkü gibi)
+   * Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti); `asilpos`: iş günü AsilPOS
+   * günü (ürün ikramı AsilPOS'ta işaretlenir; yoksa ya da false bugünkü gibi)
    */
-  waste?: { count: number; zayi: string | null; ikram: string | null; lafpos?: boolean } | null;
+  waste?: { count: number; zayi: string | null; ikram: string | null; asilpos?: boolean } | null;
   /**
    * Bu ayın (takvim) sayılan / sayılacak kalemi; geçen ayın sayımı var mı (sayım ya da ek kalem) ve orada sayılan /
    * sayılacak kalem
@@ -206,7 +206,7 @@ export interface DayFacts {
   countAlerts?: { extras: UnpricedExtras[]; late: { month: string; edits: StaffLateEdit[] } | null } | null;
   /**
    * Kasada (ModPOS) değişecek fiyatlar, en eskisinin anı ve bugünün kasası (operasyonun yükleyicisi,
-   * src/server/data/today-ops.ts; LafPOS gününde yalnız siteye bağlı olmayan ürünler). "Tümü"de birden çok kasa açıkken
+   * src/server/data/today-ops.ts; AsilPOS gününde yalnız siteye bağlı olmayan ürünler). "Tümü"de birden çok kasa açıkken
    * seçimin kasalarının toplamı ve `byBranch` kasa başına sayı (combineTillPos; şube kapsamı A3)
    */
   pos?: { count: number; oldest: string | null; kasa?: KasaName; byBranch?: { name: string; count: number }[] | null } | null;
@@ -360,10 +360,10 @@ function cashDetail(r: CashLite, full: boolean): string {
 }
 
 /** Bir kasanın günleri (DayFacts.cash ya da "Tümü"de şubenin kasası CashTill) */
-type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate" | "closed" | "noCount" | "lafposSwitch">;
+type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate" | "closed" | "noCount" | "asilposSwitch">;
 
-/** Kasanın günü LafPOS günü mü (şubenin geçiş günü; verilmezse işletmenin olgusu) */
-const tillKasa = (f: DayFacts, till: TillDays | null, day: string) => kasaName(day, till?.lafposSwitch !== undefined ? till.lafposSwitch : (f.lafposSwitch ?? null));
+/** Kasanın günü AsilPOS günü mü (şubenin geçiş günü; verilmezse işletmenin olgusu) */
+const tillKasa = (f: DayFacts, till: TillDays | null, day: string) => kasaName(day, till?.asilposSwitch !== undefined ? till.asilposSwitch : (f.asilposSwitch ?? null));
 
 /** "Tümü"de birden çok kasa açıkken yöneticinin kasaları (şube başına satır); yoksa null (tek kasa, bugünkü gibi) */
 function tillsOf(f: DayFacts): CashTill[] | null {
@@ -408,13 +408,13 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
   const href = `/panel/kasa?gun=${c.yesterday}`;
   if (!till) return admin ? { key: "kasa-dun", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" } : null;
   const r = till.yesterday;
-  // LafPOS gününün otomatik raporu: personele yalnız gün sonu fotoğrafı (sayılar LafPOS'tan)
-  if (r && !admin && r.lafposPhoto === "pending") return { key: "kasa-dun", title: "Dünkü gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
+  // AsilPOS gününün otomatik raporu: personele yalnız gün sonu fotoğrafı (sayılar AsilPOS'tan)
+  if (r && !admin && r.asilposPhoto === "pending") return { key: "kasa-dun", title: "Dünkü gün sonu fotoğrafı", status: "todo", detail: ASILPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
   if (r) return admin ? { key: "kasa-dun", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, true)), href, action: "Rapora bak" } : null;
-  // LafPOS gün sonu geldi, çekmece sayılmadı: rapor sayım gelince kendiliğinden yazılır; iş LafPOS'ta saymak
+  // AsilPOS gün sonu geldi, çekmece sayılmadı: rapor sayım gelince kendiliğinden yazılır; iş AsilPOS'ta saymak
   if (till.noCount?.includes(c.yesterday)) {
     return admin
-      ? { key: "kasa-dun", title, status: "todo", badge: "Sayım yok", detail: `${longDateTR(c.yesterday)}: ${LAFPOS_NO_COUNT_ADMIN_TEXT}`, href, action: "Rapora bak" }
+      ? { key: "kasa-dun", title, status: "todo", badge: "Sayım yok", detail: `${longDateTR(c.yesterday)}: ${ASILPOS_NO_COUNT_ADMIN_TEXT}`, href, action: "Rapora bak" }
       : { key: "kasa-dun", title, status: "todo", badge: "Sayım yok", detail: STAFF_NO_COUNT_TEXT, href, action: "Kasa raporu" };
   }
   // Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa dünün raporu beklenmez (kurulum sakin açılır)
@@ -430,7 +430,7 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
           title,
           status: "todo",
           badge: "Onay bekliyor",
-          detail: `${closed.by} ${longDateTR(c.yesterday)} için kafe kapalıydı dedi. Onaylamadan önce o günün ${kasaName(c.yesterday, f.lafposSwitch ?? null)} / banka POS'una bakın.`,
+          detail: `${closed.by} ${longDateTR(c.yesterday)} için kafe kapalıydı dedi. Onaylamadan önce o günün ${kasaName(c.yesterday, f.asilposSwitch ?? null)} / banka POS'una bakın.`,
           href: closed.requestId ? `/panel/onaylar#istek-${closed.requestId}` : "/panel/onaylar",
           action: "Onaya bak",
         }
@@ -478,12 +478,12 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
 }
 
 /**
- * Personelin akşam kasa satırı ve zili (src/server/bell/kasa.ts): ModPOS gününde Z raporu ModPOS'tan alınır; LafPOS
- * gününde (geçiş gününden itibaren) LafPOS'ta "Günü kapat" gün sonunu panele gönderir, form ondan dolar
+ * Personelin akşam kasa satırı ve zili (src/server/bell/kasa.ts): ModPOS gününde Z raporu ModPOS'tan alınır; AsilPOS
+ * gününde (geçiş gününden itibaren) AsilPOS'ta "Günü kapat" gün sonunu panele gönderir, form ondan dolar
  */
 export function eveningCashText(kasa: KasaName): string {
-  // LafPOS gününde rapor LafPOS'un gün sonundan kendiliğinden yazılır; personel rakam girmez (son denetim, 24 Kasım 2026)
-  return kasa === "LafPOS" ? LAFPOS_STAFF_BEFORE_DAY_END_TEXT : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
+  // AsilPOS gününde rapor AsilPOS'un gün sonundan kendiliğinden yazılır; personel rakam girmez (son denetim, 24 Kasım 2026)
+  return kasa === "AsilPOS" ? ASILPOS_STAFF_BEFORE_DAY_END_TEXT : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
 }
 
 /**
@@ -512,26 +512,26 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
     if (!till) return null;
     const r = till.today;
     if (r) return { key: "kasa", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, false)), href, action: "Raporu aç" };
-    if (till.noCount?.includes(c.day)) return { key: "kasa", title, status: "todo", badge: "Sayım yok", detail: dated(c, c.day, LAFPOS_NO_COUNT_ADMIN_TEXT), href, action: "Kasa raporu" };
-    // LafPOS gününde rapor LafPOS'un gün sonundan kendiliğinden yazılır; personel girmez
-    const lafpos = tillKasa(f, till, c.day) === "LafPOS";
-    if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, lafpos ? "Henüz gelmedi; LafPOS gün sonu gelince kendiliğinden yazılır." : "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
-    return { key: "kasa", title, status: "later", badge: "Akşam", detail: lafpos ? "LafPOS gün sonu gelince kendiliğinden yazılır." : "Personel kapanışta girer.", href, action: "Kasa raporu" };
+    if (till.noCount?.includes(c.day)) return { key: "kasa", title, status: "todo", badge: "Sayım yok", detail: dated(c, c.day, ASILPOS_NO_COUNT_ADMIN_TEXT), href, action: "Kasa raporu" };
+    // AsilPOS gününde rapor AsilPOS'un gün sonundan kendiliğinden yazılır; personel girmez
+    const asilpos = tillKasa(f, till, c.day) === "AsilPOS";
+    if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, asilpos ? "Henüz gelmedi; AsilPOS gün sonu gelince kendiliğinden yazılır." : "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
+    return { key: "kasa", title, status: "later", badge: "Akşam", detail: asilpos ? "AsilPOS gün sonu gelince kendiliğinden yazılır." : "Personel kapanışta girer.", href, action: "Kasa raporu" };
   }
   const title = "Kasa raporu";
   if (!till) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
   const r = till.today;
-  // LafPOS gününün otomatik raporu: rakamlar LafPOS'tan, personelin tek işi gün sonu fotoğrafı; "Raporu gönder" yok
-  if (r?.lafposPhoto === "pending") return { key: "kasa", title: "Gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
-  // Kör kasa (bulgu 0): LafPOS gününde fark personele yazılmaz
+  // AsilPOS gününün otomatik raporu: rakamlar AsilPOS'tan, personelin tek işi gün sonu fotoğrafı; "Raporu gönder" yok
+  if (r?.asilposPhoto === "pending") return { key: "kasa", title: "Gün sonu fotoğrafı", status: "todo", detail: ASILPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
+  // Kör kasa (bulgu 0): AsilPOS gününde fark personele yazılmaz
   const diff = r?.blind ? "" : ` · ${diffText(r?.cashDiff ?? 0)}`;
-  if (r?.lafposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `LafPOS gün sonu · ${LAFPOS_PHOTO_TEXT.done}${diff}`), href, action: "Raporu aç" };
+  if (r?.asilposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `AsilPOS gün sonu · ${ASILPOS_PHOTO_TEXT.done}${diff}`), href, action: "Raporu aç" };
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi${diff}`), href, action: "Raporu aç" };
-  // Gün sonu geldi ama çekmece sayılmadı: "Günü kapat"a yeniden değil, LafPOS'ta sayıma
+  // Gün sonu geldi ama çekmece sayılmadı: "Günü kapat"a yeniden değil, AsilPOS'ta sayıma
   if (till.noCount?.includes(c.day)) return { key: "kasa", title, status: "todo", badge: "Sayım yok", detail: dated(c, c.day, STAFF_NO_COUNT_TEXT), href, action: "Kasa raporu" };
   const kasa = tillKasa(f, till, c.day);
-  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasa)), href: "/panel/kasa", action: kasa === "LafPOS" ? "Kasa raporu" : "Raporu gir" };
-  const later = kasa === "LafPOS" ? "Kapanışta LafPOS'ta Günü kapat'a basılır; rapor LafPOS'tan gelir." : "Kapanışta girilir: Z raporu ve kasa sayımı.";
+  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasa)), href: "/panel/kasa", action: kasa === "AsilPOS" ? "Kasa raporu" : "Raporu gir" };
+  const later = kasa === "AsilPOS" ? "Kapanışta AsilPOS'ta Günü kapat'a basılır; rapor AsilPOS'tan gelir." : "Kapanışta girilir: Z raporu ve kasa sayımı.";
   return { key: "kasa", title, status: "later", badge: "Akşam", detail: later, href: "/panel/kasa", action: "Kasa raporu" };
 }
 
@@ -555,14 +555,14 @@ const wasteRow: Row = (f, c) => {
         c.day,
         entries
           ? `${sentence(entries)} Eksik varsa kasa raporundan önce ekleyin.`
-          : w.lafpos
-            ? "Bugün kayıt yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
+          : w.asilpos
+            ? "Bugün kayıt yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı AsilPOS'ta işaretlenir."
             : "Bugün kayıt yok. Atılan ya da ikram edilen olduysa kasa raporundan önce girin.",
       ),
     };
   }
-  const during = w.lafpos
-    ? "Atılan, dökülen bir şey ya da hammadde ikramı olursa o an girin; ürün ikramı LafPOS'ta işaretlenir."
+  const during = w.asilpos
+    ? "Atılan, dökülen bir şey ya da hammadde ikramı olursa o an girin; ürün ikramı AsilPOS'ta işaretlenir."
     : "Atılan, dökülen ya da ödenmeden verilen olursa o an girin; kasa raporuna geçer.";
   return { ...base, status: "later", badge: "Gün içinde", detail: entries ?? during };
 };

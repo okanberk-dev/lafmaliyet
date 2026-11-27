@@ -9,7 +9,7 @@
 //   yazılmış avans silinmez.
 // - Maaşlar: avans hareketi olan kişi silinemez; silinen kişinin belge dosyaları depodan da gider.
 //
-// PERSONEL_TEST_DATABASE_URL (yoksa LAFPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu.
+// PERSONEL_TEST_DATABASE_URL (yoksa ASILPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu.
 // Çalıştırma: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/lm_personel npm run test:db -- tests/personel-belge-db.test.ts
 
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ import * as s from "../src/server/db/schema";
 
 import { seedBranches } from "./helpers/subeler";
 
-const SERVER_URL = process.env.PERSONEL_TEST_DATABASE_URL ?? process.env.LAFPOS_TEST_DATABASE_URL;
+const SERVER_URL = process.env.PERSONEL_TEST_DATABASE_URL ?? process.env.ASILPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_personel_${process.pid}`;
 const TODAY = "2026-11-26";
 const ME = { id: 0, name: "Ali", email: "ali@laffogato.net", role: "admin" as const };

@@ -32,10 +32,10 @@ export interface ChannelMonthData {
   /** Faturası var mı (yoksa beklenen hesaplanmaz) */
   invoiced: boolean;
   /**
-   * Satış boş bırakılırsa kullanılacak: LafPOS'un girdiği ayda kanalın LafPOS ödemeleri (ve föyde markalı ödemeleri,
+   * Satış boş bırakılırsa kullanılacak: AsilPOS'un girdiği ayda kanalın AsilPOS ödemeleri (ve föyde markalı ödemeleri,
    * `foy`), öncesinde (grupta tek kanalken) Z toplamı
    */
-  autoSales: { amount: number; source: "lafpos" | "tek"; foy?: number } | null;
+  autoSales: { amount: number; source: "asilpos" | "tek"; foy?: number } | null;
 }
 
 /** "Geldi": hakedişi işaretle; "duzenle": kayıtlı işareti değiştir; "satis": yalnız satışı yaz (alan odaklanır) */
@@ -130,7 +130,7 @@ function ChannelMonthDialog({ data, mode, onClose, onSave }: { data: ChannelMont
 
   const salesValue = salesText.trim() ? parseNumberTR(salesText) : null;
   const salesError = salesText.trim() && salesValue === null ? "Satışı sayı olarak yazın, ör. 9.300" : salesValue !== null && salesValue < 0 ? "Satış eksi olamaz" : null;
-  // Beklenen, penceredeki satışla canlı: yazılan satış, yoksa LafPOS'un ödemeleri ya da Z'deki toplam (grupta tek kanalsa)
+  // Beklenen, penceredeki satışla canlı: yazılan satış, yoksa AsilPOS'un ödemeleri ya da Z'deki toplam (grupta tek kanalsa)
   const effectiveSales = salesValue !== null && salesValue >= 0 ? salesValue : salesText.trim() ? null : (data.autoSales?.amount ?? null);
   const expected = data.invoiced && effectiveSales !== null ? Math.round((effectiveSales - data.payable) * 100) / 100 : null;
   const [amountTextValue, setAmount] = useState(() => (received ? amountText(data.received) : expected !== null && expected > 0 ? amountText(expected) : ""));
@@ -152,10 +152,10 @@ function ChannelMonthDialog({ data, mode, onClose, onSave }: { data: ChannelMont
   const salesHint = `Kanalın kendi ekranındaki (ekstre, hakediş raporu) satış, KDV dahil. ${
     data.autoSales === null
       ? "Boş bırakırsanız satış bilinmez."
-      : data.autoSales.source === "lafpos"
+      : data.autoSales.source === "asilpos"
         ? data.autoSales.foy
-          ? `Boş bırakırsanız LafPOS ödemeleri ve ModPOS föyündeki markalı ödemeler kullanılır: ${money(data.autoSales.amount)} (föyden ${money(data.autoSales.foy)}).`
-          : `Boş bırakırsanız LafPOS'taki ödemeler kullanılır: ${money(data.autoSales.amount)}.`
+          ? `Boş bırakırsanız AsilPOS ödemeleri ve ModPOS föyündeki markalı ödemeler kullanılır: ${money(data.autoSales.amount)} (föyden ${money(data.autoSales.foy)}).`
+          : `Boş bırakırsanız AsilPOS'taki ödemeler kullanılır: ${money(data.autoSales.amount)}.`
         : `Boş bırakırsanız Z'deki toplam kullanılır: ${money(data.autoSales.amount)}.`
   }`;
 

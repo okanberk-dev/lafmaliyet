@@ -42,7 +42,7 @@ import type { BreakdownRow } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { applyScenario, type MenuClass, type ScenarioBase } from "@/lib/calc/insights";
 import { num, pct, tl } from "@/lib/format";
-import type { MonthKasa } from "@/lib/lafpos/kasa";
+import type { MonthKasa } from "@/lib/asilpos/kasa";
 import { cn } from "@/lib/utils";
 
 import { productHref } from "../urunler/logic";
@@ -849,7 +849,7 @@ export function ScenarioSimulator({
   /** Seçili ay (YYYY-MM): döküm satırlarının bağlantıları bu ayı taşır */
   month: string;
   monthLabel: string;
-  /** Ayın kasası (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", geçiş ayında "Kasa"; denetim E-39) */
+  /** Ayın kasası (src/lib/asilpos/kasa.ts monthKasa: "ModPOS", "AsilPOS", geçiş ayında "Kasa"; denetim E-39) */
   kasa?: MonthKasa["short"];
   /** Bu ayın sabit gider kalemleri (Genel bakış'taki net kârla aynı tutarlar, sunucuda kurulur): net kâr dökümünde */
   fixedItems: BreakdownRow[];

@@ -16,7 +16,7 @@ import { getDb } from "@/server/db";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { recordJobRun } from "@/server/jobs/runs";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
-import { claimLafposWaitPoll, finishWaitingDayEnds } from "@/server/lafpos/gun-sonu";
+import { claimAsilposWaitPoll, finishWaitingDayEnds } from "@/server/asilpos/gun-sonu";
 import { claimKaraokeMailPoll, runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
 import { claimChecklistAlertPoll, runChecklistAlerts } from "@/server/notify/checklist-alerts";
@@ -95,15 +95,15 @@ export async function GET(request: NextRequest) {
       }
     });
   }
-  // Pavo'yu bekleyen LafPOS gün sonu (docs/LAFPOS.md › Pavo'yu bekler): LafPOS günü yeniden göndermediyse bekleme dolunca
+  // Pavo'yu bekleyen AsilPOS gün sonu (docs/ASILPOS.md › Pavo'yu bekler): AsilPOS günü yeniden göndermediyse bekleme dolunca
   // yöneticinin ve çalışanların e-postası buradan gider (en çok 5 dakikada bir; bekleyen gün yoksa tek sorgu)
-  if (claimLafposWaitPoll()) {
+  if (claimAsilposWaitPoll()) {
     after(async () => {
       try {
         const days = await finishWaitingDayEnds(getDb(), new Date(), { deadlineAt: Date.now() + 25_000 });
-        if (days.length) console.info("[lafpos] Pavo beklemesi bitti", days);
+        if (days.length) console.info("[asilpos] Pavo beklemesi bitti", days);
       } catch (e) {
-        console.error("[lafpos] Pavo beklemesi", e);
+        console.error("[asilpos] Pavo beklemesi", e);
       }
     });
   }

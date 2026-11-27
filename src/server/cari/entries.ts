@@ -25,7 +25,7 @@ import { candidateOf, linkCandidates } from "@/lib/cari/match";
 import { missingPastConfirm, pastMonthEffects, type MonthEffect } from "@/lib/cari/months";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, tl } from "@/lib/format";
-import { lafposCashOutChange } from "@/lib/lafpos/cash-moves";
+import { asilposCashOutChange } from "@/lib/asilpos/cash-moves";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { paymentUnchanged, type RecentPaid } from "@/lib/recent-paid";
 import { daysBetween, todayTR } from "@/lib/reminders";
@@ -231,10 +231,10 @@ export async function writePayment(tx: Tx, me: Actor, card: Card, input: Payment
       // Aynı satır: günü ve tutarı ödemeyi izler
       cashOutId = cur.cashOutId;
       cashOutCreated = cur.cashOutCreated;
-      // LafPOS'tan gelen satırın günü ve tutarı LafPOS'undur (Faz 3): ödeme onları değiştiremez
-      const [own] = await tx.select({ lafposId: s.cashOuts.lafposId, kind: s.cashOuts.kind, amount: s.cashOuts.amount, date: s.cashOuts.date }).from(s.cashOuts).where(eq(s.cashOuts.id, cashOutId)).limit(1);
-      const lafposLock = own ? lafposCashOutChange(own, { kind: own.kind, amount, date: input.date }) : null;
-      if (lafposLock) throw new UserError(lafposLock);
+      // AsilPOS'tan gelen satırın günü ve tutarı AsilPOS'undur (Faz 3): ödeme onları değiştiremez
+      const [own] = await tx.select({ asilposId: s.cashOuts.asilposId, kind: s.cashOuts.kind, amount: s.cashOuts.amount, date: s.cashOuts.date }).from(s.cashOuts).where(eq(s.cashOuts.id, cashOutId)).limit(1);
+      const asilposLock = own ? asilposCashOutChange(own, { kind: own.kind, amount, date: input.date }) : null;
+      if (asilposLock) throw new UserError(asilposLock);
       await tx.update(s.cashOuts).set({ date: input.date, amount, updatedAt: new Date() }).where(eq(s.cashOuts.id, cashOutId));
     } else {
       const choice = input.cashOut;

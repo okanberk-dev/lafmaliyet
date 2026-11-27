@@ -41,9 +41,9 @@ export interface ModposFigures {
   mealCard: number;
   online: number;
   other: number;
-  /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
+  /** AsilPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
   cardExtra?: number | null;
-  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart, nakit ve toplam karşılaştırmaları düşer */
+  /** AsilPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart, nakit ve toplam karşılaştırmaları düşer */
   offDevice?: { card: number; cash: number } | null;
 }
 
@@ -88,8 +88,8 @@ export function OkcCard({
   /** Kim bakıyor: yönetici karşılaştırma satırlarının hepsini görür */
   audience: "staff" | "admin";
   modpos: ModposFigures | null;
-  /** Günün kasası (karşılaştırma satırları onun adıyla; geçiş gününden itibaren LafPOS, denetim E-39) */
-  kasa?: "ModPOS" | "LafPOS";
+  /** Günün kasası (karşılaştırma satırları onun adıyla; geçiş gününden itibaren AsilPOS, denetim E-39) */
+  kasa?: "ModPOS" | "AsilPOS";
 }) {
   const uid = useId();
   const f = okcFigures(values);

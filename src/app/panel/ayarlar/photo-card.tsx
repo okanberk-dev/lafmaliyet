@@ -70,7 +70,7 @@ export async function PhotoReadingCard() {
           />
         )}
         <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-          LafPOS gününün gün sonu fotoğrafı önce {modelName(settings.photoModels.cheap)} ile okunur; okunuş eksik, tutarsız ya da LafPOS&apos;tan farklıysa bir kez{" "}
+          AsilPOS gününün gün sonu fotoğrafı önce {modelName(settings.photoModels.cheap)} ile okunur; okunuş eksik, tutarsız ya da AsilPOS&apos;tan farklıysa bir kez{" "}
           {modelName(settings.photoModels.strong)} ile. Yapay zekâ kapalı, kurulu değil ya da sınırdaysa fotoğraf panelde kodla okunur (OCR; Anthropic&apos;e gitmez).
         </p>
         {storageLine ? <p className="text-[13px] leading-5 text-pretty text-ink-mute">{storageLine}</p> : null}

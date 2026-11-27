@@ -119,7 +119,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
   return (
     <>
       <Header
-        more={report.switchDay ? MORE.replace("satış kasa raporlarından", "satış kasa raporlarından, LafPOS'un ödemelerinden") : MORE}
+        more={report.switchDay ? MORE.replace("satış kasa raporlarından", "satış kasa raporlarından, AsilPOS'un ödemelerinden") : MORE}
         actions={<MonthPicker months={report.dataMonths} value={month} />}
       />
       <HashScroll key={month} />
@@ -230,8 +230,8 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
 }
 
 /**
- * Kurallar ve hesap (kapalı başlar): yasal dayanak, oranın ve hakedişin nasıl hesaplandığı. LafPOS'a geçiş günü
- * seçiliyse satışın o günden itibaren LafPOS'tan geldiği de yazar (geçiş günü yokken metin bugünküyle aynı)
+ * Kurallar ve hesap (kapalı başlar): yasal dayanak, oranın ve hakedişin nasıl hesaplandığı. AsilPOS'a geçiş günü
+ * seçiliyse satışın o günden itibaren AsilPOS'tan geldiği de yazar (geçiş günü yokken metin bugünküyle aynı)
  */
 function RulesCard({ switchDay }: { switchDay: string | null }) {
   const items: { title: string; body: string }[] = [
@@ -247,7 +247,7 @@ function RulesCard({ switchDay }: { switchDay: string | null }) {
       title: "Gerçek oran",
       body: `Kanalın o ay kestiği her şey (komisyon, erken ödeme ve diğer ücretler, KDV hariç) ÷ o kanaldan yapılan satış (KDV dahil). Satış, Hakediş penceresine yazdığınız aylık ekstreden gelir; yazmadıysanız ve o ay tek yemek kartının (ya da tek platformun) faturası varsa (sonraki ayın 15'ine kadar başkasınınki de gelmediyse) kasa raporlarındaki Z toplamından. Z'de kartlar tek toplam olduğu için birden çok kart kullanılan ayda kart kart oran ancak ekstreyle çıkar; yemek kartlarının toplam oranı her zaman hesaplanır.${
         switchDay
-          ? ` LafPOS'a geçtiğiniz ${dayAblativeTR(switchDay)} itibaren satış, yazmadıysanız, LafPOS'un gün sonundaki ödeme türlerinden kart kart gelir (ödeme türünün kanalı LafPOS'ta seçili olmalı); yazdığınız ekstre yine önce gelir.`
+          ? ` AsilPOS'a geçtiğiniz ${dayAblativeTR(switchDay)} itibaren satış, yazmadıysanız, AsilPOS'un gün sonundaki ödeme türlerinden kart kart gelir (ödeme türünün kanalı AsilPOS'ta seçili olmalı); yazdığınız ekstre yine önce gelir.`
           : ""
       }`,
     },

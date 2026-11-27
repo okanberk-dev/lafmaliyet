@@ -78,7 +78,7 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
     await migrate(db, { migrationsFolder: "drizzle" });
     await db.insert(s.branches).values(DEFAULT_BRANCHES.map((b) => ({ ...b }))).onConflictDoNothing();
     await db.insert(s.branches).values({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "modpos", active: true, sortOrder: 4 });
-    await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "marina"));
+    await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "marina"));
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
         .insert(s.users)
@@ -136,7 +136,7 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
     const link = await import("../src/server/actions/branch-settings");
     const actions = await import("../src/server/actions/cash-report");
     const { loadCashSettingsView } = await import("../src/server/data/cash-reports");
-    const { dayEndRecipients } = await import("../src/server/lafpos/gun-sonu");
+    const { dayEndRecipients } = await import("../src/server/asilpos/gun-sonu");
     await db.insert(s.notificationRecipients).values([
       { email: "herkes@ornek.com", active: true },
       { email: "tuzlaci@ornek.com", active: true, branchIds: ["tuzla"] },

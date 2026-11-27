@@ -6,11 +6,11 @@ import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
  * Kasanın günlük ürün satışı (docs/planlar/CRITIQUE2.md R18): gün gün ürün dökümü. ModPOS'un dökümü hiç gelmedi; ağzı
- * LafPOS doldurur: her iş gününün satış listesi gün sonunda `POST /api/pos/gun` ile gelir ve `pos_daily_sales`'e yazılır
- * (docs/LAFPOS.md). Aylık maliyet modeli bu satırları geçiş gününden itibaren ay toplamı olarak okur
- * (src/server/data/lafpos-sales.ts; Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, KDV tahmini, tatlı payı).
+ * AsilPOS doldurur: her iş gününün satış listesi gün sonunda `POST /api/pos/gun` ile gelir ve `pos_daily_sales`'e yazılır
+ * (docs/ASILPOS.md). Aylık maliyet modeli bu satırları geçiş gününden itibaren ay toplamı olarak okur
+ * (src/server/data/asilpos-sales.ts; Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, KDV tahmini, tatlı payı).
  * Satırları gün gün okuyan bugün yok (satış tahmini 4 Kasım 2026'da kalktı). Günlük pencereye geçecek okuyucu (ör. hafta gününe göre tatlı oranı) bu
- * ağızdan okur ve geçiş gününden önceki deneme günlerini kendisi ayırır (isLafposDay, src/lib/lafpos/switch.ts): ağız
+ * ağızdan okur ve geçiş gününden önceki deneme günlerini kendisi ayırır (isAsilposDay, src/lib/asilpos/switch.ts): ağız
  * bütün günleri döner. Aralıkta satır yoksa null.
  */
 
@@ -18,7 +18,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
 export interface DailyProductSale {
   /** İş günü, YYYY-MM-DD */
   date: string;
-  /** Kasadaki ürün adı (LafPOS'un POS adı) */
+  /** Kasadaki ürün adı (AsilPOS'un POS adı) */
   posName: string;
   /** Eşleşen menü ürünü (sitenin kalemi ya da POS eşleştirmesi); eşleşmeyende null */
   productId: number | null;
@@ -52,7 +52,7 @@ export async function loadDailyProductSales(from: string, to: string): Promise<D
 
 /** Şubenin günlük satırı ve Faz 2 alanları (asistanın gunluk_satislar aracı) */
 export interface BranchDailySale extends DailyProductSale {
-  /** Satırın liste değeri, indirimden önce (TL, KDV dahil); eski LafPOS göndermez: null */
+  /** Satırın liste değeri, indirimden önce (TL, KDV dahil); eski AsilPOS göndermez: null */
   gross: number | null;
   /** Birleşen satırda ek parça var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
   isAddon: boolean;
@@ -61,7 +61,7 @@ export interface BranchDailySale extends DailyProductSale {
 /**
  * Tek şubenin `from`–`to` satırları (iki uç dahil), güne ve POS adına göre; satır yoksa boş dizi. dailyProductSalesFrom
  * şubeye bakmaz; bu okuyucu şube koşulunu ve Faz 2 alanlarını ekler (panel asistanı; src/server/assistant-reads).
- * Geçiş gününden önceki deneme günlerini ayırmak okuyanın işidir (isLafposDay). Yalnız okur.
+ * Geçiş gününden önceki deneme günlerini ayırmak okuyanın işidir (isAsilposDay). Yalnız okur.
  */
 export async function dailyBranchSalesFrom(db: Pick<DB, "select">, from: string, to: string, branchId: string): Promise<BranchDailySale[]> {
   if (from > to) return [];

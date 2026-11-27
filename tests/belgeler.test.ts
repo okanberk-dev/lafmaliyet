@@ -35,7 +35,7 @@ test("SITE-SATIS.md: sözleşmeyi okuyan yerler, Nakit planının KDV tahmini da
 });
 
 // ── docs/planlar: KALAN-ISLER (yeni oturumun başladığı yer) ve 26 Ekim denetimi ─────────────────────────────────────
-// 26 Ekim denetimi E-54: KALAN-ISLER birleşmiş 10b'yi ve 13 PR-b'yi "PR bekliyor" sayıyor, LafPOS'u, FIFO'yu ve
+// 26 Ekim denetimi E-54: KALAN-ISLER birleşmiş 10b'yi ve 13 PR-b'yi "PR bekliyor" sayıyor, AsilPOS'u, FIFO'yu ve
 // Dalga 15'i anmıyordu. Bu testler belgeyi git geçmişine ve denetim raporuna bağlar.
 
 const KALAN = "docs/planlar/KALAN-ISLER.md";
@@ -155,7 +155,7 @@ test("mergedWaves: yalnız birleşmiş başlıklar, alt harf, PR parçası ve ar
     "Dalga 7–8 düzeltmeleri: ay sonu sayımı (#27)",
     "Kalan işler 5. dalga: fotoğraflı kontrol listeleri (#14)",
     "Dalga 16: dalda kalan iş, birleşmedi",
-    "LafPOS bağlantısı: günlük satış (#34)",
+    "AsilPOS bağlantısı: günlük satış (#34)",
   ]);
   assert.deepEqual(got, [
     { waves: ["15"], letter: "", part: "", pr: "39" },
@@ -175,7 +175,7 @@ test("mergedWaves: yalnız birleşmiş başlıklar, alt harf, PR parçası ve ar
 test("KALAN-ISLER: andığı plan dosyaları ve yollar var", () => {
   const refs = fileRefs(read(KALAN));
   assert.ok(refs.length >= 40, refs.join(", "));
-  for (const p of ["personel-yetki.md", "okc-z.md", "stok-fifo.md", "denetim-2026-10-26.md", "docs/LAFPOS.md"]) {
+  for (const p of ["personel-yetki.md", "okc-z.md", "stok-fifo.md", "denetim-2026-10-26.md", "docs/ASILPOS.md"]) {
     assert.ok(refs.includes(p), `KALAN-ISLER anmıyor: ${p}`);
   }
   const missing = refs.filter((r) => !NOT_YET.has(r) && !docExists(r));
@@ -203,11 +203,11 @@ test("KALAN-ISLER: başlıktaki main kaydı bu dalın geçmişinde", (t) => {
   assert.notEqual(git(["merge-base", "--is-ancestor", sha, "HEAD"]), null, `${sha} HEAD'in atası değil`);
 });
 
-test("KALAN-ISLER: LafPOS sahip adımı, FIFO notu; kaldırılmış Preview sırları yeniden istenmez", () => {
+test("KALAN-ISLER: AsilPOS sahip adımı, FIFO notu; kaldırılmış Preview sırları yeniden istenmez", () => {
   const doc = read(KALAN);
-  const lafpos = between(doc, "### LafPOS bağlantısı", /\n### /);
-  for (const s of ["#34", "#36", "`LAFPOS_SYNC_SECRET`", "`LAFMALIYET_SYNC_SECRET`", "`LAFMALIYET_URL", "yalnız Production", "E-31"]) {
-    assert.ok(lafpos.includes(s), `LafPOS bölümünde yok: ${s}`);
+  const asilpos = between(doc, "### AsilPOS bağlantısı", /\n### /);
+  for (const s of ["#34", "#36", "`ASILPOS_SYNC_SECRET`", "`LAFMALIYET_SYNC_SECRET`", "`LAFMALIYET_URL", "yalnız Production", "E-31"]) {
+    assert.ok(asilpos.includes(s), `AsilPOS bölümünde yok: ${s}`);
   }
   // Dalga 7'nin değerleme kuralı Dalga 14'te değişti
   assert.match(doc, /Sayım ay sonundaki fiyatla değerlenir \(Dalga 14'ten beri[^)]*FIFO/);

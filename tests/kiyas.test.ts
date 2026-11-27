@@ -342,8 +342,8 @@ test("fiş: satış varken 0 fiş bilinmiyor sayılır; sayılar Türkçe biçim
   const html = plain(await render(s));
   assert.doesNotMatch(html, /Fiş 40 → 0/);
   assert.match(html, /Fiş sayısı girilmedi/);
-  // LafPOS gün sonunda 0 fiş de bilinmiyor
-  const l = kiyasSummary(input([row("marina", DAY, 4_000, { source: "lafpos", receipts: 0 })], { branches: [MARINA], switchDay: "2026-11-01" }));
+  // AsilPOS gün sonunda 0 fiş de bilinmiyor
+  const l = kiyasSummary(input([row("marina", DAY, 4_000, { source: "asilpos", receipts: 0 })], { branches: [MARINA], switchDay: "2026-11-01" }));
   assert.equal(l.day.revenue, 4_000);
   assert.equal(l.day.receipts, null);
   // Binlik ayırıcı: 3.150 fiş, "Fiş 2.800 → 3.150"
@@ -419,25 +419,25 @@ test("Tümü: iki şubenin toplamı, açık gün bir kez; eksik şube kıyas dı
   assert.match(plain(await render(eksik, ["Tuzla", "Marina"])), /Marina: gün sonu yok, toplama girmedi/);
 });
 
-test("Marina: geçiş günü tam 22 Kasım; öncesindeki LafPOS gün sonu (deneme) sayılmaz, ayar boşken hiç sayılmaz", () => {
+test("Marina: geçiş günü tam 22 Kasım; öncesindeki AsilPOS gün sonu (deneme) sayılmaz, ayar boşken hiç sayılmaz", () => {
   const SWITCH = "2026-11-22";
   const today = "2026-11-23";
-  const lafpos = [row("marina", "2026-11-22", 5_000, { source: "lafpos", receipts: 25 }), row("marina", "2026-11-21", 3_000, { source: "lafpos", receipts: 15 })];
+  const asilpos = [row("marina", "2026-11-22", 5_000, { source: "asilpos", receipts: 25 }), row("marina", "2026-11-21", 3_000, { source: "asilpos", receipts: 15 })];
   const modpos21 = row("marina", "2026-11-21", 2_800, { source: "modpos", receipts: 14 });
   const opts = { branches: [MARINA], today };
-  // Geçiş günü 22 Kasım: 22 sayılır, 21'in LafPOS'u deneme (yok sayılır); 21'in ModPOS föyü varsa o sayılır
-  const s = kiyasSummary(input(lafpos, { ...opts, switchDay: SWITCH }));
+  // Geçiş günü 22 Kasım: 22 sayılır, 21'in AsilPOS'u deneme (yok sayılır); 21'in ModPOS föyü varsa o sayılır
+  const s = kiyasSummary(input(asilpos, { ...opts, switchDay: SWITCH }));
   assert.equal(s.day.date, "2026-11-22");
   assert.equal(s.day.revenue, 5_000);
   assert.equal(s.day.receipts, 25);
   assert.equal(find(s, "dun").state, "veri-yok");
-  const withModpos = kiyasSummary(input([...lafpos, modpos21], { ...opts, switchDay: SWITCH }));
+  const withModpos = kiyasSummary(input([...asilpos, modpos21], { ...opts, switchDay: SWITCH }));
   assert.equal(find(withModpos, "dun").prev?.revenue, 2_800);
   assert.equal(find(withModpos, "dun").prev?.receipts, 14);
-  // Geçiş günü bir gün sonra (23 Kasım): 22'nin LafPOS'u da deneme
-  assert.equal(kiyasSummary(input(lafpos, { ...opts, switchDay: "2026-11-23" })).day.state, "veri-yok");
-  // Ayar boş (null): LafPOS günleri hiç sayılmaz, ModPOS föyü sayılır
-  const none = kiyasSummary(input([...lafpos, modpos21], { ...opts, switchDay: null }));
+  // Geçiş günü bir gün sonra (23 Kasım): 22'nin AsilPOS'u da deneme
+  assert.equal(kiyasSummary(input(asilpos, { ...opts, switchDay: "2026-11-23" })).day.state, "veri-yok");
+  // Ayar boş (null): AsilPOS günleri hiç sayılmaz, ModPOS föyü sayılır
+  const none = kiyasSummary(input([...asilpos, modpos21], { ...opts, switchDay: null }));
   assert.equal(none.day.date, "2026-11-22");
   assert.equal(none.day.state, "veri-yok");
   assert.equal(find(none, "dun").state, "veri-yok");
@@ -461,14 +461,14 @@ test("Tuzla'nın rakamı Genel bakış'ın günlük cirosuyla aynı (ödenmez ku
   assert.equal(one("2026-11-03"), 9_500);
 });
 
-test("kaynak: yükleyici yalnız yöneticide, seçili şubeyle, 05:00 iş günüyle; panelde Kıyas kartı yok (LafPOS'ta)", () => {
+test("kaynak: yükleyici yalnız yöneticide, seçili şubeyle, 05:00 iş günüyle; panelde Kıyas kartı yok (AsilPOS'ta)", () => {
   const root = join(import.meta.dirname, "..");
   const loader = readFileSync(join(root, "src/server/data/kiyas.ts"), "utf8");
   assert.match(loader, /await requireAdmin\(\)/);
   assert.match(loader, /currentBranchScope\(\)/);
   assert.match(loader, /tillRows\(db\)/);
   assert.match(loader, /const today = businessDate\(now\)/);
-  // Bugün sayfasındaki Kıyas kartı sahibin isteğiyle kaldırıldı (kıyaslar LafPOS patron panelinde, 22 Kas 2026)
+  // Bugün sayfasındaki Kıyas kartı sahibin isteğiyle kaldırıldı (kıyaslar AsilPOS patron panelinde, 22 Kas 2026)
   const bugun = readFileSync(join(root, "src/app/panel/bugun/page.tsx"), "utf8");
   assert.doesNotMatch(bugun, /loadKiyas\(/);
   const panel = readFileSync(join(root, "src/app/panel/page.tsx"), "utf8");

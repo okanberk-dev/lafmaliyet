@@ -10,7 +10,7 @@ import { UserError } from "@/server/user-error";
 /**
  * Ayarlar › ModPOS (kasa föyü) kartının yazımı (docs/MODPOS-API.md › Ay rakamına yedek), eylemden ayrı ve veritabanını
  * parametre alarak (tests/modpos-ayarlar-db.test.ts doğrudan çalıştırır). Yalnız yöneticinin: eylem
- * (src/server/actions/modpos.ts) oturumu denetler, burada rol yeniden denetlenir (LafPOS'un geçiş günüyle aynı kural).
+ * (src/server/actions/modpos.ts) oturumu denetler, burada rol yeniden denetlenir (AsilPOS'un geçiş günüyle aynı kural).
  */
 
 type Actor = { id: number; name: string; role: "admin" | "staff" };

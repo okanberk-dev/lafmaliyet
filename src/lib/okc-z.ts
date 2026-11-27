@@ -749,23 +749,23 @@ export interface OkcReportFields {
   /** Personelin DTO'su: toplam dışı tahsilat var (tutarsız); K4 fazlayı tutmadı saymaz */
   okcExtraTakings?: boolean;
   /**
-   * LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11; src/lib/lafpos/prefill.ts lafposCardExtra): banka POS'u
-   * görür, Z'nin kartı görmez. Kart karşılaştırması bunu düşer; kaydedilmez, LafPOS'un gün sonundan gelir
+   * AsilPOS gününde kartla bahşiş + kartla cari tahsilatı (G11; src/lib/asilpos/prefill.ts asilposCardExtra): banka POS'u
+   * görür, Z'nin kartı görmez. Kart karşılaştırması bunu düşer; kaydedilmez, AsilPOS'un gün sonundan gelir
    */
   cardExtra?: number | null;
   /**
-   * LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; src/lib/lafpos/prefill.ts LafposDay.offDevice): mali
+   * AsilPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; src/lib/asilpos/prefill.ts AsilposDay.offDevice): mali
    * fişi yazarkasada kesilmedi. Z'nin kartında ve nakdinde var, yazarkasanın Z'sinde ve banka gün sonunda yok: kart, nakit
-   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez. `okcCard` LafPOS'un cihaz belgelerinin kartıdır (okc.card;
+   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez. `okcCard` AsilPOS'un cihaz belgelerinin kartıdır (okc.card;
    * okcFromDevice)
    */
   offDevice?: { card: number; cash: number; okcCard?: number | null } | null;
 }
 
 /**
- * Raporun yazarkasa kartı LafPOS'un cihaz belgelerinden mi (gün sonu tam, 24 Kasım 2026): LafPOS'un gönderdiği belge kartıyla
+ * Raporun yazarkasa kartı AsilPOS'un cihaz belgelerinden mi (gün sonu tam, 24 Kasım 2026): AsilPOS'un gönderdiği belge kartıyla
  * aynıysa evet. Belge kartı Z − yazarkasadan geçmeyen − cihazda iptaldir, kartla bahşiş ve cari tahsilatı içermez; elle
- * yazılan yazarkasa kartı (ör. banka fişinden, eski LafPOS günleri) içerebilir, onda bahşiş / tahsilat eskisi gibi düşülür
+ * yazılan yazarkasa kartı (ör. banka fişinden, eski AsilPOS günleri) içerebilir, onda bahşiş / tahsilat eskisi gibi düşülür
  */
 export function okcFromDevice(okcCard: number | null | undefined, offDevice: { okcCard?: number | null } | null | undefined): boolean {
   const device = offDevice?.okcCard;
@@ -811,18 +811,18 @@ function selfCheck(f: OkcReportFields): OkcFormCheck | null {
  * ModPOS ↔ yazarkasa ↔ banka satırları (plan §8). Tolerans 1 ₺; satır yalnız iki tarafın da değeri varsa çıkar.
  * Personel (`"staff"`) yalnız Kart ve Kendi içinde satırlarını alır (İlke 8, D13); öteki satırlar yöneticide.
  * Yazarkasa alanları boş eski raporda yalnız bugünkü "Banka POS" kart satırı. `kasa` raporun gününün kasası (geçiş
- * gününden itibaren "LafPOS"; denetim E-39): metinler o kasanın adıyla, verilmezse ModPOS (bugünkü gibi).
+ * gününden itibaren "AsilPOS"; denetim E-39): metinler o kasanın adıyla, verilmezse ModPOS (bugünkü gibi).
  *
- * LafPOS gününde (gün sonu tam, 24 Kasım 2026) yazarkasanın kartı LafPOS'un cihaz belgelerinindir: Z − yazarkasadan
- * geçmeyen − cihazda iptal (offDevice ikisini taşır; src/lib/lafpos/prefill.ts lafposDayOf), kartla bahşiş ve cari
- * tahsilatı içermez. Yazarkasa ↔ LafPOS satırı onları düşmez; banka gün sonu yazarkasa kartı + bahşiş + tahsilatla
+ * AsilPOS gününde (gün sonu tam, 24 Kasım 2026) yazarkasanın kartı AsilPOS'un cihaz belgelerinindir: Z − yazarkasadan
+ * geçmeyen − cihazda iptal (offDevice ikisini taşır; src/lib/asilpos/prefill.ts asilposDayOf), kartla bahşiş ve cari
+ * tahsilatı içermez. Yazarkasa ↔ AsilPOS satırı onları düşmez; banka gün sonu yazarkasa kartı + bahşiş + tahsilatla
  * karşılaştırılır (Pavo onları da çeker)
  */
-export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", kasa: "ModPOS" | "LafPOS" = "ModPOS"): OkcReconcileLine[] {
+export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", kasa: "ModPOS" | "AsilPOS" = "ModPOS"): OkcReconcileLine[] {
   const out: OkcReconcileLine[] = [];
   const okcCard = isNum(f.okcCard) ? f.okcCard : null;
   const hasOkc = isNum(f.okcTotal) || okcCard !== null;
-  // LafPOS gününde kartla bahşiş ve cari tahsilatı Z'nin kartında yok, banka POS'unda var (G11): karşılaştırma düşer;
+  // AsilPOS gününde kartla bahşiş ve cari tahsilatı Z'nin kartında yok, banka POS'unda var (G11): karşılaştırma düşer;
   // tutarı yalnız yöneticinin metninde
   const extra = isNum(f.cardExtra) && f.cardExtra > 0 ? f.cardExtra : 0;
   // Yazarkasadan geçmeyen ödeme (Faz 2) Z'nin kartında ve nakdinde var, yazarkasada ve banka gün sonunda yok: düşülür;
@@ -830,17 +830,17 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
   const offCard = f.offDevice && f.offDevice.card > 0 ? f.offDevice.card : 0;
   const offCash = f.offDevice && f.offDevice.cash > 0 ? f.offDevice.cash : 0;
   const offNote = (what: "kart" | "nakit", amount: number) =>
-    amount ? (audience === "admin" ? ` LafPOS'ta yazarkasadan geçmeyen ${what} (${money(amount)}) düşüldü.` : ` LafPOS'ta yazarkasadan geçmeyen ${what} düşüldü.`) : "";
+    amount ? (audience === "admin" ? ` AsilPOS'ta yazarkasadan geçmeyen ${what} (${money(amount)}) düşüldü.` : ` AsilPOS'ta yazarkasadan geçmeyen ${what} düşüldü.`) : "";
   const extraNote =
-    (extra ? (audience === "admin" ? ` LafPOS'taki kartla bahşiş ve cari tahsilatı (${money(extra)}) düşüldü.` : " LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü.") : "") +
+    (extra ? (audience === "admin" ? ` AsilPOS'taki kartla bahşiş ve cari tahsilatı (${money(extra)}) düşüldü.` : " AsilPOS'taki kartla bahşiş ve cari tahsilatı düşüldü.") : "") +
     offNote("kart", offCard);
   const card = r2(f.card - offCard);
-  // Yazarkasa kartı LafPOS'un cihaz belgelerinden (otomatik rapor): bahşiş / tahsilat onda yok, banka satırında var
-  const lafpos = kasa === "LafPOS" && okcFromDevice(okcCard, f.offDevice);
+  // Yazarkasa kartı AsilPOS'un cihaz belgelerinden (otomatik rapor): bahşiş / tahsilat onda yok, banka satırında var
+  const asilpos = kasa === "AsilPOS" && okcFromDevice(okcCard, f.offDevice);
   // Kart: yazarkasa kartı varsa o, yoksa banka gün sonu − ModPOS kart
   if (okcCard !== null) {
-    const d = r2(okcCard - card - (lafpos ? 0 : extra));
-    const note = lafpos ? offNote("kart", offCard) : extraNote;
+    const d = r2(okcCard - card - (asilpos ? 0 : extra));
+    const note = asilpos ? offNote("kart", offCard) : extraNote;
     out.push(
       same(d)
         ? { key: "okc-card", tone: "good", text: `Kart: yazarkasa ile ${kasa} aynı.${note}`, diff: d }
@@ -873,7 +873,7 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
   if (isNum(f.okcTotal)) {
     const d = r2(f.zTotal - f.okcTotal);
     const offFiscal = r2(f.online + f.other);
-    // LafPOS gününde yazarkasadan geçmeyen satış da (Faz 2)
+    // AsilPOS gününde yazarkasadan geçmeyen satış da (Faz 2)
     const offDev = r2(offCard + offCash);
     const why = offDev > 0 ? (offFiscal > 0 ? "online, diğer ve yazarkasadan geçmeyen satışlar kadar" : "yazarkasadan geçmeyen satışlar kadar") : "online ve diğer satışlar kadar (yazarkasadan geçmez)";
     out.push(
@@ -889,7 +889,7 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
     if (!same(d)) out.push({ key: "okc-meal", tone: "info", text: `Yazarkasa yemek kartı, ${kasa}'takinden ${moreLess(d)}.`, diff: d });
   }
   if (okcCard !== null && isNum(f.bankPos)) {
-    const d = r2(f.bankPos - okcCard - (lafpos ? extra : 0));
+    const d = r2(f.bankPos - okcCard - (asilpos ? extra : 0));
     out.push(
       same(d)
         ? { key: "okc-bank", tone: "good", text: "Banka gün sonu yazarkasa kartıyla aynı.", diff: d }

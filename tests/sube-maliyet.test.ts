@@ -121,9 +121,9 @@ test("veri yükleyici: şube süzgeci her tabloda, giderde işletme geneli de; o
   assert.match(d, /scope === ALL_BRANCHES \|\| branch\?\.kind === "online" \? loadSiteSales\(\) : Promise\.resolve\(\[\]\)/);
   assert.match(d, /branchView: branch \? \{ id: branch\.id, name: branch\.name, kind: branch\.kind \} : null/);
   assert.match(d, /opts\.scope === undefined \? readDataset\(\) : withBranchScope\(opts\.scope, readDataset\)/);
-  // LafPOS gün sonları da şubeye göre (kasa raporu, satış, ikram)
-  assert.match(oku("src/server/data/lafpos-sales.ts"), /currentBranchWhere\(d\.branchId\)/);
-  assert.match(oku("src/server/data/lafpos-ikram.ts"), /currentBranchWhere\(s\.posDayReports\.branchId\)/);
+  // AsilPOS gün sonları da şubeye göre (kasa raporu, satış, ikram)
+  assert.match(oku("src/server/data/asilpos-sales.ts"), /currentBranchWhere\(d\.branchId\)/);
+  assert.match(oku("src/server/data/asilpos-ikram.ts"), /currentBranchWhere\(s\.posDayReports\.branchId\)/);
   assert.match(oku("src/server/data/cash-reports.ts"), /lte\(s\.posDayReports\.date, to\) : undefined, await currentBranchWhere\(s\.posDayReports\.branchId\)/);
 });
 

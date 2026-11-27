@@ -6,7 +6,7 @@ import { daysInMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { createPosMappingIndex, posMatchKey } from "@/lib/calc/pos-paste";
 import type { MonthField, TillMonth } from "@/lib/calc/types";
-import { listDiscount, type LafposListPart } from "@/lib/cash-month";
+import { listDiscount, type AsilposListPart } from "@/lib/cash-month";
 import { money, monthLabel, num, pct } from "@/lib/format";
 
 // ---------------------------------------------------------------- Açık gün
@@ -114,13 +114,13 @@ export function effectiveValue(f: MonthField, o: { mode: FieldMode; text: string
 
 /**
  * Ay formunun liste ↔ POS kutusu (motorun kuralı, engine listDiscounts; hesap sözleşmesi §11): ürün listesi − listeden
- * düşülecek indirim − POS cirosu. LafPOS'un satırları indirimden sonradır: `lafpos` (sunucudan, lafposListPart) varken
- * yazılan ya da kasadaki indirimden LafPOS günlerininki düşülür, ay bütünüyle LafPOS'sa hiç düşülmez. Liste ya da POS
- * cirosu yoksa fark yok (null). `discount` zaten listeden düşülecek olansa (listenin dönemi, engine listPeriod) `lafpos`
+ * düşülecek indirim − POS cirosu. AsilPOS'un satırları indirimden sonradır: `asilpos` (sunucudan, asilposListPart) varken
+ * yazılan ya da kasadaki indirimden AsilPOS günlerininki düşülür, ay bütünüyle AsilPOS'sa hiç düşülmez. Liste ya da POS
+ * cirosu yoksa fark yok (null). `discount` zaten listeden düşülecek olansa (listenin dönemi, engine listPeriod) `asilpos`
  * null verilir
  */
-export function listVsPos(o: { list: number; discount: number; pos: number | null; lafpos: LafposListPart | null }): { discount: number; diff: number | null } {
-  const discount = listDiscount(o.discount, o.lafpos);
+export function listVsPos(o: { list: number; discount: number; pos: number | null; asilpos: AsilposListPart | null }): { discount: number; diff: number | null } {
+  const discount = listDiscount(o.discount, o.asilpos);
   return { discount, diff: o.pos !== null && o.list ? Math.round((o.list - discount - o.pos) * 100) / 100 : null };
 }
 
@@ -150,14 +150,14 @@ export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, numbe
   if (!kasa || v === null) return null;
   const t = kasa.till;
   if (mode === "kasa") {
-    // Yedek günler de rakam verir (LafPOS gün sonu G6, ModPOS föyü; docs/MODPOS-API.md › Ay rakamına yedek): payda
-    // raporlu gün + LafPOS günü + föy günü. Föyde indirim yok: o günler indirimin paydasında girilmemiş görünür. Ayın
+    // Yedek günler de rakam verir (AsilPOS gün sonu G6, ModPOS föyü; docs/MODPOS-API.md › Ay rakamına yedek): payda
+    // raporlu gün + AsilPOS günü + föy günü. Föyde indirim yok: o günler indirimin paydasında girilmemiş görünür. Ayın
     // bütün satırları föyse (raporlar başlamadan önceki ay) kaynak "ModPOS föyünden"
-    const lafpos = t.lafpos?.length ?? 0;
+    const asilpos = t.asilpos?.length ?? 0;
     const modpos = t.modpos?.length ?? 0;
-    const onlyFoy = modpos > 0 && !t.reported && !lafpos;
-    const all = t.reported + lafpos + modpos;
-    const fallback = `${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}${modpos ? ` + ModPOS API'den ${modpos} gün` : ""}`;
+    const onlyFoy = modpos > 0 && !t.reported && !asilpos;
+    const all = t.reported + asilpos + modpos;
+    const fallback = `${asilpos ? ` + AsilPOS'tan ${asilpos} gün` : ""}${modpos ? ` + ModPOS API'den ${modpos} gün` : ""}`;
     const days =
       f === "discounts" ? `${t.discountDays} / ${all} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${all} günde girildi` : onlyFoy ? `${modpos} gün` : `${t.reported} gün${fallback}`;
     // Ciroda, Z toplamlarının içinden düşülen ödenmez söylenir (docs/KASA-RAPORU.md › Ciro ve ödenmez)
@@ -367,18 +367,18 @@ export function salesFileProblem(size: number): string | null {
 /**
  * Satırın indirimden önceki (brüt) ve sonraki tutarı: Satışlar'ın iki sütunu (23 Kasım 2026; "net" burada KDV hariç
  * demek, bu değil). ModPOS listesi indirimden öncedir: satır başına indirim bilinmez (`after` null; ayın indirimi kasa
- * raporlarından). LafPOS satırı ikisini de taşır (`gross` ve ciro); eski LafPOS'un günü varsa brüt bilinmez (null)
+ * raporlarından). AsilPOS satırı ikisini de taşır (`gross` ve ciro); eski AsilPOS'un günü varsa brüt bilinmez (null)
  */
-export function discountColumns(r: { lafposDays: number | null; revenue: number; gross: number | null }): { before: number | null; after: number | null } {
-  if (r.lafposDays === null) return { before: r.revenue, after: null };
+export function discountColumns(r: { asilposDays: number | null; revenue: number; gross: number | null }): { before: number | null; after: number | null } {
+  if (r.asilposDays === null) return { before: r.revenue, after: null };
   return { before: r.gross, after: r.revenue };
 }
 
 /**
- * Satırların iki sütununun toplamı: brüt bilinmeyen LafPOS satırında ciro (indirimi bilinmiyor, en az o kadar); ModPOS
+ * Satırların iki sütununun toplamı: brüt bilinmeyen AsilPOS satırında ciro (indirimi bilinmiyor, en az o kadar); ModPOS
  * satırı varken indirimden sonraki toplam satırlardan bilinmez (null)
  */
-export function discountTotals(rows: readonly { lafposDays: number | null; revenue: number; gross: number | null }[]): { before: number; after: number | null } {
+export function discountTotals(rows: readonly { asilposDays: number | null; revenue: number; gross: number | null }[]): { before: number; after: number | null } {
   let before = 0;
   let after: number | null = 0;
   for (const r of rows) {

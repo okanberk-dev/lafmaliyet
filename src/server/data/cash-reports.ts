@@ -16,9 +16,9 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
-import { posZSchema } from "@/lib/lafpos/day";
-import { blindReport, staffBlindDay } from "@/lib/lafpos/kor-kasa";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { posZSchema } from "@/lib/asilpos/day";
+import { blindReport, staffBlindDay } from "@/lib/asilpos/kor-kasa";
+import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
 import { foyZ } from "@/lib/modpos/z";
 import { okcDayVat, type OkcPrev, type OkcRow, type OkcVatLine } from "@/lib/okc-z";
 import { addDays } from "@/lib/reminders";
@@ -26,7 +26,7 @@ import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
+import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
 import { modposFallbackBranches } from "@/server/modpos/fallback";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
@@ -40,7 +40,7 @@ export interface CashSettings {
   emailEnabled: boolean;
   /** "WhatsApp ile gönder" bu numaranın sohbetini açar; boşsa sohbet seçici (grup da seçilir) */
   whatsapp: string | null;
-  /** LafPOS gün sonunun kısa e-postası: şubenin çalışanları (yönetim listesinden ayrı) */
+  /** AsilPOS gün sonunun kısa e-postası: şubenin çalışanları (yönetim listesinden ayrı) */
   staffRecipients?: string[];
   /** Çalışan e-postasında tutarlar (ciro, ödeme türleri) görünsün mü; kapalıyken yalnız "gün sonu alındı", fiş sayısı */
   staffAmounts?: boolean;
@@ -68,7 +68,7 @@ export async function loadCashSettingsView(branchId: string, db?: SettingsReader
 
 /**
  * Yazar; verilen alanların grubu yazılır (alıcılar ya da çalışanlar). Şube verilmezse eski kaydın sahipleri: alıcılar
- * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi LafPOS'un şubesinin (lafposBranchId); tek kasalı eski
+ * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi AsilPOS'un şubesinin (asilposBranchId); tek kasalı eski
  * çağrının anlamı. Alıcıları başka şubeninkini kullanan şubeye yazmaz (putBranchSetting). `tx`: çağıranın işlemi (işlem
  * geçmişi aynı işlemde), `by`: yazanın adı
  */
@@ -79,7 +79,7 @@ export async function saveCashSettings(value: Partial<CashSettings>, branchId?: 
       await putBranchSetting(t, CASH_REPORT_GROUP, branchId ?? DEFAULT_BRANCH_ID, { recipients: value.recipients, emailEnabled: value.emailEnabled, whatsapp: value.whatsapp }, by);
     }
     if (value.staffRecipients !== undefined || value.staffAmounts !== undefined) {
-      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? (await lafposBranchId(t)), { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
+      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? (await asilposBranchId(t)), { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
     }
   };
   if (o.tx) await run(o.tx);
@@ -111,7 +111,7 @@ export interface CashReportDTO extends CashReportFields {
   /** Personelin DTO'su: toplam dışı tahsilat var (tutarı yok; okc-z.ts K4 fazlayı tutmadı saymaz). Yoksa anahtar yok */
   okcExtraTakings?: true;
   /**
-   * Kör kasa (bulgu 0; src/lib/lafpos/kor-kasa.ts): personelin LafPOS günü raporu, açılış, sayılan, teslim ve kasa farkı
+   * Kör kasa (bulgu 0; src/lib/asilpos/kor-kasa.ts): personelin AsilPOS günü raporu, açılış, sayılan, teslim ve kasa farkı
    * sıfırlanmış (blindForStaff). Ekran bu raporda farkı, sayılanı, açılışı, olması gerekeni ve devri çizmez
    */
   blind?: true;
@@ -194,15 +194,15 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff", viewer?: Rol
 }
 
 /**
- * Kör kasa (bulgu 0; docs/LAFPOS.md › Kör kasa): personele giden raporlardan LafPOS'un şubesinin LafPOS günlerinin sayım
+ * Kör kasa (bulgu 0; docs/ASILPOS.md › Kör kasa): personele giden raporlardan AsilPOS'un şubesinin AsilPOS günlerinin sayım
  * rakamları çıkar (blindReport: açılış, sayılan, teslim, fark; notun açılış cümleleri). Yönetici olduğu gibi alır; Tuzla
  * (ModPOS) ve geçiş gününden önceki gün değişmez. Personele rapor gösteren her yükleyici bundan geçirir (Kasa sayfası,
  * Bugün)
  */
 export async function blindForStaff(reports: CashReportDTO[], role: CashAudience): Promise<CashReportDTO[]> {
   if (role === "admin" || !reports.length) return reports;
-  const [branch, switchDay] = await Promise.all([lafposBranchId(), lafposSwitchDay()]);
-  return reports.map((r) => (staffBlindDay({ admin: false, branchId: r.branchId, lafposDay: isLafposDay(r.date, switchDay), lafposBranch: branch }) ? blindReport(r) : r));
+  const [branch, switchDay] = await Promise.all([asilposBranchId(), asilposSwitchDay()]);
+  return reports.map((r) => (staffBlindDay({ admin: false, branchId: r.branchId, asilposDay: isAsilposDay(r.date, switchDay), asilposBranch: branch }) ? blindReport(r) : r));
 }
 
 /**
@@ -363,15 +363,15 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
  * Bütün raporların ay bilgisine giden altı sütunu (src/lib/cash-month.ts tillMonths): günde bir rapor, yılda ~365 satır.
- * Geçiş gününden sonra kasa raporu girilmemiş LafPOS günü LafPOS'un Z'sinden yedek satırla gelir (`source: "lafpos"`,
- * G6; docs/LAFPOS.md › Kasa raporu): rakamı aya girer, gün yine "rapor yok" sayılır; raporu olan günde rapor kazanır.
+ * Geçiş gününden sonra kasa raporu girilmemiş AsilPOS günü AsilPOS'un Z'sinden yedek satırla gelir (`source: "asilpos"`,
+ * G6; docs/ASILPOS.md › Kasa raporu): rakamı aya girer, gün yine "rapor yok" sayılır; raporu olan günde rapor kazanır.
  * Ayarlar › ModPOS › Ay rakamına yedek açıkken geçiş gününden önceki raporsuz gün kapanmış ModPOS föyünden gelir
- * (`source: "modpos"`, modposTillRows; docs/MODPOS-API.md › Ay rakamına yedek). Öncelik rapor > LafPOS > ModPOS.
+ * (`source: "modpos"`, modposTillRows; docs/MODPOS-API.md › Ay rakamına yedek). Öncelik rapor > AsilPOS > ModPOS.
  * Geçiş günü boş ve yedek kapalıyken yalnız kasa raporları (bugünkü gibi). Ay bilgisini okuyan her yer (veri kümesi,
  * sabit gider sürümü, Kasa'nın ay satırı) bu yükleyiciden geçer: rakam her ekranda aynı. İşlem içinden de okunur.
  */
 export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
-  const [reports, lafpos, modpos] = await Promise.all([
+  const [reports, asilpos, modpos] = await Promise.all([
     db
       .select({
         date: s.cashReports.date,
@@ -399,25 +399,25 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
           return { ...r, payments: Math.round((cash + r.card + r.mealCard + online + other) * 100) / 100, ...(okc ? { okc } : {}) };
         }),
       ),
-    lafposTillRows(db),
+    asilposTillRows(db),
     modposTillRows(db),
   ]);
-  if (!lafpos.length && !modpos.length) return reports;
-  // LafPOS gününün KDV dökümü (Faz 2) o günün kasa raporuna da: günün KDV'si ondan (rapor LafPOS'un cirosunu tutuyorsa;
+  if (!asilpos.length && !modpos.length) return reports;
+  // AsilPOS gününün KDV dökümü (Faz 2) o günün kasa raporuna da: günün KDV'si ondan (rapor AsilPOS'un cirosunu tutuyorsa;
   // cash-month.ts dayVatOf denetler), raporu elle değişmiş günde oranla
-  const vatOf = new Map(lafpos.filter((r) => r.vat?.length).map((r) => [tillKey(r), r.vat]));
+  const vatOf = new Map(asilpos.filter((r) => r.vat?.length).map((r) => [tillKey(r), r.vat]));
   if (vatOf.size) for (const r of reports) if (vatOf.has(tillKey(r))) r.vat = vatOf.get(tillKey(r));
   // Öncelik ve kesintisiz kısım şube içinde (tillKey; docs/MODPOS-API.md › Şubeler): "Tümü"de Tuzla'nın raporu Marina'nın
   // aynı günkü föyünü düşürmez, Marina'nın föyleri Marina'nın ilk raporuna göre sayılır
   const have = new Set(reports.map(tillKey));
-  // ModPOS föyü yalnız raporu da LafPOS gün sonu da olmayan günde (geçiş gününden önce zaten LafPOS satırı yok)
-  const taken = new Set([...reports, ...lafpos].map(tillKey));
+  // ModPOS föyü yalnız raporu da AsilPOS gün sonu da olmayan günde (geçiş gününden önce zaten AsilPOS satırı yok)
+  const taken = new Set([...reports, ...asilpos].map(tillKey));
   // Raporlar başlamadan önceki föyler yalnız ilk rapora kesintisiz uzanan kısımla (cash-month.ts modposRunStart): her
   // okuyucu (veri kümesi, satış dönemi, sabit gider sürümü) aynı satırları görür
-  const runFrom = modposRunStarts(modpos, [...reports, ...lafpos]);
+  const runFrom = modposRunStarts(modpos, [...reports, ...asilpos]);
   return [
     ...reports,
-    ...lafpos.filter((r) => !have.has(tillKey(r))),
+    ...asilpos.filter((r) => !have.has(tillKey(r))),
     ...modpos.filter((r) => !taken.has(tillKey(r)) && r.date >= (runFrom.get(r.branchId ?? "") ?? "")),
   ].sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -433,11 +433,11 @@ function modposRunStarts(modpos: readonly TillRow[], reports: readonly TillRow[]
 }
 
 /**
- * LafPOS'un yedek ay satırları (G6): geçiş gününden itibaren gelen gün sonlarının Z'si, [from, to] içinde. Geçiş günü
+ * AsilPOS'un yedek ay satırları (G6): geçiş gününden itibaren gelen gün sonlarının Z'si, [from, to] içinde. Geçiş günü
  * boşken boş (deneme günleri hiçbir hesaba girmez). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır
  */
-export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
-  const switchDay = await lafposSwitchDay(db);
+export async function asilposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
+  const switchDay = await asilposSwitchDay(db);
   if (switchDay === null || (to !== undefined && to < switchDay)) return [];
   const start = from !== undefined && from > switchDay ? from : switchDay;
   const rows = await db
@@ -460,7 +460,7 @@ export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
         offRevenue: d.offRevenue,
         receipts: d.receipts,
         payments: Math.round((d.cash + d.card + d.mealCard + d.online + d.other) * 100) / 100,
-        source: "lafpos" as const,
+        source: "asilpos" as const,
         // Faz 2: günün KDV dökümü (yoksa günün oranıyla; engine.ts posNet)
         ...(d.vat?.length ? { vat: d.vat } : {}),
       },
@@ -475,15 +475,15 @@ const MODPOS_LAST_DAY = "9999-12-31";
 /**
  * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar hiçbir şubede açık değilse null (föy
  * tablosu hiç okunmaz); açıksa anahtarı açık şubeler (şube ayarı `modpos`; öbür şubeler "aynı" başlar, bugünkü tek
- * anahtar) ve LafPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren LafPOS'un şubesinin
- * kasası LafPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
+ * anahtar) ve AsilPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren AsilPOS'un şubesinin
+ * kasası AsilPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
  * girmeye devam eder (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; lafposBranch: string; branches: Set<string> } | null> {
+async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; asilposBranch: string; branches: Set<string> } | null> {
   const branches = await modposFallbackBranches(db);
   if (!branches.size) return null;
-  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDay(db), lafposBranchId(db)]);
-  return { switchDay, lafposBranch, branches };
+  const [switchDay, asilposBranch] = await Promise.all([asilposSwitchDay(db), asilposBranchId(db)]);
+  return { switchDay, asilposBranch, branches };
 }
 
 /**
@@ -518,9 +518,9 @@ export function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "sta
 /**
  * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; şube başına ayar
  * `modpos`, modposFallbackBranches: yalnız anahtarı açık şubenin föyü; varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
- * rakamı bugünkü gibi. Açıkken yalnız ModPOS günleri (LafPOS'un şubesinde geçiş gününden önceki günler, ModPOS'ta kalan
+ * rakamı bugünkü gibi. Açıkken yalnız ModPOS günleri (AsilPOS'un şubesinde geçiş gününden önceki günler, ModPOS'ta kalan
  * şubede bütün günler; geçiş günü boşsa bütün günler) ve yalnız kapanmış föyler (modposTillRow). Raporu olan günü
- * süzmez: tillRows ve tillMonths raporu öne alır (rapor > LafPOS > ModPOS). Yalnız yöneticinin ekranları ve hesaplar
+ * süzmez: tillRows ve tillMonths raporu öne alır (rapor > AsilPOS > ModPOS). Yalnız yöneticinin ekranları ve hesaplar
  * okur; personelin ekranına föy rakamı gitmez
  */
 export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
@@ -529,7 +529,7 @@ export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
 
 /**
  * Ay rakamına yedeğin kapsamındaki föyler, [from, to] içinde (seçili şubeyle): anahtar kapalıyken föy tablosu okunmadan
- * boş, açıkken yalnız ModPOS günleri (LafPOS'un şubesinde geçiş gününden önceki günler; branchSwitchDay). Sayılan satırı
+ * boş, açıkken yalnız ModPOS günleri (AsilPOS'un şubesinde geçiş gününden önceki günler; branchSwitchDay). Sayılan satırı
  * modposTillRow seçer; Bugün'ün şube kartı da föyü buradan okur (src/server/data/branch-day.ts; denetim 13 Kasım HM-09)
  */
 export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string, to?: string): Promise<ModposSheet[]> {
@@ -539,7 +539,7 @@ export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string,
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.filter((sh) => fallback.branches.has(sh.branchId) && !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.lafposBranch)));
+  return sheets.filter((sh) => fallback.branches.has(sh.branchId) && !isAsilposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.asilposBranch)));
 }
 
 /**
@@ -646,9 +646,9 @@ export async function cashReportIntegrity(r: CashReportDTO): Promise<CashReportI
 
 /** Bu ayın kasa raporu var mı (ay bilgisinin boş alanları oradan dolar) */
 /**
- * Ayın kasadan gelen bir satırı var mı: kasa raporu ya da (yalnız açık olan yedeklerde) LafPOS gün sonu veya sayılan
+ * Ayın kasadan gelen bir satırı var mı: kasa raporu ya da (yalnız açık olan yedeklerde) AsilPOS gün sonu veya sayılan
  * ModPOS föyü (tillRows). Ay bilgisinin elle yazılmış 0'ı bu ayda değerdir, silinmez (cash-month.ts monthRowEmpty);
- * yalnız föyden ya da LafPOS'tan gelen ayda da öyle (docs/MODPOS-API.md › Ay rakamına yedek)
+ * yalnız föyden ya da AsilPOS'tan gelen ayda da öyle (docs/MODPOS-API.md › Ay rakamına yedek)
  */
 export async function hasTillRowsIn(month: string, db: Db | Tx = getDb()): Promise<boolean> {
   if (await hasCashReportIn(month, db)) return true;

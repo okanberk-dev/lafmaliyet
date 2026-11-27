@@ -37,7 +37,7 @@ const FETCH_BUDGET_MS = 50_000;
  * (son hata ve kalan hak değişir); alınan gün işlem geçmişine "gün · alındı / değişti / değişmedi · kalan hak" diye düşer.
  *
  * Şube başına (docs/MODPOS-API.md › Şubeler): kartın şubesinin anahtarı ve hakkıyla çekilir (verilmezse Tuzla). Şube
- * ModPOS'tan çekilen bir şube değilse (pasif, online kanal, kasası LafPOS) istek gitmez.
+ * ModPOS'tan çekilen bir şube değilse (pasif, online kanal, kasası AsilPOS) istek gitmez.
  */
 export async function fetchModposDay(input: string, branchInput: string = DEFAULT_BRANCH_ID) {
   return attempt(async () => {

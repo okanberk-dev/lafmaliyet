@@ -156,7 +156,7 @@ describe("Kapalı gün düzenlenince bildirim ve personelin kasa satırı", { sk
     assert.deepEqual(stale.ended, { status: "revoked", note: null });
     assert.equal(stale.canAsk, false);
     assert.equal(closedEndedTitle("revoked", null), "Kapalı gün bildirimi geri alındı. Raporu girin.");
-    assert.equal(closedEndedTitle("superseded", "LafPOS gün sonu geldi (Z 12)"), "Kapalı gün bildirimi kapandı: LafPOS gün sonu geldi (Z 12). Raporu girin.");
+    assert.equal(closedEndedTitle("superseded", "AsilPOS gün sonu geldi (Z 12)"), "Kapalı gün bildirimi kapandı: AsilPOS gün sonu geldi (Z 12). Raporu girin.");
     assert.equal(closedEndedTitle("expired", null), "Kapalı gün bildiriminin süresi doldu. Raporu girin.");
   });
 

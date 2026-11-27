@@ -4,11 +4,11 @@ import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 import type { z } from "zod";
 
 import { staffCategory, staffExpenseLocked } from "@/lib/cash-outs";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
 import { cheapFirst, receiptReadProblems, zReadProblems, type CheapStep } from "@/lib/photo-read/cheap-first";
-import { cheapReadingProblems, formFailureOf } from "@/lib/photo-read/lafpos-read";
-import { normalizeOkc, okcReadingOnLafposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
+import { cheapReadingProblems, formFailureOf } from "@/lib/photo-read/asilpos-read";
+import { normalizeOkc, okcReadingOnAsilposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
 import type { PhotoReading } from "@/lib/photo-read/reading";
 import { normalizeReceipt, receiptToStore } from "@/lib/photo-read/receipt";
@@ -21,12 +21,12 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
-import { lafposOkcDeviceOf } from "@/server/lafpos/foto";
+import { asilposBranchId } from "@/server/asilpos/branch";
+import { asilposOkcDeviceOf } from "@/server/asilpos/foto";
 
-import { logPhotoRead, readLafposDayPhoto } from "./lafpos";
+import { logPhotoRead, readAsilposDayPhoto } from "./asilpos";
 
 export interface ReadOutcome {
   reading: PhotoReading | null;
@@ -134,7 +134,7 @@ export async function recentReceipts(day: string, staff: boolean, scope: Receipt
  * personel rakamları elle yazar ya da yeniden dener.
  *
  * Her tür önce ucuz modelle okunur, okunuş eksik ya da tutarsızsa bir kez güçlü modelle (cheapFirst; ucuz 15 sn, güçlü
- * 35 sn). LafPOS gününün kasa fotoğrafının kendi sırası var (readLafposDayPhoto: ucuz → güçlü → kod).
+ * 35 sn). AsilPOS gününün kasa fotoğrafının kendi sırası var (readAsilposDayPhoto: ucuz → güçlü → kod).
  *
  * Yazarkasa Z'si (`kasa-okc`, plan §4.4, §7): `OKC_TASK` + `KasaOkcRaw`, ucuzda efor `OKC_EFFORT`; önceki
  * Z ve son 28 günün toplamları okumayla paralel okunur, kimlikler ve zincir sunucuda. Personel kümülatifi, yazarkasa
@@ -169,34 +169,34 @@ export async function readPhotoFor(
     return { reading: normalizeZ(res.data, { day: input.day, prevZNo }), readError: null, readCode: null, canRetry: false };
   }
   if (kind === "kasa-okc" || kind === "kasa-pos") {
-    // LafPOS gününün kasa fotoğrafı (Pavo'nun detaylı Z'si): önce ucuz model, gerekirse bir kez güçlü model, yapay zekâ
-    // yoksa kodla (src/server/photo-read/lafpos.ts). Gün sonu fotoğrafı kartı yanıtın okunuşunu ve hatasını göstermez
+    // AsilPOS gününün kasa fotoğrafı (Pavo'nun detaylı Z'si): önce ucuz model, gerekirse bir kez güçlü model, yapay zekâ
+    // yoksa kodla (src/server/photo-read/asilpos.ts). Gün sonu fotoğrafı kartı yanıtın okunuşunu ve hatasını göstermez
     // (karşılaştırma yöneticinin); elle girilen raporun formu (OkcCard) alanları yalnız yapay zekâ okunuşuyla doldurur,
     // kodla okunduysa ya da okunamadıysa yapay zekânın hatası eskisi gibi (formFailureOf)
     const till = await currentTillBranch();
-    const lafpos = await readLafposDayPhoto(getDb(), { photoId: input.photoId, bytes: input.bytes, contentType: input.contentType, day: input.day, userId: input.me.id, branchId: till });
-    if (lafpos) {
-      const failure = formFailureOf(lafpos);
-      if (failure || !lafpos.raw) {
+    const asilpos = await readAsilposDayPhoto(getDb(), { photoId: input.photoId, bytes: input.bytes, contentType: input.contentType, day: input.day, userId: input.me.id, branchId: till });
+    if (asilpos) {
+      const failure = formFailureOf(asilpos);
+      if (failure || !asilpos.raw) {
         const code = failure && failure.code !== "ocr" ? failure.code : null;
         return { reading: null, readError: failure?.message ?? "Fotoğraf okunamadı; rakamları elle yazın.", readCode: code, canRetry: code !== null && RETRYABLE.includes(code) };
       }
       const [prev, recentTotals] = await Promise.all([previousOkc(input.day), okcTypical(input.day)]);
-      // Pavo gününde yalnız banka gün sonu okunduysa "Z'yi de çekin" denmez (Pavo ayrı mali Z basmaz; rakamlar LafPOS'tan)
-      const full = okcReadingOnLafposDay(normalizeOkc(lafpos.raw, { day: input.day, prev, recentTotals }), lafpos.device);
+      // Pavo gününde yalnız banka gün sonu okunduysa "Z'yi de çekin" denmez (Pavo ayrı mali Z basmaz; rakamlar AsilPOS'tan)
+      const full = okcReadingOnAsilposDay(normalizeOkc(asilpos.raw, { day: input.day, prev, recentTotals }), asilpos.device);
       const reading = opsLevel(input.me.role) === "admin" ? full : toStaffReading(full);
       return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
     }
-    const [prev, recentTotals, lafposDay, run] = await Promise.all([
+    const [prev, recentTotals, asilposDay, run] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),
-      // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
+      // Günün kasası: AsilPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
       // günü (branchSwitchDay): ModPOS'ta kalan şubede öneri kalır
-      Promise.all([lafposSwitchDayOf(getDb()), currentTillBranch(), lafposBranchId()])
+      Promise.all([asilposSwitchDayOf(getDb()), currentTillBranch(), asilposBranchId()])
         .then(async ([d, b, l]) => {
           const switchDay = branchSwitchDay(d, b, l);
-          // LafPOS gününde günün kaydı henüz yoksa cihaz şubenin son gün sonundan (Pavo ayrı mali Z basmaz)
-          return { switchDay, device: isLafposDay(input.day, switchDay) ? await lafposOkcDeviceOf(getDb(), b).catch(() => null) : null };
+          // AsilPOS gününde günün kaydı henüz yoksa cihaz şubenin son gün sonundan (Pavo ayrı mali Z basmaz)
+          return { switchDay, device: isAsilposDay(input.day, switchDay) ? await asilposOkcDeviceOf(getDb(), b).catch(() => null) : null };
         })
         .catch(() => ({ switchDay: null, device: null })),
       twoStep({ task: OKC_TASK(input.day), schema: KasaOkcRaw, problems: (raw) => cheapReadingProblems(raw, { expectBatches: false }), cheapEffort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS }),
@@ -205,7 +205,7 @@ export async function readPhotoFor(
     logPhotoRead({ photoId: input.photoId, kind, steps: run.steps, model: res.ok ? res.model : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
     if (!res.ok) return failed(res.code, res.message);
     const normalized = normalizeOkc(res.data, { day: input.day, prev, recentTotals });
-    const full = isLafposDay(input.day, lafposDay.switchDay) ? okcReadingOnLafposDay(normalized, lafposDay.device) : normalized;
+    const full = isAsilposDay(input.day, asilposDay.switchDay) ? okcReadingOnAsilposDay(normalized, asilposDay.device) : normalized;
     const reading = opsLevel(input.me.role) === "admin" ? full : toStaffReading(full);
     return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
   }

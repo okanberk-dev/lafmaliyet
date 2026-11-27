@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { money } from "@/lib/format";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import { historyWhen, PRICE_SOURCE_LABEL, type HistoryRow } from "@/lib/prices/history";
 import { posChangedText, staleForText } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
@@ -25,7 +25,7 @@ export interface ProductPriceHistoryInfo {
   price: number | null;
   /**
    * Ürünün eski fiyatı duran kasaları (şube kapsamı A3): seçili şubenin kasası, "Tümü"de birden çok kasa açıkken her
-   * biri (`name` şubenin adı). LafPOS gününde siteye bağlı üründe uyarı hiç gelmez: LafPOS fiyatı siteden alır
+   * biri (`name` şubenin adı). AsilPOS gününde siteye bağlı üründe uyarı hiç gelmez: AsilPOS fiyatı siteden alır
    */
   pos: { branchId: string; name: string | null; kasa: KasaName; stalePrice: number; since: string }[];
 }

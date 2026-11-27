@@ -74,7 +74,7 @@ async function SiteMenuContent() {
   });
   const [site, till, rows, categories, pendingNew] = await Promise.all([
     loadSiteLinks(),
-    // Bugünün kasası (bilgi metni: LafPOS fiyatı siteden alır; denetim E-39)
+    // Bugünün kasası (bilgi metni: AsilPOS fiyatı siteden alır; denetim E-39)
     loadTillScope().catch(() => null),
     getDb()
       .select({

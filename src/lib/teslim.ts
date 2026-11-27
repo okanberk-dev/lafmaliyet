@@ -3,14 +3,14 @@
  * İki kaynak tek listede:
  * - Kasa raporunun **Sayımdan sonra teslim**'i (`cash_reports.handed_over`) ve "Kime"si (`handed_to`): yönetici
  *   kullanıcı, Banka ya da elle yazılan ad. Panelde girilen kasa (Tuzla) burada yazar.
- * - **Gün içinde** "Teslim · ödeme" satırları (`cash_outs`, tür teslim) ve "Kime"si (`store`): Marina'nın LafPOS'tan
- *   gelen teslimleri de buradadır (LafPOS'un `cashMoves[].recipient`'i satırın Kime'si olur; docs/LAFPOS.md).
+ * - **Gün içinde** "Teslim · ödeme" satırları (`cash_outs`, tür teslim) ve "Kime"si (`store`): Marina'nın AsilPOS'tan
+ *   gelen teslimleri de buradadır (AsilPOS'un `cashMoves[].recipient`'i satırın Kime'si olur; docs/ASILPOS.md).
  * Saf: tests/teslim-defteri.test.ts
  */
 
 import { money } from "./format";
 
-/** "Kime" en çok bu kadar karakter (Kasadan çıkanlar'ın Kime alanı ve LafPOS'un alıcısıyla aynı sınır) */
+/** "Kime" en çok bu kadar karakter (Kasadan çıkanlar'ın Kime alanı ve AsilPOS'un alıcısıyla aynı sınır) */
 export const HANDED_TO_MAX = 60;
 
 /** Bankaya yatırılan teslimin "Kime"si */
@@ -66,12 +66,12 @@ export interface HandoverRow {
   amount: number;
   /** Alan ("Kime"); yazılmamışsa null */
   to: string | null;
-  /** Kaydeden: raporu gönderen ya da satırı ekleyen ("LafPOS") */
+  /** Kaydeden: raporu gönderen ya da satırı ekleyen ("AsilPOS") */
   by: string;
   /** Sayımdan sonra (kasa raporunun teslim alanı) ya da gün içinde (Kasadan çıkanlar'ın teslim satırı) */
   kind: "sayim" | "gun-ici";
-  /** Satır LafPOS'un kasa hareketinden geldi */
-  lafpos: boolean;
+  /** Satır AsilPOS'un kasa hareketinden geldi */
+  asilpos: boolean;
   /** Kayıt: rapor ya da kasadan çıkan satırı */
   ref: { report: number } | { cashOut: number };
 }

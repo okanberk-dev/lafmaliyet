@@ -78,5 +78,5 @@ test("pencere sade: üç rakam, tek Kontrol, döküm, kapalı Ayrıntılar; sat�
   for (const t of ['label="Toplam satış"', 'label="Sayılan nakit"', 'label="Kasa"', "Kontrol edilecek ${checks.length} konu", "Kontroller tamam", "Ayrıntılar"]) assert.ok(sheet.includes(t), t);
   const history = read("src/app/panel/kasa/cash-history.tsx");
   for (const t of ["<ReportSheet", "modposDiffs={modposDays[open.date]?.diffs}"]) assert.ok(history.includes(t), t);
-  for (const t of ["<ModposDiffList", "<LafposDiffList", "<CashBreakdown", "<DiffHeadline"]) assert.ok(!history.includes(t), `pencerede yok: ${t}`);
+  for (const t of ["<ModposDiffList", "<AsilposDiffList", "<CashBreakdown", "<DiffHeadline"]) assert.ok(!history.includes(t), `pencerede yok: ${t}`);
 });

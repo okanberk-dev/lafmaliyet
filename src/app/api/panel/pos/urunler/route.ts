@@ -1,29 +1,29 @@
 import { connection, type NextRequest } from "next/server";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
-import { lafposRequestSecret } from "@/server/lafpos/ingest";
-import { servePosProducts } from "@/server/lafpos/products";
+import { asilposRequestSecret } from "@/server/asilpos/ingest";
+import { servePosProducts } from "@/server/asilpos/products";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
 /**
- * LafPOS'un ürün maliyetleri (docs/LAFPOS.md › Ürün maliyetleri): siteye bağlı ürünlerin reçete birim maliyeti (kuruş,
+ * AsilPOS'un ürün maliyetleri (docs/ASILPOS.md › Ürün maliyetleri): siteye bağlı ürünlerin reçete birim maliyeti (kuruş,
  * KDV hariç) `{ version: 1, now, items: [{ siteMenuId, slot, name, size, costMinor, active }] }`. Makine ucu: yalnız
- * LafPOS'un imzasıyla (LAFPOS_SYNC_SECRET), oturumla açılmaz; önbelleğe alınmaz. Anahtar yoksa 503, imza tutmazsa 401.
+ * AsilPOS'un imzasıyla (ASILPOS_SYNC_SECRET), oturumla açılmaz; önbelleğe alınmaz. Anahtar yoksa 503, imza tutmazsa 401.
  */
 export async function GET(request: NextRequest) {
   await connection();
   try {
     const r = await servePosProducts({
       // Önbellekteki anahtar ön süzgeç: imza tutarsa anahtar veritabanından yeniden okunur (döndürülen eski anahtar geçmez)
-      secret: await lafposRequestSecret(request),
+      secret: await asilposRequestSecret(request),
       url: new URL(request.url),
       timestamp: request.headers.get(TIMESTAMP_HEADER),
       signature: request.headers.get(SIGNATURE_HEADER),
     });
     return Response.json(r.body, { status: r.status, headers: NO_STORE });
   } catch (e) {
-    console.error("[lafpos] ürün maliyetleri okunamadı:", e);
+    console.error("[asilpos] ürün maliyetleri okunamadı:", e);
     return Response.json({ error: "server_error" }, { status: 500, headers: NO_STORE });
   }
 }

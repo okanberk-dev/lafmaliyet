@@ -90,11 +90,16 @@ export const ESKI_SUTUNLAR = { kasaHareketi: "lafpos_id", hizmet: "lafpos_servic
 // ─── Asistan ve panel ────────────────────────────────────────────────────────
 
 /** Onay kartının etkisi (assistant_ops.preview ve cihazdaki sohbetler): eski kartlar da adla görünür */
-export const ESKI_ETKI = "lafpos";
+export const ESKI_ETKI = "lafpos" as const;
 /** Asistanın okuma aracının eski adı (cihazdaki sohbetler, tekrar oynatma) */
-export const ESKI_ARAC_ADI = "lafpos_durumu";
+export const ESKI_ARAC_ADI = "lafpos_durumu" as const;
+/**
+ * Zil bildirimlerinin kimliğindeki eski ad (`<bu>-ret-…`, `<bu>-foto-…`, `kasa-<bu>-…`): cihazda okundu sayılanlar
+ * (tarayıcıda saklanan kimlikler) ad değişikliğinden sonra yeniden okunmamış görünmesin
+ */
+export const ZIL_ONEKI = "lafpos";
 /** Ayarlar'daki bölümün eski çapası (yer imleri, eski bağlantılar): `#lafpos` */
-export const ESKI_BOLUM_CAPASI = "lafpos";
+export const ESKI_BOLUM_CAPASI = "lafpos" as const;
 
 // ─── Kâğıt (fotoğraf okuması) ────────────────────────────────────────────────
 
@@ -138,8 +143,8 @@ export const ESKI_AD_METINLERI: readonly string[] = [
 export const ESKI_ENV_ADLARI: readonly string[] = [TEL_UZAK_ADRES_ENV, TEL_UZAK_ANAHTAR_ENV];
 
 /**
- * Yalnız belgelerde: tırnaktaki tel ve veritabanı değeri, AsilPOS deposunun adıyla anılan yollar (depo `lafpos` adıyla
- * kaldı), ad değişikliği notu
+ * Yalnız belgelerde: tırnaktaki tel ve veritabanı değeri, AsilPOS deposunun adı (depo eski adla kaldı), ad değişikliği
+ * notu
  */
 export const BELGE_ALINTILARI: readonly string[] = [
   `\`${TEL_KAYNAK}\``,
@@ -150,7 +155,6 @@ export const BELGE_ALINTILARI: readonly string[] = [
   `"${KASA_YAZARI}"`,
   `RiosenBeq/${TEL_KAYNAK}`,
   `okanberk-dev/${TEL_KAYNAK}`,
-  `${TEL_KAYNAK} \``,
   `26 Kasım 2026'ya kadar adı ${ESKI_URUN_ADI}`,
   `${ESKI_KAGIT_ADI}|ASILPOS`,
 ];

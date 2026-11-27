@@ -363,7 +363,7 @@ test("sunucu: ay başına tek kayıt (üzerine yazılır, eski yanıt yazılmaz)
   assert.match(read("src/app/api/export/workbook.ts"), /c\.revenueTotalNet \?\? 0/);
   // Kasa sayfası: satır ayrı Suspense'te (sayfa beklemez); personele karaoke tutarı yok
   const kasa = read("src/app/panel/kasa/page.tsx");
-  assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} till=\{view\.till\} karaoke=\{can\(user\.role, "karaoke\.tutar"\)\} kasa=\{lafposState\.lafpos \? "LafPOS" : "ModPOS"\} \/>/);
+  assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} till=\{view\.till\} karaoke=\{can\(user\.role, "karaoke\.tutar"\)\} kasa=\{asilposState\.asilpos \? "AsilPOS" : "ModPOS"\} \/>/);
   // Satır kasanın şubesinin (site #279: &branch=tuzla|marina); e-posta ve gönderim de raporun şubesiyle sorar
   assert.match(kasa, /fetchTillOnlineRow\(date, till\)/);
   assert.match(read("src/server/cash/report-email.ts"), /fetchTillOnlineRow\(row\.date, row\.branchId\)/);

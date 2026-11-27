@@ -19,7 +19,7 @@ import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/forma
 import { purchaseVat, purchaseWithheld } from "../../../lib/kdv";
 import { invoiceSourceLabel } from "../../../lib/import-labels";
 import { SHARED_LABEL, UNASSIGNED_LABEL } from "../../../lib/invoice-branch";
-import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
+import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/asilpos/kasa";
 import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
 import { ACCOUNTANT_CHECKS } from "../../../lib/tax/checks";
@@ -721,7 +721,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
   sectionRow(ws, "a", "SAYFALAR (adına tıklayınca açılır)");
   subHeaderRow(ws, { a: "Sayfa", b: "İçerik" });
   // Ayın kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
-  const kasa = monthKasa(month, model.settings.lafposGecisGunu).both;
+  const kasa = monthKasa(month, model.settings.asilposGecisGunu).both;
   for (const w of sheets) {
     const r = ws.addRow({ a: sheetLink(w.name), b: sheetPurpose(w.name, label, kasa) });
     r.getCell("b").alignment = { wrapText: true, vertical: "top" };
@@ -765,8 +765,8 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
   if (!t) {
     lines.push({ k: "Bu ayın satış listesi yüklenmemiş: reçeteye göre satırlar boş. Faturaya göre kâr yine aşağıda.", v: null });
   }
-  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra LafPOS; denetim E-39)
-  const mk = salesMonthKasa(month, model.settings.lafposGecisGunu, model.ds.lafposSales);
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra AsilPOS; denetim E-39)
+  const mk = salesMonthKasa(month, model.settings.asilposGecisGunu, model.ds.asilposSales);
   const kasaSales = mk.source === "modpos" ? `${mk.report} satış listesi` : `${mk.report} satışları`;
   lines.push(
     // ModPOS + laffogato.net online (kâr-zarardaki gibi); online ayrıca alt satırda
@@ -1309,7 +1309,7 @@ function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
 export const TAX_SHEET = "Vergi";
 /** Sayfanın ilk satırı (plan docs/planlar/vergi.md §9) */
 export const TAX_SHEET_FIRST_LINE = "Tahmin; beyanname değildir. Kafenin payı; şirketin beyannamesi muhasebecidedir.";
-/** Geliri yönetim verisinden (ModPOS / LafPOS) gelen ayın ve çeyreğin yerine (K11, K31) */
+/** Geliri yönetim verisinden (ModPOS / AsilPOS) gelen ayın ve çeyreğin yerine (K11, K31) */
 export const TAX_NOT_FISCAL = "Gelir mali belgeden girilmedi; hesap ekranda (taslak)";
 
 const REVENUE_SOURCE_TEXT: Record<RevenueSource, string> = { beyanname: "beyanname", z: "Z", yonetim: "yönetim verisi" };
@@ -1410,7 +1410,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
       money(r, [...cols, "e"]);
       return r;
     };
-    // Gelirsiz ayın (belge beklemez) yönetim verisi satırı yazılmaz: ModPOS / LafPOS dışa aktarıma girmez (K31)
+    // Gelirsiz ayın (belge beklemez) yönetim verisi satırı yazılmaz: ModPOS / AsilPOS dışa aktarıma girmez (K31)
     block((m) => (m.revenueSource === "yonetim" ? m.income.rows.filter((r) => r.key !== "pos") : m.income.rows));
     total("Gelir toplamı", fiscal.map((m) => m.income.total), q.income);
     block((m) => m.expense.rows);
@@ -1798,7 +1798,7 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
       t: r.total,
     });
     if (part) row.getCell("pt").note = r.calledDays === null ? "Vardiya bağlantısı yok: çağrıldığı gün bilinmiyor, ücret sayılmadı." : `${num(r.calledDays)} gün × ${tl(r.staff.dailyWage ?? 0)}`;
-    if (r.mealCard) row.getCell("meal").note = `${num(r.mealDays)} gün × ${tl(st.mealCardDaily)}${!part && r.lafposDays !== null ? " (LafPOS'ta çalıştığı gün)" : ""}`;
+    if (r.mealCard) row.getCell("meal").note = `${num(r.mealDays)} gün × ${tl(st.mealCardDaily)}${!part && r.asilposDays !== null ? " (AsilPOS'ta çalıştığı gün)" : ""}`;
   }
   if (!pers.rows.length) pr.addRow({ n: `${label} ayında çalışan personel yok.` });
   // TOPLAM herkesi kapsar: tam zamanlıların net, brüt ve payları; ek ve yemek kartı part-time dahil

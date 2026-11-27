@@ -20,7 +20,7 @@ import {
   type ProposedFields,
 } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
-import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
+import { unreceiptedCashOut } from "@/lib/asilpos/prefill";
 import { dayMonthTR, monthTitleTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestKind, type StaffRequestStatus } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
@@ -31,7 +31,7 @@ import { lateBellRows, lateCards, type LateCard } from "@/server/data/cash-late"
 import { cashOutCards, type CashOutCard, type PhotoRemovalCard } from "@/server/data/cash-out-requests";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { nextReportAfter } from "@/server/data/cash-reports";
-import { loadKasaLafpos } from "@/server/data/lafpos-day";
+import { loadKasaAsilpos } from "@/server/data/asilpos-day";
 import { getDb, schema as s } from "@/server/db";
 import { ownRequests } from "@/server/staff-requests/core";
 
@@ -265,10 +265,10 @@ export interface CorrectionCard extends CardBase {
   /** Sonraki raporun açılışı bu devirle tutacak mı */
   next: { date: string; opening: number; holds: boolean } | null;
   /**
-   * "Gün içinde çıkan" değişiyorsa: fişlerin sayısı ve toplamı, fişsiz kalan; LafPOS gününde farkın LafPOS'taki teslim
-   * kadarı fişsiz sayılmaz (`lafposHanded`, E-35)
+   * "Gün içinde çıkan" değişiyorsa: fişlerin sayısı ve toplamı, fişsiz kalan; AsilPOS gününde farkın AsilPOS'taki teslim
+   * kadarı fişsiz sayılmaz (`asilposHanded`, E-35)
    */
-  receipts: { count: number; total: number; unreceipted: number | null; lafposHanded?: number | null } | null;
+  receipts: { count: number; total: number; unreceipted: number | null; asilposHanded?: number | null } | null;
   /** Raporun ayı geçti */
   monthPassed: string | null;
 }
@@ -386,10 +386,10 @@ async function dayRequestCards(now: Date): Promise<((CorrectionCard | DeleteCard
         : null;
     let receipts: CorrectionCard["receipts"] = null;
     if (changes.some((c) => c.key === "cashOut")) {
-      const [outs, lafpos] = await Promise.all([cashOutsOn(r.day, report.branchId), loadKasaLafpos(r.day, undefined, report.branchId)]);
+      const [outs, asilpos] = await Promise.all([cashOutsOn(r.day, report.branchId), loadKasaAsilpos(r.day, undefined, report.branchId)]);
       // Fişsiz çıkışın tek hesabı (raporun Kontrol listesi, ay listesi, e-posta ve zil de bununla)
-      const u = unreceiptedCashOut(after.cashOut, outs, lafpos.day?.till ?? null, r.day);
-      receipts = { count: outs.length, total: u.total, unreceipted: u.unreceipted || null, lafposHanded: u.lafposHanded };
+      const u = unreceiptedCashOut(after.cashOut, outs, asilpos.day?.till ?? null, r.day);
+      receipts = { count: outs.length, total: u.total, unreceipted: u.unreceipted || null, asilposHanded: u.asilposHanded };
     }
     const carryAfter = Math.round((after.countedCash - after.handedOver) * 100) / 100;
     cards.push({

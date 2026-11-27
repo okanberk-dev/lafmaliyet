@@ -5,14 +5,14 @@
  * tutar, ₺ fark, % değişim; fiş (adisyon) sayısı ve ortalama fiş veri varsa.
  *
  * **Kaynak** Genel bakış'ın günlük ciro kartıyla aynı: ay bilgisinin okuduğu kasa satırları (src/server/data/cash-reports.ts
- * tillRows: kasa raporu > LafPOS gün sonu (yalnız geçiş gününden itibaren) > ModPOS föyü, şube başına günde bir satır),
+ * tillRows: kasa raporu > AsilPOS gün sonu (yalnız geçiş gününden itibaren) > ModPOS föyü, şube başına günde bir satır),
  * seçili şubenin kapsamıyla. Ciro kuralı ayınki (src/lib/cash-revenue.ts dayRevenue): KDV dahil, ödenmez / ikram hariç.
  * Para TL, kuruşa yuvarlanır (ay rakamının kuralı).
  *
  * **Şube-gün durumları.** Satırı olan gün: Z toplamı sıfırdan büyükse "satış", değilse "satış yok". Kapalı işaretli gün
  * (Özel günler › kapalı) satırı yoksa da "satış yok" sayılır. Satırı da kapalı işareti de olmayan gün "veri yok": sıfır
  * sayılmaz, kıyasa girmez. Şubenin açılış gününden önceki gün "açılmamış": beklenmez, veri yok sayılmaz. Marina'nın geçiş
- * gününden önceki LafPOS gün sonları (deneme) hiç sayılmaz.
+ * gününden önceki AsilPOS gün sonları (deneme) hiç sayılmaz.
  *
  * **Bir tarafın (gün ya da dönem) durumu.** En az bir şube-günde satış varsa satış var. Beklenen bütün şube-günler
  * biliniyor ve hiçbirinde satış yoksa "satış yok". Satış yokken bilinmeyen (veri yok) şube-gün de varsa "veri yok":
@@ -27,7 +27,7 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import type { TillRow } from "@/lib/cash-month";
 import { dayRevenue } from "@/lib/cash-revenue";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
 import { addDays, monthTitleTR, shiftMonth } from "@/lib/reminders";
 
 export interface KiyasBranch {
@@ -44,10 +44,10 @@ export interface KiyasInput {
   branches: readonly KiyasBranch[];
   /** Bugünün iş günü (05:00 kuralı, src/lib/cash-report.ts businessDate) */
   today: string;
-  /** LafPOS'a geçiş günü (ayar); LafPOS satırı yalnız şubesinin geçiş gününden itibaren sayılır */
+  /** AsilPOS'a geçiş günü (ayar); AsilPOS satırı yalnız şubesinin geçiş gününden itibaren sayılır */
   switchDay: string | null;
-  /** LafPOS'un şubesi (kütükten türetilmiş, lafposBranchOf); verilmezse geri düşüş değeri */
-  lafposBranch?: string;
+  /** AsilPOS'un şubesi (kütükten türetilmiş, asilposBranchOf); verilmezse geri düşüş değeri */
+  asilposBranch?: string;
   /** Kasa raporlarının fiş sayısı, `şube|gün` anahtarıyla (tillRows rapor satırına fiş koymaz) */
   receipts?: ReadonlyMap<string, number | null>;
   /** Kapalı işaretli gün mü (şubenin kendi ya da işletme geneli işareti) */
@@ -171,7 +171,7 @@ export interface KiyasSummary {
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const key = (branchId: string, date: string) => `${branchId}|${date}`;
-const PRIORITY = { undefined: 0, lafpos: 1, modpos: 2 } as const;
+const PRIORITY = { undefined: 0, asilpos: 1, modpos: 2 } as const;
 const rank = (r: TillRow) => PRIORITY[String(r.source) as keyof typeof PRIORITY] ?? 3;
 
 /** Ayın gün sayısı ("2026-02" → 28) */
@@ -204,8 +204,8 @@ export function cellReader(input: KiyasInput): (branch: KiyasBranch, date: strin
   const byKey = new Map<string, TillRow>();
   for (const r of input.rows) {
     const b = r.branchId ?? DEFAULT_BRANCH_ID;
-    // Geçiş gününden önceki LafPOS gün sonu deneme günüdür: hiçbir hesaba girmez (tillRows zaten süzer; burada da)
-    if (r.source === "lafpos" && !isLafposDay(r.date, branchSwitchDay(input.switchDay, b, input.lafposBranch))) continue;
+    // Geçiş gününden önceki AsilPOS gün sonu deneme günüdür: hiçbir hesaba girmez (tillRows zaten süzer; burada da)
+    if (r.source === "asilpos" && !isAsilposDay(r.date, branchSwitchDay(input.switchDay, b, input.asilposBranch))) continue;
     const k = key(b, r.date);
     const had = byKey.get(k);
     if (!had || rank(r) < rank(had)) byKey.set(k, r);
@@ -483,7 +483,7 @@ const FLAT = 0.0005;
 
 const pctText = (g: number) => new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(g) * 100);
 
-/** "↑ +%83,1" / "↓ %63,4" / "→ %0,0" (sahibin LafPOS Uzaktan'da beğendiği biçim; ok ve işaret, yalnız renge dayanmaz) */
+/** "↑ +%83,1" / "↓ %63,4" / "→ %0,0" (sahibin AsilPOS Uzaktan'da beğendiği biçim; ok ve işaret, yalnız renge dayanmaz) */
 export function changeText(g: number): string {
   const s = pctText(g);
   if (Math.abs(g) < FLAT) return `→ %${s}`;

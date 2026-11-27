@@ -28,7 +28,7 @@ import { readBranchPrices, readMenuSyncState, readSiteSnapshot } from "@/server/
 /**
  * Fiyatlar › Şube fiyatı ve Eski fiyattan satılanlar (docs/FIYATLAR.md › Şube fiyatı). Satırlar sitenin son okumasının
  * kopyasından (`menu_site_branch_prices`), taban sitenin kaleminden ve panelin fiyat geçmişinden (siteye bağlı ürünün
- * product_prices'ı), satışlar LafPOS gün sonundan (pos_daily_sales, `list_prices`). Siteye gidilmez.
+ * product_prices'ı), satışlar AsilPOS gün sonundan (pos_daily_sales, `list_prices`). Siteye gidilmez.
  */
 
 export interface BranchTarget {
@@ -130,7 +130,7 @@ export interface OldPriceReport {
   names: Record<string, string>;
   changes: BranchChangeReport[];
   sales: OldPriceSale[];
-  /** Raporun ilk günü ve LafPOS'un liste fiyatı gönderdiği gün var mı (yoksa her durum Bilinmiyor) */
+  /** Raporun ilk günü ve AsilPOS'un liste fiyatı gönderdiği gün var mı (yoksa her durum Bilinmiyor) */
   from: string;
   hasListPrices: boolean;
 }

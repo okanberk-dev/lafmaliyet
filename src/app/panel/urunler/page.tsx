@@ -12,7 +12,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel, num, pct } from "@/lib/format";
-import { monthKasa } from "@/lib/lafpos/kasa";
+import { monthKasa } from "@/lib/asilpos/kasa";
 import { combineTillPos } from "@/lib/prices/pos";
 import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
@@ -77,8 +77,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   // Satılan adet ModPOS + laffogato.net online: Genel bakış, Analiz, ürün kartı, dışa aktarım ve Claude aracıyla aynı sayı
   const sold = soldWithOnline(model, month);
   const st = model.settings;
-  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
-  const mk = monthKasa(month, st.lafposGecisGunu);
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "AsilPOS"; denetim E-39)
+  const mk = monthKasa(month, st.asilposGecisGunu);
   const linkOf = new Map(site.links.map((l) => [l.productId, l]));
   const siteItems = site.snapshot.at ? site.snapshot.items : null;
 
@@ -140,7 +140,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         title="Ürünler & kârlılık"
         description={DESCRIPTION}
         more={MORE}
-        meta={<SalesSourceLine source={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales)} />}
+        meta={<SalesSourceLine source={salesSourceOf(month, st.asilposGecisGunu, model.ds.asilposSales)} />}
         actions={
           <>
             <MonthPicker months={availableMonths(model)} value={month} />
@@ -278,7 +278,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           target={st.hedefMaliyet}
           month={month}
           loss={prices.loss}
-          salesMissing={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales).missing}
+          salesMissing={salesSourceOf(month, st.asilposGecisGunu, model.ds.asilposSales).missing}
         /> : (
         // Kart yalnız zam varken çizilir; çapalı bağlantı (Yardım, zil, sabah e-postası: #zamlar) kısa satıra iner (UI-08)
         <AnchorNote id="zamlar" className="mb-6">

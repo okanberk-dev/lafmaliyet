@@ -49,7 +49,7 @@ export async function addWasteEntry(input: z.input<typeof entrySchema>) {
     const me = await requireCan("kayit.yaz");
     const { branchId, ...data } = entrySchema.parse(input);
     const sube = await wasteBranch(branchId);
-    // Yazım formun şubesinin kapsamında: kilit, kapalı gün ve LafPOS okumaları da o şubenin
+    // Yazım formun şubesinin kapsamında: kilit, kapalı gün ve AsilPOS okumaları da o şubenin
     const target = await withBranchScope(sube, () => addWaste(getDb(), asActor(me, opsLevel(me.role)), data, undefined, sube));
     // Aynı anahtarın tekrarı: kayıt zaten yazılmış ve işlem geçmişinde; ikinci satır yazılmaz
     if (!target.repeated) await logActivity(me, `${WASTE_KIND_LABEL[data.kind]} kaydı`, `${target.name} ${qtyText(data.qty, target.unit)}${data.reason ? ` · ${data.reason}` : ""}`);

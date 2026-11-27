@@ -2,7 +2,7 @@
 // rakamına yedek), saf kurallar ve kaynak bekçileri: "Bu günü çek"in onay penceresi (kalan hak, bugün kesin değil, zaten
 // saklı gün) ve sonucu (bildirim, işlem geçmişi, hata metni), son çekilen günlerin rozetleri ve satırı, yedek anahtarının
 // metni; eylemler önce yönetici oturumunu denetler, sayfa açılışı ya da after() hiçbir zaman ModPOS'a istek göndermez
-// (günde 2 hak), istemci eylemi useActionTransition'la çağırır, bölüm listesinde ve sayfada kart LafPOS'tan sonra, sayfanın
+// (günde 2 hak), istemci eylemi useActionTransition'la çağırır, bölüm listesinde ve sayfada kart AsilPOS'tan sonra, sayfanın
 // maxDuration'ı 60 sn. Veritabanında: tests/modpos-ayarlar-db.test.ts.
 // Çalıştırma: npx tsx --test tests/modpos-ayarlar.test.ts
 
@@ -238,7 +238,7 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
     assert.doesNotMatch(src, /useEffect/, `${name}: açılışta eylem yok`);
   }
   assert.match(read("src/server/modpos/status.ts"), /^import "server-only";/m);
-  // Kart LafPOS kartının deseninde: okunamazsa yedek kart, bölüm kimliği modpos
+  // Kart AsilPOS kartının deseninde: okunamazsa yedek kart, bölüm kimliği modpos
   // Her ModPOS şubesinin kendi bölümü (yoksa Tuzla; src/lib/pos-cards.ts modposCardView): kendi anahtarı, hakkı ve
   // günleriyle; tek şube seçiliyken yalnız onunki, kasası ModPOS olmayan şubede "Bu şubede kullanılmıyor"
   assert.match(card, /const view = modposCardView\(scope, branches\);/);
@@ -274,16 +274,16 @@ test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" 
   assert.match(client, /max=\{today\}/);
 });
 
-test("bölüm listesi, sayfa ve arama: ModPOS LafPOS'tan sonra; sayfanın sunucu eylemi 60 sn'ye kadar", () => {
+test("bölüm listesi, sayfa ve arama: ModPOS AsilPOS'tan sonra; sayfanın sunucu eylemi 60 sn'ye kadar", () => {
   const ids = SETTINGS_SECTIONS.map((x) => x.id) as string[];
-  assert.equal(ids.indexOf("modpos"), ids.indexOf("lafpos") + 1);
+  assert.equal(ids.indexOf("modpos"), ids.indexOf("asilpos") + 1);
   assert.equal(SETTINGS_SECTIONS.find((x) => x.id === "modpos")?.label, "ModPOS API");
   assert.match(read("src/app/panel/ayarlar/sections.ts"), /\n {2}\/\/ ModPOS'un kasa föyü[^\n]*\n {2}\{ id: "modpos", label: "ModPOS API", icon: ReceiptTurkishLira \},/);
   const page = read("src/app/panel/ayarlar/page.tsx");
   assert.match(page, /\nexport const maxDuration = 60;\n/);
-  const lafpos = page.indexOf("<LafposCard");
+  const asilpos = page.indexOf("<AsilposCard");
   const modpos = page.indexOf("<ModposCard scope={scope} branches={branches} />");
-  assert.ok(lafpos > page.indexOf("await requireAdmin();") && modpos > lafpos && modpos < page.indexOf("<PhotoReadingCard />"));
+  assert.ok(asilpos > page.indexOf("await requireAdmin();") && modpos > asilpos && modpos < page.indexOf("<PhotoReadingCard />"));
   const settings = NAV_FOOTER.find((i) => i.href === "/panel/ayarlar");
   assert.match(settings?.keywords ?? "", /modpos api kasa föyü/);
 });

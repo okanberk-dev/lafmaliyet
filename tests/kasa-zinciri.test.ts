@@ -1,8 +1,8 @@
-// Kasa zinciri (Faz 3, 23 Kasım 2026; docs/LAFPOS.md › Kasa zinciri, Kasadan çıkanlar LafPOS'tan): gövdenin açılış alanları
+// Kasa zinciri (Faz 3, 23 Kasım 2026; docs/ASILPOS.md › Kasa zinciri, Kasadan çıkanlar AsilPOS'tan): gövdenin açılış alanları
 // (z.expectedOpening, z.openingDiff, z.openingReason) ve kasa hareketleri (cashMoves) okunur, bozuk gelen günü reddetmez;
-// ertesi günün beklenen açılışı (nextOpening) kayıtlı Kasa raporundan ya da LafPOS'un sayımından, LafPOS'un otomatik
+// ertesi günün beklenen açılışı (nextOpening) kayıtlı Kasa raporundan ya da AsilPOS'un sayımından, AsilPOS'un otomatik
 // raporunda gelen gövdenin değeriyle (rapor yanıttan sonra yazılır); kasa hareketlerinin "Kasadan çıkanlar"a planı
-// (kimlikle, elle girilmiş eşi bire bir sahiplenilir, gelmeyen LafPOS satırı kalkar, giriş satıra girmez); kilit metni;
+// (kimlikle, elle girilmiş eşi bire bir sahiplenilir, gelmeyen AsilPOS satırı kalkar, giriş satıra girmez); kilit metni;
 // otomatik raporun notu ve gün görünümü. Veritabanı tarafı tests/kasa-zinciri-db.test.ts'te.
 // Çalıştırma: npx tsx --test tests/kasa-zinciri.test.ts
 
@@ -13,28 +13,29 @@ import { test } from "node:test";
 
 import { cashOutWritesExpense } from "../src/lib/cash-outs";
 import {
-  LAFPOS_CASH_OUT_BY,
-  LAFPOS_CASH_OUT_TEXT,
-  lafposAwaitingCategory,
-  lafposCashOutChange,
-  lafposInsertedRow,
-  LAFPOS_RECIPIENT_MAX,
-  lafposRecipient,
-  planLafposCashOuts,
-  planLafposDetach,
-  planLafposRecipientFill,
-  type LafposCashOutRow,
-} from "../src/lib/lafpos/cash-moves";
-import { parsePosDay, type PosCashMove } from "../src/lib/lafpos/day";
-import { nextOpeningOf } from "../src/lib/lafpos/devir";
-import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
-import { autoValuesOf, autoValuesOfReport, dayHash, mergeAuto, type AutoValues } from "../src/lib/lafpos/gun-sonu";
+  ASILPOS_CASH_OUT_BY,
+  ASILPOS_CASH_OUT_TEXT,
+  asilposAwaitingCategory,
+  asilposCashOutChange,
+  asilposInsertedRow,
+  ASILPOS_RECIPIENT_MAX,
+  asilposRecipient,
+  planAsilposCashOuts,
+  planAsilposDetach,
+  planAsilposRecipientFill,
+  type AsilposCashOutRow,
+} from "../src/lib/asilpos/cash-moves";
+import { parsePosDay, type PosCashMove } from "../src/lib/asilpos/day";
+import { nextOpeningOf } from "../src/lib/asilpos/devir";
+import { TEL_KAYNAK } from "../src/lib/asilpos/eski-adlar";
+import { asilposDayDetail } from "../src/lib/asilpos/gun-ayrinti";
+import { autoValuesOf, autoValuesOfReport, dayHash, mergeAuto, type AutoValues } from "../src/lib/asilpos/gun-sonu";
 import { money } from "../src/lib/format";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 /** Gövdelerin denetlendiği an: 23 Kasım 2026 öğlen */
 const NOW = new Date("2026-11-23T12:00:00+03:00");
-const golden = () => JSON.parse(read("tests/fixtures/lafpos-gun.golden.json")) as Record<string, unknown> & { z: Record<string, unknown>; cashMoves: Record<string, unknown>[] };
+const golden = () => JSON.parse(read("tests/fixtures/asilpos-gun.golden.json")) as Record<string, unknown> & { z: Record<string, unknown>; cashMoves: Record<string, unknown>[] };
 const parse = (body: unknown) => {
   const r = parsePosDay(JSON.stringify(body), NOW);
   assert.ok(r.ok, r.ok ? "" : `400: ${r.field}`);
@@ -54,7 +55,7 @@ function quiet<T>(fn: () => T): { value: T; warned: string[] } {
 
 // ---------------------------------------------------------------- Gövde
 
-test("gövde: Faz 3 alanları isteğe bağlı (eski LafPOS göndermez); gelince açılışın beklenen tutarı, işaretli farkı ve nedeni, kasa hareketleri okunur", () => {
+test("gövde: Faz 3 alanları isteğe bağlı (eski AsilPOS göndermez); gelince açılışın beklenen tutarı, işaretli farkı ve nedeni, kasa hareketleri okunur", () => {
   const old: Record<string, unknown> & { z: Record<string, unknown> } = golden();
   delete old.cashMoves;
   for (const k of ["expectedOpening", "openingDiff", "openingReason"]) delete old.z[k];
@@ -72,10 +73,10 @@ test("gövde: Faz 3 alanları isteğe bağlı (eski LafPOS göndermez); gelince 
   b.z.openingReason = "";
   const n = parse(b);
   assert.deepEqual([n.z.expectedOpening, n.z.openingDiff, n.z.openingReason], [null, null, null], "beklenen yok; boş neden null");
-  assert.deepEqual(parse({ ...golden(), cashMoves: [] }).cashMoves, [], "hareketsiz gün boş dizi (eski LafPOS'tan ayrı)");
+  assert.deepEqual(parse({ ...golden(), cashMoves: [] }).cashMoves, [], "hareketsiz gün boş dizi (eski AsilPOS'tan ayrı)");
   const m = parse(golden()).cashMoves!;
   assert.deepEqual(m[0], { id: "01M5WDWP40S3V9J8M2N4P6Q8T0", kind: "harcama", amount: 120, description: "Buz", at: "2026-10-26T15:40:00.000Z", categoryId: 1 });
-  // Teslimin alıcısı (LafPOS 25 Kasım 2026): yalnız teslimde gelir; harcamada alan hiç yok
+  // Teslimin alıcısı (AsilPOS 25 Kasım 2026): yalnız teslimde gelir; harcamada alan hiç yok
   assert.equal(m[1].kind, "teslim");
   assert.equal(m[1].recipient, "Patron");
   assert.ok(!("recipient" in m[0]) && !("recipient" in m[2]));
@@ -89,41 +90,41 @@ test("gövde: teslimin alıcısı bozuk gelirse yalnız alıcı düşer, liste v
     assert.ok(r.ok, `${JSON.stringify(bad)}: gün reddedilmez`);
     assert.equal(r.data.cashMoves?.length, 3, `${JSON.stringify(bad)}: liste düşmez`);
     assert.equal(r.data.cashMoves?.[1].recipient, undefined);
-    assert.equal(lafposRecipient(r.data.cashMoves![1]), null);
+    assert.equal(asilposRecipient(r.data.cashMoves![1]), null);
   }
 });
 
-test("Kime: LafPOS teslimin alıcısı satırın Kime'si olur (yalnız teslimde, sadeleşir, en çok 60)", () => {
-  const t = (recipient: unknown, kind: PosCashMove["kind"] = "teslim") => lafposRecipient({ ...move("01K", kind, 100), recipient } as PosCashMove);
+test("Kime: AsilPOS teslimin alıcısı satırın Kime'si olur (yalnız teslimde, sadeleşir, en çok 60)", () => {
+  const t = (recipient: unknown, kind: PosCashMove["kind"] = "teslim") => asilposRecipient({ ...move("01K", kind, 100), recipient } as PosCashMove);
   assert.equal(t("Patron"), "Patron");
   assert.equal(t("  Okan   Bey  "), "Okan Bey");
-  assert.equal(t("Ç".repeat(100))?.length, LAFPOS_RECIPIENT_MAX);
+  assert.equal(t("Ç".repeat(100))?.length, ASILPOS_RECIPIENT_MAX);
   assert.equal(t("   "), null, "boş ad Kime yazmaz");
-  assert.equal(t(undefined), null, "eski LafPOS: alıcı yok");
+  assert.equal(t(undefined), null, "eski AsilPOS: alıcı yok");
   assert.equal(t("Patron", "harcama"), null, "harcamada alıcı Kime olmaz (yer panelden)");
   assert.equal(t("Patron", "giris"), null);
 });
 
-test("Kime: boş Kime'li sahiplenilen ve önceden yazılmış LafPOS teslimi dolar; panelde yazılmış Kime ve yeniden yazılan satır dokunulmaz", () => {
+test("Kime: boş Kime'li sahiplenilen ve önceden yazılmış AsilPOS teslimi dolar; panelde yazılmış Kime ve yeniden yazılan satır dokunulmaz", () => {
   const withTo = (id: string, amount: number, recipient?: string): PosCashMove => ({ ...move(id, "teslim", amount), ...(recipient ? { recipient } : {}) });
   const moves = [withTo("01A", 200, "Patron"), withTo("01B", 300, "Banka"), withTo("01C", 400, "Okan"), withTo("01D", 50), move("01E", "harcama", 80)];
   const rows = [
-    { id: 1, lafposId: moves[0].id, store: null }, // eski sürümün yazdığı satır: dolar
-    { id: 2, lafposId: moves[1].id, store: "Patrona (elle)" }, // panelde yazılmış Kime: dokunulmaz
-    { id: 3, lafposId: null, store: "" }, // elle girilmiş eş, sahiplenilecek: dolar
-    { id: 4, lafposId: moves[3].id, store: null }, // alıcısız teslim: boş kalır
-    { id: 5, lafposId: moves[4].id, store: null }, // harcama: Kime değil
-    { id: 6, lafposId: "01Z".padEnd(26, "0"), store: null }, // gövdede olmayan satır
+    { id: 1, asilposId: moves[0].id, store: null }, // eski sürümün yazdığı satır: dolar
+    { id: 2, asilposId: moves[1].id, store: "Patrona (elle)" }, // panelde yazılmış Kime: dokunulmaz
+    { id: 3, asilposId: null, store: "" }, // elle girilmiş eş, sahiplenilecek: dolar
+    { id: 4, asilposId: moves[3].id, store: null }, // alıcısız teslim: boş kalır
+    { id: 5, asilposId: moves[4].id, store: null }, // harcama: Kime değil
+    { id: 6, asilposId: "01Z".padEnd(26, "0"), store: null }, // gövdede olmayan satır
   ];
-  assert.deepEqual(planLafposRecipientFill(moves, rows, [{ rowId: 3, move: moves[2] }]), [
+  assert.deepEqual(planAsilposRecipientFill(moves, rows, [{ rowId: 3, move: moves[2] }]), [
     { rowId: 3, store: "Okan" },
     { rowId: 1, store: "Patron" },
   ]);
   // Tutarı ya da türü değişip yeniden yazılan satır (plan.update) yazımda dolar, burada atlanır
-  assert.deepEqual(planLafposRecipientFill(moves, rows, [], new Set([1])), []);
+  assert.deepEqual(planAsilposRecipientFill(moves, rows, [], new Set([1])), []);
 });
 
-test("gövde: bozuk Faz 3 alanı günü reddetmez (400 LafPOS'ta kalıcı): alan düşer, günlüğe yazılır; bozuk tek hareket bütün listeyi düşürür", () => {
+test("gövde: bozuk Faz 3 alanı günü reddetmez (400 AsilPOS'ta kalıcı): alan düşer, günlüğe yazılır; bozuk tek hareket bütün listeyi düşürür", () => {
   const cases: [string, (b: ReturnType<typeof golden>) => void, string][] = [
     ["eksi beklenen", (b) => void (b.z.expectedOpening = -5), "z.expectedOpening"],
     ["metin fark", (b) => void (b.z.openingDiff = "100"), "z.openingDiff"],
@@ -153,12 +154,13 @@ test("gövde: bozuk Faz 3 alanı günü reddetmez (400 LafPOS'ta kalıcı): alan
 
 const Z = { countedCash: 1_279.5 };
 const report = { id: 7, countedCash: 1_279.5, handedOver: 0 };
-/** LafPOS'un otomatik raporunun son yazdığı değerler (lafpos_day_ends.autoValues) */
+/** AsilPOS'un otomatik raporunun son yazdığı değerler (asilpos_day_ends.autoValues) */
 const auto = (counted: number | null, handed = 0) => ({ reportId: 7, autoValues: { countedCash: counted, handedOver: handed } as unknown as AutoValues });
 
-test("devir: sayılmayan gün (geçişten önce) null; rapor yoksa LafPOS'un sayımı, sayım da yoksa null", () => {
+test("devir: sayılmayan gün (geçişten önce) null; rapor yoksa AsilPOS'un sayımı, sayım da yoksa null", () => {
   assert.equal(nextOpeningOf({ counted: false, z: Z, report, auto: null }), null);
-  assert.deepEqual(nextOpeningOf({ counted: true, z: Z, report: null, auto: null }), { amount: 1_279.5, source: "lafpos" });
+  // Kaynak telde eski adla (kurulu kasa yenisini tanımaz, devri bütünüyle reddeder)
+  assert.deepEqual(nextOpeningOf({ counted: true, z: Z, report: null, auto: null }), { amount: 1_279.5, source: TEL_KAYNAK });
   assert.equal(nextOpeningOf({ counted: true, z: { countedCash: null }, report: null, auto: null }), null);
   assert.equal(nextOpeningOf({ counted: true, z: null, report: null, auto: null }), null);
 });
@@ -166,12 +168,12 @@ test("devir: sayılmayan gün (geçişten önce) null; rapor yoksa LafPOS'un say
 test("devir: kişinin yazdığı ya da üstlendiği Kasa raporu geçer (sayılan − teslim)", () => {
   const human = { id: 9, countedCash: 1_500, handedOver: 300 };
   assert.deepEqual(nextOpeningOf({ counted: true, z: Z, report: human, auto: null }), { amount: 1_200, source: "kasa_raporu" });
-  // Rapor LafPOS'un otomatiğiydi ama kişi üstlendi (durum başka raporu gösteriyor ya da otomatik değer silinmiş)
+  // Rapor AsilPOS'un otomatiğiydi ama kişi üstlendi (durum başka raporu gösteriyor ya da otomatik değer silinmiş)
   assert.deepEqual(nextOpeningOf({ counted: true, z: Z, report: human, auto: { reportId: 3, autoValues: null } }), { amount: 1_200, source: "kasa_raporu" });
   assert.deepEqual(nextOpeningOf({ counted: true, z: Z, report: { ...human, id: 7 }, auto: { reportId: 7, autoValues: null } }), { amount: 1_200, source: "kasa_raporu" });
 });
 
-test("devir: LafPOS'un elle değişmemiş otomatik raporunda gelen gövdenin sayımı (rapor yanıttan sonra yazılır; yeniden sayımın yanıtı eskiyi söylemez)", () => {
+test("devir: AsilPOS'un elle değişmemiş otomatik raporunda gelen gövdenin sayımı (rapor yanıttan sonra yazılır; yeniden sayımın yanıtı eskiyi söylemez)", () => {
   // İlk gönderim 1.279,50 saydı, rapor öyle yazıldı; yeniden sayım 1.300,00 diyor: rapor da 1.300,00 olacak
   assert.deepEqual(nextOpeningOf({ counted: true, z: { countedCash: 1_300 }, report, auto: auto(1_279.5) }), { amount: 1_300, source: "kasa_raporu" });
   // Sayımsız yeniden kapanış: rapor sayımını korur
@@ -182,7 +184,7 @@ test("devir: LafPOS'un elle değişmemiş otomatik raporunda gelen gövdenin say
   assert.deepEqual(nextOpeningOf({ counted: true, z: { countedCash: 1_300 }, report: { ...report, handedOver: 200 }, auto: auto(1_279.5) }), { amount: 1_100, source: "kasa_raporu" });
 });
 
-test("devir: tutarsız rapor (teslim sayılandan büyük) eksi devir vermez, null (LafPOS kendi sayımına döner)", () => {
+test("devir: tutarsız rapor (teslim sayılandan büyük) eksi devir vermez, null (AsilPOS kendi sayımına döner)", () => {
   // Kişi teslimi 1.000,00 yazdı; yeniden sayım 900,00 geldi: birleştirme sayılanı gövdeden, teslimi kişiden alır
   assert.equal(nextOpeningOf({ counted: true, z: { countedCash: 900 }, report: { ...report, handedOver: 1_000 }, auto: auto(1_279.5) }), null);
   // Kişinin raporu da: sayılan 500, teslim 600
@@ -244,17 +246,17 @@ const move = (id: string, kind: PosCashMove["kind"], amount: number, categoryId:
   at: "2026-11-22T13:45:00.000Z",
   categoryId,
 });
-const row = (id: number, kind: "harcama" | "teslim", amount: number, lafposId: string | null = null, createdAt = `2026-11-22T0${id}:00:00.000Z`): LafposCashOutRow => ({
+const row = (id: number, kind: "harcama" | "teslim", amount: number, asilposId: string | null = null, createdAt = `2026-11-22T0${id}:00:00.000Z`): AsilposCashOutRow => ({
   id,
   kind,
   amount,
-  lafposId: lafposId && lafposId.padEnd(26, "0"),
+  asilposId: asilposId && asilposId.padEnd(26, "0"),
   createdAt: new Date(createdAt),
 });
 
 test("plan: yeni hareket satır olur, aynı kimlik yeniden gelince satırı günceller (eklemez); giriş satıra girmez", () => {
   const moves = [move("01A", "harcama", 800, 3), move("01B", "teslim", 200), move("01C", "giris", 50)];
-  const first = planLafposCashOuts(moves, []);
+  const first = planAsilposCashOuts(moves, []);
   assert.deepEqual(
     first.insert.map((m) => [m.id.slice(0, 3), m.kind]),
     [
@@ -263,18 +265,18 @@ test("plan: yeni hareket satır olur, aynı kimlik yeniden gelince satırı gün
     ],
   );
   assert.deepEqual([first.adopt, first.update, first.remove], [[], [], []]);
-  const again = planLafposCashOuts(moves, [row(1, "harcama", 800, "01A"), row(2, "teslim", 200, "01B")]);
+  const again = planAsilposCashOuts(moves, [row(1, "harcama", 800, "01A"), row(2, "teslim", 200, "01B")]);
   assert.deepEqual([again.insert, again.adopt, again.update, again.remove], [[], [], [], []], "aynı gövde: değişiklik yok");
-  const changed = planLafposCashOuts([move("01A", "harcama", 850, 3), move("01B", "teslim", 200)], [row(1, "harcama", 800, "01A"), row(2, "teslim", 200, "01B")]);
+  const changed = planAsilposCashOuts([move("01A", "harcama", 850, 3), move("01B", "teslim", 200)], [row(1, "harcama", 800, "01A"), row(2, "teslim", 200, "01B")]);
   assert.deepEqual(
     changed.update.map((u) => [u.rowId, u.move.amount]),
     [[1, 850]],
   );
 });
 
-test("plan: elle girilmiş eş (aynı tür, aynı tutar, LafPOS'a bağlanmamış) bire bir sahiplenilir, en eskisi önce; tutmayan elle satır kalır", () => {
+test("plan: elle girilmiş eş (aynı tür, aynı tutar, AsilPOS'a bağlanmamış) bire bir sahiplenilir, en eskisi önce; tutmayan elle satır kalır", () => {
   const rows = [row(1, "harcama", 800), row(2, "harcama", 800), row(3, "teslim", 800), row(4, "harcama", 120.01)];
-  const p = planLafposCashOuts([move("01A", "harcama", 800, 3), move("01B", "harcama", 120)], rows);
+  const p = planAsilposCashOuts([move("01A", "harcama", 800, 3), move("01B", "harcama", 120)], rows);
   assert.deepEqual(
     p.adopt.map((a) => [a.rowId, a.move.id.slice(0, 3)]),
     [[1, "01A"]],
@@ -285,66 +287,66 @@ test("plan: elle girilmiş eş (aynı tür, aynı tutar, LafPOS'a bağlanmamış
     ["01B"],
   );
   // İki aynı hareket iki ayrı elle satırı sahiplenir (bire bir)
-  const two = planLafposCashOuts([move("01A", "harcama", 800), move("01B", "harcama", 800), move("01C", "harcama", 800)], rows);
+  const two = planAsilposCashOuts([move("01A", "harcama", 800), move("01B", "harcama", 800), move("01C", "harcama", 800)], rows);
   assert.deepEqual(
     two.adopt.map((a) => a.rowId),
     [1, 2],
   );
   assert.equal(two.insert.length, 1);
-  // Başka LafPOS satırı (kimliği gövdede yok) sahiplenilmez, kaldırılır
-  const gone = planLafposCashOuts([move("01A", "harcama", 800)], [row(5, "harcama", 800, "01Z")]);
+  // Başka AsilPOS satırı (kimliği gövdede yok) sahiplenilmez, kaldırılır
+  const gone = planAsilposCashOuts([move("01A", "harcama", 800)], [row(5, "harcama", 800, "01Z")]);
   assert.deepEqual([gone.adopt, gone.insert.length, gone.remove], [[], 1, [5]]);
 });
 
-test("plan: gövdede olmayan LafPOS satırı kaldırılır; elle girilmiş satıra dokunulmaz", () => {
-  const p = planLafposCashOuts([move("01A", "harcama", 800)], [row(1, "harcama", 800, "01A"), row(2, "teslim", 200, "01B"), row(3, "harcama", 45)]);
+test("plan: gövdede olmayan AsilPOS satırı kaldırılır; elle girilmiş satıra dokunulmaz", () => {
+  const p = planAsilposCashOuts([move("01A", "harcama", 800)], [row(1, "harcama", 800, "01A"), row(2, "teslim", 200, "01B"), row(3, "harcama", 45)]);
   assert.deepEqual([p.remove, p.insert, p.adopt, p.update], [[2], [], [], []]);
-  assert.deepEqual(planLafposCashOuts([], [row(1, "harcama", 800, "01A"), row(3, "harcama", 45)]).remove, [1], "hareketsiz gün: LafPOS satırları kalkar");
+  assert.deepEqual(planAsilposCashOuts([], [row(1, "harcama", 800, "01A"), row(3, "harcama", 45)]).remove, [1], "hareketsiz gün: AsilPOS satırları kalkar");
 });
 
-test("kilit: LafPOS satırının tutarı, türü ve günü değişmez; yer, belge, fotoğraf ve kategori serbest; elle satır serbest", () => {
-  const prev = { lafposId: "01M81R1GV0K7Q2W9X4Y6Z8A0B2", kind: "harcama" as const, amount: 800, date: "2026-11-22" };
-  assert.equal(lafposCashOutChange(prev, { kind: "harcama", amount: 800, date: "2026-11-22" }), null);
-  assert.equal(lafposCashOutChange(prev, { kind: "harcama", amount: 800.004, date: "2026-11-22" }), null, "kuruş altı yuvarlama");
-  assert.equal(lafposCashOutChange(prev, { kind: "harcama", amount: 750, date: "2026-11-22" }), LAFPOS_CASH_OUT_TEXT.locked);
-  assert.equal(lafposCashOutChange(prev, { kind: "teslim", amount: 800, date: "2026-11-22" }), LAFPOS_CASH_OUT_TEXT.locked);
-  assert.equal(lafposCashOutChange(prev, { kind: "harcama", amount: 800, date: "2026-11-21" }), LAFPOS_CASH_OUT_TEXT.locked);
-  assert.equal(lafposCashOutChange({ ...prev, lafposId: null }, { kind: "teslim", amount: 1, date: "2026-11-01" }), null);
-  for (const t of Object.values(LAFPOS_CASH_OUT_TEXT)) assert.match(t, /LafPOS/, "metin satırın kaynağını söyler");
+test("kilit: AsilPOS satırının tutarı, türü ve günü değişmez; yer, belge, fotoğraf ve kategori serbest; elle satır serbest", () => {
+  const prev = { asilposId: "01M81R1GV0K7Q2W9X4Y6Z8A0B2", kind: "harcama" as const, amount: 800, date: "2026-11-22" };
+  assert.equal(asilposCashOutChange(prev, { kind: "harcama", amount: 800, date: "2026-11-22" }), null);
+  assert.equal(asilposCashOutChange(prev, { kind: "harcama", amount: 800.004, date: "2026-11-22" }), null, "kuruş altı yuvarlama");
+  assert.equal(asilposCashOutChange(prev, { kind: "harcama", amount: 750, date: "2026-11-22" }), ASILPOS_CASH_OUT_TEXT.locked);
+  assert.equal(asilposCashOutChange(prev, { kind: "teslim", amount: 800, date: "2026-11-22" }), ASILPOS_CASH_OUT_TEXT.locked);
+  assert.equal(asilposCashOutChange(prev, { kind: "harcama", amount: 800, date: "2026-11-21" }), ASILPOS_CASH_OUT_TEXT.locked);
+  assert.equal(asilposCashOutChange({ ...prev, asilposId: null }, { kind: "teslim", amount: 1, date: "2026-11-01" }), null);
+  for (const t of Object.values(ASILPOS_CASH_OUT_TEXT)) assert.match(t, /AsilPOS/, "metin satırın kaynağını söyler");
 });
 
-test("ayırma: sayılmayan günde LafPOS'un açtığı satır kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır; kaydı silinen sayılan günde hepsi kalır", () => {
-  const lafpos = { createdBy: null, createdByName: LAFPOS_CASH_OUT_BY };
+test("ayırma: sayılmayan günde AsilPOS'un açtığı satır kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır; kaydı silinen sayılan günde hepsi kalır", () => {
+  const asilpos = { createdBy: null, createdByName: ASILPOS_CASH_OUT_BY };
   const rows = [
-    { id: 1, lafposId: "01A", ...lafpos, paid: false },
-    { id: 2, lafposId: "01B", createdBy: 5, createdByName: "Ayşe", paid: false },
-    { id: 3, lafposId: "01C", ...lafpos, paid: true },
-    { id: 4, lafposId: null, createdBy: 5, createdByName: "Ayşe", paid: false },
-    // Açanı silinmiş elle satır (createdBy null) LafPOS'un değil
-    { id: 5, lafposId: "01D", createdBy: null, createdByName: "Ayşe", paid: false },
+    { id: 1, asilposId: "01A", ...asilpos, paid: false },
+    { id: 2, asilposId: "01B", createdBy: 5, createdByName: "Ayşe", paid: false },
+    { id: 3, asilposId: "01C", ...asilpos, paid: true },
+    { id: 4, asilposId: null, createdBy: 5, createdByName: "Ayşe", paid: false },
+    // Açanı silinmiş elle satır (createdBy null) AsilPOS'un değil
+    { id: 5, asilposId: "01D", createdBy: null, createdByName: "Ayşe", paid: false },
   ];
-  assert.deepEqual(planLafposDetach(rows, "drop"), { remove: [1], release: [2, 3, 5] });
-  assert.deepEqual(planLafposDetach(rows, "release"), { remove: [], release: [1, 2, 3, 5] });
-  assert.equal(lafposInsertedRow({ lafposId: null, ...lafpos }), false, "LafPOS'tan ayrılmış satır artık elle satır");
+  assert.deepEqual(planAsilposDetach(rows, "drop"), { remove: [1], release: [2, 3, 5] });
+  assert.deepEqual(planAsilposDetach(rows, "release"), { remove: [], release: [1, 2, 3, 5] });
+  assert.equal(asilposInsertedRow({ asilposId: null, ...asilpos }), false, "AsilPOS'tan ayrılmış satır artık elle satır");
 });
 
-test("kategori bekleyen LafPOS harcaması: yalnız LafPOS'un açtığı, kaydı olmayan ve personelin kategorisiyle gelmeyen harcama; personelin düzeltmesinde kural", () => {
+test("kategori bekleyen AsilPOS harcaması: yalnız AsilPOS'un açtığı, kaydı olmayan ve personelin kategorisiyle gelmeyen harcama; personelin düzeltmesinde kural", () => {
   const staffCat = (id: number) => id === 3;
-  const r = { lafposId: "01A", createdBy: null, createdByName: LAFPOS_CASH_OUT_BY, kind: "harcama" as const, hasExpense: false };
-  assert.equal(lafposAwaitingCategory(r, null, staffCat), true, "kategorisiz");
-  assert.equal(lafposAwaitingCategory(r, 99, staffCat), true, "personelin seçemediği kategori");
-  assert.equal(lafposAwaitingCategory(r, 3, staffCat), false, "kategoriyle geldi: kaydı eşitlemede açıldı, yoksa yönetici kaldırdı");
-  assert.equal(lafposAwaitingCategory(r, undefined, staffCat), false, "hareket saklı gövdede yok");
-  assert.equal(lafposAwaitingCategory({ ...r, hasExpense: true }, null, staffCat), false);
-  assert.equal(lafposAwaitingCategory({ ...r, kind: "teslim" }, null, staffCat), false);
-  assert.equal(lafposAwaitingCategory({ ...r, createdBy: 5, createdByName: "Ayşe" }, null, staffCat), false, "sahiplenilen elle satır");
+  const r = { asilposId: "01A", createdBy: null, createdByName: ASILPOS_CASH_OUT_BY, kind: "harcama" as const, hasExpense: false };
+  assert.equal(asilposAwaitingCategory(r, null, staffCat), true, "kategorisiz");
+  assert.equal(asilposAwaitingCategory(r, 99, staffCat), true, "personelin seçemediği kategori");
+  assert.equal(asilposAwaitingCategory(r, 3, staffCat), false, "kategoriyle geldi: kaydı eşitlemede açıldı, yoksa yönetici kaldırdı");
+  assert.equal(asilposAwaitingCategory(r, undefined, staffCat), false, "hareket saklı gövdede yok");
+  assert.equal(asilposAwaitingCategory({ ...r, hasExpense: true }, null, staffCat), false);
+  assert.equal(asilposAwaitingCategory({ ...r, kind: "teslim" }, null, staffCat), false);
+  assert.equal(asilposAwaitingCategory({ ...r, createdBy: 5, createdByName: "Ayşe" }, null, staffCat), false, "sahiplenilen elle satır");
   // cashOutWritesExpense: personelin düzeltmesi
   const edit = { admin: false, mode: "edit" as const, kind: "harcama" as const, docType: "yok" as const, requested: false, hasExpense: false, prevDocType: "yok" as const };
-  assert.equal(cashOutWritesExpense({ ...edit, lafposAwaitingCategory: true }), true, "kategori bekleyen: yeni satırın kuralı");
-  assert.equal(cashOutWritesExpense({ ...edit, lafposAwaitingCategory: true, docType: "fatura" }), false, "faturalı değil");
-  assert.equal(cashOutWritesExpense({ ...edit, lafposAwaitingCategory: false }), false, "kaydı kaldırılan LafPOS satırı: geri gelmez");
-  assert.equal(cashOutWritesExpense({ ...edit, prevDocType: "fatura", awaitingInvoice: false, lafposAwaitingCategory: false }), false, "sahiplenilen faturalı satır, faturası beklenmiyor");
-  assert.equal(cashOutWritesExpense({ ...edit, prevDocType: "fatura", awaitingInvoice: true, lafposAwaitingCategory: false }), true, "faturası beklenen satır fişe döndü");
+  assert.equal(cashOutWritesExpense({ ...edit, asilposAwaitingCategory: true }), true, "kategori bekleyen: yeni satırın kuralı");
+  assert.equal(cashOutWritesExpense({ ...edit, asilposAwaitingCategory: true, docType: "fatura" }), false, "faturalı değil");
+  assert.equal(cashOutWritesExpense({ ...edit, asilposAwaitingCategory: false }), false, "kaydı kaldırılan AsilPOS satırı: geri gelmez");
+  assert.equal(cashOutWritesExpense({ ...edit, prevDocType: "fatura", awaitingInvoice: false, asilposAwaitingCategory: false }), false, "sahiplenilen faturalı satır, faturası beklenmiyor");
+  assert.equal(cashOutWritesExpense({ ...edit, prevDocType: "fatura", awaitingInvoice: true, asilposAwaitingCategory: false }), true, "faturası beklenen satır fişe döndü");
 });
 
 // ---------------------------------------------------------------- Otomatik rapor ve gün görünümü
@@ -352,13 +354,13 @@ test("kategori bekleyen LafPOS harcaması: yalnız LafPOS'un açtığı, kaydı 
 const NO_OUTS = { count: 0, total: 0, note: null };
 const fullZ = (o: Record<string, unknown> = {}) => ({ ...zOf(1_279.5), ...o });
 
-test("otomatik rapor: açılış farkının nedeni nota yazılır; panelin devir denetimi yoksa LafPOS'un farkı da", () => {
-  // Panelde önceki rapor yok: LafPOS'un beklediği ve farkı nota
+test("otomatik rapor: açılış farkının nedeni nota yazılır; panelin devir denetimi yoksa AsilPOS'un farkı da", () => {
+  // Panelde önceki rapor yok: AsilPOS'un beklediği ve farkı nota
   const v = autoValuesOf("2026-11-23", fullZ({ openingCash: 1_300, expectedOpening: 1_279.5, openingDiff: 20.5, openingReason: "Bozuk para eklendi" }), NO_OUTS, null);
-  assert.match(String(v.note), /Açılış LafPOS'ta beklenenden 20,50\s₺ fazla \(beklenen 1\.279,50\s₺\); neden: Bozuk para eklendi\./);
-  // Panelin devriyle de tutmuyor: panelin cümlesi ve LafPOS'ta yazılan neden
+  assert.match(String(v.note), /Açılış AsilPOS'ta beklenenden 20,50\s₺ fazla \(beklenen 1\.279,50\s₺\); neden: Bozuk para eklendi\./);
+  // Panelin devriyle de tutmuyor: panelin cümlesi ve AsilPOS'ta yazılan neden
   const c = autoValuesOf("2026-11-23", fullZ({ openingCash: 1_300, expectedOpening: 1_279.5, openingDiff: 20.5, openingReason: "Bozuk para eklendi" }), NO_OUTS, { date: "2026-11-22", amount: 1_279.5 });
-  assert.match(String(c.note), /Açılış önceki raporun devrinden 20,50\s₺ fazla; LafPOS'taki açılış yazıldı\. Neden \(LafPOS\): Bozuk para eklendi\./);
+  assert.match(String(c.note), /Açılış önceki raporun devrinden 20,50\s₺ fazla; AsilPOS'taki açılış yazıldı\. Neden \(AsilPOS\): Bozuk para eklendi\./);
   assert.doesNotMatch(String(c.note), /beklenenden/, "aynı fark iki kez yazılmaz");
   // Fark yok, neden yok: not değişmez
   const plain = autoValuesOf("2026-11-23", fullZ({ expectedOpening: 1_120, openingDiff: 0, openingReason: null }), NO_OUTS, null);
@@ -374,20 +376,20 @@ test("gün sonu e-postasının özeti Faz 3 alanlarıyla değişmez (yükseltmed
 
 test("gün görünümü: açılışın beklenen tutarı, farkı ve nedeni; hareketler türüne göre (giriş yalnız burada)", () => {
   const d = parse(golden());
-  const detail = lafposDayDetail(d);
+  const detail = asilposDayDetail(d);
   const sec = (t: string) => Object.fromEntries(detail.sections.find((x) => x.title === t)?.rows ?? []);
-  assert.deepEqual(sec("Kasa açılışı (LafPOS)"), { "Beklenen açılış": money(1_400), "Açılış farkı": `+${money(100)}`, "Farkın nedeni": "Sabah bozuk para eklendi" });
+  assert.deepEqual(sec("Kasa açılışı (AsilPOS)"), { "Beklenen açılış": money(1_400), "Açılış farkı": `+${money(100)}`, "Farkın nedeni": "Sabah bozuk para eklendi" });
   // 25 Kasım 2026'dan altın gövdenin teslimi alıcısıyla (`recipient: "Patron"`): teslim kime gittiğiyle de dökülür
-  assert.deepEqual(sec("Kasa hareketleri (LafPOS)"), { Harcama: `1 · ${money(120)}`, Teslim: `1 · ${money(200)}`, "Teslim · Patron": `1 · ${money(200)}`, "Kasaya giren (giriş)": `1 · ${money(50)}` });
+  assert.deepEqual(sec("Kasa hareketleri (AsilPOS)"), { Harcama: `1 · ${money(120)}`, Teslim: `1 · ${money(200)}`, "Teslim · Patron": `1 · ${money(200)}`, "Kasaya giren (giriş)": `1 · ${money(50)}` });
   const kabul = parse(JSON.parse(read("tests/fixtures/kabul-gunu-2026-11-22.json")));
-  const k = lafposDayDetail(kabul);
+  const k = asilposDayDetail(kabul);
   const ks = (t: string) => Object.fromEntries(k.sections.find((x) => x.title === t)?.rows ?? []);
-  assert.deepEqual(ks("Kasa açılışı (LafPOS)"), { "Beklenen açılış": "bilinmiyor" });
-  assert.deepEqual(ks("Kasa hareketleri (LafPOS)"), { Harcama: `1 · ${money(800)}`, Teslim: "yok", "Kasaya giren (giriş)": "yok" });
-  // Eski LafPOS'un gününde bölüm yok (uydurulmaz)
+  assert.deepEqual(ks("Kasa açılışı (AsilPOS)"), { "Beklenen açılış": "bilinmiyor" });
+  assert.deepEqual(ks("Kasa hareketleri (AsilPOS)"), { Harcama: `1 · ${money(800)}`, Teslim: "yok", "Kasaya giren (giriş)": "yok" });
+  // Eski AsilPOS'un gününde bölüm yok (uydurulmaz)
   const old: Record<string, unknown> & { z: Record<string, unknown> } = golden();
   delete old.cashMoves;
   for (const key of ["expectedOpening", "openingDiff", "openingReason"]) delete old.z[key];
-  const titles = lafposDayDetail(parse(old)).sections.map((x) => x.title);
-  assert.ok(!titles.includes("Kasa açılışı (LafPOS)") && !titles.includes("Kasa hareketleri (LafPOS)"), titles.join(", "));
+  const titles = asilposDayDetail(parse(old)).sections.map((x) => x.title);
+  assert.ok(!titles.includes("Kasa açılışı (AsilPOS)") && !titles.includes("Kasa hareketleri (AsilPOS)"), titles.join(", "));
 });

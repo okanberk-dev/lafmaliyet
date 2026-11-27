@@ -107,7 +107,7 @@ const lateSchema = reportSchema.omit({ countedBy: true, revision: true, photos: 
   zNo: z.string().trim().min(1, "Z no gerekli").max(30),
   reason: z.string().trim().min(3, "Geç girme nedenini yazın").max(300, "Neden en çok 300 karakter"),
   requestVersion: z.number().int().min(0),
-  // En az kaç fotoğraf: günün kasasına göre çekirdekte (ModPOS Z; LafPOS gününde gün sonu geldiyse hiç, gelmediyse yazarkasa Z)
+  // En az kaç fotoğraf: günün kasasına göre çekirdekte (ModPOS Z; AsilPOS gününde gün sonu geldiyse hiç, gelmediyse yazarkasa Z)
   photoIds: z.array(z.number().int().positive()).max(MAX_REPORT_PHOTOS),
   handedTo: z.discriminatedUnion("kind", [z.object({ kind: z.literal("user"), id: z.number().int().positive() }), z.object({ kind: z.literal("banka") })]).nullable(),
   branchId: tillId,

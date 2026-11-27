@@ -21,8 +21,8 @@ export interface ReportFlags {
   okcOff: boolean;
 }
 
-export function reportFlags(report: ReportLike, extras: { cardExtra?: number | null; offDevice?: CashOffDevice | null; kasa?: "ModPOS" | "LafPOS" } = {}): ReportFlags {
-  // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen kartı (Faz 2) düşer
+export function reportFlags(report: ReportLike, extras: { cardExtra?: number | null; offDevice?: CashOffDevice | null; kasa?: "ModPOS" | "AsilPOS" } = {}): ReportFlags {
+  // AsilPOS gününde kart farkı kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen kartı (Faz 2) düşer
   const c = computeCash(withCardExtra(report, extras.cardExtra, extras.offDevice, extras.kasa));
   return {
     paymentsOff: Math.abs(c.paymentsDiff) >= CASH_TOLERANCE,
@@ -34,14 +34,14 @@ export function reportFlags(report: ReportLike, extras: { cardExtra?: number | n
 export const cardDiffLabel = (d: number) => `Kart ${d > 0 ? "+" : "−"}${money(Math.abs(d))}`;
 
 /**
- * Dikkat isteyenlerin kısa adları (sırası ay listesininki): fotoğraftan farklı, LafPOS'tan farklı, ModPOS API'den farklı,
+ * Dikkat isteyenlerin kısa adları (sırası ay listesininki): fotoğraftan farklı, AsilPOS'tan farklı, ModPOS API'den farklı,
  * fişsiz çıkış (bulgu 2; "Fişsiz çıkış: 500 ₺", unreceiptedCashOut), Z tutmuyor, kart farkı, yazarkasa tutmuyor. Boşsa her
  * şey yolunda
  */
-export function reportAttention(flags: ReportFlags, o: { photoDiffs?: number; lafposDiffs?: number; modposDiffs?: number; unreceipted?: number | null } = {}): string[] {
+export function reportAttention(flags: ReportFlags, o: { photoDiffs?: number; asilposDiffs?: number; modposDiffs?: number; unreceipted?: number | null } = {}): string[] {
   const out: string[] = [];
   if (o.photoDiffs) out.push("Fotoğraftan farklı");
-  if (o.lafposDiffs) out.push("LafPOS'tan farklı");
+  if (o.asilposDiffs) out.push("AsilPOS'tan farklı");
   if (o.modposDiffs) out.push("ModPOS API'den farklı");
   if (o.unreceipted && o.unreceipted >= CASH_TOLERANCE) out.push(unreceiptedLabel(o.unreceipted));
   if (flags.paymentsOff) out.push("Z tutmuyor");

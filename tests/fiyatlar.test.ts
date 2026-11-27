@@ -818,7 +818,7 @@ test("eylemler: toplu fiyat ve şube fiyatı yöneticinin; kasaya işle iki rold
   const ops = read("src/server/bell/ops.ts");
   // Personel dalı kendi sabit sütunlu özetinden okur (yalnız etkin ürünler), yönetici posPendingSummary'den
   const pos = ops.slice(ops.indexOf("async function posNotifications"), ops.indexOf("export async function opsBell"));
-  // Bugünün kasaları (geçiş gününden itibaren LafPOS; denetim E-39; şube başına, A3) iki özete ve metne aynı
+  // Bugünün kasaları (geçiş gününden itibaren AsilPOS; denetim E-39; şube başına, A3) iki özete ve metne aynı
   assert.match(pos, /const tills = await loadTillScopes\(undefined, now\);/);
   assert.match(pos, /for \(const scope of tills\)/);
   assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(scope\) : await staffPosSummary\(scope\)/);

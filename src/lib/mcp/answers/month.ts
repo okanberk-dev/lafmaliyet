@@ -7,7 +7,7 @@
 import { daysInMonth, uncountedCogsSummary, uncountedCogsText, yearMonths, type Model } from "../../calc/engine";
 import { alerts, dashboard, missingRevenueText, yearTotals, yearTrend } from "../../calc/insights";
 import { kasaMonthLine, missingSentence } from "../../cash-month";
-import { monthKasa, periodKasa } from "../../lafpos/kasa";
+import { monthKasa, periodKasa } from "../../asilpos/kasa";
 import { cleanName, monthLabel, num, panelUrl, pct, pctNum, r2, r2n, tl } from "./common";
 
 export interface MonthSummary {
@@ -78,8 +78,8 @@ const kdvText = (rate: number) => num(1 + rate, 2, 2);
 
 export function monthSummary(model: Model, month: string, ctx: { base: string }): MonthSummary {
   const st = model.settings;
-  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra LafPOS; denetim E-39)
-  const mk = monthKasa(month, st.lafposGecisGunu);
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra AsilPOS; denetim E-39)
+  const mk = monthKasa(month, st.asilposGecisGunu);
   const d = dashboard(model, month);
   const pm = model.pnlMonth(month);
   const info = d.info;
@@ -118,10 +118,10 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
       const ciroNet = pm.revenueNet ?? 0;
       hesap.push(`Kâr = KDV hariç ciro − giderler = ${tl(total)} − ${tl(pm.expenses)} = ${tl(pm.profit)}`);
       const service = pm.serviceRevenue;
-      // LafPOS'un şubesinin ayında KDV gün gün (engine.ts posNet): LafPOS günü kendi dökümüyle, öteki günler günün
+      // AsilPOS'un şubesinin ayında KDV gün gün (engine.ts posNet): AsilPOS günü kendi dökümüyle, öteki günler günün
       // oranıyla, ay günlerin toplamı; ay toplamının formülü o rakamı vermez (Marina Kasım: 30.576,15, ay toplamından ,14)
       const pos = model.posNet(month)?.byDay
-        ? `${tl(pm.revenue)} gün gün (LafPOS günü kendi KDV dökümüyle, öteki günler ÷ ${kdvText(st.kdv)}${service > 0 ? `, hizmet ÷ ${kdvText(st.kdvHizmet)}` : ""}; ay günlerin toplamı)`
+        ? `${tl(pm.revenue)} gün gün (AsilPOS günü kendi KDV dökümüyle, öteki günler ÷ ${kdvText(st.kdv)}${service > 0 ? `, hizmet ÷ ${kdvText(st.kdvHizmet)}` : ""}; ay günlerin toplamı)`
         : service > 0
           ? `(${tl(pm.revenue)} − ${tl(service)} hizmet) ÷ ${kdvText(st.kdv)} + ${tl(service)} ÷ ${kdvText(st.kdvHizmet)}`
           : `${tl(pm.revenue)} ÷ ${kdvText(st.kdv)}`;
@@ -245,7 +245,7 @@ export function yearSummary(model: Model, year: number, ctx: { base: string }): 
   const toplam = { ciroKdvHaric: r2(yt.revenueNet), gider: r2(yt.expenses), kar: r2(yt.profit) };
   const months = yearMonths(year);
   const hesap = [
-    `Her ayın kârı = KDV hariç ciro (${periodKasa(months, model.settings.lafposGecisGunu).both} + laffogato.net online) − giderler (Gelir-gider)`,
+    `Her ayın kârı = KDV hariç ciro (${periodKasa(months, model.settings.asilposGecisGunu).both} + laffogato.net online) − giderler (Gelir-gider)`,
     active.length
       ? `Yıl toplamı cirosu girilmiş ${num(active.length)} ay: ${active.map((r) => monthLabel(r.month)).join(", ")} → ciro ${tl(toplam.ciroKdvHaric)} − gider ${tl(toplam.gider)} = ${tl(toplam.kar)}`
       : `${year} yılında cirosu girilmiş ay yok`,

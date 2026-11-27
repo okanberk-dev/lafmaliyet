@@ -160,15 +160,15 @@ test("sade metin: geliştirici notu ve kalkmış özellik anlatılmaz", () => {
 });
 
 test("sade metin: Marina'nın ModPOS dönemi kapandı (CONTRACT §9); kasa şubeye göre anlatılır, Tuzla ModPOS'ta", () => {
-  for (const s of ["Kasadaki (ModPOS)", "LafPOS&apos;a geçildiyse", "LafPOS&apos;a geçiş günü seçildiyse", "ModPOS raporuyla çalışan aylarda", "ModPOS fiyatları", "ModPOS için kayıt sürer"]) {
+  for (const s of ["Kasadaki (ModPOS)", "AsilPOS&apos;a geçildiyse", "AsilPOS&apos;a geçiş günü seçildiyse", "ModPOS raporuyla çalışan aylarda", "ModPOS fiyatları", "ModPOS için kayıt sürer"]) {
     assert.ok(!PAGE.includes(s), s);
   }
   const kasa = answer("kasa-fiyat");
   assert.match(kasa, /ModPOS'lu şubede/);
-  assert.match(kasa, /LafPOS'lu şubede/);
+  assert.match(kasa, /AsilPOS'lu şubede/);
   assert.match(PAGE, /q: "Kasadaki fiyatlar \(Kasaya işle\)"/);
   assert.match(answer("zam"), /Kasaya işle/);
-  for (const id of ["fotograf", "komisyon", "ay-ortasi-liste"]) assert.match(answer(id), /LafPOS'lu şube/, id);
+  for (const id of ["fotograf", "komisyon", "ay-ortasi-liste"]) assert.match(answer(id), /AsilPOS'lu şube/, id);
 });
 
 test("sade metin: ay sonu tahmini Formüller'le birleşti (formül iki yerde yazılmaz)", () => {
@@ -178,14 +178,14 @@ test("sade metin: ay sonu tahmini Formüller'le birleşti (formül iki yerde yaz
   assert.match(PAGE, /"Ay sonu tahmini \(yalnızca devam eden ay\)"/);
 });
 
-test("sade metin: LafPOS'lu şubenin gün sonu (#132): rapor LafPOS'tan, personel Pavo'nun fişini çeker, karşılaştırma batch batch", () => {
+test("sade metin: AsilPOS'lu şubenin gün sonu (#132): rapor AsilPOS'tan, personel Pavo'nun fişini çeker, karşılaştırma batch batch", () => {
   const foto = answer("fotograf");
   assert.match(foto, /Pavo/);
   assert.match(foto, /Gün sonu fotoğrafı/);
   assert.doesNotMatch(foto, /yalnız banka POS Z'si çekilir/);
   const z = answer("yazarkasa-z");
   assert.match(z, /ModPOS'lu şubede banka POS Z'si isteğe bağlıdır/);
-  assert.match(z, /LafPOS'lu şubede/);
+  assert.match(z, /AsilPOS'lu şubede/);
   assert.match(z, /batch/);
 });
 

@@ -12,7 +12,7 @@ import { addDays, todayTR } from "@/lib/reminders";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, type DB } from "@/server/db";
-import { loadBranchSwitchDay } from "@/server/lafpos/branch";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
 
 import { loadModposFallback } from "./fallback";
 import { loadModposIndex, readModposState, recentModposSheets } from "./store";
@@ -67,7 +67,7 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     loadModposIndex(db, branchId),
     recentModposSheets(MODPOS_RECENT_DAYS, db, branchId),
     resolveBranchSetting(MODPOS_GROUP, branchId, db),
-    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS şubesinin föyü eksik sayılmaya devam eder
+    // Geçiş günü yalnız AsilPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS şubesinin föyü eksik sayılmaya devam eder
     loadBranchSwitchDay(branchId, db),
     branches ? Promise.resolve(branches) : listBranches(db),
   ]);
@@ -75,7 +75,7 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
   const fallback = fallbackSetting.value.monthFallback;
   const fallbackFrom = fallbackSetting.mode.kind === "linked" ? { id: fallbackSetting.from, name: all.find((b) => b.id === fallbackSetting.from)?.name ?? fallbackSetting.from } : null;
   const sorted = [...index.keys()].sort();
-  // LafPOS'a geçiş gününden itibaren föy çekilmez: eksik sayılmaz. Sıra sabah işininki (yeniden eskiye)
+  // AsilPOS'a geçiş gününden itibaren föy çekilmez: eksik sayılmaz. Sıra sabah işininki (yeniden eskiye)
   const missing = missingFoyDays(from, index, now, switchDay);
   const input: ModposCardInput = {
     now,

@@ -1,10 +1,10 @@
-// Panel asistanının LafPOS ve operasyon okuma araçları (docs/ASISTAN.md › LafPOS ve operasyon), sahte okuyucularla:
+// Panel asistanının AsilPOS ve operasyon okuma araçları (docs/ASISTAN.md › AsilPOS ve operasyon), sahte okuyucularla:
 // gün sonu (Z, kasa farkı, ödeme türleri, ikram; ModPOS günü, gelmeyen gün, şube kapsamı, varsayılan dün, aralık
-// sınırı), günlük satışlar (deneme günleri, tek ürün, eşleşmeyen adlar, bugün yok), LafPOS durumu (ret ve onarım),
+// sınırı), günlük satışlar (deneme günleri, tek ürün, eşleşmeyen adlar, bugün yok), AsilPOS durumu (ret ve onarım),
 // menü durumu, vardiya (not gitmez), Bugün özeti, bekleyen işler (hatırlatıcı notu gitmez), stok tahmini; serbest
 // metnin kısalması, personele kapalı olmaları, araç listesindeki yerleri ve strict önek. İşlem rehberi: yapılandırılmış
 // girdiler, yolların src/app/panel altında gerçek bir sayfa ve bölüm olması, kataloğun Rehber ve Hariç eylemlerinin
-// hepsinin bir girdide olması. Kaynak bekçileri: okuyucu modülünün izin listesi (LafPOS yazıcıları yok), sistem
+// hepsinin bir girdide olması. Kaynak bekçileri: okuyucu modülünün izin listesi (AsilPOS yazıcıları yok), sistem
 // isteminin kuralları, örnek çipler, telefonda alt sayfa (390 / 360 px), klavye, güvenli alan, 44 px.
 // Veritabanıyla uçtan uca: tests/asistan-okuma-db.test.ts. Çalıştırma: npx tsx --test tests/asistan-okuma.test.ts
 
@@ -18,8 +18,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { OP_GUIDES, searchGuides } from "../src/lib/assistant/guides";
 import { safeHref } from "../src/lib/assistant/markdown";
 import { DEFAULT_BRANCHES, ALL_BRANCHES, type BranchRow } from "../src/lib/branches";
-import { posZSchema, type PosPayment } from "../src/lib/lafpos/day";
-import type { LafposRejection } from "../src/lib/lafpos/status";
+import { posZSchema, type PosPayment } from "../src/lib/asilpos/day";
+import type { AsilposRejection } from "../src/lib/asilpos/status";
 import { ToolInputError } from "../src/lib/mcp/answers/common";
 import { fitsStructuredOutputs, schemaComplexity } from "../src/lib/photo-read/claude-schema";
 import type { StockEstimateLine } from "../src/lib/stock-estimate";
@@ -32,7 +32,7 @@ import {
   readTools,
   type DailySaleRead,
   type DayEndRead,
-  type LafposCardRead,
+  type AsilposCardRead,
   type ReadToolContext,
   type ReadToolDeps,
   type StockRead,
@@ -99,13 +99,13 @@ const END: DayEndRead = {
   auto: { reportId: 77, missing: ["photo", "okcZNo"] },
 };
 
-const card = (over: Partial<LafposCardRead> = {}): LafposCardRead => {
-  const rej: LafposRejection & { date: string } = { at: "2026-11-23T23:00:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-11-22", zNo: 40, sentZNo: 41, clearedAt: null };
+const card = (over: Partial<AsilposCardRead> = {}): AsilposCardRead => {
+  const rej: AsilposRejection & { date: string } = { at: "2026-11-23T23:00:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-11-22", zNo: 40, sentZNo: 41, clearedAt: null };
   return {
     secretProblem: null,
     switchDay: SWITCH,
     today: "2026-11-24",
-    state: { lastOk: { at: "2026-11-23T22:40:00.000Z", date: "2026-11-23", zNo: 42 }, lastError: rej, rejections: { "2026-11-22": rej }, unverified: null } as unknown as LafposCardRead["state"],
+    state: { lastOk: { at: "2026-11-23T22:40:00.000Z", date: "2026-11-23", zNo: 42 }, lastError: rej, rejections: { "2026-11-22": rej }, unverified: null } as unknown as AsilposCardRead["state"],
     lastDay: { date: "2026-11-23", zNo: 42, receivedAt: "2026-11-23T22:40:00.000Z" },
     totalDays: 5,
     trialDays: 2,
@@ -157,7 +157,7 @@ const stockLine = (name: string, over: Partial<StockEstimateLine> = {}): StockEs
 const STOCK: StockRead = {
   today: "2026-11-24",
   switchDay: SWITCH,
-  lafposFrom: SWITCH,
+  asilposFrom: SWITCH,
   estimate: {
     lines: [stockLine("Süt"), stockLine("Espresso çekirdeği", { ingredientId: 2, unit: "KG", estimate: 5_000, critical: false })],
     critical: [stockLine("Süt")],
@@ -166,7 +166,7 @@ const STOCK: StockRead = {
     missingDays: ["2026-11-21"],
     unmatched: { lines: 2, qty: 3, names: 1, top: ["LATTE BUYUK XL"] },
     noRecipe: { lines: 0, qty: 0, names: 0, top: [] },
-    counts: { tahmin: 2, "sayim-yok": 0, "lafpos-oncesi": 0 },
+    counts: { tahmin: 2, "sayim-yok": 0, "asilpos-oncesi": 0 },
     online: { orders: 12, qty: 15, tillOrders: 3, unmatched: { lines: 0, qty: 0, names: 0, top: [] }, missingMonths: ["2026-10"], through: "2026-11-23" },
     avgDays: 2,
     avgWindow: 14,
@@ -208,7 +208,7 @@ function fakeDeps(state: FakeState = { scope: "marina", calls: [] }, over: Parti
       state.calls.push(`dailySales:${from}:${to}:${branchId}`);
       return SALES.filter((r) => r.date >= from && r.date <= to);
     },
-    lafposCard: async () => card(),
+    asilposCard: async () => card(),
     menu: async () => ({
       configured: true,
       entries: [
@@ -216,7 +216,7 @@ function fakeDeps(state: FakeState = { scope: "marina", calls: [] }, over: Parti
         { name: "Latte M", category: "Kahveler", sizes: ["M", "L"], state: "on", marker: null },
         { name: "Limonata", category: "Soğuk", sizes: [], state: "closed", marker: null },
       ],
-      pos: { count: 2, oldest: "2026-11-22T10:00:00.000Z", kasa: "LafPOS" },
+      pos: { count: 2, oldest: "2026-11-22T10:00:00.000Z", kasa: "AsilPOS" },
     }),
     shiftsOn: async (date, branchId) => (branchId === "marina" ? [{ name: "Ayşe Yılmaz", startMin: 570, endMin: 1110 }] : []),
     shiftWeek: async (branch, monday) => ({
@@ -269,7 +269,7 @@ test("gun_sonu: varsayılan dün; Z, ödeme türleri, kasa farkı, ikram (gerek�
   assert.equal(day.gun, "2026-11-23");
   assert.equal(day.haftaGunu, "Pazartesi");
   assert.equal(day.sube, "Marina");
-  assert.equal(day.kasa, "LafPOS");
+  assert.equal(day.kasa, "AsilPOS");
   assert.equal(day.zNo, 42);
   assert.equal(day.fisSayisi, 118);
   assert.equal(day.zToplam, 18_450.5);
@@ -289,7 +289,7 @@ test("gun_sonu: varsayılan dün; Z, ödeme türleri, kasa farkı, ikram (gerek�
   assert.equal(day.ikram.hazirlanmisIptal, 1);
   assert.equal(day.ikram.hazirlanmamisIptal, 1);
   assert.doesNotMatch(raw, /reason|gerekce|neden"/i);
-  assert.deepEqual(day.otomatikRapor, { kasaRaporu: "LafPOS'tan kendiliğinden yazıldı", eksikler: ["gün sonu fotoğrafı (personel ekler)", "Yazarkasa Z no"] });
+  assert.deepEqual(day.otomatikRapor, { kasaRaporu: "AsilPOS'tan kendiliğinden yazıldı", eksikler: ["gün sonu fotoğrafı (personel ekler)", "Yazarkasa Z no"] });
   assert.deepEqual(day.kiyas.dun, { gun: "2026-11-22", zToplam: 16_000 });
   assert.deepEqual(day.kiyas.gecenHaftaAyniGun, { gun: "2026-11-16", zToplam: 15_000 });
   assert.equal(day.kiyas.dunegoreYuzde, 15.32);
@@ -312,7 +312,7 @@ test("gun_sonu: 'Tümü'de şube şube (Tuzla ModPOS → kasa_raporlari); gelmey
   assert.equal(missing.geldi, false);
   assert.match(missing.not, /Geçmiş günler/);
   assert.equal(rows.find((r) => r.sube === "Marina" && r.gun === "2026-11-23")!.geldi, true);
-  // Tuzla'nın günleri için LafPOS okunmaz
+  // Tuzla'nın günleri için AsilPOS okunmaz
   assert.equal(st.calls.some((c) => c.endsWith(":tuzla")), false);
   // Geçiş gününden önceki Marina günü de ModPOS günüdür (deneme sayılmaz)
   const before = await call(tools, "gun_sonu", { baslangic: "2026-11-20", sube: "marina" });
@@ -370,29 +370,29 @@ test("gunluk_satislar: deneme günü sayılmaz, en çok satanlar, hafta günü, 
   assert.match(tuzla.json!.not, /urun_karliligi/);
 });
 
-// ---------------------------------------------------------------- lafpos_durumu, menu_durumu
+// ---------------------------------------------------------------- asilpos_durumu, menu_durumu
 
-test("lafpos_durumu: rozet, son gün sonu, 409 reddi ve onarımı (şifreli: islem_rehberi), gelmeyen gün, eşleşmeyen ad kısaltılır", async () => {
-  const { json, raw } = await call(toolsOf(fakeDeps()), "lafpos_durumu");
-  assert.equal(json!.durum, "LafPOS");
+test("asilpos_durumu: rozet, son gün sonu, 409 reddi ve onarımı (şifreli: islem_rehberi), gelmeyen gün, eşleşmeyen ad kısaltılır", async () => {
+  const { json, raw } = await call(toolsOf(fakeDeps()), "asilpos_durumu");
+  assert.equal(json!.durum, "AsilPOS");
   assert.equal(json!.gecisGunu, SWITCH);
   assert.equal(json!.sonGunSonu.zNo, 42);
   assert.equal(json!.retler.length, 1);
   assert.equal(json!.retler[0].gun, "2026-11-22");
-  assert.match(json!.retler[0].metin, /Z 40 kayıtlı; LafPOS Z 41 gönderdi/);
+  assert.match(json!.retler[0].metin, /Z 40 kayıtlı; AsilPOS Z 41 gönderdi/);
   assert.match(json!.retler[0].onarim, /islem_rehberi/);
   assert.deepEqual(json!.gelmeyenGunler, ["2026-11-21"]);
   assert.doesNotMatch(json!.eslesmeyenAdlar.ilkler[0].ad, /\n/);
   assert.match(json!.onarim, /Geçmiş günler/);
-  assert.match(json!.lafposNedir, /ürün ve fiyatı siteden alır, gün sonunu .* panele iter; maliyet panelde/);
-  assert.equal(json!.panelAdresi, "/panel/ayarlar#lafpos");
-  assert.doesNotMatch(raw, /LAFPOS_SYNC_SECRET=|secret"/i);
+  assert.match(json!.asilposNedir, /ürün ve fiyatı siteden alır, gün sonunu .* panele iter; maliyet panelde/);
+  assert.equal(json!.panelAdresi, "/panel/ayarlar#asilpos");
+  assert.doesNotMatch(raw, /ASILPOS_SYNC_SECRET=|secret"/i);
   // Anahtar yoksa geçiş günü seçiliyken kırmızı: bağlantı kapalı (değer değil, yalnız sorun adı)
-  const off = await call(toolsOf(fakeDeps(undefined, { lafposCard: async () => card({ secretProblem: "missing" }) })), "lafpos_durumu");
+  const off = await call(toolsOf(fakeDeps(undefined, { asilposCard: async () => card({ secretProblem: "missing" }) })), "asilpos_durumu");
   assert.equal(off.json!.durum, "Bağlantı kapalı");
 });
 
-test("menu_durumu: Tükendi (kim, ne zaman; ad kısaltılır), sitede kapalı, kasaya işlenecek fiyat, LafPOS notu", async () => {
+test("menu_durumu: Tükendi (kim, ne zaman; ad kısaltılır), sitede kapalı, kasaya işlenecek fiyat, AsilPOS notu", async () => {
   const { json } = await call(toolsOf(fakeDeps()), "menu_durumu");
   assert.equal(json!.tukendi.length, 1);
   assert.equal(json!.tukendi[0].urun, "Tiramisu");
@@ -401,7 +401,7 @@ test("menu_durumu: Tükendi (kim, ne zaman; ad kısaltılır), sitede kapalı, k
   assert.deepEqual(json!.sitedeKapali, [{ urun: "Limonata", kategori: "Soğuk" }]);
   assert.equal(json!.satistaUrun, 1);
   assert.equal(json!.kasayaIslenecekFiyat.adet, 2);
-  assert.match(json!.not, /LafPOS ürün ve fiyatı siteden alır/);
+  assert.match(json!.not, /AsilPOS ürün ve fiyatı siteden alır/);
   assert.equal(json!.panelAdresi, "/panel/siparisler#tukenenler");
 });
 
@@ -458,7 +458,7 @@ test("stok_tahmini: kritikler yaklaşık ve birimiyle, malzeme ayrıntısı, Tuz
   // Kaç gün yeter, günlük kullanım ve önerilen eşik (öneri; eşiği yönetici kaydeder)
   assert.equal(json!.malzemeler[0].kacGunYeter, "≈ 2 gün");
   assert.equal(json!.malzemeler[0].onerilenEsik, "3,6 LT");
-  // Online siparişler: düşülen ve kasadan geçen (LafPOS'ta sayılan), çekilmemiş ay uyarısı
+  // Online siparişler: düşülen ve kasadan geçen (AsilPOS'ta sayılan), çekilmemiş ay uyarısı
   assert.equal(json!.online.dusulenSiparis, 12);
   assert.equal(json!.online.kasadanGecen, 3);
   assert.match(json!.uyarilar.join(" "), /Online siparişler şu aylar için alınmadı: 2026-10/);
@@ -558,12 +558,12 @@ test("döngü: iki okuma aracı paralel → sonuçlar tek kullanıcı mesajında
   );
 });
 
-test("kayıtlı yanıt (AI_REPLAY): LafPOS ve operasyon soruları kendi araçlarına, riskli istek işlem rehberine", () => {
+test("kayıtlı yanıt (AI_REPLAY): AsilPOS ve operasyon soruları kendi araçlarına, riskli istek işlem rehberine", () => {
   const route = (q: string) =>
     replayAssistantMessage(assistantParams({ system: "S", context: "C", tools: [], messages: [{ role: "user", content: q }] })).content.find((b) => b.type === "tool_use") as { name: string; input: unknown } | undefined;
   assert.equal(route("Dünkü gün sonu nasıldı?")?.name, "gun_sonu");
   assert.equal(route("Dün en çok ne sattı?")?.name, "gunluk_satislar");
-  assert.equal(route("LafPOS bağlantısı çalışıyor mu?")?.name, "lafpos_durumu");
+  assert.equal(route("AsilPOS bağlantısı çalışıyor mu?")?.name, "asilpos_durumu");
   assert.equal(route("Ne tükendi?")?.name, "menu_durumu");
   assert.equal(route("Bugün kim çalışıyor?")?.name, "vardiya");
   assert.equal(route("Ne bitmek üzere?")?.name, "stok_tahmini");
@@ -593,7 +593,7 @@ function pageExists(path: string): boolean {
   return existsSync(join(dir, "page.tsx"));
 }
 
-/** Kaynakta bölümün kimliği ("lafpos" → id="lafpos", id: "lafpos", "#lafpos") geçiyor mu */
+/** Kaynakta bölümün kimliği ("asilpos" → id="asilpos", id: "asilpos", "#asilpos") geçiyor mu */
 function anchorExists(anchor: string): boolean {
   const re = new RegExp(`["'\`]${anchor}["'\`]`);
   const walk = (dir: string): boolean =>
@@ -666,7 +666,7 @@ test("işlem rehberi aracı: neden, bağlantı (markdown), numaralı adımlar, g
   assert.ok(backup[0].sifreOnayi);
   assert.equal(backup[0].ekran, "/panel/ayarlar#yedek");
   for (const [q, id] of [
-    ["LafPOS günündeki 409 hatasını düzelt", "lafpos-gunu-sil"],
+    ["AsilPOS günündeki 409 hatasını düzelt", "asilpos-gunu-sil"],
     ["tedarikçinin IBAN'ını güncelle", "tedarikci-karti"],
     ["davet bağlantısı gönder", "davet-baglantisi"],
     ["e-posta bildirimine alıcı ekle", "bildirim-ayarlari"],
@@ -682,7 +682,7 @@ test("işlem rehberi aracı: neden, bağlantı (markdown), numaralı adımlar, g
 
 // ---------------------------------------------------------------- Kaynak bekçileri
 
-test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS yazıcıları ve yazım yok; yeni okuyucular yazmaz", () => {
+test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; AsilPOS yazıcıları ve yazım yok; yeni okuyucular yazmaz", () => {
   const src = read("src/server/assistant-reads/index.ts");
   const imports = Object.fromEntries(
     [...src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"(@\/[^"]+)"/g)].map((m) => [
@@ -707,8 +707,8 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS
     "@/server/branch-scope": ["currentBranchScope"],
     "@/server/branches": ["listBranches"],
     "@/server/data/daily-sales": ["dailyBranchSalesFrom"],
-    "@/server/data/lafpos-ikram": ["loadDayLafposIkram"],
-    "@/server/data/lafpos-day-end": ["loadLafposDayEnd", "loadLafposZTotals"],
+    "@/server/data/asilpos-ikram": ["loadDayAsilposIkram"],
+    "@/server/data/asilpos-day-end": ["loadAsilposDayEnd", "loadAsilposZTotals"],
     "@/server/data/menu-status": ["loadSoldOut"],
     "@/server/data/prices": ["posPendingSummaries"],
     "@/server/data/stock-estimate": ["loadStockEstimate"],
@@ -716,11 +716,11 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS
     "@/server/data/today-safe": ["safe"],
     "@/server/data/user-reminders": ["loadDueReminders"],
     "@/server/db": ["getDb", "schema as s"],
-    "@/server/lafpos/status": ["loadLafposCard", "loadLafposSwitchDay"],
+    "@/server/asilpos/status": ["loadAsilposCard", "loadAsilposSwitchDay"],
     "@/server/vardiya/store": ["loadShiftWeek", "shiftsOn", "todayShifts"],
   });
   const body = code("src/server/assistant-reads/index.ts");
-  assert.doesNotMatch(body, /\.(insert|update|delete)\(|refresh\(|revalidate|handlePosDay|noteUnverified|lafpos\/(gun-sonu|ingest|admin)/);
+  assert.doesNotMatch(body, /\.(insert|update|delete)\(|refresh\(|revalidate|handlePosDay|noteUnverified|asilpos\/(gun-sonu|ingest|admin)/);
   // Okuma araçlarının saf modülü sunucuya uzanmaz (yalnız tür)
   assert.doesNotMatch(read("src/server/ai/assistant/read-tools.ts"), /^import (?!type)[^;]*from "@\/server\//m);
   // Eklenen okuyucuların gövdeleri yalnız select
@@ -732,8 +732,8 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS
     return s.slice(start, next < 0 ? undefined : next);
   };
   for (const [f, fn] of [
-    ["src/server/data/lafpos-day-end.ts", "loadLafposDayEnd"],
-    ["src/server/data/lafpos-day-end.ts", "loadLafposZTotals"],
+    ["src/server/data/asilpos-day-end.ts", "loadAsilposDayEnd"],
+    ["src/server/data/asilpos-day-end.ts", "loadAsilposZTotals"],
     ["src/server/data/daily-sales.ts", "dailyBranchSalesFrom"],
   ]) {
     const b = fnBody(f, fn);
@@ -747,10 +747,10 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS
   assert.match(body, /filter\(\(l\) => l\.key !== "siradaki"\)/);
 });
 
-test("sistem istemi: riskli iş kuralı, LafPOS'un ne olduğu, araç seçimi ve örnek sorular", () => {
+test("sistem istemi: riskli iş kuralı, AsilPOS'un ne olduğu, araç seçimi ve örnek sorular", () => {
   for (const must of [
     "Yapamadığın ya da riskli bir işlem istenirse rehberi kullan, adımları ver, işlemi kendin yapmaya çalışma",
-    "LafPOS kafedeki kasa programıdır",
+    "AsilPOS kafedeki kasa programıdır",
     "Ürün ve fiyatı siteden",
     "gün sonunu panele iter",
     "maliyet, reçete ve kâr panelde hesaplanır",

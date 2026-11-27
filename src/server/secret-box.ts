@@ -2,6 +2,8 @@ import "server-only";
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
+import { KURULUM_SIFRE_AMACI } from "@/lib/asilpos/eski-adlar";
+
 /**
  * Veritabanında duran gizli değerler (Paraşüt belirteçleri ve panelden girilen client_secret, iki adımlı doğrulama
  * anahtarları, Web Push'un VAPID özel anahtarı, karaoke hatırlatması gidene kadar misafirin e-posta adresi, şube başına
@@ -10,7 +12,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  * kurulur, bildirim anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur; bekleyen karaoke
  * hatırlatmaları gönderilmeden düşer).
  */
-export type SealPurpose = "parasut-token" | "parasut-connect" | "parasut-settings" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder" | "branch-settings" | "lafpos-kurulum";
+export type SealPurpose = "parasut-token" | "parasut-connect" | "parasut-settings" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder" | "branch-settings" | typeof KURULUM_SIFRE_AMACI;
 
 function key(purpose: SealPurpose): Buffer {
   const secret = process.env.AUTH_SECRET;

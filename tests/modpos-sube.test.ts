@@ -102,7 +102,7 @@ test("anahtar: herhangi bir şubenin anahtarı sabah işini başlatır; ModPOS �
   assert.equal(modposAnyKey({ MODPOS_API_KEY: TUZLA_KEY }), true);
   assert.equal(modposAnyKey({ MODPOS_API_URL: "https://x.example/" }), false);
   assert.deepEqual(modposBranchIds(BRANCHES), ["tuzla", "marina"]);
-  assert.deepEqual(modposBranchIds(BRANCHES.map((b) => (b.id === "marina" ? { ...b, posSource: "lafpos" as const } : b))), ["tuzla"]);
+  assert.deepEqual(modposBranchIds(BRANCHES.map((b) => (b.id === "marina" ? { ...b, posSource: "asilpos" as const } : b))), ["tuzla"]);
   assert.deepEqual(modposBranchIds(BRANCHES.map((b) => (b.id === "marina" ? { ...b, active: false } : b))), ["tuzla"]);
 });
 
@@ -281,7 +281,7 @@ test("kaynak: çekim şubenin anahtarı, hakkı, kirası ve günleriyle; föy ay
   assert.match(sync, /const lease = await takeModposLease\(db, undefined, branchId\);/);
   assert.match(sync, /await releaseModposLease\(db, lease, branchId\);/);
   assert.match(sync, /readModposState\(db, branchId\),\n\s+loadModposIndex\(db, branchId\),/);
-  // LafPOS'a geçiş günü yalnız LafPOS'un şubesinin föyünü keser (denetim 21 Kasım #5): Marina'nın föyü çekilmeye devam eder
+  // AsilPOS'a geçiş günü yalnız AsilPOS'un şubesinin föyünü keser (denetim 21 Kasım #5): Marina'nın föyü çekilmeye devam eder
   assert.match(sync, /loadBranchSwitchDay\(branchId, db\),/);
   assert.match(sync, /planFoyDays\(\{ now, from, have, left, until: switchDay, failed \}\)/);
   assert.match(sync, /fetchKasaFoyu\(day, \{ now, timeoutMs: remaining - 1_000, fetchImpl: o\.fetchImpl, env, branchId \}\)/);
@@ -349,7 +349,7 @@ test("rapor yalnız kendi şubesinin föyüyle karşılaştırılır: Marina'nı
   assert.equal(modposPairKey("marina", day), "marina|2026-11-01");
 });
 
-test("LafPOS'a geçiş günü yalnız Marina'nın kasasını keser: Tuzla'nın raporu föyüyle karşılaştırılmaya devam eder (21 Kasım kararı)", () => {
+test("AsilPOS'a geçiş günü yalnız Marina'nın kasasını keser: Tuzla'nın raporu föyüyle karşılaştırılmaya devam eder (21 Kasım kararı)", () => {
   const day = "2026-12-02";
   const switchDay = "2026-12-01";
   const marinaSheet = { day, branchId: "marina", foy: sample(day), revision: 1 };
@@ -357,7 +357,7 @@ test("LafPOS'a geçiş günü yalnız Marina'nın kasasını keser: Tuzla'nın r
   const marina = { ...sameReport(day, "marina"), cash: 8190 };
   const tuzla = { ...sameReport(day, "tuzla"), cash: 8190 };
   const branchless = { ...sameReport(day), cash: 8190 };
-  // Tuzla ModPOS'ta: farkı görünür (şubesiz eski rapor da Tuzla'nındır, Tuzla'nın föyüyle); Marina LafPOS'ta: atlanır
+  // Tuzla ModPOS'ta: farkı görünür (şubesiz eski rapor da Tuzla'nındır, Tuzla'nın föyüyle); Marina AsilPOS'ta: atlanır
   const m = modposMismatches([marina, tuzla, branchless], [marinaSheet, tuzlaSheet], switchDay);
   assert.deepEqual(
     m.map((x) => x.report.branchId ?? null),
@@ -393,8 +393,8 @@ test("kaynak: Kasa ekranı föyü ekrandaki raporun şubesinden; günden güne l
   assert.match(day, /const b = branchId \?\? sube;/);
   assert.match(day, /out\.get\(modposPairKey\(b, date\)\)/);
   // Geçiş günü günün kasasının şubesine göre (denetim 21 Kasım #5): Marina'nın föyü geçiş gününden sonra da okunur
-  assert.match(day, /if \(isLafposDay\(date, branchSwitchDay\(switchDay, sube, lafposBranch\)\)\) return NO_MODPOS;/);
-  assert.match(day, /return isLafposDay\(date, branchSwitchDay\(switchDay, b, lafposBranch\)\) \? NO_MODPOS/);
+  assert.match(day, /if \(isAsilposDay\(date, branchSwitchDay\(switchDay, sube, asilposBranch\)\)\) return NO_MODPOS;/);
+  assert.match(day, /return isAsilposDay\(date, branchSwitchDay\(switchDay, b, asilposBranch\)\) \? NO_MODPOS/);
   assert.match(day, /for \(const sheet of await loadModposSheets\(from, to, db\)\)/, "aralık geçiş gününe kırpılmaz");
   // Raporun DTO'su şubesini taşır
   assert.match(read("src/server/data/cash-reports.ts"), /id: r\.id,\n\s+branchId: r\.branchId,/);

@@ -24,12 +24,12 @@ function rateSub(g: GroupMonth): string {
  */
 export function MealTotalCard({ group, rows, className }: { group: GroupMonth; rows: ChannelMonth[]; className?: string }) {
   const companies = new Set(rows.filter((r) => r.invoices.length).map((r) => r.channel)).size;
-  // Birden çok kart varken satışı bilinmeyen kart varsa: kart kart oran ancak ekstredeki satışla (LafPOS'un ödemeleri
-  // kartın satışını kendisi verir). Ayın tamamı LafPOS'tansa Z tek toplam değil: satışı bilinmeyen kartın LafPOS'ta
+  // Birden çok kart varken satışı bilinmeyen kart varsa: kart kart oran ancak ekstredeki satışla (AsilPOS'un ödemeleri
+  // kartın satışını kendisi verir). Ayın tamamı AsilPOS'tansa Z tek toplam değil: satışı bilinmeyen kartın AsilPOS'ta
   // ödemesi yok (ödeme türünün kanalı seçilmemiş olabilir); geçiş ayında öncesinin Z'si tek toplam
   const unknown = rows.filter((r) => r.invoices.length && !r.sales);
-  const fullLafpos = group.lafposFrom !== null && group.lafposFrom <= `${group.month}-01`;
-  const untyped = unknown.length > 0 && (fullLafpos || group.activeChannels.length >= 2);
+  const fullAsilpos = group.asilposFrom !== null && group.asilposFrom <= `${group.month}-01`;
+  const untyped = unknown.length > 0 && (fullAsilpos || group.activeChannels.length >= 2);
   const names = unknown.map((r) => r.label);
   const nameList = names.length > 1 ? `${names.slice(0, -1).join(", ")} ve ${names[names.length - 1]}` : (names[0] ?? "");
   const cells = [
@@ -52,14 +52,14 @@ export function MealTotalCard({ group, rows, className }: { group: GroupMonth; r
           ))}
         </dl>
         <FlagList flags={group.flags} />
-        {/* Hiçbir karta yazılmayan tutar (LafPOS'un girdiği ayda; 23 Kasım 2026) */}
+        {/* Hiçbir karta yazılmayan tutar (AsilPOS'un girdiği ayda; 23 Kasım 2026) */}
         {unbrandedLine(group.unbranded, "meal") ? <p className="text-[13px] leading-5 text-ink-mute">{unbrandedLine(group.unbranded, "meal")}</p> : null}
         {untyped ? (
           <p className="text-[13px] leading-5 text-ink-mute">
-            {fullLafpos
-              ? `${nameList} için LafPOS'ta ödeme yok: ödeme türünün kanalını LafPOS'ta seçin ya da kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.`
-              : group.lafposFrom
-                ? `LafPOS ${dayLocativeTR(group.lafposFrom)} başladı; öncesinde Z raporunda yemek kartları tek toplam. Kart kart oran için her kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.`
+            {fullAsilpos
+              ? `${nameList} için AsilPOS'ta ödeme yok: ödeme türünün kanalını AsilPOS'ta seçin ya da kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.`
+              : group.asilposFrom
+                ? `AsilPOS ${dayLocativeTR(group.asilposFrom)} başladı; öncesinde Z raporunda yemek kartları tek toplam. Kart kart oran için her kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.`
                 : "Z raporunda yemek kartları tek toplam. Kart kart oran için her kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin."}
           </p>
         ) : null}

@@ -187,8 +187,8 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
             {
               key: "indirim",
               label: "Yönetici indirimleri",
-              // LafPOS'un satırları indirimden sonradır: yalnız ModPOS listesi günlerinin indirimi (engine listDiscounts)
-              sub: s.lafposLines ? `${period}; yalnız ModPOS listesinin günleri` : period,
+              // AsilPOS'un satırları indirimden sonradır: yalnız ModPOS listesi günlerinin indirimi (engine listDiscounts)
+              sub: s.asilposLines ? `${period}; yalnız ModPOS listesinin günleri` : period,
               amount: -s.discounts,
               href: salesHref,
             },

@@ -93,8 +93,8 @@ test("önizlemede canlının veritabanına dokunmaz; ayrı veritabanı varsa aç
 
 test("Production derlemesi main dışındaki daldan reddedilir (Redeploy / Promote to Production edilen önizleme)", () => {
   assert.equal(PRODUCTION_BRANCH, "main");
-  const refused = productionBranchRefusal({ DATABASE_URL: DB, VERCEL_ENV: "production", VERCEL_GIT_COMMIT_REF: "claude/lafpos-baglantisi" }) ?? "";
-  assert.match(refused, /^Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: claude\/lafpos-baglantisi\./);
+  const refused = productionBranchRefusal({ DATABASE_URL: DB, VERCEL_ENV: "production", VERCEL_GIT_COMMIT_REF: "claude/asilpos-baglantisi" }) ?? "";
+  assert.match(refused, /^Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: claude\/asilpos-baglantisi\./);
   assert.match(refused, /ALLOW_BRANCH_PRODUCTION=1/);
   assert.match(refused, /canlı sürüm ve veritabanı değişmedi/);
   // Veritabanı tanımlı olmasa da: dalın kodu canlı sırlarıyla yayına çıkmasın
@@ -158,9 +158,9 @@ test("betiğin kendisi: daldan Production derlemesi veritabanına bağlanmadan 1
       env: { ...process.env, DATABASE_URL: dead, DATABASE_URL_UNPOOLED: dead, POSTGRES_URL: dead, VERCEL_ENV: "production", ...extra },
       timeout: 60_000,
     });
-  const r = run({ VERCEL_GIT_COMMIT_REF: "claude/lafpos-baglantisi" });
+  const r = run({ VERCEL_GIT_COMMIT_REF: "claude/asilpos-baglantisi" });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /✗ Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: claude\/lafpos-baglantisi\./);
+  assert.match(r.stderr, /✗ Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: claude\/asilpos-baglantisi\./);
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /Veritabanı hazırlığı başarısız|Havuzlu|migration/i);
 });
 

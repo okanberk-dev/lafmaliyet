@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { CashPlanState, CashPlanVat, Vat2Row, VatRow } from "@/lib/cash-plan";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, money, num, tl } from "@/lib/format";
-import { monthKasa } from "@/lib/lafpos/kasa";
+import { monthKasa } from "@/lib/asilpos/kasa";
 import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatForgetText, vatKeptCarryText, vatPeriodTitle, vatProgressText, vatSourceText, vatSubText, type VatEstimate } from "@/lib/kdv";
 import { daysBetween, monthGenitiveTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";

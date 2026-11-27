@@ -11,9 +11,9 @@
  * Şubenin kendi kaydı: integration_state › `sales.coverage.sube` = { "<şube>": { "YYYY-MM": "YYYY-MM-DD" | null } }
  * (null: ayın tamamı). Satışlar ortak kayıtla aynı anda yazar, şubenin listesi temizlenince şubenin ayı silinir. Şubeye
  * bakan her okuyucu readCoverage ile şubenin kendi kaydını okur, kaydı olmayan ayda (bu kayıttan önce yüklenen liste)
- * ortak kaydı: şube görünümünün liste dönemi (veri kümesi), Marina'nın LafPOS'unun sayıldığı ilk gün ve geçiş ayının
- * çakışması (lafposSalesCountFrom; veri kümesi "Tümü"de de, tahmini stok), LafPOS'un ModPOS dönemi ucu
- * (docs/LAFPOS.md). Tuzla'nın listesi Marina'nın listesinin son gününü kaydırmaz. Ortak kayıt ezilmeden önce eski
+ * ortak kaydı: şube görünümünün liste dönemi (veri kümesi), Marina'nın AsilPOS'unun sayıldığı ilk gün ve geçiş ayının
+ * çakışması (asilposSalesCountFrom; veri kümesi "Tümü"de de, tahmini stok), AsilPOS'un ModPOS dönemi ucu
+ * (docs/ASILPOS.md). Tuzla'nın listesi Marina'nın listesinin son gününü kaydırmaz. Ortak kayıt ezilmeden önce eski
  * listelerin son günü şubelerinin kaydına geçer (legacyCoveragePins).
  */
 

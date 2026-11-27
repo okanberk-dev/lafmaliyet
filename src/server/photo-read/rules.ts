@@ -11,7 +11,7 @@ import { can, opsLevel, ownerRowAmountOnly } from "@/lib/roles";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
-import { lafposPhotoDayOpen } from "@/server/lafpos/foto";
+import { asilposPhotoDayOpen } from "@/server/asilpos/foto";
 import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import type { PhotoKindRules } from "@/server/storage/photo-access";
 import type { PhotoRow } from "@/server/storage/photos";
@@ -171,7 +171,7 @@ export async function canUploadPhoto(me: CurrentUser, kind: PhotoKind, day: stri
   if (rule === "yes") return true;
   if (await staffDayOpen(day)) return true;
   if (rule === "open-or-late" && (await staffLateDayOpen(day))) return true;
-  // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı (yazarkasa bölümü) günden 14 gün içinde, ertesi günün
-  // raporu girilmiş olsa da (rakam değişmez; src/server/lafpos/foto.ts)
-  return (kind === "kasa-okc" || kind === "kasa-pos") && lafposPhotoDayOpen(getDb(), day, await currentTillBranch(), opsLevel(me.role));
+  // Gün sonu tam (24 Kasım 2026): AsilPOS gününün gün sonu fotoğrafı (yazarkasa bölümü) günden 14 gün içinde, ertesi günün
+  // raporu girilmiş olsa da (rakam değişmez; src/server/asilpos/foto.ts)
+  return (kind === "kasa-okc" || kind === "kasa-pos") && asilposPhotoDayOpen(getDb(), day, await currentTillBranch(), opsLevel(me.role));
 }

@@ -11,7 +11,7 @@ import { SegmentedLinks } from "@/components/ui/segmented";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { dateTimeTR, money } from "@/lib/format";
 import { salesBasis } from "@/lib/calc/price-loss";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import type { BulkRow } from "@/lib/prices/bulk";
 import { todayTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
@@ -40,9 +40,9 @@ const TITLE = "Fiyatlar";
 const DESCRIPTION = "Menü fiyatlarını toplu değiştirin; kasada değiştirdiklerinizi işaretleyin.";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE = "Menü fiyatlarını toplu değiştirin, kasada (ModPOS) elle değiştirdiklerinizi işaretleyin; her fiyat değişikliği geçmişte kalır.";
-/** LafPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatını LafPOS siteden alır */
-const MORE_LAFPOS =
-  "Menü fiyatlarını toplu değiştirin; LafPOS siteye bağlı ürünlerin fiyatını siteden alır, bağlı olmayanlar Kasaya işle'de. Her fiyat değişikliği geçmişte kalır.";
+/** AsilPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatını AsilPOS siteden alır */
+const MORE_ASILPOS =
+  "Menü fiyatlarını toplu değiştirin; AsilPOS siteye bağlı ürünlerin fiyatını siteden alır, bağlı olmayanlar Kasaya işle'de. Her fiyat değişikliği geçmişte kalır.";
 
 function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }) {
   return (
@@ -50,7 +50,7 @@ function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }
       path="/panel/urunler/fiyatlar"
       title={TITLE}
       description={DESCRIPTION}
-      more={kasa === "LafPOS" ? MORE_LAFPOS : MORE}
+      more={kasa === "AsilPOS" ? MORE_ASILPOS : MORE}
       actions={
         <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
           <ArrowLeft size={16} aria-hidden="true" /> Ürünler
@@ -91,7 +91,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
   await requireAdmin();
   const sp = await searchParams;
   const tab = tabOf(sp.sekme);
-  // Bugünün kasaları: LafPOS gününde Kasaya işle'de yalnız siteye bağlı olmayan ürünler (denetim E-39). Kasa şube
+  // Bugünün kasaları: AsilPOS gününde Kasaya işle'de yalnız siteye bağlı olmayan ürünler (denetim E-39). Kasa şube
   // başınadır (şube kapsamı A3): tek şubede onun kasası, "Tümü"de birden çok kasa açıkken her kasa ayrı liste
   const tills = await loadTillScopes();
   const scope = tills[0];
@@ -101,7 +101,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
     // Sayı yalnız kasada bekleyen varken (boş listede "0" yazmasın)
     { value: "kasa", label: "Kasaya işle", href: tabHref("kasa"), count: pending || undefined },
     { value: "gecmis", label: "Geçmiş", href: tabHref("gecmis") },
-    // Şube fiyatı (docs/FIYATLAR.md › Şube fiyatı): şubenin kendi fiyatları ve LafPOS'ta uygulanıp uygulanmadığı
+    // Şube fiyatı (docs/FIYATLAR.md › Şube fiyatı): şubenin kendi fiyatları ve AsilPOS'ta uygulanıp uygulanmadığı
     { value: "sube", label: "Şube fiyatı", href: tabHref("sube") },
     { value: "eski", label: "Eski fiyattan satılanlar", href: tabHref("eski") },
   ];
@@ -211,7 +211,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
         siteConfigured={site.configured}
         basis={sb?.basis ?? null}
         // Satış verisi yokken ne yapılacağı ayın kaynağından (bugünün ayı; docs/planlar/ux-sade.md §10)
-        salesMissing={salesSourceOf(todayTR().slice(0, 7), st.lafposGecisGunu, model.ds.lafposSales).missing}
+        salesMissing={salesSourceOf(todayTR().slice(0, 7), st.asilposGecisGunu, model.ds.asilposSales).missing}
         kasa={scope.kasa}
         // Şube seçimi yalnız site şube fiyatını duyurduysa (writes.branchPrice) ve yazılabilen şube varsa
         branchPrice={branchBulk}

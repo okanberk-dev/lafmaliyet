@@ -1208,7 +1208,7 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       const branches = await import("../src/server/actions/branches");
       const refused = { ok: false, error: BRANCH_EMAIL_TAKEN };
       const branchEmail = async (id: string) => (await db.select({ email: s.branches.email }).from(s.branches).where(eq(s.branches.id, id)))[0]?.email ?? null;
-      const installs = (id: string) => db.select({ email: s.lafposInstalls.email }).from(s.lafposInstalls).where(eq(s.lafposInstalls.branchId, id));
+      const installs = (id: string) => db.select({ email: s.asilposInstalls.email }).from(s.asilposInstalls).where(eq(s.asilposInstalls.branchId, id));
       const userCount = async () => (await db.select({ id: s.users.id }).from(s.users)).length;
       try {
         await signIn("ali");
@@ -1221,7 +1221,7 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
           assert.deepEqual(r, refused, `${BASE[k].role} adresiyle şube açılmaz`);
         }
         assert.deepEqual(await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "bodrum")), [], "şube kaydı yok");
-        assert.deepEqual(await db.select({ id: s.lafposInstalls.id }).from(s.lafposInstalls), [], "kurulum bağlantısı yok");
+        assert.deepEqual(await db.select({ id: s.asilposInstalls.id }).from(s.asilposInstalls), [], "kurulum bağlantısı yok");
 
         // Var olan şube: Tuzla müdürünün adresi Tuzla'ya da yazılmaz (eski denetim bunu geçiriyordu)
         assert.deepEqual(await branches.sendBranchInstall({ id: "tuzla", email: BASE.mehmet.email }), refused, "şubesinin müdürü");
@@ -1242,7 +1242,7 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       } finally {
         if (prev === undefined) delete process.env.LADMIN_ANA_ADMIN;
         else process.env.LADMIN_ANA_ADMIN = prev;
-        await db.delete(s.lafposInstalls).where(inArray(s.lafposInstalls.branchId, ["tuzla", "marina"]));
+        await db.delete(s.asilposInstalls).where(inArray(s.asilposInstalls.branchId, ["tuzla", "marina"]));
         await db.update(s.branches).set({ email: null }).where(inArray(s.branches.id, ["tuzla", "marina"]));
       }
     });

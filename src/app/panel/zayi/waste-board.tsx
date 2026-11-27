@@ -17,7 +17,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { BRANCH_REQUIRED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
-import { LAFPOS_IKRAM_TEXT } from "@/lib/lafpos/ikram";
+import { ASILPOS_IKRAM_TEXT } from "@/lib/asilpos/ikram";
 import { longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { matchesChoice, qtyText, WASTE_KIND_LABEL, WASTE_REASONS, type WasteChoice, type WasteKind } from "@/lib/waste";
@@ -37,11 +37,11 @@ export interface PendingLate {
 }
 
 /**
- * LafPOS gününün ikram ve zayi satırları (geçiş gününden itibaren; src/lib/lafpos/ikram.ts), salt okunur. Personele ad
+ * AsilPOS gününün ikram ve zayi satırları (geçiş gününden itibaren; src/lib/asilpos/ikram.ts), salt okunur. Personele ad
  * ve adet; yöneticiye nedeni, menü değeri ve ürüne bağlı olmayan satır da (sunucu personelinkini boş gönderir)
  */
-export interface LafposDayView {
-  /** "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir. Burada hammadde ikramı ve zayi girilir." */
+export interface AsilposDayView {
+  /** "Ürün ikramı 10 Kasım'dan beri AsilPOS'ta işaretlenir. Burada hammadde ikramı ve zayi girilir." */
   note: string;
   /** O günün gün sonu geldi */
   received: boolean;
@@ -52,12 +52,12 @@ export interface LafposDayView {
   lines: { kind: WasteKind; name: string; qty: number; reason: string | null; menuValue: number | null; unmatched: boolean; service?: boolean }[];
   /** Panele girilmiş, sayılmayan ürün ikramı kayıtları (gün sonu geldiyse) */
   notCounted: number[];
-  /** Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
+  /** Paneldeki ürün zayisi, aynı gün aynı ürün AsilPOS'ta da zayi yazıldı (ikisi de sayılır) */
   maybeTwice: number[];
-  /** "Tümü"de birden çok kasa açıkken LafPOS'un şubesi (listenin başlığında; şube kapsamı C P2-7); yoksa null */
+  /** "Tümü"de birden çok kasa açıkken AsilPOS'un şubesi (listenin başlığında; şube kapsamı C P2-7); yoksa null */
   branchName?: string | null;
   /**
-   * Ürüne bağlı olmayan satırın "Ayarlar › LafPOS'ta bağlayın" bağlantısı; Ayarlar'ı açamayan rolde null (müdür satırın
+   * Ürüne bağlı olmayan satırın "Ayarlar › AsilPOS'ta bağlayın" bağlantısı; Ayarlar'ı açamayan rolde null (müdür satırın
    * notunu görür, bağlantıyı görmez; src/lib/roles.ts › openableHref)
    */
   settingsHref: string | null;
@@ -68,9 +68,9 @@ export interface LafposDayView {
  * neden tek dokunuşla; kayıt anında listeye düşer. İstek kipinde (personel, kilitli dün ve önceki 14 gün; dalga 10
  * §2.8) kart "Geç kayıt isteği" olur: yöneticiye açıklama zorunlu, kayıt onaya kadar listeye girmez. Satırın silme
  * kipi sunucuda hesaplanır (deleteModes): doğrudan (çöp kutusu), istek ("Silinmesini iste") ya da yok. Tutar yok.
- * LafPOS gününde (`lafpos`) ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde aranır (gün sonu gelmeyen
- * geçmiş günde ürün de), LafPOS'un ikram ve zayi satırları salt okunur listelenir, panele girilmiş ürün ikramı
- * "sayılmıyor", LafPOS'ta da zayi yazılan ürünün panel zayisi "LafPOS'ta da zayi" der.
+ * AsilPOS gününde (`asilpos`) ürün ikramı AsilPOS'ta işaretlenir: İkram'da yalnız hammadde aranır (gün sonu gelmeyen
+ * geçmiş günde ürün de), AsilPOS'un ikram ve zayi satırları salt okunur listelenir, panele girilmiş ürün ikramı
+ * "sayılmıyor", AsilPOS'ta da zayi yazılan ürünün panel zayisi "AsilPOS'ta da zayi" der.
  */
 export function WasteBoard({
   date,
@@ -81,7 +81,7 @@ export function WasteBoard({
   deleteAsks,
   lateBadges,
   pendingLate,
-  lafpos = null,
+  asilpos = null,
   branches,
 }: {
   date: string;
@@ -95,8 +95,8 @@ export function WasteBoard({
   /** Onayla giren geç kayıtların rozeti: "Geç kayıt · Mehmet onayladı 24 Eki" */
   lateBadges: Record<number, string>;
   pendingLate: PendingLate[];
-  /** LafPOS günü (geçiş gününden itibaren); değilse null: bugünkü gibi */
-  lafpos?: LafposDayView | null;
+  /** AsilPOS günü (geçiş gününden itibaren); değilse null: bugünkü gibi */
+  asilpos?: AsilposDayView | null;
   /**
    * Kaydın ineceği şube (docs/SUBE.md › Yazarken hangi şube): tekse o; "Tümü"de birden çoksa form sorar, varsayılan yok.
    * Sunucu doğrular (formBranch "waste"); gönderim anındaki seçim değil bu yazılır
@@ -124,12 +124,12 @@ export function WasteBoard({
   // Gönderim sürerken Enter'a ikinci basış: `pending` bir sonraki çizimde gelir, aynı karedeki olayı bu bayrak tutar
   const sending = useRef(false);
   const late = mode === "request";
-  // LafPOS gününde ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde seçilir (sunucu da reddeder); gün sonu
+  // AsilPOS gününde ürün ikramı AsilPOS'ta işaretlenir: İkram'da yalnız hammadde seçilir (sunucu da reddeder); gün sonu
   // gelmeyen geçmiş günde ürün de seçilir
-  const noProducts = lafpos !== null && lafpos.closed && kind === "ikram";
+  const noProducts = asilpos !== null && asilpos.closed && kind === "ikram";
   const pickable = noProducts ? choices.filter((c) => c.type !== "product") : choices;
-  const notCounted = new Set(lafpos?.notCounted ?? []);
-  const maybeTwice = new Set(lafpos?.maybeTwice ?? []);
+  const notCounted = new Set(asilpos?.notCounted ?? []);
+  const maybeTwice = new Set(asilpos?.maybeTwice ?? []);
   const itemLabel = noProducts ? "Hammadde" : "Ürün ya da hammadde";
 
   const results = query.trim() ? pickable.filter((c) => matchesChoice(c, query)).slice(0, MAX_RESULTS) : [];
@@ -253,7 +253,7 @@ export function WasteBoard({
             onChange={(k) => {
               setKind(k);
               setReason(null);
-              if (lafpos?.closed && k === "ikram" && picked?.type === "product") setPicked(null);
+              if (asilpos?.closed && k === "ikram" && picked?.type === "product") setPicked(null);
             }}
             options={[
               { value: "zayi", label: "Zayi (atıldı, bozuldu)" },
@@ -261,9 +261,9 @@ export function WasteBoard({
             ]}
           />
           {noProducts ? (
-            <Notice tone="neutral" size="sm" title={lafpos.note} />
-          ) : lafpos && kind === "zayi" ? (
-            <Notice tone="neutral" size="sm" title={LAFPOS_IKRAM_TEXT.zayiNote} />
+            <Notice tone="neutral" size="sm" title={asilpos.note} />
+          ) : asilpos && kind === "zayi" ? (
+            <Notice tone="neutral" size="sm" title={ASILPOS_IKRAM_TEXT.zayiNote} />
           ) : kind === "ikram" ? (
             <p className="text-xs leading-5 text-ink-mute">
               Uygulamadaki ödülle (damga kartı, davet kuponu) verilen içecek ikram değildir: bar ekranına uygulama siparişi olarak düşer ve online satışta sayılır. Buraya
@@ -429,11 +429,11 @@ export function WasteBoard({
                     </p>
                     {lateBadges[e.id] || asks.length || notCounted.has(e.id) || maybeTwice.has(e.id) ? (
                       <p className="mt-1 flex flex-wrap gap-1.5">
-                        {notCounted.has(e.id) ? <Badge tone="gray">{LAFPOS_IKRAM_TEXT.notCounted}</Badge> : null}
+                        {notCounted.has(e.id) ? <Badge tone="gray">{ASILPOS_IKRAM_TEXT.notCounted}</Badge> : null}
                         {maybeTwice.has(e.id) ? (
                           // Uzun uyarı: telefonda satıra sığsın diye kırılır
                           <Badge tone="amber" className="rounded-lg whitespace-normal">
-                            {LAFPOS_IKRAM_TEXT.maybeTwice}
+                            {ASILPOS_IKRAM_TEXT.maybeTwice}
                           </Badge>
                         ) : null}
                         {lateBadges[e.id] ? <Badge tone="gray">{lateBadges[e.id]}</Badge> : null}
@@ -464,23 +464,23 @@ export function WasteBoard({
           </ul>
         ) : (
           <p className="border-t border-line px-5 py-6 text-sm text-ink-mute">
-            {lafpos?.closed
-              ? "Atılan bir şey ya da hammadde ikramı olduysa buraya girin; ürün ikramı LafPOS'ta işaretlenir. Ay sonu stok farkı böyle açıklanır."
+            {asilpos?.closed
+              ? "Atılan bir şey ya da hammadde ikramı olduysa buraya girin; ürün ikramı AsilPOS'ta işaretlenir. Ay sonu stok farkı böyle açıklanır."
               : "Atılan ya da ikram edilen her şeyi buraya girin; ay sonu stok farkı böyle açıklanır."}
           </p>
         )}
-        {lafpos ? (
-          // LafPOS'un ikram ve zayi satırları salt okunur: kasada işaretlendi, tüketime oradan girer
-          <section aria-label={LAFPOS_IKRAM_TEXT.listTitle} className="border-t border-line px-5 py-4">
+        {asilpos ? (
+          // AsilPOS'un ikram ve zayi satırları salt okunur: kasada işaretlendi, tüketime oradan girer
+          <section aria-label={ASILPOS_IKRAM_TEXT.listTitle} className="border-t border-line px-5 py-4">
             <h3 className="text-sm font-semibold text-ink">
-              {LAFPOS_IKRAM_TEXT.listTitle}
-              {lafpos.branchName ? ` · ${lafpos.branchName}` : ""}
+              {ASILPOS_IKRAM_TEXT.listTitle}
+              {asilpos.branchName ? ` · ${asilpos.branchName}` : ""}
             </h3>
-            {!lafpos.received ? (
-              <p className="mt-1 text-sm text-ink-mute">{lafpos.past ? LAFPOS_IKRAM_TEXT.waitingPast : LAFPOS_IKRAM_TEXT.waiting}</p>
-            ) : lafpos.lines.length ? (
+            {!asilpos.received ? (
+              <p className="mt-1 text-sm text-ink-mute">{asilpos.past ? ASILPOS_IKRAM_TEXT.waitingPast : ASILPOS_IKRAM_TEXT.waiting}</p>
+            ) : asilpos.lines.length ? (
               <ul className="mt-2 space-y-2">
-                {lafpos.lines.map((l, i) => (
+                {asilpos.lines.map((l, i) => (
                   <li key={i} className="flex flex-wrap items-start gap-x-3 gap-y-0.5 text-sm">
                     <Badge tone={l.kind === "zayi" ? "red" : "blue"}>{WASTE_KIND_LABEL[l.kind]}</Badge>
                     <div className="min-w-0 flex-1">
@@ -489,12 +489,12 @@ export function WasteBoard({
                       </p>
                       {l.reason || l.unmatched || l.service ? (
                         <p className="text-xs break-words text-ink-mute">
-                          {[l.reason, l.unmatched ? LAFPOS_IKRAM_TEXT.unmatched : null, l.service ? LAFPOS_IKRAM_TEXT.service : null].filter(Boolean).join(" · ")}
-                          {l.unmatched && lafpos.settingsHref ? (
+                          {[l.reason, l.unmatched ? ASILPOS_IKRAM_TEXT.unmatched : null, l.service ? ASILPOS_IKRAM_TEXT.service : null].filter(Boolean).join(" · ")}
+                          {l.unmatched && asilpos.settingsHref ? (
                             <>
                               {" · "}
-                              <Link href={lafpos.settingsHref} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
-                                Ayarlar › LafPOS&apos;ta bağlayın
+                              <Link href={asilpos.settingsHref} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                                Ayarlar › AsilPOS&apos;ta bağlayın
                               </Link>
                             </>
                           ) : null}
@@ -506,7 +506,7 @@ export function WasteBoard({
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-sm text-ink-mute">{LAFPOS_IKRAM_TEXT.none}</p>
+              <p className="mt-1 text-sm text-ink-mute">{ASILPOS_IKRAM_TEXT.none}</p>
             )}
           </section>
         ) : null}

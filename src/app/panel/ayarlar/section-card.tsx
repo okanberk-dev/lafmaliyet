@@ -7,10 +7,14 @@ import { flushSync } from "react-dom";
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { TONE_ICON } from "@/components/ui/notice";
+import { ESKI_BOLUM_CAPASI } from "@/lib/asilpos/eski-adlar";
 import { cn } from "@/lib/utils";
 
 import { pinSection } from "./pin-scroll";
 import { SECTION_SCROLL_MARGIN, type SettingsSectionId } from "./sections";
+
+/** Bölümlerin eski çapaları (yer imleri, eski bağlantılar): ad değişikliğinde AsilPOS'un bölümü eski adıyla da açılır */
+const HASH_ALIASES: Partial<Record<SettingsSectionId, readonly string[]>> = { asilpos: [ESKI_BOLUM_CAPASI] };
 
 const OPEN_EVENT = "ayarlar:bolum-ac";
 
@@ -81,7 +85,7 @@ export function SectionCard({
 
   useEffect(() => {
     const fromHash = () => {
-      if (window.location.hash !== `#${id}`) return;
+      if (![id, ...(HASH_ALIASES[id] ?? [])].some((h) => window.location.hash === `#${h}`)) return;
       setOpen(true);
       setHashHits((n) => n + 1);
     };
@@ -139,6 +143,10 @@ export function SectionCard({
 
   return (
     <Card ref={ref} id={id} className={cn(SECTION_SCROLL_MARGIN, className)}>
+      {/* Eski çapa: boş, görünmez (tarayıcının çapa gezinmesi de bulsun) */}
+      {(HASH_ALIASES[id] ?? []).map((h) => (
+        <span key={h} id={h} aria-hidden="true" />
+      ))}
       {/* Telefon: akordeon başlığı ya da başka ekrana giden satır (tüm satır dokunulabilir, en az 64px) */}
       <h2 className="sm:hidden">
         {href ? (

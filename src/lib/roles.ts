@@ -122,7 +122,7 @@ export function asActor<T extends { role: Role }>(me: T, level: "admin" | "staff
 }
 
 /**
- * Çekirdekteki kişinin gerçek rolü: `asActor`'ın yazdığı `realRole`; elle kurulan kişide (LafPOS eşitlemesi, fatura
+ * Çekirdekteki kişinin gerçek rolü: `asActor`'ın yazdığı `realRole`; elle kurulan kişide (AsilPOS eşitlemesi, fatura
  * eşleme, testler) düzeyin kendisi. Müdür "admin" düzeyinde yazar ama yöneticinin yetkileri onda yoktur.
  */
 export function realRoleOf(actor: { role: Role; realRole?: Role }): Role {
@@ -130,7 +130,7 @@ export function realRoleOf(actor: { role: Role; realRole?: Role }): Role {
 }
 
 /**
- * Başkasının yüklediği fotoğrafı bir kayda (kasa raporu, kasadan çıkan, LafPOS gün sonu) bağlayabilir mi: yalnız gerçek
+ * Başkasının yüklediği fotoğrafı bir kayda (kasa raporu, kasadan çıkan, AsilPOS gün sonu) bağlayabilir mi: yalnız gerçek
  * yönetici; "admin" düzeyindeki müdür yalnız onayladığı isteğin tuttuğu fotoğrafı (`held`), öbür her yolda kendi
  * yüklediğini. Fotoğrafta şube yok: müdür öteki şubenin bağsız fotoğrafını kendi kaydına bağlayıp okuyamasın
  * (docs/ROLLER.md › Müdür)

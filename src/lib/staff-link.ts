@@ -80,7 +80,7 @@ export function parseLinkValue(v: string): { userId: number | null; personRef: s
 
 /**
  * Maaş satırına bağlı hesabın silinmesinin reddi (denetim bulgusu 47). Silinince staff.user_id boşalır (ON DELETE SET NULL):
- * part-time'ın çağrıldığı gün Vardiya'dan sayılamaz, bütün aylardaki ücreti 0'a düşer; tam zamanlının LafPOS yemek kartı
+ * part-time'ın çağrıldığı gün Vardiya'dan sayılamaz, bütün aylardaki ücreti 0'a düşer; tam zamanlının AsilPOS yemek kartı
  * günü de bağlantıyı kaybeder. Ayrılan kişinin hesabı pasif yapılır: giriş kapanır, bağlantı ve geçmiş aylar kalır
  */
 export function linkedDeleteText(names: readonly string[]): string {

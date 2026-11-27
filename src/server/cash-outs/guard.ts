@@ -2,13 +2,13 @@ import "server-only";
 
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
-import { LAFPOS_CASH_OUT_TEXT, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { ASILPOS_CASH_OUT_TEXT, staffAsilposEntryClosed } from "@/lib/asilpos/cash-moves";
+import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
+import { asilposBranchId } from "@/server/asilpos/branch";
 import { staffDayOpen } from "@/server/photo-read/rules";
 import { UserError } from "@/server/user-error";
 
@@ -24,7 +24,7 @@ import { adminCategoryOf, type CashOutActor, type CashOutRow, type CashOutTx } f
 
 /**
  * `restore`: silinenin "Geri al"ı (mühürlü kopyayla, 15 dakika; actions/cash-outs.ts restoreCashOut): yeni satır sayılmaz,
- * LafPOS gününün ekleme reddi uygulanmaz (personelin az önce sildiği elle girilmiş satır geri gelir)
+ * AsilPOS gününün ekleme reddi uygulanmaz (personelin az önce sildiği elle girilmiş satır geri gelir)
  */
 export type CashOutTarget = { op: "ekle"; date: string; restore?: boolean } | { op: Exclude<CashOutOp, "ekle"> | "fis"; row: CashOutRow };
 
@@ -41,13 +41,13 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
   if (refusal) throw new UserError(refusal);
   if (me.role === "admin") return "direct";
   const date = target.op === "ekle" ? target.date : target.row.date;
-  // LafPOS gününe personel satır eklemez (sahibin kararı, 24 Kasım 2026; staffLafposEntryClosed): kasadan çıkanlar LafPOS'un
+  // AsilPOS gününe personel satır eklemez (sahibin kararı, 24 Kasım 2026; staffAsilposEntryClosed): kasadan çıkanlar AsilPOS'un
   // kasa hareketlerinden gelir. Doğrudan ekleme, ekleme isteği ve satırı başka güne taşıma buradan geçer. Düzeltme ve fiş
-  // (LafPOS satırına fiş fotoğrafı, kategori) açık kalır; yönetici her zaman ekler
+  // (AsilPOS satırına fiş fotoğrafı, kategori) açık kalır; yönetici her zaman ekler
   if (target.op === "ekle" && !target.restore) {
-    const [till, switchDay, lafposBranch] = await Promise.all([currentTillBranch(), lafposSwitchDayOf(tx), lafposBranchId(tx)]);
-    const lafposDay = isLafposDay(date, branchSwitchDay(switchDay, till, lafposBranch));
-    if (staffLafposEntryClosed({ admin: false, branchId: till, lafposDay, lafposBranch })) throw new UserError(LAFPOS_CASH_OUT_TEXT.staffAdd);
+    const [till, switchDay, asilposBranch] = await Promise.all([currentTillBranch(), asilposSwitchDayOf(tx), asilposBranchId(tx)]);
+    const asilposDay = isAsilposDay(date, branchSwitchDay(switchDay, till, asilposBranch));
+    if (staffAsilposEntryClosed({ admin: false, branchId: till, asilposDay, asilposBranch })) throw new UserError(ASILPOS_CASH_OUT_TEXT.staffAdd);
   }
   const [dayOpen, adminCategory, payment] = await Promise.all([
     // Satırın kasası: var olan satırda satırın şubesi, yeni satırda kasanın şubesi (yazım da oraya iner)

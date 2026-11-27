@@ -168,7 +168,7 @@ export function CashSettingsCard({
         )}
         {showStaff ? (
           <>
-            <Field label="Çalışanlar (LafPOS gün sonu, kısa e-posta)" htmlFor={`${anchor}-calisan`} hint="Her satıra bir adres (en çok 20). Gün sonu alınınca kısa özet gider; rapor ayrıntısı gitmez. Bu liste şubenin kendisinin">
+            <Field label="Çalışanlar (AsilPOS gün sonu, kısa e-posta)" htmlFor={`${anchor}-calisan`} hint="Her satıra bir adres (en çok 20). Gün sonu alınınca kısa özet gider; rapor ayrıntısı gitmez. Bu liste şubenin kendisinin">
               <Textarea id={`${anchor}-calisan`} value={staffRecipients} onChange={(e) => setStaffRecipients(e.target.value)} rows={3} spellCheck={false} autoCapitalize="none" />
             </Field>
             <ToggleRow title="Çalışan e-postasında tutarlar" description="Açıkken ciro ve ödeme türleri de yazar; kapalıyken yalnız gün sonu alındı ve fiş sayısı" label="Çalışan e-postasında tutarlar" checked={staffAmounts} onChange={setStaffAmounts} />
