@@ -4,12 +4,13 @@ import { redirect } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
 import { BranchChooser } from "@/components/panel/branch-chooser";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
-import { tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { countFactor, shiftMonth } from "@/lib/calc/engine";
 import { stockVatSummary } from "@/lib/calc/insights";
 import { countGroupOptions } from "@/lib/count-item";
@@ -17,7 +18,7 @@ import { monthLabel, monthShort } from "@/lib/format";
 import { STOCK_ESTIMATE_BRANCH, STOCK_ESTIMATE_PATH } from "@/lib/stock-estimate";
 import { adminActor } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
-import { currentBranchScope, currentPhysicalBranch } from "@/server/branch-scope";
+import { areaScope, currentBranchScope, currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -98,9 +99,17 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
       </>
     );
   }
-  const model = await loadModel({ scope: branch.id });
-  const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
   const isAdmin = user.role === "admin";
+  // Stok değeri alanının kipi (şube ayrımı parça 5): şube kipinde FIFO havuzu şubenin ve işletme genelinin faturaları,
+  // devir kartı şubenin kendi sayımı (Gelir-gider'e elle yazılan işletme geneli devir gösterilmez); firma kipinde bütün
+  // faturalar ve işletme geneli devir (bugünkü gibi). Veri kümesi aynı kuralla okur (dataset.ts, sayılan şubenin kapsamında)
+  const [model, valueScope] = await Promise.all([
+    loadModel({ scope: branch.id }),
+    // şube-ayrımı: alan.stok_degeri
+    isAdmin && branchLabel !== null ? withBranchScope(branch.id, () => areaScope("stok_degeri")) : Promise.resolve(ALL_BRANCHES),
+  ]);
+  const branchValue = valueScope !== ALL_BRANCHES;
+  const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
   const requested = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) ? ay : null;
   // Personel bu ayın sayımını, ayın ilk 10 gününde geçen ayınkini de değiştirebilir (sunucu da reddeder): başka ay
   // açılıp boşuna sayılmasın
@@ -130,7 +139,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
       .groupBy(s.stockCounts.countedBy),
     // Gelir-giderde elle yazılan stok devirleri işletme genelidir: şubenin modeli onları görmez (branchPnlEntry), burada
     // ayrıca okunur (yalnız yönetici; 21 Kasım denetimi #20)
-    isAdmin
+    isAdmin && !branchValue
       ? db
           .select({ month: s.pnlEntries.month, rowKey: s.pnlEntries.rowKey, amount: s.pnlEntries.amount })
           .from(s.pnlEntries)
@@ -211,6 +220,8 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
           </>
         }
       />
+      {/* Şube seçiliyken: Stok değeri alanının kipi (şube ayrımı D); yalnız yöneticide (çip bütün şubeleri görene) */}
+      <BranchViewChip area="stok_degeri" className="mb-4" />
       <StockCountForm
         key={`${branch.id}:${month}`}
         branchId={branch.id}
@@ -221,7 +232,18 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         isAdmin={isAdmin}
         groups={groups}
         extrasVatRate={model.settings.alisKdvGida}
-        valuation={isAdmin ? { fifo: sheet.valuation === "fifo", covered: sheet.fifoCovered, total: sheet.total, start: model.fifoStart ? monthLabel(model.fifoStart) : null, shared: branchLabel !== null } : null}
+        valuation={
+          isAdmin
+            ? {
+                fifo: sheet.valuation === "fifo",
+                covered: sheet.fifoCovered,
+                total: sheet.total,
+                start: model.fifoStart ? monthLabel(model.fifoStart) : null,
+                shared: branchLabel !== null && !branchValue,
+                lots: branchValue ? branch.name : null,
+              }
+            : null
+        }
         extras={sheet.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         prevExtras={prev.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         hasPrev={prev.hasData}

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -12,14 +12,18 @@ import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import type { BranchScope } from "@/lib/branches";
 import { dateTR, money, num, pct } from "@/lib/format";
+import type { BranchPosRow } from "@/lib/mutabakat/branch";
+import { genitive } from "@/lib/recipe-change";
 import { BASIS_LABEL, KEEP_DAYS, RECORD_LABEL } from "@/lib/mutabakat/match";
 import { POS_STATUS_LABEL, type PosRow, type PosStatus } from "@/lib/mutabakat/pos";
 import { filterRows, KIND_LABEL, lineActions, ROW_FILTERS, rowStatus, STATUS_LABEL, type RowFilter, type RowStatus } from "@/lib/mutabakat/view";
 import { daysBetween, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { areaScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { loadPosView, loadRecon, loadSupplierOptions, type StatementView } from "@/server/mutabakat/load";
+import { loadPosView, loadRecon, loadSupplierOptions, type PosView, type StatementView } from "@/server/mutabakat/load";
 
 import { BlockDaysForm } from "./block-days-form";
 import { LineActions } from "./line-actions";
@@ -79,9 +83,13 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 async function ReconContent({ searchParams }: { searchParams: PageProps<"/panel/mutabakat">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  if (pick(sp.sekme) === "pos") return <PosSection />;
+  // Mutabakat alanının kipi (şube ayrımı parça 5): ekstre ve eşleşme firmanın; şube kipinde şubenin kayıtlarıyla eşleşen
+  // hareketler üstte, gerisi İşletme geneli; POS'ta şubenin beklenen neti (src/lib/mutabakat/branch.ts)
+  // şube-ayrımı: alan.mutabakat
+  const scope = await areaScope("mutabakat");
+  if (pick(sp.sekme) === "pos") return <PosSection scope={scope} />;
   const id = Number(pick(sp.ekstre));
-  const { statements } = await loadRecon();
+  const { statements } = await loadRecon(scope);
   const st = Number.isInteger(id) && id > 0 ? statements.find((x) => x.id === id) : undefined;
   if (st) {
     const raw = pick(sp.durum);
@@ -94,7 +102,7 @@ async function ReconContent({ searchParams }: { searchParams: PageProps<"/panel/
   return (
     <>
       <Header tab="ekstre" actions={upload} />
-      <CompanyWideNotice screen="mutabakat" className="mb-4" />
+      <BranchViewChip area="mutabakat" className="mb-4" />
       {statements.length ? (
         <StatementList statements={statements} />
       ) : (
@@ -219,7 +227,7 @@ function StatementDetail({ st, filter }: { st: StatementView; filter: RowFilter 
   return (
     <>
       <Header tab="ekstre" actions={back} />
-      <CompanyWideNotice screen="mutabakat" className="mb-4" />
+      <BranchViewChip area="mutabakat" className="mb-4" />
       {st.orphan ? (
         <Notice tone="warn" className="mb-4" title="Tedarikçi bulunamadı">
           Ekstrenin tedarikçisi Tedarikçiler&apos;de artık yok (kartı silinmiş ya da adı değişmiş olabilir): hareketler hiçbir kayıtla eşleşmez. Ekstreyi silip tedarikçiyi seçerek yeniden yükleyin.
@@ -273,89 +281,120 @@ function StatementDetail({ st, filter }: { st: StatementView; filter: RowFilter 
             options={filters.map((f) => ({ value: f, label: f === "hepsi" ? "Hepsi" : STATUS_LABEL[f], href: href(f), count: counts[f] }))}
           />
         </div>
-        {rows.length ? (
+        {st.branch ? (
           <>
-            <div className="max-lg:hidden">
-              <TableWrap>
-                <Table>
-                  <THead>
-                    <tr>
-                      <TH>Gün</TH>
-                      <TH>Açıklama</TH>
-                      <TH numeric>Tutar</TH>
-                      <TH>Panel kaydı</TH>
-                      <TH numeric>Fark</TH>
-                      <TH>Durum</TH>
-                      <TH className="text-right">İşlem</TH>
-                    </tr>
-                  </THead>
-                  <tbody>
-                    {rows.map((r) => {
-                      const status = rowStatus(r);
-                      return (
-                        <TR key={r.line.id}>
-                          <TD className="whitespace-nowrap">{dateTR(r.line.date)}</TD>
-                          <TD className="max-w-[22rem]">
-                            <span className="line-clamp-2 break-words">{r.line.description || "–"}</span>
-                            {r.line.ref ? <span className="text-xs text-ink-mute">{r.line.ref}</span> : null}
-                          </TD>
-                          <TD numeric className={r.line.amount < 0 ? "text-ink" : "text-good-ink"}>
-                            {money(r.line.amount)}
-                          </TD>
-                          <TD className="max-w-[18rem]">
-                            <RecordCell r={r} />
-                          </TD>
-                          <TD numeric className={r.status === "fark" ? "text-warn" : "text-ink-mute"}>
-                            {r.candidate ? money(r.diff) : "–"}
-                          </TD>
-                          <TD>
-                            <Badge tone={STATUS_TONE[status]} dot>
-                              {STATUS_LABEL[status]}
-                            </Badge>
-                          </TD>
-                          <TD className="text-right">
-                            <LineActions lineId={r.line.id} amount={r.line.amount} actions={lineActions(st.kind, r)} pos={r.pos} matched={Boolean(r.candidate)} summary={`${dateTR(r.line.date)} · ${money(r.line.amount)}`} description={r.line.description} />
-                          </TD>
-                        </TR>
-                      );
-                    })}
-                  </tbody>
-                </Table>
-              </TableWrap>
-            </div>
-            <ul className="flex flex-col gap-2 px-3 pb-3 lg:hidden">
-              {rows.map((r) => {
-                const status = rowStatus(r);
-                return (
-                  <li key={r.line.id} className="flex flex-col gap-2 rounded-2xl bg-surface p-3.5 ring-1 ring-line-strong">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[13px] text-ink-mute">{dateTR(r.line.date)}</p>
-                        <p className="text-sm break-words text-ink">{r.line.description || "–"}</p>
-                      </div>
-                      <span className={r.line.amount < 0 ? "shrink-0 font-medium tabular text-ink" : "shrink-0 font-medium tabular text-good-ink"}>{money(r.line.amount)}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={STATUS_TONE[status]} dot>
-                        {STATUS_LABEL[status]}
-                      </Badge>
-                      {r.status === "fark" && r.candidate ? <span className="text-xs text-warn">Fark {money(r.diff)}</span> : null}
-                    </div>
-                    {r.candidate || r.line.decision ? <RecordCell r={r} /> : null}
-                    <LineActions lineId={r.line.id} amount={r.line.amount} actions={lineActions(st.kind, r)} pos={r.pos} matched={Boolean(r.candidate)} summary={`${dateTR(r.line.date)} · ${money(r.line.amount)}`} description={r.line.description} />
-                  </li>
-                );
-              })}
-            </ul>
+            <RowsHeading title={`${genitive(st.branch.name)} kayıtlarıyla eşleşen`} count={st.branch.own.length} />
+            <RowsList st={st} rows={filterRows(st.branch.own, filter)} empty={`Bu süzgeçte ${genitive(st.branch.name)} kaydıyla eşleşen hareket yok.`} />
+            <RowsHeading title="İşletme geneli" count={st.branch.shared.length} badge="Firma geneli" note="Eşleşmeyen, şubesi boş (işletme geneli) ve öbür şubenin kaydıyla eşleşen hareketler; öbür şubenin kaydı adıyla görünmez." />
+            <RowsList st={st} rows={filterRows(st.branch.shared, filter)} empty="Bu süzgeçte işletme geneli hareket yok." />
           </>
         ) : (
-          <CardContent>
-            <p className="text-sm text-ink-mute">Bu süzgeçte hareket yok.</p>
-          </CardContent>
+          <RowsList st={st} rows={rows} empty="Bu süzgeçte hareket yok." />
         )}
       </Card>
       <MissingCard st={st} />
     </>
+  );
+}
+
+/** Ekstrenin hareketleri: genişte tablo, dar ekranda kartlar; `rows` süzülmüş satırlar */
+function RowsList({ st, rows, empty }: { st: StatementView; rows: StatementView["rows"]; empty: string }) {
+  return (
+    <>
+      {rows.length ? (
+        <>
+          <div className="max-lg:hidden">
+            <TableWrap>
+              <Table>
+                <THead>
+                  <tr>
+                    <TH>Gün</TH>
+                    <TH>Açıklama</TH>
+                    <TH numeric>Tutar</TH>
+                    <TH>Panel kaydı</TH>
+                    <TH numeric>Fark</TH>
+                    <TH>Durum</TH>
+                    <TH className="text-right">İşlem</TH>
+                  </tr>
+                </THead>
+                <tbody>
+                  {rows.map((r) => {
+                    const status = rowStatus(r);
+                    return (
+                      <TR key={r.line.id}>
+                        <TD className="whitespace-nowrap">{dateTR(r.line.date)}</TD>
+                        <TD className="max-w-[22rem]">
+                          <span className="line-clamp-2 break-words">{r.line.description || "–"}</span>
+                          {r.line.ref ? <span className="text-xs text-ink-mute">{r.line.ref}</span> : null}
+                        </TD>
+                        <TD numeric className={r.line.amount < 0 ? "text-ink" : "text-good-ink"}>
+                          {money(r.line.amount)}
+                        </TD>
+                        <TD className="max-w-[18rem]">
+                          <RecordCell r={r} />
+                        </TD>
+                        <TD numeric className={r.status === "fark" ? "text-warn" : "text-ink-mute"}>
+                          {r.candidate ? money(r.diff) : "–"}
+                        </TD>
+                        <TD>
+                          <Badge tone={STATUS_TONE[status]} dot>
+                            {STATUS_LABEL[status]}
+                          </Badge>
+                        </TD>
+                        <TD className="text-right">
+                          <LineActions lineId={r.line.id} amount={r.line.amount} actions={lineActions(st.kind, r)} pos={r.pos} matched={Boolean(r.candidate)} summary={`${dateTR(r.line.date)} · ${money(r.line.amount)}`} description={r.line.description} />
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            </TableWrap>
+          </div>
+          <ul className="flex flex-col gap-2 px-3 pb-3 lg:hidden">
+            {rows.map((r) => {
+              const status = rowStatus(r);
+              return (
+                <li key={r.line.id} className="flex flex-col gap-2 rounded-2xl bg-surface p-3.5 ring-1 ring-line-strong">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] text-ink-mute">{dateTR(r.line.date)}</p>
+                      <p className="text-sm break-words text-ink">{r.line.description || "–"}</p>
+                    </div>
+                    <span className={r.line.amount < 0 ? "shrink-0 font-medium tabular text-ink" : "shrink-0 font-medium tabular text-good-ink"}>{money(r.line.amount)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={STATUS_TONE[status]} dot>
+                      {STATUS_LABEL[status]}
+                    </Badge>
+                    {r.status === "fark" && r.candidate ? <span className="text-xs text-warn">Fark {money(r.diff)}</span> : null}
+                  </div>
+                  {r.candidate || r.line.decision ? <RecordCell r={r} /> : null}
+                  <LineActions lineId={r.line.id} amount={r.line.amount} actions={lineActions(st.kind, r)} pos={r.pos} matched={Boolean(r.candidate)} summary={`${dateTR(r.line.date)} · ${money(r.line.amount)}`} description={r.line.description} />
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : (
+        <CardContent>
+          <p className="text-sm text-ink-mute">{empty}</p>
+        </CardContent>
+      )}
+    </>
+  );
+}
+
+/** Şube kipinde hareket gruplarının başlığı */
+function RowsHeading({ title, count, badge, note }: { title: string; count: number; badge?: string; note?: string }) {
+  return (
+    <div className="px-5 pt-3 pb-2">
+      <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink-soft">
+        {title} · {num(count)}
+        {badge ? <Badge tone="gray">{badge}</Badge> : null}
+      </p>
+      {note ? <p className="text-xs leading-5 text-ink-mute">{note}</p> : null}
+    </div>
   );
 }
 
@@ -388,15 +427,22 @@ function RecordCell({ r }: { r: StatementView["rows"][number] }) {
 function MissingCard({ st }: { st: StatementView }) {
   if (st.orphan) return null;
   const what = st.kind === "banka" ? "harcama, tedarikçi ödemesi, ödendi işaretli fatura ve kasadan teslim" : "fatura ve ödeme";
+  // Şube kipinde yalnız şubenin kayıtları; işletme geneli ve öbür şubelerinki sayı olarak (şube ayrımı parça 5)
+  const missing = st.branch ? st.branch.missing : st.missing;
   return (
     <Card>
       <CardHeader
         icon={<ListX />}
         title="Panelde var, ekstrede yok"
-        description={`Ekstrenin döneminde (${dateTR(st.periodFrom)} – ${dateTR(st.periodTo)}) hiçbir harekete eşleşmeyen ${what} kayıtları.`}
-        meta={`${num(st.missing.length)} kayıt`}
+        description={`Ekstrenin döneminde (${dateTR(st.periodFrom)} – ${dateTR(st.periodTo)}) hiçbir harekete eşleşmeyen ${st.branch ? `${genitive(st.branch.name)} ` : ""}${what} kayıtları.`}
+        meta={`${num(missing.length)} kayıt`}
       />
-      {st.missing.length ? (
+      {st.branch?.otherMissing ? (
+        <CardContent className="pt-0">
+          <p className="text-xs leading-5 text-ink-mute">{num(st.branch.otherMissing)} kayıt işletme geneli ya da öbür şubelerde: firma geneli görünümde listelenir.</p>
+        </CardContent>
+      ) : null}
+      {missing.length ? (
         <TableWrap>
           <Table>
             <THead>
@@ -408,7 +454,7 @@ function MissingCard({ st }: { st: StatementView }) {
               </tr>
             </THead>
             <tbody>
-              {st.missing.map((c) => (
+              {missing.map((c) => (
                 <TR key={`${c.kind}:${c.id}`}>
                   <TD className="whitespace-nowrap">{dateTR(c.date)}</TD>
                   <TD>
@@ -432,7 +478,7 @@ function MissingCard({ st }: { st: StatementView }) {
           <p className="text-sm text-ink-mute">Dönemdeki bütün kayıtlar ekstrede bulundu.</p>
         </CardContent>
       )}
-      {st.kind === "banka" && st.missing.length ? (
+      {st.kind === "banka" && missing.length ? (
         <CardContent className="pt-0">
           <p className="text-xs leading-5 text-ink-mute">Birden çok banka hesabı varsa öteki hesaptan ödenen kayıt da burada görünür; o hesabın ekstresini de yükleyince eşleşir.</p>
         </CardContent>
@@ -445,9 +491,9 @@ function MissingCard({ st }: { st: StatementView }) {
 
 const POS_TONE: Record<PosStatus, Tone> = { tamam: "green", fark: "amber", gecikti: "red", "gec-geldi": "amber", bekleniyor: "gray", beklenmeyen: "violet" };
 
-async function PosSection() {
+async function PosSection({ scope }: { scope: BranchScope }) {
   const today = todayTR();
-  const [view, branchNames] = await Promise.all([loadPosView(today), listBranches()]);
+  const [view, branchNames] = await Promise.all([loadPosView(today, scope), listBranches()]);
   const nameOf = new Map(branchNames.map((b) => [b.id, b.name]));
   const { rows, totals } = view.result;
   const shown = [...rows].reverse();
@@ -455,7 +501,7 @@ async function PosSection() {
   return (
     <>
       <Header tab="pos" />
-      <CompanyWideNotice screen="mutabakat" className="mb-4" />
+      <BranchViewChip area="mutabakat" className="mb-4" />
       {!view.coverage ? (
         <Notice tone="neutral" className="mb-4" title="Banka ekstresi yok">
           Kasa raporlarının kart satışı bankaya gelen parayla karşılaştırılır. Banka ve tedarikçi sekmesinden POS hakedişinin geldiği hesabın ekstresini yükleyin.
@@ -465,6 +511,10 @@ async function PosSection() {
           Açıklamasında POS, üye işyeri ya da hakediş geçen giriş yok. Hakediş satırını ekstrenin hareketlerinde &quot;POS hakedişi&quot; düğmesiyle işaretleyin.
         </Notice>
       ) : null}
+      {view.branch ? (
+        <BranchPos branch={view.branch} firm={totals} />
+      ) : (
+        <>
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat compact icon={<CreditCard />} label="Beklenen net" value={money(totals.expected)} sub={`Kart satışı ${money(totals.gross)}`} />
         <Stat compact icon={<CircleCheck />} label="Bankaya gelen" value={money(totals.received)} sub={totals.effectiveRate !== null ? `Gerçek kesinti ${pct(totals.effectiveRate, 2)}` : undefined} />
@@ -535,6 +585,8 @@ async function PosSection() {
           </CardContent>
         )}
       </Card>
+        </>
+      )}
       <Card>
         <CardHeader title="Hesap" description="Bloke günü bankanın POS sözleşmesindeki gündür (ertesi gün ödeme: 1). Oranlar Şubeler'de, şube şube." />
         <CardContent className="flex flex-col gap-4">
@@ -555,6 +607,85 @@ async function PosSection() {
             Yemek kartı ve platform hakedişleri Komisyon &amp; hakediş&apos;te.
           </p>
         </CardContent>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * POS hakedişinin şube kipi (şube ayrımı parça 5): şubenin kart satışı ve beklenen neti valör gününe göre; bankaya gelen
+ * para firmanın (terminal → şube eşlemesi yok), günün durumu firmanın karşılaştırmasından. Öbür şubenin satışı yok
+ */
+function BranchPos({ branch, firm }: { branch: NonNullable<PosView["branch"]>; firm: PosView["result"]["totals"] }) {
+  const shown = [...branch.rows].reverse();
+  return (
+    <>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat compact icon={<CreditCard />} label={`${branch.name} · beklenen net`} value={money(branch.totals.expected)} sub={`Kart satışı ${money(branch.totals.gross)}`} />
+        <Stat compact icon={<CircleCheck />} label="Bankaya gelen" value={money(firm.received)} sub="Firma geneli · hesap şubeye bölünmez" />
+        <Stat compact icon={<Scale />} label="Fark" value={money(firm.diff)} tone={Math.abs(firm.diff) >= 1 ? (firm.diff < 0 ? "bad" : "warn") : "good"} sub="Firma geneli · gelen − beklenen" />
+        <Stat
+          compact
+          icon={<CircleDashed />}
+          label="Geciken"
+          value={num(firm.lateCount)}
+          tone={firm.lateCount ? "bad" : "default"}
+          sub={firm.lateCount ? `Firma geneli · ${money(firm.lateAmount)} gelmedi` : "Firma geneli"}
+        />
+      </div>
+      <Card className="mb-4">
+        <CardHeader
+          icon={<CreditCard />}
+          title={`${genitive(branch.name)} valör günleri`}
+          description="Beklenen net = şubenin kart satışı × (1 − şubenin POS oranı). Günün durumu firmanın: o gün bankaya gelen para bütün şubelerin satışıyla karşılaştırılır."
+        />
+        {shown.length ? (
+          <TableWrap>
+            <Table>
+              <THead>
+                <tr>
+                  <TH>Valör</TH>
+                  <TH>Satış</TH>
+                  <TH numeric>Kart satışı</TH>
+                  <TH numeric>Beklenen net</TH>
+                  <TH>Günün durumu (firma geneli)</TH>
+                </tr>
+              </THead>
+              <tbody>
+                {shown.map((r: BranchPosRow) => (
+                  <TR key={r.due}>
+                    <TD className="whitespace-nowrap">{dateTR(r.due)}</TD>
+                    <TD className="text-[13px]">
+                      <ul className="flex flex-col gap-0.5">
+                        {r.sales.map((x) => (
+                          <li key={x.date} className="whitespace-nowrap">
+                            {dateTR(x.date)}
+                            <span className="text-ink-mute">
+                              {" "}
+                              · {money(x.card)}
+                              {x.source === "z" ? " (Z)" : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </TD>
+                    <TD numeric>{money(r.gross)}</TD>
+                    <TD numeric>{money(r.expected)}</TD>
+                    <TD>
+                      <Badge tone={POS_TONE[r.firmStatus]} dot>
+                        {POS_STATUS_LABEL[r.firmStatus]}
+                      </Badge>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </TableWrap>
+        ) : (
+          <CardContent>
+            <p className="text-sm text-ink-mute">Bu dönemde {genitive(branch.name)} kart satışı olan kasa raporu yok.</p>
+          </CardContent>
+        )}
       </Card>
     </>
   );

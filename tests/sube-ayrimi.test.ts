@@ -252,8 +252,11 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
 
 // ---------------------------------------------------------------- (c) çip ve firma geneli notu
 
-/** Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon) bağladı; 5, 6 boşaltır */
-const BEKLEYEN_ALANLAR: readonly ViewArea[] = ["vergi", "tutarlilik", "mutabakat", "stok_degeri", "karsilastirma", "ortak_gider"];
+/**
+ * Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon), parça 5 dördünü
+ * (vergi, tutarlilik, mutabakat, stok_degeri) bağladı; 6 boşaltır
+ */
+const BEKLEYEN_ALANLAR: readonly ViewArea[] = ["karsilastirma", "ortak_gider"];
 /** Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır */
 const YALNIZ_FIRMA_SAYFALARI: readonly string[] = [];
 /** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme parça 2'de kapsamla okumaya geçti; boş) */

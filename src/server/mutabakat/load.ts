@@ -2,11 +2,12 @@ import "server-only";
 
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 
-import { tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { cardFor, cardIndex, groupSuppliers, methodLabel, supplierHref, type SupplierCard, type SupplierGroup } from "@/app/panel/tedarikciler/logic";
 import { invoiceLabel } from "@/lib/cari/account";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
 import { BANK_MATCH, isPosLine, SUPPLIER_MATCH, type Candidate, type Decision, type MatchLine, type RecordKind } from "@/lib/mutabakat/match";
+import { type BranchPos, branchPos, branchRecon, type BranchRecon } from "@/lib/mutabakat/branch";
 import type { StatementKind } from "@/lib/mutabakat/parse";
 import { posCardOf, posReconciliation, posSalesFrom, type PosSaleDay } from "@/lib/mutabakat/pos";
 import { missingFor, poolOf, reconcilePool, statementSummary, supplierScope, type ReconRow, type StatementSummary } from "@/lib/mutabakat/view";
@@ -19,7 +20,9 @@ import { readPosBlockDays } from "./store";
 
 // Mutabakatın okuma yolu (docs/MUTABAKAT.md): ekstreler, satırları, panel kayıtları (adaylar) ve eşleşme. Eşleşme her
 // okumada yeniden hesaplanır (src/lib/mutabakat/view.ts reconcilePool): panelde bir kayıt düzelince ya da eklenince
-// ekran kendiliğinden güncellenir. Mutabakat işletme genelidir (banka hesabı ve cari şubeye bölünmez): şube seçicisi süzmez.
+// ekran kendiliğinden güncellenir. Ekstre işletme genelidir (banka hesabı ve cari şubeye bölünmez): eşleşme her kipte
+// firmanın bütün kayıtlarıyla; Mutabakat alanının şube kipinde (şube ayrımı parça 5) yalnız gösterim ayrılır
+// (src/lib/mutabakat/branch.ts: şubenin kaydıyla eşleşenler üstte, gerisi İşletme geneli; POS'ta şubenin beklenen neti).
 
 /** Adayların ekstre döneminin bu kadar gün öncesinden ve sonrasından okunur (elle eşleştirme penceresi ±45 gün) */
 const WINDOW_DAYS = 45;
@@ -55,6 +58,8 @@ export interface StatementView extends StatementInfo {
   missing: Candidate[];
   /** Tedarikçi ekstresinde tedarikçi bulunamadı (kartı silindi, adı değişti): eşleşme yapılamaz */
   orphan: boolean;
+  /** Mutabakat alanının şube kipi: şubenin adı ve hareketlerin ayrımı; firma kipinde ve "Tümü"de null */
+  branch: (BranchRecon<ReconRow<LineRow>> & { name: string }) | null;
 }
 
 interface Pool {
@@ -113,7 +118,15 @@ async function bankCandidates(from: string, to: string, groups: readonly Group[]
   const db = getDb();
   const [expenses, payments, invoices, deposits, cards] = await Promise.all([
     db
-      .select({ id: s.expenseEntries.id, date: s.expenseEntries.date, amount: s.expenseEntries.amount, description: s.expenseEntries.description, category: s.expenseCategories.name, method: s.expenseEntries.paymentMethod })
+      .select({
+        id: s.expenseEntries.id,
+        date: s.expenseEntries.date,
+        amount: s.expenseEntries.amount,
+        description: s.expenseEntries.description,
+        category: s.expenseCategories.name,
+        method: s.expenseEntries.paymentMethod,
+        branchId: s.expenseEntries.branchId,
+      })
       .from(s.expenseEntries)
       .innerJoin(s.expenseCategories, eq(s.expenseEntries.categoryId, s.expenseCategories.id))
       .where(
@@ -130,7 +143,16 @@ async function bankCandidates(from: string, to: string, groups: readonly Group[]
       .from(s.supplierEntries)
       .where(and(eq(s.supplierEntries.kind, "odeme"), gte(s.supplierEntries.date, from), lte(s.supplierEntries.date, to), inArray(s.supplierEntries.method, ["havale", "kart", "cek", "diger"]))),
     db
-      .select({ id: s.invoices.id, paidAt: s.invoices.paidAt, payable: s.invoices.payable, supplier: s.invoices.supplier, invoiceNo: s.invoices.invoiceNo, date: s.invoices.date, paidVia: s.invoices.paidVia })
+      .select({
+        id: s.invoices.id,
+        paidAt: s.invoices.paidAt,
+        payable: s.invoices.payable,
+        supplier: s.invoices.supplier,
+        invoiceNo: s.invoices.invoiceNo,
+        date: s.invoices.date,
+        paidVia: s.invoices.paidVia,
+        branchId: s.invoices.branchId,
+      })
       .from(s.invoices)
       .where(
         and(
@@ -162,6 +184,7 @@ async function bankCandidates(from: string, to: string, groups: readonly Group[]
       label: [e.category, e.description?.trim()].filter(Boolean).join(" · "),
       names: [e.description ?? "", e.category].filter(Boolean),
       href: `/panel/harcamalar?ay=${e.date.slice(0, 7)}`,
+      branchId: e.branchId ?? null,
     });
   }
   for (const p of payments) {
@@ -175,6 +198,8 @@ async function bankCandidates(from: string, to: string, groups: readonly Group[]
       label: `${card?.name ?? "Tedarikçi"} · ${METHOD_LABEL[(p.method ?? "diger") as CariMethod]}`,
       names: cardNames(card),
       href: slug ? `${supplierHref(slug)}?sekme=hareketler` : null,
+      // Cari ödeme firmanın hesabından (şubesi yok)
+      branchId: null,
     });
   }
   for (const i of invoices) {
@@ -188,6 +213,7 @@ async function bankCandidates(from: string, to: string, groups: readonly Group[]
       names: [i.supplier, ...cardNames(cardFor(index, i.supplier))],
       ref: i.invoiceNo,
       href: slug ? `${supplierHref(slug)}?fatura=${i.id}` : null,
+      branchId: i.branchId ?? null,
     });
   }
   for (const d of deposits) {
@@ -199,6 +225,7 @@ async function bankCandidates(from: string, to: string, groups: readonly Group[]
       label: `Kasadan teslim${d.store?.trim() ? ` · ${d.store.trim()}` : ""}`,
       names: d.store ? [d.store] : [],
       href: `/panel/kasa?gun=${d.date}&sube=${encodeURIComponent(d.branchId)}`,
+      branchId: d.branchId,
     });
   }
   return out.filter((c) => Math.abs(c.amount) >= 0.005);
@@ -215,7 +242,7 @@ async function supplierCandidates(g: Group, from: string, to: string): Promise<C
   const out: Candidate[] = [];
   for (const i of g.invoices) {
     if (inWindow(i.date) && Math.abs(i.payable) >= 0.005) {
-      out.push({ kind: "fatura", id: i.id, date: i.date, amount: i.payable, label: invoiceLabel(i), ref: i.invoiceNo, href: href(i.id) });
+      out.push({ kind: "fatura", id: i.id, date: i.date, amount: i.payable, label: invoiceLabel(i), ref: i.invoiceNo, href: href(i.id), branchId: i.branchId ?? null });
     }
     if (!i.unpaid && i.paidAt && !i.paidByLedger && inWindow(i.paidAt) && Math.abs(i.payable) >= 0.005) {
       out.push({
@@ -226,6 +253,7 @@ async function supplierCandidates(g: Group, from: string, to: string): Promise<C
         label: `${invoiceLabel(i)} ödemesi${i.paidVia ? ` (${methodLabel(i.paidVia)})` : ""}`,
         ref: i.invoiceNo,
         href: href(i.id),
+        branchId: i.branchId ?? null,
       });
     }
   }
@@ -242,6 +270,7 @@ async function supplierCandidates(g: Group, from: string, to: string): Promise<C
         amount: -Math.abs(p.amount),
         label: `Ödeme · ${METHOD_LABEL[(p.method ?? "diger") as CariMethod]}`,
         href: `${supplierHref(g.slug)}?sekme=hareketler`,
+        branchId: null,
       });
     }
   }
@@ -287,9 +316,12 @@ const toLine = (r: { [K in keyof typeof LINE_COLUMNS]: unknown }): LineRow => r 
 
 /**
  * Bütün ekstreler, eşleşmeleriyle (yeni yüklenen önce). Banka ekstreleri tek havuzda, tedarikçi ekstreleri tedarikçi
- * başına eşleşir (view.ts poolOf). `pools` elle eşleştirmenin denetimi içindir (eylemler).
+ * başına eşleşir (view.ts poolOf). `pools` elle eşleştirmenin denetimi içindir (eylemler). `scope` bir şubeyse
+ * (Mutabakat alanının şube kipi) eşleşme aynı kalır, gösterim ayrılır: her ekstrenin `branch` ayrımı kurulur, `rows`
+ * şubenin hareketleri ve İşletme geneli (öbür şubenin kaydı adsız), `missing` yalnız şubenin kayıtları; havuzlar dönmez
+ * (eylemler loadRecon()'u kapsamsız, firmanın havuzuyla çağırır)
  */
-export async function loadRecon(): Promise<{ statements: StatementView[]; pools: Map<string, Pool>; poolOfStatement: Map<number, string> }> {
+export async function loadRecon(scope: BranchScope = ALL_BRANCHES): Promise<{ statements: StatementView[]; pools: Map<string, Pool>; poolOfStatement: Map<number, string> }> {
   const db = getDb();
   const [statements, lines] = await Promise.all([
     db.select(STATEMENT_COLUMNS).from(s.reconStatements).orderBy(desc(s.reconStatements.uploadedOn), desc(s.reconStatements.id)),
@@ -325,10 +357,16 @@ export async function loadRecon(): Promise<{ statements: StatementView[]; pools:
     pools.set(pool, { kind, candidates, rows, free });
   }
 
+  const branchName = scope === ALL_BRANCHES ? null : ((await listBranches(db)).find((b) => b.id === scope)?.name ?? scope);
   const views: StatementView[] = statements.map((st) => {
     const pool = pools.get(poolOfStatement.get(st.id)!)!;
-    const rows = pool.rows.filter((r) => r.line.statementId === st.id);
+    const all = pool.rows.filter((r) => r.line.statementId === st.id);
     const g = groupOfStatement.get(st.id) ?? null;
+    const allMissing = missingFor(pool.free, { from: st.periodFrom, to: st.periodTo });
+    const branch = branchName === null || scope === ALL_BRANCHES ? null : { name: branchName, ...branchRecon(all, allMissing, scope) };
+    // Şube kipinde satırlar ekrandaki sırayla (şubenin, sonra İşletme geneli) ve öbür şubenin kaydı adsız
+    const rows = branch ? [...branch.own, ...branch.shared] : all;
+    const missing = branch ? branch.missing : allMissing;
     return {
       id: st.id,
       kind: st.kind,
@@ -343,12 +381,14 @@ export async function loadRecon(): Promise<{ statements: StatementView[]; pools:
       createdByName: st.createdByName,
       createdAt: st.createdAt,
       supplierHref: g ? supplierHref(g.slug) : null,
-      summary: statementSummary(rows),
+      summary: statementSummary(all),
       rows,
-      missing: missingFor(pool.free, { from: st.periodFrom, to: st.periodTo }),
+      missing,
       orphan: st.kind === "tedarikci" && !g,
+      branch,
     };
   });
+  if (scope !== ALL_BRANCHES) return { statements: views, pools: new Map(), poolOfStatement: new Map() };
   return { statements: views, pools, poolOfStatement };
 }
 
@@ -380,6 +420,8 @@ export interface PosView {
   inflowCount: number;
   bankStatements: number;
   result: ReturnType<typeof posReconciliation>;
+  /** Mutabakat alanının şube kipi: şubenin kart satışı ve beklenen neti (gelen para firmanın); firma kipinde null */
+  branch: (BranchPos & { name: string }) | null;
 }
 
 /**
@@ -387,7 +429,7 @@ export interface PosView {
  * şube, şubenin POS komisyon oranı (branches.pos_rate) ve bloke günüyle beklenen net; banka ekstrelerindeki POS
  * hakedişi satırları gelen. Ekstrelerin kapsadığı günler bütün banka ekstrelerinin ilk ve son hareketi arası.
  */
-export async function loadPosView(today = todayTR()): Promise<PosView> {
+export async function loadPosView(today = todayTR(), scope: BranchScope = ALL_BRANCHES): Promise<PosView> {
   const db = getDb();
   const [blockDays, branchRows, bankLines, bankStatements] = await Promise.all([
     readPosBlockDays(db),
@@ -413,13 +455,18 @@ export async function loadPosView(today = todayTR()): Promise<PosView> {
   const all = branchRows.filter((b) => b.kind === "fiziksel");
   const rates = Object.fromEntries(all.map((b) => [b.id, b.posRate ?? 0.02]));
   const days: PosSaleDay[] = reports.map((r) => ({ date: r.date, branchId: r.branchId, ...posCardOf(r) }));
-  const result = posReconciliation({ days, inflows, settings: { blockDays, rates, defaultRate: 0.02 }, coverage, today });
+  const settings = { blockDays, rates, defaultRate: 0.02 };
+  const result = posReconciliation({ days, inflows, settings, coverage, today });
+  const branchRow = scope === ALL_BRANCHES ? null : branchRows.find((b) => b.id === scope);
+  const shownBranches = (tills.length ? tills : all).filter((b) => !branchRow || b.id === branchRow.id);
   return {
+    branch: branchRow ? { name: branchRow.name, ...branchPos({ branch: branchRow.id, days, settings, coverage, today, firmRows: result.rows }) } : null,
     blockDays,
-    branches: (tills.length ? tills : all).map((b) => ({ id: b.id, name: b.name, rate: b.posRate ?? 0.02 })),
+    branches: shownBranches.map((b) => ({ id: b.id, name: b.name, rate: b.posRate ?? 0.02 })),
     coverage,
     inflowCount: inflows.length,
     bankStatements: bankStatements.length,
-    result,
+    // Şube kipinde firmanın valör satırları (öbür şubenin satışıyla) dönmez: yalnız toplamlar (bankaya gelen firmanın)
+    result: branchRow ? { rows: [], totals: result.totals } : result,
   };
 }

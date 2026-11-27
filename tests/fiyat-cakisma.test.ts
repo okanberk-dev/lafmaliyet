@@ -85,7 +85,8 @@ test("reçete kartı: gördüğü satış alanlarını gönderir, sayfa yenileni
     /const priceMoved =\s+toMinor\(product\.price\) !== toMinor\(seen\.price\) && toMinor\(priceNum\) !== toMinor\(seen\.price\) && toMinor\(priceNum\) !== toMinor\(product\.price\);/,
   );
   // Seçim fiyat alanının hemen altında; genişte fire ilk satırda fiyatın yanında, okunuşu onun altında kalır
-  const priceField = editor.indexOf('label="Satış fiyatı (KDV dahil)"');
+  // Şube seçiliyken şubenin fiyatı varsa alanın adı "Taban fiyat" (şube ayrımı parça 5)
+  const priceField = editor.indexOf('label={branchPrice ? `${BASE_PRICE_LABEL} (KDV dahil)` : "Satış fiyatı (KDV dahil)"}');
   const box = editor.indexOf('id="r-price-moved"');
   const fireField = editor.indexOf('label="Zayi / fire"');
   const fireHint = editor.indexOf('id="r-fire-hint"');

@@ -2,6 +2,7 @@ import { connection } from "next/server";
 
 import { todayTR } from "@/lib/reminders";
 import { getCurrentUser } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { loadSupplierPrices } from "@/server/data/supplier-prices";
 
 /**
@@ -14,7 +15,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!me || me.role !== "admin") return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Geçersiz hammadde" }, { status: 400 });
-  const body = await loadSupplierPrices(id, todayTR());
+  // Panelin seçimiyle: şube seçiliyken şubenin ve işletme genelinin faturaları (şube ayrımı parça 5)
+  const body = await loadSupplierPrices(id, todayTR(), await currentBranchScope());
   if (!body) return Response.json({ error: "Hammadde bulunamadı" }, { status: 404 });
   return Response.json(body, { headers: { "Cache-Control": "private, no-store" } });
 }

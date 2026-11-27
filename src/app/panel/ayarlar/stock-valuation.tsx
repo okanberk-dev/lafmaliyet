@@ -43,12 +43,18 @@ export function StockValuationCard({
   rows,
   months,
   openingOverrides = [],
+  branch = null,
 }: {
   start: string | null;
   rows: ValuationRow[];
   months: string[];
   /** Gelir-giderde açılış stoğu ("stock:opening") elle girilmiş aylar: önceki ayın kapanış farkı onlara geçmez */
   openingOverrides?: string[];
+  /**
+   * Stok değeri alanının şube kipinde önizlemenin şubesi (şube ayrımı parça 5): satırlar şubenin sayımları ve şubenin ve
+   * işletme genelinin faturalarıyla; ayar yine firmanın. Firma kipinde ve "Tümü"de null ("Tümü"nün önizlemesi)
+   */
+  branch?: string | null;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState(start ?? OFF);
@@ -110,6 +116,11 @@ export function StockValuationCard({
       }
     >
       <CardContent className="space-y-4">
+        {branch ? (
+          <p className="text-xs leading-5 text-ink-mute">
+            Önizleme {branch} görünümü: şubenin sayımları, şubenin ve işletme genelinin faturalarıyla. Yöntem firmanın ayarıdır, bütün şubelere uygulanır.
+          </p>
+        ) : null}
         <Field label="Yöntem ve başlangıç ayı" htmlFor="s-fifo" hint="Seçince önce / sonra aşağıda hemen görünür; Kaydet'e basınca kâr-zarar, sayım ve dışa aktarım bu yöntemle hesaplanır.">
           <Select id="s-fifo" value={draft} onChange={(e) => setDraft(e.target.value)} className="max-w-sm">
             <option value={OFF}>Ay sonu fiyatı (FIFO kapalı)</option>

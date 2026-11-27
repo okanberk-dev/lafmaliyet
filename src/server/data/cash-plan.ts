@@ -125,8 +125,8 @@ export async function loadCashPlan(
   // olmalı (loadAreaCashPlan). Plan yalnız şubeye ait kalemlerle kurulur: işletme geneli hatırlatıcı, işletme geneli
   // fatura, faturasız borç, vergi, KDV ve SGK firmanın planındadır (src/lib/cash-plan-branch.ts); açılış bakiyesi yok
   const branch = opts.branch ?? null;
-  // Verilmezse bütün ödemeler (Vergi › Özet: firmanın planı; Vergi alanı parça 5'te)
-  // şube-ayrımı: vergi.sayfa
+  // Verilmezse bütün ödemeler (Vergi › Özet'in KDV tahmini: beyan firmanın, her kipte firmanın planı)
+  // şube-ayrımı: vergi.beyan
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
   const branchesP = listBranches();

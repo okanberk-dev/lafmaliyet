@@ -99,6 +99,8 @@ export interface SupplierPricesResponse extends SupplierPricesResult {
   };
   /** Hammaddeye bağlı Paraşüt ürünü sayısı ("Fiyatı güncelle" kapalı olanlar dahil) */
   links: number;
+  /** Şube seçiliyken listede olmayan faturalar (öbür şubenin ve şubesi seçilmemiş; şube ayrımı parça 5) */
+  elsewhere?: number;
 }
 
 interface PointAcc {

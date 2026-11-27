@@ -2,6 +2,7 @@ import { Calculator, FileSpreadsheet, SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -15,17 +16,18 @@ import { ADJUSTMENT_LABELS, adjustmentPeriodLabel } from "@/lib/tax/pnl";
 import { PAYROLL_FULL_MONTH_NOTE } from "@/lib/tax/payroll";
 import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { withBranchScope } from "@/server/branch-scope";
-import { loadTaxView } from "@/server/data/tax";
+import { areaScope, withBranchScope } from "@/server/branch-scope";
+import { loadBranchTaxView, loadTaxView } from "@/server/data/tax";
 
 import { AdjustmentButton } from "../adjustment-dialog";
 import { filingKindData, invoiceChoices } from "../dialog-data";
+import { BranchContributionCard } from "../branch-share";
 import { FilingButton } from "../filing-dialog";
 import { PeriodPicker } from "../period-picker";
 import { type BannerData, NoteList, NoteNotice, TaxBanner, VergiHeader } from "../ui";
 import { BridgeCard } from "./bridge-card";
 import { ClassifyList } from "./classify-list";
-import { adjustmentChoices, adjustmentRows, classifyData } from "./data";
+import { adjustmentChoices, adjustmentRows, classifyData, scopeClassify } from "./data";
 import { quarterGrid } from "./grid";
 import { QuarterPhone } from "./quarter-phone";
 import { QuarterTable } from "./quarter-table";
@@ -65,8 +67,8 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   const rawQuarter = pick(sp.ceyrek);
-  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
-  // şube-ayrımı: vergi.sayfa
+  // Beyan firmanındır: çeyreğin vergi kârı ve geçici vergi bütün şubelerle (docs/SUBE.md › Şube ayrımı)
+  // şube-ayrımı: vergi.beyan
   const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     const loaded = await loadTaxView(model, {
@@ -78,6 +80,10 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   });
   const { settings } = inputs;
   const q = view.quarter;
+  // Vergi alanı "Yalnız şube" kipinde (şube ayrımı parça 5): çeyreğin matraha katkısı (bilgi), eksik belgeler şubenin
+  // şube-ayrımı: alan.vergi
+  const area = await areaScope("vergi");
+  const branch = area !== ALL_BRANCHES && q ? await loadBranchTaxView(area, { year: view.year, today: view.today, quarter: q.key }) : null;
   const banner: BannerData = {
     compiled: view.rulesInfo.compiled,
     stale: view.rulesInfo.stale,
@@ -118,7 +124,9 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const gecici = filingKindData("gecici", { today: view.today, settings, filings: inputs.filings, reminders: null });
   const geciciFiling = filingFor(inputs.filings, "gecici", q.key);
   const choices = invoiceChoices(model.ds.invoices, inputs.assets, view.today);
-  const classify = classifyData(view, { invoices: model.ds.invoices, settings, choices, today: view.today });
+  const allClassify = classifyData(view, { invoices: model.ds.invoices, settings, choices, today: view.today });
+  const classify =
+    area !== ALL_BRANCHES ? scopeClassify(allClassify, area, { invoices: model.ds.invoices, fixed: model.ds.fixedExpenses, entries: model.ds.expenseEntries ?? [] }) : allClassify;
   const adjChoices = adjustmentChoices(view.today, settings, inputs.filings);
   const adjRows = adjustmentRows(inputs.adjustments, view.year);
   const rangeText = `${monthName(q.totals.months[0] ?? q.key)}–${monthName(q.totals.months.at(-1) ?? q.key)}`;
@@ -130,16 +138,18 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
       <HashScroll key={`capa-${q.key}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
+        {/* Şube seçiliyken: Vergi alanının kipi (şube ayrımı D); çeyreğin vergi kârı her kipte firmanın */}
+        <BranchViewChip area="vergi" />
         {missing && (missing.unclassified.count > 0 || missing.candidates.count > 0) ? (
           // Belgesi seçilmemiş gider vergi hesabına girmez: vergi yüksek çıkar (yasal sonuç, katlanmaz)
           <Notice
             tone="warn"
             risk="hukuk"
-            title={
+            title={`${
               missing.unclassified.count > 0
                 ? `${money(missing.unclassified.total)} gider vergi hesabına girmedi (${missing.unclassified.count} kalem)`
                 : `${money(missing.candidates.total)}'lik ${missing.candidates.count} fatura demirbaş olabilir`
-            }
+            }${area !== ALL_BRANCHES ? " · firma geneli" : ""}`}
             text={missing.unclassified.count > 0 && missing.candidates.count > 0 ? `${money(missing.candidates.total)}'lik ${missing.candidates.count} fatura demirbaş olabilir.` : undefined}
             action={<NoticeLink href="#siniflandir">Belgesini seç</NoticeLink>}
           />
@@ -184,6 +194,8 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
           <QuarterPhone key={q.key} grid={grid} />
           <div className="h-5" />
         </Card>
+
+        {branch?.contribution ? <BranchContributionCard name={branch.name} c={branch.contribution} /> : null}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <BridgeCard quarter={q} />

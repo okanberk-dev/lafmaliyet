@@ -211,6 +211,9 @@ export async function currentBranchView(area: ViewArea): Promise<ViewMode> {
 export async function areaScope(area: ViewArea): Promise<BranchScope> {
   const scope = await currentBranchScope();
   if (scope === ALL_BRANCHES) return scope;
+  // Tek şube açıkken kip anlamsız (kart ve çip yok, seçici çizilmez): firmanın tamamı o şubedir. Yazdığı şubeyle açılan
+  // ekran (stok sayımı: withBranchScope(şube)) şubesi seçilmemiş faturayı da görmeye devam eder (şube ayrımı parça 5)
+  if ((await listBranches()).filter((b) => b.active).length < 2) return ALL_BRANCHES;
   return viewScope(scope, await currentBranchView(area));
 }
 

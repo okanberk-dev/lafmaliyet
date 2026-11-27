@@ -76,6 +76,7 @@ import {
   countStatus,
   countText,
   coverageSplit,
+  lotScopeNote,
   draftConflicts,
   EXTRAS_ANCHOR,
   extraKey,
@@ -961,7 +962,7 @@ const StockTotalCard = memo(function StockTotalCard({
   month: string;
   monthLabel: string;
   prevMonthLabel: string;
-  valuation: { fifo: boolean; start: string | null; shared?: boolean } | null;
+  valuation: { fifo: boolean; start: string | null; shared?: boolean; lots?: string | null } | null;
   live: LiveTotals;
   /** Listede olmayan kalemlerin KDV'si (gıdanın alış KDV'si, Ayarlar) */
   extrasVatRate: number;
@@ -974,6 +975,7 @@ const StockTotalCard = memo(function StockTotalCard({
   breakdown: () => BreakdownGroup[];
 }) {
   const override = closingOverride !== null ? closingOverrideText(month, closingOverride, live.total, branchLabel) : null;
+  const lotNote = valuation?.fifo ? lotScopeNote({ lots: valuation.lots, shared: valuation.shared, coveredShare, total: live.total }) : null;
   return (
     <StatBreakdown
       title={`${monthLabel} stoğu`}
@@ -1028,9 +1030,10 @@ const StockTotalCard = memo(function StockTotalCard({
               {live.extrasTotal > 0 ? "ay sonu fiyatıyla ya da ek kalemde elle girilen fiyatla" : "ay sonu fiyatıyla"}.
             </p>
           ) : null}
-          {valuation?.fifo && valuation.shared ? (
-            // Faturalar işletme genelinde, sayım şube başına: her şube aynı faturalardan değerlenir (sahibe soru 2, varsayılan)
-            <p className="py-2 text-xs leading-5 text-ink-mute">Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü&apos;yle tutmaz.</p>
+          {lotNote ? (
+            // Firma kipinde faturalar şubelere bölünmez, her şube aynı faturalardan değerlenir (sahibe soru 2); şube kipinde
+            // havuz şubenin ve işletme genelinin faturaları (Stok değeri alanı, şube ayrımı parça 5)
+            <p className={cn("py-2 text-xs leading-5", lotNote.low ? "text-warn" : "text-ink-mute")}>{lotNote.text}</p>
           ) : null}
           <KeyValue
             label={
@@ -1271,8 +1274,11 @@ export function StockCountForm({
   /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
   addItem?: { groups: { name: string; unit: CountUnit }[] } | null;
   /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayının adı ("Ekim 2026") */
-  /** `shared`: birden çok fiziksel şube açık; şubenin FIFO tutarı faturaları öteki şubeyle paylaşır (denetim ST-06) */
-  valuation?: { fifo: boolean; covered: number; total: number; start: string | null; shared?: boolean } | null;
+  /**
+   * `shared`: birden çok fiziksel şube açık ve Stok değeri firma kipinde; şubenin FIFO tutarı faturaları öteki şubeyle
+   * paylaşır (denetim ST-06). `lots`: şube kipinde sayılan şubenin adı (havuz şubenin ve işletme genelinin faturaları)
+   */
+  valuation?: { fifo: boolean; covered: number; total: number; start: string | null; shared?: boolean; lots?: string | null } | null;
 }) {
   const all = useMemo(() => groups.flatMap((g) => g.lines), [groups]);
   /** Bugünkü sayım listesindeki kalemler (ilerleme bunlarla); arşiv satırları salt okunur */

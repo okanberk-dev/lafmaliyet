@@ -139,9 +139,22 @@ En tutucu, geri alınabilir varsayılan seçildi:
 
 ## Şube
 
-Mutabakat işletme genelidir ([SUBE.md](SUBE.md) › Neyi süzer): banka hesabı ve cari hesap şubeye bölünmez, şube
-seçiliyken de bütün şubelerin kayıtlarıyla eşleşir ("Marina seçili: bu ekran firma geneli" notu). POS hakedişinde kart
-satışı şube şube kendi oranıyla hesaplanır, valör satırı birden çok şubenin satışını gösterir.
+Ekstre işletme genelidir ([SUBE.md](SUBE.md) › Neyi süzer): banka hesabı ve cari hesap şubeye bölünmez, eşleşme her
+zaman bütün şubelerin kayıtlarıyla yapılır. POS hakedişinde kart satışı şube şube kendi oranıyla hesaplanır, "Tümü"de
+valör satırı birden çok şubenin satışını gösterir.
+
+27 Kasım 2026'dan beri (şube ayrımı parça 5, [SUBE.md › Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-vergi-tutarlılık-mutabakat-stok-değeri-parça-5))
+şube seçiliyken ekran kişinin şube görünümüyle (Mutabakat alanı; "firma geneli" notunun yerinde görünüm çipi). Firma
+geneli kipinde bugünkü gibi. **Yalnız şube** kipinde eşleşme aynıdır, gösterim ayrılır (`src/lib/mutabakat/branch.ts`):
+
+- Hareketler: şubenin kaydıyla (harcamanın, faturanın, kasadan teslimin şubesi) eşleşenler üstte; eşleşmeyen, şubesi boş
+  kayıtla (işletme geneli harcama ve fatura, cari ödeme) ve öbür şubenin kaydıyla eşleşenler **İşletme geneli** grubunda.
+  Öbür şubenin kaydı adı, bağlantısı ve belge numarası olmadan "Öbür şubenin kaydı" yazar.
+- "Panelde var, ekstrede yok": yalnız şubenin kayıtları; işletme geneli ve öbür şubelerinki sayı olarak.
+- POS hakediş: şubenin kart satışı ve beklenen neti valör gününe göre, "Günün durumu (firma geneli)" firmanın
+  karşılaştırmasından; bankaya gelen, fark ve geciken firmanın (terminal → şube eşlemesi yok). Öbür şubenin satışı ve
+  oranı görünmez.
+- Elle eşleştirme penceresi firmanın havuzuyla çalışır (eylem `loadRecon()`'u kapsamsız çağırır).
 
 ## Şema
 

@@ -99,9 +99,15 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   kâr etkisi ve faturadan gelen pay (önce / sonra önizleme). "Değişen ay" bütün sayımlı ayları kapsar (tablo son 12'yi
   gösterir); sayımı olmayan sonraki ayın açılışı da yazılır (o ayın kârı ters yönde), Gelir-giderde açılışı elle girilmiş
   ay etkilenmez. Telefonda "Faturadan" sütunu gizlenir. Kaydet işlem geçmişine "Stok değerleme: eski → yeni" yazar.
-  Kapalı seçilirse her ay ay sonu fiyatıyla. Önizleme şube seçiminden bağımsız, işletme genelidir ("Tümü"nün
-  sayımları ve Gelir-giderde elle girilmiş devirleri): ayar "Tümü"nün kâr-zararını değiştirir, şube görünümünün mal
-  maliyeti sayıma bağlı değildir (denetim 21 Kasım #32).
+  Kapalı seçilirse her ay ay sonu fiyatıyla. Önizleme "Tümü"de ve Stok değeri alanının firma geneli kipinde işletme
+  genelidir ("Tümü"nün sayımları ve Gelir-giderde elle girilmiş devirleri): ayar "Tümü"nün kâr-zararını değiştirir, şube
+  görünümünün mal maliyeti sayıma bağlı değildir (denetim 21 Kasım #32). Şube seçili ve alan **Yalnız şube** kipindeyken
+  (şube ayrımı parça 5) önizleme şubenin sayımları ve havuzuyla; kart bunu yazar, ayar yine firmanın.
+- **Şube görünümü** (şube ayrımı parça 5, [SUBE.md › Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-vergi-tutarlılık-mutabakat-stok-değeri-parça-5)):
+  Stok değeri alanı **Yalnız şube** kipindeyken FIFO havuzu şubenin ve işletme genelinin faturalarıdır
+  (`queryPurchaseLots(db, kapsam)`, `invoiceScopeWhere`); öbür şubenin ve şubesi seçilmemiş faturanın partisi yoktur,
+  karşılanmayan miktar ay sonu fiyatıyla. Sayım kartı kapsamı yazar, faturalardan karşılanan pay %50'nin altındaysa
+  uyarır. Firma geneli kipinde ve "Tümü"de havuz bütün faturalar (bugünkü gibi; şube tutarları aynı faturaları paylaşır).
 - **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer. Yıl
   kartları (ciro, giderler, kâr / zarar, mal maliyeti oranı) bu aya kadar, POS cirosu girilmiş ayların toplamıdır
   (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca

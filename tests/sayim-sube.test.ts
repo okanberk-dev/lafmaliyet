@@ -219,7 +219,8 @@ test("#20 kapanış uyarısı: tek şubede bugünkü metin, birden çok şubede 
 test("#20 sayfa devirleri işletme genelinden okur (yalnız yönetici), şubenin sayımıyla birleştirir", () => {
   const page = read("src/app/panel/sayim/page.tsx");
   assert.match(page, /loadModel\(\{ scope: branch\.id \}\)/, "sayım listesi ve tutarlar şubenin");
-  assert.match(page, /isAdmin\s+\? db\s+\.select\(\{ month: s\.pnlEntries\.month, rowKey: s\.pnlEntries\.rowKey, amount: s\.pnlEntries\.amount \}\)/);
+  // Stok değeri alanının şube kipinde (şube ayrımı parça 5) işletme geneli devir okunmaz: açılış şubenin kendi sayımı
+  assert.match(page, /isAdmin && !branchValue\s+\? db\s+\.select\(\{ month: s\.pnlEntries\.month, rowKey: s\.pnlEntries\.rowKey, amount: s\.pnlEntries\.amount \}\)/);
   assert.match(page, /inArray\(s\.pnlEntries\.rowKey, \["stock:closing", "stock:opening"\]\)/);
   assert.match(page, /const opening = isAdmin \? countOpeningOf\(overrides, model\.closingStock\(prevMonth\)\.computed, prev\.hasData\) : null;/);
   assert.match(page, /closingOverride=\{isAdmin \? overrides\.closing : null\}/);

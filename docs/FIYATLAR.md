@@ -341,7 +341,9 @@ kayıtlıdır, birkaç dakika geç düşebilir). Kasada gün 05:00'ten sonra kap
 fiyatına göre denetlenir (yaklaşık; AsilPOS iş gününü kendi açılış / kapanışıyla sayar).
 
 Ekonomi (önerilen fiyat, zam etkisi, maliyet oranı) tabanla hesaplanır; şube fiyatı Satışlar'a AsilPOS'un gerçek
-cirosuyla zaten girer.
+cirosuyla zaten girer. Ürünler ve ürün kartı şube seçiliyken (şube ayrımı parça 5, `src/lib/prices/branch-view.ts`)
+siteye bağlı ürünün şubede geçerli kendi fiyatını gösterir: birim kâr, maliyet oranı ve durum o fiyatla; kutudaki
+(düzenlenen) fiyatın adı **Taban fiyat** (bütün şubelerin menüsü). Önerilen fiyat ve zam etkisi tabanla kalır.
 
 **Panel asistanı** (26 Kasım 2026; [ASISTAN.md](ASISTAN.md) › İşlemler): asistanın fiyat kartı (`urun_fiyati_degistir`)
 yalnız **tabanı** değiştirir ve şube fiyatını bilir: kendi fiyatı olan şubeyi kartta ayrı satırda "şube fiyatı,

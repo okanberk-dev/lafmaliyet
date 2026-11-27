@@ -2,8 +2,9 @@ import "server-only";
 
 import { and, asc, desc, eq, gt, gte, inArray, ne, notInArray } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
-import { livePct, newerInvoice } from "@/lib/price-hold";
+import { holdInScope, livePct, newerInvoice } from "@/lib/price-hold";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
@@ -79,6 +80,7 @@ export async function loadHoldLines(productKeys: string[]) {
 
 const columns = {
   hold: h,
+  invoiceBranch: s.invoices.branchId,
   ingredient: {
     name: s.ingredients.name,
     unit: s.ingredients.unit,
@@ -89,7 +91,7 @@ const columns = {
   },
 };
 
-const toRow = (r: { hold: typeof h.$inferSelect; ingredient: HoldRow["ingredient"] }): HoldRow => ({
+const toRow = (r: { hold: typeof h.$inferSelect; ingredient: HoldRow["ingredient"]; invoiceBranch?: string | null }): HoldRow => ({
   ...r.hold,
   createdAt: r.hold.createdAt.toISOString(),
   decidedAt: r.hold.decidedAt?.toISOString() ?? null,
@@ -98,22 +100,32 @@ const toRow = (r: { hold: typeof h.$inferSelect; ingredient: HoldRow["ingredient
 
 /**
  * Hammaddeler › "Onay bekleyen fiyatlar": bekleyen öneriler (en eski önce) ve son 3 günde karara bağlanan ya da
- * geçersiz kalanlar (en yeni önce, en çok 10; yanlış dokunuş bildirim kaybolduktan sonra da geri alınabilsin).
+ * geçersiz kalanlar (en yeni önce, en çok 10; yanlış dokunuş bildirim kaybolduktan sonra da geri alınabilsin). Seçimle
+ * (şube ayrımı parça 5, `holdInScope`): şube seçiliyken öbür şubenin faturasından gelen öneri listede değil, sayısı
+ * `elsewhere`'de
  */
-export async function loadPriceHolds(): Promise<{ pending: HoldRow[]; recent: HoldRow[] }> {
+export async function loadPriceHolds(scope: BranchScope = ALL_BRANCHES): Promise<{ pending: HoldRow[]; recent: HoldRow[]; elsewhere: number }> {
   const db = getDb();
   const since = new Date(Date.now() - RECENT_DAYS * 86_400_000);
   const [pending, recent] = await Promise.all([
-    db.select(columns).from(h).innerJoin(s.ingredients, eq(s.ingredients.id, h.ingredientId)).where(eq(h.status, "pending")).orderBy(asc(h.createdAt), asc(h.id)),
     db
       .select(columns)
       .from(h)
       .innerJoin(s.ingredients, eq(s.ingredients.id, h.ingredientId))
+      .leftJoin(s.invoices, eq(s.invoices.id, h.invoiceId))
+      .where(eq(h.status, "pending"))
+      .orderBy(asc(h.createdAt), asc(h.id)),
+    db
+      .select(columns)
+      .from(h)
+      .innerJoin(s.ingredients, eq(s.ingredients.id, h.ingredientId))
+      .leftJoin(s.invoices, eq(s.invoices.id, h.invoiceId))
       .where(and(ne(h.status, "pending"), gte(h.decidedAt, since)))
       .orderBy(desc(h.decidedAt), desc(h.id))
       .limit(RECENT_MAX),
   ]);
-  return { pending: pending.map(toRow), recent: recent.map(toRow) };
+  const shown = pending.filter((r) => holdInScope(r.invoiceBranch, scope));
+  return { pending: shown.map(toRow), recent: recent.filter((r) => holdInScope(r.invoiceBranch, scope)).map(toRow), elsewhere: pending.length - shown.length };
 }
 
 /**
@@ -121,8 +133,10 @@ export async function loadPriceHolds(): Promise<{ pending: HoldRow[]; recent: Ho
  * önerinin kimliği (zil bildiriminin kimliği buna göre değişir) ve hammadde başına canlı fark (önerilen ÷ şimdiki
  * birim fiyat − 1; şimdiki fiyat sonradan değiştiyse yeni farkı söyler). Tek sorgu.
  */
-export async function pendingHoldSummary(): Promise<{ count: number; latestId: number | null; items: { name: string; pct: number | null; createdAt: string }[] }> {
-  const rows = await getDb()
+export async function pendingHoldSummary(
+  scope: BranchScope = ALL_BRANCHES,
+): Promise<{ count: number; latestId: number | null; items: { name: string; pct: number | null; createdAt: string }[]; elsewhere: number }> {
+  const all = await getDb()
     .select({
       id: h.id,
       packagePrice: h.packagePrice,
@@ -131,12 +145,17 @@ export async function pendingHoldSummary(): Promise<{ count: number; latestId: n
       name: s.ingredients.name,
       currentPrice: s.ingredients.packagePrice,
       currentSize: s.ingredients.packageSize,
+      invoiceBranch: s.invoices.branchId,
     })
     .from(h)
     .innerJoin(s.ingredients, eq(s.ingredients.id, h.ingredientId))
+    .leftJoin(s.invoices, eq(s.invoices.id, h.invoiceId))
     .where(eq(h.status, "pending"))
     .orderBy(asc(h.createdAt), asc(h.id));
+  // Şube seçiliyken öbür şubenin faturasından gelen öneri sayı olarak (holdInScope; zil, Bugün, Genel bakış)
+  const rows = all.filter((r) => holdInScope(r.invoiceBranch, scope));
   return {
+    elsewhere: all.length - rows.length,
     count: rows.length,
     latestId: rows.length ? Math.max(...rows.map((r) => r.id)) : null,
     items: rows.map((r) => ({

@@ -55,6 +55,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Segmented, SegmentedLinks } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { priceProduct } from "@/lib/calc/engine";
+import { BASE_PRICE_LABEL, economicsAtPrice } from "@/lib/prices/branch-view";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_COST_NOTE, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
@@ -210,6 +211,7 @@ export function RecipeEditor({
   priceHistory = null,
   recipeHistory = null,
   soldOutNote = null,
+  branchPrice = null,
 }: {
   product: {
     id: number;
@@ -262,6 +264,11 @@ export function RecipeEditor({
   recipeHistory?: RecipeHistoryRow[] | null;
   /** Siparişler ekranının Tükenenler kartıyla kapatıldıysa: "Personel tükendi yaptı · Selin 21:40" (dalga 10 §2.1) */
   soldOutNote?: string | null;
+  /**
+   * Şube seçiliyken şubenin kendi fiyatı (şube ayrımı parça 5; src/lib/prices/branch-view.ts): kutudaki fiyat "Taban
+   * fiyat", şubenin fiyatı ve o fiyatla birim kâr altında. Şubenin satırı yoksa null
+   */
+  branchPrice?: { value: number; label: string } | null;
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
@@ -1218,10 +1225,22 @@ export function RecipeEditor({
               {/* Telefonda alt alta (tek sütun form), genişte fiyat + dar fire sütunu */}
               <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_6.5rem]">
                 <Field
-                  label="Satış fiyatı (KDV dahil)"
+                  label={branchPrice ? `${BASE_PRICE_LABEL} (KDV dahil)` : "Satış fiyatı (KDV dahil)"}
                   htmlFor="r-price"
                   hint={
-                    lines.length ? (
+                    branchPrice ? (
+                      <span className="flex flex-col gap-0.5">
+                        <span>
+                          {branchPrice.label} fiyatı: <span className="font-medium text-ink-soft tabular">{tl(branchPrice.value)}</span> · birim kâr{" "}
+                          <span className="tabular">{tl(economicsAtPrice(econ, branchPrice.value, settings).unitProfit, 2)}</span>
+                        </span>
+                        {lines.length ? (
+                          <span>
+                            Önerilen: <span className="font-medium text-ink-soft tabular">{tl(econ.suggestedPrice)}</span>
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : lines.length ? (
                       <span className="flex flex-wrap items-center gap-x-1.5">
                         Önerilen: <span className="font-medium text-ink-soft tabular">{tl(econ.suggestedPrice)}</span>
                         {econ.suggestedPrice > 0 && Math.abs(econ.suggestedPrice - priceNum) >= 0.5 ? (

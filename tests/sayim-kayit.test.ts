@@ -13,6 +13,7 @@ import {
   countPushReaches,
   draftConflicts,
   extrasBase,
+  lotScopeNote,
   mergeExtras,
   monthEndCountPush,
   monthEndCountPushes,
@@ -358,11 +359,34 @@ test("ay değişince ?izinsiz= notu düşer (B01-K3)", () => {
   assert.match(read("src/components/panel/month-picker.tsx"), /sp\.set\(param, m\);\s+for \(const k of omit \?\? \[\]\) sp\.delete\(k\);/);
 });
 
-test("FIFO stok tutarı birden çok şubede ortak faturalardan: kartta not (denetim ST-06, sahibe soru 2 varsayılanı)", () => {
-  // Faturalar işletme genelinde, sayım şube başına: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz
+test("FIFO stok tutarı birden çok şubede: firma kipinde ortak faturalardan notu, şube kipinde şubenin havuzu (denetim ST-06; şube ayrımı parça 5)", () => {
+  // Firma kipinde faturalar işletme genelinde, sayım şube başına: şube tutarları aynı faturaları paylaşır, toplamları
+  // Tümü'yle tutmaz. Stok değeri alanının şube kipinde havuz şubenin ve işletme genelinin faturaları
   const page = read("src/app/panel/sayim/page.tsx");
-  assert.match(page, /shared: branchLabel !== null \} : null\}/);
+  assert.match(page, /shared: branchLabel !== null && !branchValue,/);
+  assert.match(page, /lots: branchValue \? branch\.name : null,/);
   const form = read("src/app/panel/sayim/stock-form.tsx");
-  assert.match(form, /\{valuation\?\.fifo && valuation\.shared \? \(/);
-  assert.match(form, /Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü&apos;yle tutmaz\./);
+  assert.match(form, /const lotNote = valuation\?\.fifo \? lotScopeNote\(\{ lots: valuation\.lots, shared: valuation\.shared, coveredShare, total: live\.total \}\) : null;/);
+  assert.equal(lotScopeNote({ shared: true, coveredShare: 1, total: 100 })?.text, "Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz.");
+  assert.equal(lotScopeNote({ coveredShare: 1, total: 100 }), null, "tek şube: not yok");
+  const own = lotScopeNote({ lots: "Marina", shared: false, coveredShare: 0.8, total: 100 })!;
+  assert.match(own.text, /havuz yalnız Marina'nın ve işletme genelinin faturaları/);
+  assert.equal(own.low, false);
+  const low = lotScopeNote({ lots: "Marina", coveredShare: 0.2, total: 100 })!;
+  assert.equal(low.low, true, "kapsam düşük: uyarı");
+  assert.match(low.text, /Faturalardan karşılanan pay düşük/);
+  assert.equal(lotScopeNote({ lots: "Marina", coveredShare: 0, total: 0 })?.low, false, "boş sayımda uyarı yok");
+});
+
+test("ek kalemin fiyatı: şube kipinde önce sayılan şubenin geçmişi, yoksa öbür şubeninki; firma kipinde en son fiyat (şube ayrımı parça 5)", () => {
+  const h = (id: number, month: string, branchId: string, unitPrice: number): SavedExtra => ({ ...ex(id, "Peçete", "PAKET", 1, unitPrice, month), branchId });
+  const history = [h(1, "2026-09", "marina", 10), h(2, "2026-10", "tuzla", 14)];
+  const price = (prefer: string | null) => {
+    const r = planStaffExtras([], [{ name: "Peçete", unit: "PAKET", qty: 2 }], history, prefer);
+    assert.ok(r.ok, "plan kuruldu");
+    return r.plan.inserts[0].unitPrice;
+  };
+  assert.equal(price(null), 14, "firma kipi: en son fiyat (Tuzla'nın)");
+  assert.equal(price("marina"), 10, "Marina'nın kendi fiyatı önce");
+  assert.equal(price("kadikoy"), 14, "şubenin geçmişi yoksa öbür şubenin en son fiyatı");
 });

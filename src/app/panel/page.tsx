@@ -254,7 +254,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   ]);
   const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable, priceAlerts.loss.totalLoss) : null;
   // Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen fiyatlar (Hammaddeler › Onay bekleyen fiyatlar)
-  const hold = holdAlert((await pendingHoldSummary().catch(() => null))?.items ?? []);
+  const hold = holdAlert((await pendingHoldSummary(scope).catch(() => null))?.items ?? []);
   // Cari hesap: faturası 45 gündür gelmeyen alımlar ve faturası gelmiş olabilecek faturasız alımlar (§6.7). Faturasız
   // borç firmanın ("İşletme geneli"): Ödemeler alanının şube kipinde uyarı yok, firma kipinde ve "Tümü"de var
   const cari = upcoming && paymentsArea === ALL_BRANCHES ? cariAlerts(upcoming.cari) : [];

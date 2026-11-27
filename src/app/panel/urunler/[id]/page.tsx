@@ -7,13 +7,17 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { productSalesHistory, soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel } from "@/lib/format";
+import { productBranchPrice } from "@/lib/prices/branch-view";
 import { productDeleteBlocker } from "@/lib/product-delete";
 import { suggestLinks } from "@/lib/site-menu/names";
 import { soldOutWhen } from "@/lib/site-menu/sold-out";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadBranchPrices } from "@/server/data/branch-prices";
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadProductPriceHistory } from "@/server/data/prices";
@@ -101,10 +105,14 @@ async function RecipeContent({
   });
   const { id } = await params;
   const sp = await searchParams;
-  const [model, siteLinks] = await Promise.all([loadModel(), loadSiteLinks()]);
+  const [model, siteLinks, scope] = await Promise.all([loadModel(), loadSiteLinks(), currentBranchScope()]);
   const product = model.productById.get(Number(id));
   if (!product) notFound();
   const link = siteLinks.links.find((l) => l.productId === product.id) ?? null;
+  // Şube seçiliyken şubenin kendi fiyatı (şube ayrımı parça 5): kartta kutudaki fiyat "Taban fiyat", şubenin fiyatı ve
+  // o fiyatla birim kâr ayrıca; okunamazsa yok
+  const branchPrices = link && scope !== ALL_BRANCHES ? await loadBranchPrices(scope).catch(() => null) : null;
+  const branchPriceValue = branchPrices?.branch?.id === scope ? productBranchPrice(link, branchPrices.items, product.price) : null;
   const siteItems = siteLinks.snapshot.at ? siteLinks.snapshot.items : [];
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
@@ -195,6 +203,7 @@ async function RecipeContent({
             : null,
       }}
       priceHistory={priceHistory}
+      branchPrice={branchPriceValue !== null && branchPrices?.branch ? { value: branchPriceValue, label: branchPrices.branch.name } : null}
       recipeHistory={recipeHistory}
       soldOutNote={soldOut ? `${soldOut.staff ? "Personel tükendi yaptı" : "Siparişler ekranında tükendi yapıldı"} · ${soldOut.by} ${soldOutWhen(soldOut.at, new Date())}` : null}
       priceImpact={

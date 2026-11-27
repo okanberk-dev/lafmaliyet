@@ -743,10 +743,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Şube seçiliyken ekranlar, zil, Bugün ve panel asistanı yalnız o şubenin kayıtlarını gösterir: kasa, sayım, onaylar, kontrol listeleri,
             işlem geçmişi. İşletme geneli kayıtlar (kira, muhasebe) &quot;İşletme geneli&quot; yazar, şubenin toplamına girmez. Online kanalın kasası ve
             stoğu yoktur. Tümü seçiliyken şubeye ait kayıt yazacaksanız ekran önce şubeyi sorar. Şubeye kilitli personel yalnız kendi şubesini görür.{" "}
-            Ödemeler, Nakit planı, Tedarikçiler ve Komisyon&apos;da üstteki düğme ya da{" "}
-            <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong> ekranın yalnız şubeyi mi, firmanın tamamını mı göstereceğini
-            seçer. Yalnız şubede faturasız borç ve hesaptaki para &quot;İşletme geneli&quot; satırında; nakit planı şubenin net akışı, bakiye firmanın.
-            Vergi beyanı, banka ekstresi ve tam yedek hep firmanındır.
+            Ödemeler, Nakit planı, Tedarikçiler, Komisyon, Vergi, Tutarlılık, Mutabakat ve Stok sayımı&apos;nda üstteki düğme ya da{" "}
+            <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong> yalnız şubeyi ya da firmanın tamamını seçer. Yalnız şubede
+            işletme geneli kalemler ayrı satırda, Vergi şubenin payını bilgi olarak ekler. Vergi beyanı, banka ekstresi ve tam yedek hep firmanındır.
           </>
         ),
         icon: Globe,

@@ -20,7 +20,7 @@ import { countedTillIds, earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, typ
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
-import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { invoiceAccountDates, loadClosedPeriods } from "@/server/closed-period";
 import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { loadSplitLines } from "./invoice-split";
@@ -134,8 +134,11 @@ async function readDataset(): Promise<Dataset> {
       })
       .from(s.ingredientPrices)
       .orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
-    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts)
-    loadPurchaseLots(),
+    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts). Stok değeri
+    // alanının kipiyle (şube ayrımı parça 5): şube kipinde şubenin ve işletme genelinin faturaları, firma kipinde ve
+    // "Tümü"de bütün faturalar
+    // şube-ayrımı: alan.stok_degeri
+    areaScope("stok_degeri").then(loadPurchaseLots),
     // Çarpanı onay bekleyen alışlar: alınan miktara girmedi, Tutarlılık işaretler (aynı yüklem)
     loadHeldPurchases(),
     // Fiyatı onay bekleyen hammaddeler: fiyatsızsa "paket fiyatını girin" değil, onaya götürülür (Genel bakış, zil)

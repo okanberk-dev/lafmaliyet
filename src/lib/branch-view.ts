@@ -376,24 +376,51 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
     kind: "yalniz-firma",
     reason: "Nakit açılış bakiyesi firmanın parası: şubenin akışında da firmanın planından okunur (bakiye ve İşletme geneli satırı)",
   },
+  // Alanlar: parça 5 Vergi, Tutarlılık, Mutabakat, Stok değeri
+  {
+    id: "alan.vergi",
+    where: "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent",
+    kind: "alan",
+    area: "vergi",
+    reason: "Vergi ekranları: şube kipinde şubenin payı (bilgi), matraha katkısı, eksik belgeleri ve demirbaşları; firma kipinde yalnız firmanın",
+  },
+  {
+    id: "vergi.beyan",
+    where:
+      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/server/data/cash-plan.ts#loadCashPlan",
+    kind: "yalniz-firma",
+    reason: "Beyan tutarları (KDV, muhtasar, geçici ve kurumlar vergisi, devreden KDV) ve takvim firmanın tek vergi numarasıyla: her kipte bütün şubeler",
+  },
+  {
+    id: "alan.tutarlilik",
+    where: "src/app/panel/tutarlilik/page.tsx#ConsistencyContent",
+    kind: "alan",
+    area: "tutarlilik",
+    reason: "Tutarlılık: firma kipinde bütün şubelerin satışı, sayımı ve bütün faturaların alımı",
+  },
+  {
+    id: "alan.mutabakat",
+    where: "src/app/panel/mutabakat/page.tsx#ReconContent",
+    kind: "alan",
+    area: "mutabakat",
+    reason: "Mutabakat: firma kipinde ekstrenin bütün hareketleri ve bütün şubelerin POS hakedişi tek listede",
+  },
+  {
+    id: "alan.stok_degeri",
+    where:
+      "src/server/data/dataset.ts#readDataset; src/app/panel/sayim/page.tsx#StockContent; src/app/panel/sayim/actions.ts#saveStaffStockExtras; src/app/panel/ayarlar/page.tsx#SettingsContent",
+    kind: "alan",
+    area: "stok_degeri",
+    reason: "Stok değeri: firma kipinde FIFO havuzu bütün faturalar, devir işletme geneli, ek kalem fiyatı bütün şubelerin geçmişi",
+  },
   {
     id: "komisyon.oran",
     where: "src/server/data/commission.ts#loadLightReport; src/server/data/commission.ts#loadCommissionReports",
     kind: "ortak-veri",
     reason: "Komisyon oranı ve hakediş işletmenin: bütün faturalar ÷ bütün şubelerin satışı; şubenin payı ve hakediş satırları bununla",
   },
-  // Sonraki parçalar (şube ayrımı 5–6; parça 2 kendi üç kaydını, parça 4 Nakit planı ve Komisyon kayıtlarını kapattı)
-  {
-    id: "vergi.sayfa",
-    where:
-      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/server/data/cash-plan.ts#loadCashPlan",
-    kind: "bekliyor",
-    area: "vergi",
-    part: 5,
-    reason: "Vergi ekranları (ve Vergi › Özet'in nakit planı) bugün firmanın",
-  },
-  { id: "tutarlilik.sayfa", where: "src/app/panel/tutarlilik/page.tsx#ConsistencyContent", kind: "bekliyor", area: "tutarlilik", part: 5, reason: "Tutarlılık bugün firmanın" },
-  { id: "stok-degeri.ayarlar", where: "src/app/panel/ayarlar/page.tsx#SettingsContent", kind: "bekliyor", area: "stok_degeri", part: 5, reason: "Ayarlar'ın stok değerleme önizlemesi bugün firmanın" },
+  // Sonraki parça (şube ayrımı 6; parça 2 kendi üç kaydını, parça 4 Nakit planı ve Komisyon, parça 5 Vergi, Tutarlılık ve
+  // stok değeri kayıtlarını kapattı)
   { id: "karsilastirma.sayfa", where: "src/server/data/sube-karsilastirma.ts#loadBranchCompare", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "Şube karşılaştırma bugün şubeleri yan yana okuyor" },
   { id: "karsilastirma.iscilik", where: "src/server/data/iscilik.ts#loadLaborReport", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "İşçilik / ciro bugün şubeleri yan yana okuyor" },
   { id: "karsilastirma.sube-gunu", where: "src/server/data/branch-day.ts#loadBranchDay", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "Bugün'ün Şubelerde gün kartı bugün bütün şubelerin föyünü okuyor" },

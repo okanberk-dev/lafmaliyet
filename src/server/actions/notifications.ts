@@ -268,7 +268,8 @@ async function unpricedNotifications(): Promise<PanelNotification[]> {
  * öneri gelince yeniden okunmamış olur.
  */
 async function holdNotifications(): Promise<PanelNotification[]> {
-  const h = await pendingHoldSummary();
+  // Seçimle (şube ayrımı parça 5): öbür şubenin faturasından gelen öneri bu şubenin zilinde yok
+  const h = await pendingHoldSummary(await currentBranchScope());
   if (!h.count) return [];
   return [
     {

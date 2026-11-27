@@ -135,7 +135,8 @@ test("işletme geneli ekranlar şube seçiminden bağımsız: vergi, nakit plan�
   // Nakit planı şube ayrımı parça 4'ten beri kişinin şube görünümüyle (areaScope("nakit")); firmanın planı yine "Tümü"yle
   assert.match(oku("src/app/panel/hatirlaticilar/nakit/page.tsx"), /areaScope\("nakit"\)/);
   assert.match(oku("src/server/data/cash-plan.ts"), /withBranchScope\(ALL_BRANCHES,/);
-  assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /loadModel\(\{ scope: ALL_BRANCHES \}\)/);
+  // Tutarlılık şube ayrımı parça 5'ten beri kişinin şube görünümüyle (areaScope("tutarlilik")); Vergi'nin beyanı "Tümü"yle
+  assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /const scope = await areaScope\("tutarlilik"\);/);
   // Seçimi geçersiz kılan kapsam isteğin seçiminden önce gelir
   const kapsam = oku("src/server/branch-scope.ts");
   // Müdürde verilen kapsam da şubesine daralır (managerLock; docs/ROLLER.md), öteki rollerde verilen kapsam geçerli

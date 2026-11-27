@@ -8,13 +8,17 @@ import { okcMonth } from "@/lib/okc-z";
 import { addDays, todayTR } from "@/lib/reminders";
 import type { TaxAsset } from "@/lib/tax/assets";
 import type { TaxFiling } from "@/lib/tax/corporate";
+import { type BranchContribution, branchContribution, branchTaxInput, branchTaxShare, type BranchTaxShare } from "@/lib/tax/branch-share";
 import { type TaxInputs, taxViewInputFromModel, zMonthOf } from "@/lib/tax/inputs";
-import type { TaxAdjustment, ZMonth } from "@/lib/tax/pnl";
+import { type TaxAdjustment, taxPnlInputFromModel, type ZMonth } from "@/lib/tax/pnl";
 import { parseTaxSettings, TAX_SETTINGS_KEY, type TaxSettings } from "@/lib/tax/settings";
 import { buildTaxView, type TaxPlanFeed, taxPlanFeed, type TaxView } from "@/lib/tax/view";
+import { withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadCashPlan, type CashPlanView } from "@/server/data/cash-plan";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { okcRows } from "@/server/data/cash-reports";
+import { loadModel } from "@/server/data/dataset";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadVatPaid } from "@/server/data/vat-paid";
 import { getDb, schema as s } from "@/server/db";
@@ -141,4 +145,44 @@ export async function loadTaxView(
   const paidReminders = recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount }));
   const view = buildTaxView(taxViewInputFromModel(model, taxInputs, { today, year: opts.year, quarter: opts.quarter, reminders, vat: cashPlan?.plan.vat ?? null, paidReminders }));
   return { view, inputs: taxInputs, cashPlan, reminders };
+}
+
+export interface BranchTaxView {
+  /** Şubenin adı */
+  name: string;
+  share: BranchTaxShare;
+  /** Vergi kârının çeyreği verildiyse o çeyreğin matraha katkısı (bilgi) */
+  contribution: BranchContribution | null;
+}
+
+/**
+ * Vergi alanının şube kipi (şube ayrımı parça 5; src/lib/tax/branch-share.ts): şubenin payı (bilgi). Şubenin görünümüyle
+ * okunur (`withBranchScope(şube)`: satış, kasa, Z, personel şubenin; faturalardan yalnız şubeye seçilmiş olanlar). Beyan
+ * firmanın: sayfa bunu firmanın hesabının yanına koyar, hesabı değiştirmez. Hesaplanamazsa null (kart çizilmez)
+ */
+export async function loadBranchTaxView(branch: string, opts: { year: number; today?: string; quarter?: string | null }): Promise<BranchTaxView | null> {
+  try {
+    return await withBranchScope(branch, async () => {
+      const [model, inputs, branches] = await Promise.all([loadModel(), loadTaxInputs({ year: opts.year, today: opts.today }), listBranches()]);
+      const today = opts.today ?? todayTR();
+      const share = branchTaxShare(model, { branch, year: opts.year, today, settings: inputs.settings, assets: inputs.assets });
+      let contribution: BranchContribution | null = null;
+      if (opts.quarter) {
+        const pnl = taxPnlInputFromModel(model, {
+          settings: inputs.settings,
+          today,
+          adjustments: [],
+          assets: inputs.assets,
+          filings: [],
+          zMonths: inputs.zMonths,
+          invoicedCashOuts: inputs.invoicedCashOuts,
+        });
+        contribution = branchContribution(branchTaxInput(pnl, branch), opts.quarter);
+      }
+      return { name: branches.find((b) => b.id === branch)?.name ?? branch, share, contribution };
+    });
+  } catch (e) {
+    console.error("[vergi] şubenin payı hesaplanamadı", e);
+    return null;
+  }
 }

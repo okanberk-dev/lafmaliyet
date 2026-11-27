@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { SEPARATE_CATEGORIES, settingsFromRows } from "@/lib/constants";
 import { isCountable } from "@/lib/ingredient-usage";
@@ -18,6 +19,7 @@ import {
   estimateStock,
   onlineMonthsNeeded,
   stockQty,
+  receiptsInScope,
   recipePerUnit,
   showsStockEstimate,
   STOCK_ESTIMATE_BRANCH,
@@ -256,11 +258,17 @@ export const RECEIPT_LIMIT = 100;
 /** Faturanın şubesi kartı: listelenen faturalar ve dönemin bütün sayıları (liste kesilse de) */
 export interface ReceiptList {
   invoices: ReceiptInvoice[];
-  /** Dönemin hammaddeye bağlı kalemi olan bütün faturaları */
+  /** Dönemin hammaddeye bağlı kalemi olan bütün faturaları (şube seçiliyken listeye girenler) */
   total: number;
   /** Bunlardan şubesi seçilmemiş olanlar (hiçbir şubenin tahminine girmez) */
   unassigned: number;
+  /**
+   * Şube seçiliyken listede olmayanlar (şube ayrımı parça 5): öbür şubeye ve işletme geneline seçilmiş faturalar ("N
+   * fatura başka şubede"). "Tümü"de 0
+   */
+  elsewhere?: { branches: number; shared: number };
 }
+
 
 /**
  * Dönemin (`from` – `to`) hammaddeye bağlı kalemi olan faturaları ve seçilmiş şubeleri (yönetici; Tahmini stok ›
@@ -268,7 +276,7 @@ export interface ReceiptList {
  * seçilmişler, ikisi de en yeni önce; en çok RECEIPT_LIMIT. Sayılar kesilmeden önce bütün dönemden (bulgu 42: liste
  * 100'de sessizce kesiliyor, sayaç da yalnız ilk 100'ü sayıyordu; dönem uzunsa eski seçilmeyen fatura görünmüyordu).
  */
-export async function loadReceiptInvoices(from: string, to: string, db: DB = getDb(), limit = RECEIPT_LIMIT): Promise<ReceiptList> {
+export async function loadReceiptInvoices(from: string, to: string, db: DB = getDb(), limit = RECEIPT_LIMIT, scope: BranchScope = ALL_BRANCHES): Promise<ReceiptList> {
   const bl = s.parasutBillLines;
   const inv = s.invoices;
   const ln = s.parasutProductLinks;
@@ -301,7 +309,7 @@ export async function loadReceiptInvoices(from: string, to: string, db: DB = get
     cur.all.push(`${ing.name} ${stockQty(r.qty, displayUnit(ing))}`);
     out.set(r.id, cur);
   }
-  const list = [...out.values()];
+  const { shown: list, elsewhere } = receiptsInScope([...out.values()], scope);
   // Şubesi seçilmemiş: ne şube ne işletme geneli (işletme geneli bilinçli bir seçimdir, iş beklemez)
   const isOpen = (i: { branchId: string | null; companyWide: boolean }) => i.branchId === null && !i.companyWide;
   const open = list.filter(isOpen);
@@ -313,5 +321,6 @@ export async function loadReceiptInvoices(from: string, to: string, db: DB = get
     }),
     total: list.length,
     unassigned: open.length,
+    ...(scope === ALL_BRANCHES ? {} : { elsewhere }),
   };
 }

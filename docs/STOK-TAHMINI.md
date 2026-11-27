@@ -91,7 +91,9 @@ Bütün faturaları saymak Tuzla'nın malını Marina'da gösterir, hiç saymama
 **Marina'ya gelen faturalar** kartı dönemin hammaddeye bağlı kalemi olan her faturasını şubesiyle gösterir ("Seçilmedi",
 Tuzla, Marina, İşletme geneli); seçim faturanın şubesini yazar, Faturalar'daki seçimle **aynı alandır** (tek doğruluk
 kaynağı). Seçilmeyen ve işletme geneli fatura tahmine girmez, kart "şubesi seçilmedi" der. Tutar, ödeme, cari, FIFO ve
-mal maliyeti değişmez; fatura seçilen şubenin Faturalar, Gelir-gider ve Maliyet görünümüne geçer.
+mal maliyeti değişmez; fatura seçilen şubenin Faturalar, Gelir-gider ve Maliyet görünümüne geçer. Marina seçiliyken (şube
+ayrımı parça 5) kart Marina'nın ve şubesi seçilmemiş faturaları listeler; öbür şubenin ve işletme genelinin faturası
+"N fatura başka şubede, M fatura işletme geneli: Tümü'de görünür" satırında (`receiptsInScope`). "Tümü"de hepsi.
 
 Kart önce şubesi seçilmeyenleri, sonra seçilmişleri (şube ya da işletme geneli) listeler, ikisi de en yeni önce, ve en
 çok 100 fatura gösterir. Başlıktaki fatura sayısı ve "şubesi seçilmedi" sayacı liste kesilse de dönemin bütün

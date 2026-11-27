@@ -10,13 +10,17 @@ import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel, num, pct } from "@/lib/format";
 import { monthKasa } from "@/lib/asilpos/kasa";
+import { economicsAtPrice, productBranchPrice } from "@/lib/prices/branch-view";
 import { combineTillPos } from "@/lib/prices/pos";
 import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { loadBranchPrices } from "@/server/data/branch-prices";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { posPendingSummaries } from "@/server/data/prices";
@@ -64,12 +68,21 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const sp = await searchParams;
   // Kasada (ModPOS) değişecek fiyatlar: Fiyatlar düğmesinin rozeti (okunamazsa rozet yok); seçimin kasalarının toplamı
   // (şube kapsamı A3: "Tümü"de birden çok kasa açıkken hepsi)
-  const [model, site, pos] = await Promise.all([
+  const [model, site, pos, branchPrices] = await Promise.all([
     loadModel(),
     loadSiteLinks(),
     posPendingSummaries()
       .then(combineTillPos)
       .catch(() => null),
+    // Şube seçiliyken şubenin fiyatı (şube ayrımı parça 5; sitenin şube satırları, docs/FIYATLAR.md › Şube fiyatı):
+    // birim kâr ve maliyet oranı şubede geçerli fiyatla, panelin fiyatı "Taban fiyat"
+    currentBranchScope().then((scope) =>
+      scope === ALL_BRANCHES
+        ? null
+        : loadBranchPrices(scope)
+            .then((r) => (r.branch?.id === scope ? { name: r.branch.name, items: r.items } : null))
+            .catch(() => null),
+    ),
   ]);
   const month = resolveMonth(sp.ay, model);
   // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
@@ -82,9 +95,11 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const linkOf = new Map(site.links.map((l) => [l.productId, l]));
   const siteItems = site.snapshot.at ? site.snapshot.items : null;
 
-  const rows: ProductRow[] = model.products.map((p) => {
-    const qty = sold.get(p.product.id) ?? 0;
-    const link = linkOf.get(p.product.id) ?? null;
+  const rows: ProductRow[] = model.products.map((pc) => {
+    const qty = sold.get(pc.product.id) ?? 0;
+    const link = linkOf.get(pc.product.id) ?? null;
+    const branchPrice = branchPrices ? productBranchPrice(link, branchPrices.items, pc.price) : null;
+    const p = branchPrice !== null ? economicsAtPrice(pc, branchPrice, st) : pc;
     return {
       id: p.product.id,
       name: p.product.name,
@@ -93,7 +108,9 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
       category: p.category?.name ?? "—",
       note: p.product.note,
       active: p.product.active,
-      price: p.price,
+      // Düzenlenen fiyat panelin (taban) fiyatı; şubenin fiyatı ayrıca (kâr ve oran onunla)
+      price: pc.price,
+      branchPrice: branchPrice !== null && branchPrices ? { value: branchPrice, label: branchPrices.name } : null,
       net: p.net,
       commission: p.commission,
       cost: p.cost,

@@ -292,7 +292,7 @@ test("13: personele katman, havuz, tutar ve fiyat gitmez (sayım sayfası eşlem
     assert.ok(page.includes(field), `sayim/page.tsx: ${field}`);
   }
   // Değerleme kartı yalnız yöneticiye; katmanlar (layers) forma hiç gönderilmez (form havuzdan kendisi hesaplar)
-  assert.ok(page.includes('valuation={isAdmin ? {'), "valuation yalnız yöneticiye");
+  assert.match(page, /valuation=\{\s*isAdmin\s*\?\s*\{/, "valuation yalnız yöneticiye");
   assert.ok(!/layers:\s*l\.layers/.test(page), "layers forma gitmez");
 });
 

@@ -263,7 +263,8 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         };
       })(),
     ),
-    safe(pendingHoldSummary().then((h) => ({ count: h.count, items: h.items.map(({ name, pct }) => ({ name, pct })) }))),
+    // Fiyat önerisi seçimle (şube ayrımı parça 5): öbür şubenin faturasından gelen öneri bu şubede sayılmaz
+    safe(pendingHoldSummary(scope).then((h) => ({ count: h.count, items: h.items.map(({ name, pct }) => ({ name, pct })) }))),
     // Hammadde zammı: Genel bakış ve zil ile aynı metin (ayda TL etkisiyle); personelde model hiç kurulmaz
     safe(
       (async () => {

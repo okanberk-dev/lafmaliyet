@@ -93,7 +93,7 @@ test("kaynak: kasa ve sayım 'Tümü'de birden çok kasa açıkken formdan önce
   assert.ok(fn > 0 && at > fn && at < kasa.indexOf("const till = await currentTillBranch();", fn), "kasa: soru formdan önce");
   assert.match(kasa, /title="Hangi şubenin kasası\?"/);
   const sayim = read("src/app/panel/sayim/page.tsx");
-  assert.ok(sayim.indexOf("if (tills.length > 1 && !tills.some((b) => b.id === scope)) {") < sayim.indexOf("const model = await loadModel({ scope: branch.id });"), "sayım: soru modelden önce");
+  assert.ok(sayim.indexOf("if (tills.length > 1 && !tills.some((b) => b.id === scope)) {") < sayim.indexOf("loadModel({ scope: branch.id })"), "sayım: soru modelden önce");
   assert.match(sayim, /title="Hangi şubeyi sayıyorsunuz\?"/);
 });
 
@@ -170,13 +170,16 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
   assert.match(note!.text, /cari hesabı firmanındır/);
   // Faturalar firma geneli değil (25 Kasım 2026, docs/SUBE.md › Faturanın şubesi): seçili şubenin faturaları
   assert.doesNotMatch(read("src/app/panel/faturalar/page.tsx"), /<CompanyWideNotice/);
-  // Ekranlar notu çizer (şube kapsamı C P1-12, P2-1); alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube
-  // ayrımı parça 4: Tedarikçiler, Nakit planı)
-  for (const [file, screen] of [
+  // Alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube ayrımı parça 4: Tedarikçiler, Nakit planı; parça 5:
+  // Vergi, Tutarlılık, Mutabakat)
+  for (const [file, area] of [
     ["src/app/panel/vergi/page.tsx", "vergi"],
     ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
-  ] as const)
-    assert.match(read(file), new RegExp(`<CompanyWideNotice screen="${screen}"`), file);
+    ["src/app/panel/mutabakat/page.tsx", "mutabakat"],
+  ] as const) {
+    assert.match(read(file), new RegExp(`<BranchViewChip area="${area}"`), file);
+    assert.doesNotMatch(read(file), /<CompanyWideNotice/, file);
+  }
   assert.match(read("src/app/panel/tedarikciler/page.tsx"), /<BranchViewChip area="tedarikciler"/);
   assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /<BranchViewChip area="nakit"/);
   assert.doesNotMatch(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\(/);

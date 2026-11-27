@@ -90,7 +90,15 @@ export interface ProductRow {
   hasEstimate: boolean;
   /** laffogato.net menü bağlantısı (bağlantı kapalıysa ve ürün bağlı değilse null); ref: "mnu-0007 M" */
   site?: (SiteMarker & { ref: string | null }) | null;
+  /**
+   * Şube seçiliyken şubenin kendi fiyatı (şube ayrımı parça 5; src/lib/prices/branch-view.ts): kâr, oran ve durum bununla;
+   * `price` düzenlenen taban fiyat. Şubenin satırı yoksa null
+   */
+  branchPrice?: { value: number; label: string } | null;
 }
+
+/** Kâr ve oranın fiyatı: şubenin fiyatı varsa o, yoksa taban */
+const salePrice = (r: Pick<ProductRow, "price" | "branchPrice">) => r.branchPrice?.value ?? r.price;
 
 type NumKey = keyof Pick<
   ProductRow,
@@ -194,7 +202,7 @@ function SiteMark({ site, compact }: { site: NonNullable<ProductRow["site"]>; co
 }
 
 /** Oran anlamsız: reçete yok (%0 ve ~%97) ya da fiyat girilmemiş (0 ₺; oran %0 görünür ama ürün zararına satılır) */
-const noRatio = (r: Pick<ProductRow, "status" | "price">) => r.status === "Reçete yok" || r.price <= 0;
+const noRatio = (r: Pick<ProductRow, "status" | "price" | "branchPrice">) => r.status === "Reçete yok" || salePrice(r) <= 0;
 
 /** Maliyet oranının hedefe göre rengi (Durum rozetiyle aynı eşikler); oranı anlamsız üründe renk yok */
 const ratioClass = (r: Pick<ProductRow, "costRatio" | "status" | "price">, target: number) =>
@@ -319,28 +327,36 @@ function PriceCell({ row, className }: { row: ProductRow; className?: string }) 
   }
 
   return (
-    <div className={cn("relative inline-block w-24", className)}>
-      <NumberInput
-        aria-label={`${row.name} ${row.size} satış fiyatı (₺, KDV dahil)`}
-        value={value}
-        disabled={saving}
-        onChange={(e) => setValue(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") {
-            cancelled.current = true;
-            setValue(priceText(last));
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        // Telefon kartında 44px dokunma alanı ve 16px yazı (iOS alanı büyütmesin)
-        className="cell-input bg-surface/70 pr-6 pl-2 ring-line hover:bg-surface hover:ring-line-strong focus:bg-surface pointer-coarse:h-11 max-sm:h-11 max-sm:font-semibold"
-      />
-      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-mute" aria-hidden="true">
-        ₺
-      </span>
+    <div className={cn("inline-flex flex-col items-end gap-0.5", className)}>
+      <div className="relative inline-block w-24">
+        <NumberInput
+          aria-label={`${row.name} ${row.size} ${row.branchPrice ? "taban " : ""}satış fiyatı (₺, KDV dahil)`}
+          value={value}
+          disabled={saving}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") {
+              cancelled.current = true;
+              setValue(priceText(last));
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          // Telefon kartında 44px dokunma alanı ve 16px yazı (iOS alanı büyütmesin)
+          className="cell-input bg-surface/70 pr-6 pl-2 ring-line hover:bg-surface hover:ring-line-strong focus:bg-surface pointer-coarse:h-11 max-sm:h-11 max-sm:font-semibold"
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-mute" aria-hidden="true">
+          ₺
+        </span>
+      </div>
+      {row.branchPrice ? (
+        // Şube seçiliyken şubenin kendi fiyatı (şube ayrımı parça 5): kâr ve oran bununla, kutudaki taban fiyat
+        <span className="text-[11px] leading-4 whitespace-nowrap text-ink-mute tabular" title={`Taban fiyat: kutudaki fiyat (bütün şubelerin menüsü). ${row.branchPrice.label} fiyatı Fiyatlar › Şube fiyatı'nda.`}>
+          {row.branchPrice.label} {tl(row.branchPrice.value)} · kutuda taban
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -904,7 +920,7 @@ export function ProductsTable({
                 transition={{ duration: 0.2, ease: EASE_OUT }}
               >
                 {paged.slice.map((r) => {
-                  const underPriced = r.price < r.suggestedPrice;
+                  const underPriced = salePrice(r) < r.suggestedPrice;
                   return (
                     <TR key={r.id}>
                       <TD sticky className="max-w-[15rem] min-w-48">
@@ -1043,8 +1059,8 @@ export function ProductsTable({
                     {tl(r.cost, 2)}
                   </Metric>
                   <Metric label="Kâr marjı">{ratioText(r, r.margin)}</Metric>
-                  <Metric label="Önerilen" className={r.price < r.suggestedPrice ? "font-semibold" : "text-ink-soft"}>
-                    {r.price < r.suggestedPrice ? (
+                  <Metric label="Önerilen" className={salePrice(r) < r.suggestedPrice ? "font-semibold" : "text-ink-soft"}>
+                    {salePrice(r) < r.suggestedPrice ? (
                       <>
                         <ArrowUpRight size={13} className="-mt-0.5 mr-0.5 inline text-bad" aria-hidden="true" />
                         <span className="sr-only">Fiyatınız önerilenin altında:</span>

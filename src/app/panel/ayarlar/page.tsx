@@ -21,7 +21,7 @@ import { missedPingShown } from "@/lib/site-orders/follow";
 import { activityActionLabel } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
-import { branchWhereWithShared, currentBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhereWithShared, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadAutoBackupInfo, type AutoBackupInfo } from "@/server/backup/auto";
 import { loadBackupInfo } from "@/server/backup/state";
@@ -458,11 +458,14 @@ async function SettingsContent() {
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
   const dayLabel = dayLabeler(new Date());
-  // Stok değerleme işletme geneli bir ayar (settings.stokFifoBaslangic): Tümü'nün kâr-zararını değiştirir. Önizleme de
-  // "Tümü"nün sayımlarıyla ve elle girilmiş devirleriyle; şube seçiliyken şubenin kısmi stoğu ve süzülen stock:*
-  // satırları yanıltırdı (denetim 21 Kasım #32; Genel bakış'ın nakit planı kartıyla aynı kalıp)
-  // şube-ayrımı: stok-degeri.ayarlar
-  const company = model.ds.branchView ? await loadModel({ scope: ALL_BRANCHES }) : model;
+  // Stok değerleme işletme geneli bir ayar (settings.stokFifoBaslangic): Tümü'nün kâr-zararını değiştirir. Önizleme Stok
+  // değeri alanının kipiyle (şube ayrımı parça 5): firma kipinde (ve "Tümü"de) "Tümü"nün sayımları ve elle girilmiş
+  // devirleriyle (denetim 21 Kasım #32), şube kipinde şubenin sayımları ve şubenin ve işletme genelinin faturalarıyla
+  // (sayım ekranının tutarı; ayar yine firmanın)
+  // şube-ayrımı: alan.stok_degeri
+  const valuationScope = model.ds.branchView ? await areaScope("stok_degeri") : ALL_BRANCHES;
+  const company = model.ds.branchView && valuationScope === ALL_BRANCHES ? await loadModel({ scope: valuationScope }) : model;
+  const valuationBranch = valuationScope === ALL_BRANCHES ? null : (model.ds.branchView?.name ?? null);
   const fifoOptions = fifoMonthOptions(company.countedMonths, company.fifoStart, company.ds.currentMonth ?? currentMonthTR());
 
   return (
@@ -476,6 +479,7 @@ async function SettingsContent() {
         rows={valuationRows(company, fifoOptions)}
         months={fifoOptions}
         openingOverrides={company.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
+        branch={valuationBranch}
       />
       <ClosedPeriodCard />
       <PackageCard />
