@@ -670,10 +670,10 @@ test("DEPLOY.md § 8: Vercel Hobby planı, bir saatlik günlük, 7 günlük hata
   const { GRACE_MIN } = await import("../src/lib/job-health");
   assert.match(s8, new RegExp(`pencerenin sonundan ${GRACE_MIN} dakika sonra \\(\`src/lib/job-health\\.ts\` › \`GRACE_MIN\`\\)`));
   for (const f of ["src/lib/job-health.ts", "src/server/jobs/capped.ts", "docs/planlar/KALAN-ISLER.md"]) assert.ok(s8.includes(`\`${f}\``) && read(f).length > 0, f);
-  // Hata kancası yazılınca belge de güncellenir (kanca istek gövdesi ve çerez taşımamalı; o zaman kendi testi)
-  const hook = ["src/instrumentation.ts", "src/instrumentation-node.ts", "instrumentation.ts"].some((f) => existsSync(join(process.cwd(), f)));
-  assert.equal(hook, false, "instrumentation kancası eklendi: DEPLOY.md § 8'deki 'Hata kancası yok' maddesini güncelleyin");
-  assert.match(s8, /\*\*Hata kancası yok\.\*\* `src\/instrumentation\.ts`/);
+  // Hata kancası var: belge onu söyler; kancanın istek gövdesi, çerez ve başlık taşımadığı tests/hata-kaydi.test.ts'te
+  assert.ok(existsSync(join(process.cwd(), "src/instrumentation.ts")), "hata kancası");
+  assert.match(s8, /\*\*Hata kancası var \(27 Kasım 2026\)\.\*\* `src\/instrumentation\.ts`/);
+  assert.ok(s8.includes("Ayarlar › Hata kaydı") && existsSync(join(process.cwd(), "docs/HATA-KAYDI.md")), "Hata kaydı belgesi");
   // Sahibe soru 10'un varsayılanı yazılı
   assert.match(read("docs/planlar/KALAN-ISLER.md"), /10\. \*\*Vercel planı\*\* \(E-67, B05\)[^\n]*\n\s+\*\*Varsayılan:\*\* plan Hobby kalır/);
 });

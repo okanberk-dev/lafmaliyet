@@ -62,6 +62,17 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   gönderilmedi, PR açılmadı: #166'dan sonra birleşir, gün sonu penceresinin (22:00–03:00) dışında. Sonra sahip:
   YAPILACAKLAR.md › Dalga 3'teki [Sahip] maddesi. Şube ayrımı (plan B adım 9) ayrı paket. Daraltma (A3) ≥ 7 gün sonra.
 
+- **Anahtar değişimi uyumu (27 Kasım öğleden sonra; dal `uyum-anahtar`, gönderilmedi):** sabahki olaydan sonra (iki
+  anahtar yalnız panelde değişti, Uzaktan perşembe dondu) üç depoda uyum: panelde anahtar uyumu denetimi (Uzaktan ve
+  site panelin anahtarını kabul ediyor mu; Ayarlar › AsilPOS ve zil), kasa deposunda Uzaktan'ın `_ONCEKI` anahtarı
+  (`uyum-1`, #189'un üstünde), sitede `LAFPOS_SYNC_SECRET_ONCEKI`. Sıra: kasa ve site PR'ları yayına çıkmadan yeni
+  anahtar sırası (docs/ASILPOS.md › Anahtar değişimi) kullanılmaz; panelin denetimi tek başına da güvenli (yalnız uyarır).
+  Sahibe söylenecek: sonraki değişimde önce Uzaktan ve site (`_ONCEKI` ile), sonra panel, sonra Ayarlar › AsilPOS ›
+  Anahtarları sına. İnceleme düzeltmeleri aynı dalda ("Uyum: inceleme düzeltmeleri"): panelin uyarısı uç `_ONCEKI`'yi
+  tanıdığını yanıt başlığıyla (`x-laf-anahtar`) söylemedikçe uçtaki değeri değiştirtmez; kasa sorunca saatte bir sınanır;
+  Uzaktan'ın `/api/health` › `onceki` bayrağı okunur. Başlık ve bayrak kasa ve site dallarından gelir (onlarsız panel
+  "önceki anahtarı tanımıyor" der, belge değişimi başlatmaz). Yayın sırası DEPLOY.md § 7.
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)
@@ -70,12 +81,13 @@ doğruladığı 6 bulgu testleriyle düzeltildi; göç 0097_roller. Ayrıntı: Y
 
 ### P2. Excel'den tam bağımsızlık — BİTTİ (#164 ve bu PR)
 
-### P3. Hata izleme ve kayıt (yüksek)
-Canlıda hata yalnız Vercel günlüğüne (Hobby'de 1 saat) düşüyor. `src/instrumentation.ts`'e `onRequestError` kancası;
-sunucu hataları, `attempt()` hataları ve istemci hataları veritabanında kısa ömürlü bir tabloya yazılsın; panelde
-(Ayarlar › Sistem) görünsün; kritik hatada yöneticiye e-posta (mevcut sistem uyarısı altyapısıyla, günde bir kez).
-CSP ihlal raporları da aynı kayda (bugün yalnız 1 saatlik günlükte; CSP_ENFORCE kararı kanıtla verilsin).
-İsteğe bağlı: Sentry (sahip hesap açarsa DSN ortam değişkeniyle).
+### P3. Hata izleme ve kayıt — BİTTİ (bu PR)
+`src/instrumentation.ts` › `onRequestError`, `attempt()`, tarayıcı (`/api/hata`) ve CSP raporları `error_log`'a (30 gün,
+aynı hata tek satır); ekran Ayarlar › Hata kaydı ("Sistem" yerine adı bu); kritik hatada günde bir sistem uyarısı
+e-postası; CSP_ENFORCE kararı kartta (7 gün kanıt). Göç `0100_hata_kaydi`: main ilerlediyse birleştirmede yeniden
+üretilir. Sentry eklenmedi (docs/HATA-KAYDI.md § 7). İnceleme düzeltmeleri (aynı PR): sorgu parametresi hiç alınmaz,
+kapı kaynak başına (CSP yağmuru sunucu hatasını düşürmez), NUL ve uzun girdi, eklentinin CSP ihlali kayda girmez,
+Çözüldü 7 günü atlatmaz, son beş hata kodu, takılan e-postanın anahtarı yeniden alınır. Ayrıntı docs/HATA-KAYDI.md.
 
 ### P4. CI ve kod sağlığı (yüksek)
 - CI'da şema–göç tutarlılığı: `drizzle-kit generate` değişiklik üretirse CI düşsün.
@@ -132,7 +144,8 @@ AsilPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikram�
 3. GitHub sırrı `ANTHROPIC_API_KEY` (ve Anthropic Console bakiyesi): PR incelemesi bir kez bile çalışmadı.
 4. Vercel planı: Hobby ticari kullanıma izin vermiyor ve günlükler 1 saat; Pro kararı (docs/DEPLOY.md § 8). Neon:
    laffogato.net veritabanının kotası dolu (online sipariş / karaoke / menü eşitlemesi duruyor), panelinki ücretsiz planda.
-5. Vercel: iki adımlı doğrulama zorunlu olsun → `ADMIN_2FA_REQUIRED=1`; CSP bir hafta temizse `CSP_ENFORCE=1`;
+5. Vercel: iki adımlı doğrulama zorunlu olsun → `ADMIN_2FA_REQUIRED=1`; Ayarlar › Hata kaydı CSP'yi "uygulanabilir"
+   deyince `CSP_ENFORCE=1`;
    kullanılmayan `PARASUT_USERNAME` / `PARASUT_PASSWORD` silinsin.
 6. Yayından sonra el kontrolü (10 dk): kasa raporu, fatura, Z e-postası, raporlar; belge tarayıcı gerçek iPhone ve
    Android'de (vizör, otomatik çekim, tarama ekranı).

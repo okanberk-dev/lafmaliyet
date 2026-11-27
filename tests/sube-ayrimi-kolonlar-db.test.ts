@@ -236,7 +236,7 @@ describe("şube ayrımı parça 3: şube sütunu gelen tablolar veritabanında",
   });
 
   test("migration 0101'in geri doldurması: listenin şubesi, tamamlayanın ya da ilk yanıtlayanın şubesi, yoksa Tuzla", async () => {
-    const file = readFileSync("drizzle/0101_sube_ayrimi_kolonlar.sql", "utf8");
+    const file = readFileSync("drizzle/0101_sube_ayrimi.sql", "utf8");
     const fill = file.slice(file.indexOf('UPDATE "checklist_runs"'), file.indexOf("--> statement-breakpoint", file.indexOf('UPDATE "checklist_runs"')));
     const ROLLBACK = new Error("geri al");
     let after: { t: number; d: string; b: string | null }[] = [];

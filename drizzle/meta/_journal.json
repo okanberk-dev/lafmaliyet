@@ -705,15 +705,15 @@
     {
       "idx": 100,
       "version": "7",
-      "when": 1795759648741,
-      "tag": "0100_sube_gorunumu",
+      "when": 1795760867053,
+      "tag": "0100_hata_kaydi",
       "breakpoints": true
     },
     {
       "idx": 101,
       "version": "7",
-      "when": 1795762380788,
-      "tag": "0101_sube_ayrimi_kolonlar",
+      "when": 1795793656248,
+      "tag": "0101_sube_ayrimi",
       "breakpoints": true
     }
   ]

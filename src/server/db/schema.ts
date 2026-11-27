@@ -1415,6 +1415,49 @@ export const jobRuns = pgTable(
   (t) => [index("job_runs_job_started_idx").on(t.job, t.startedAt)],
 );
 
+// ---------------------------------------------------------------- Hata kaydı
+/**
+ * Canlıdaki hataların kısa ömürlü kaydı (docs/HATA-KAYDI.md): sunucu hataları (`src/instrumentation.ts` ›
+ * onRequestError), sunucu eylemlerinin beklenmeyen hataları (`attempt()`), tarayıcı hataları (`/api/hata`) ve CSP ihlal
+ * raporları (`/api/csp-rapor`). Aynı hata tek satırdır (`fingerprint`): sayısı, ilk ve son görülüşü. Kişisel veri ve
+ * anahtar taşımaz (istek gövdesi, çerez, başlık, sorgu dizgesi yok; metinler kısaltılıp temizlenir: src/lib/error-log.ts).
+ * Kaynak başına günde en çok sınırlı sayıda yeni satır açılır; 30 günden eski satırları sabah işi siler. Yedeğe girmez.
+ */
+export const errorLog = pgTable(
+  "error_log",
+  {
+    id: serial("id").primaryKey(),
+    /** Hatanın özeti (kaynak, ad, sayıları atılmış ileti, yol): aynı hata aynı satırı artırır */
+    fingerprint: text("fingerprint").notNull(),
+    source: text("source", { enum: ["server", "action", "client", "csp"] }).notNull(),
+    level: text("level", { enum: ["error", "warning"] }).notNull().default("error"),
+    /** Hatanın adı (TypeError, PostgresError…) ya da CSP yönergesi */
+    name: text("name"),
+    message: text("message").notNull(),
+    /** Sayfanın ya da yolun adresi (sorgu dizgesi yok) */
+    path: text("path"),
+    /** Bağlam: sayfa / API yolu / eylem, tarayıcı, CSP kaynağı */
+    detail: text("detail"),
+    /** Next'in hata kodu (hata ekranındaki "Hata kodu") */
+    digest: text("digest"),
+    /** Yığının ilk satırları (dosya yolları kısaltılmış) */
+    stack: text("stack"),
+    count: integer("count").notNull().default(1),
+    firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),
+    lastSeen: timestamp("last_seen", { withTimezone: true }).notNull().defaultNow(),
+    /** Yönetici "Çözüldü" dedi; hata yeniden görülürse boşalır */
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("error_log_fingerprint_uq").on(t.fingerprint),
+    index("error_log_last_seen_idx").on(t.lastSeen),
+    index("error_log_source_first_idx").on(t.source, t.firstSeen),
+    check("error_log_source_ck", sql`${t.source} in ('server','action','client','csp')`),
+    check("error_log_level_ck", sql`${t.level} in ('error','warning')`),
+    check("error_log_count_ck", sql`${t.count} > 0`),
+  ],
+);
+
 // ---------------------------------------------------------------- Reçete değişiklik önerileri
 /** Önerideki ve öneri anındaki reçete: satır adları da saklanır (malzeme sonra silinse ya da adı değişse de okunur) */
 export type RecipeSnapshot = {

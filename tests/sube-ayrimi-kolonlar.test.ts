@@ -196,7 +196,7 @@ test("yatırımlar: şube seçiliyken toplam şubenin, işletme geneli bilgi; T�
 // ---------------------------------------------------------------- Migration
 
 test("migration 0101: kayıtlar geri doldurulur, eski sürümün yazımı tetikleyiciyle doğru şubeye iner", () => {
-  const sql = read("drizzle/0101_sube_ayrimi_kolonlar.sql");
+  const sql = read("drizzle/0101_sube_ayrimi.sql");
   // Sıra: listenin şubesi, tamamlayanın, ilk yanıtlayanın (fiziksel) şubesi, Tuzla
   const fill = sql.slice(sql.indexOf('UPDATE "checklist_runs"'), sql.indexOf('ALTER TABLE "checklist_runs" ALTER COLUMN'));
   const order = ['FROM "checklist_templates" t', 'WHERE u."id" = r."completed_by"', 'FROM "checklist_answers" a', "'tuzla'"].map((p) => fill.indexOf(p));
@@ -209,5 +209,5 @@ test("migration 0101: kayıtlar geri doldurulur, eski sürümün yazımı tetikl
   assert.match(sql, /"notification_log_branch_id_branches_id_fk"[^;]*ON DELETE set null/);
   assert.match(sql, /"investments_branch_id_branches_id_fk"[^;]*ON DELETE no action/);
   const journal = JSON.parse(read("drizzle/meta/_journal.json")) as { entries: { idx: number; tag: string }[] };
-  assert.deepEqual(journal.entries.at(-1), { ...journal.entries.at(-1), idx: 101, tag: "0101_sube_ayrimi_kolonlar" });
+  assert.deepEqual(journal.entries.at(-1), { ...journal.entries.at(-1), idx: 101, tag: "0101_sube_ayrimi" });
 });

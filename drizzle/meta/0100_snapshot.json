@@ -1,5 +1,5 @@
 {
-  "id": "056a4c76-085d-40f1-a681-c548e9b026d8",
+  "id": "70929cda-926f-42ff-a995-95d33bec829c",
   "prevId": "1e761b07-ad66-44af-843f-3b79b5c39beb",
   "version": "7",
   "dialect": "postgresql",
@@ -2636,6 +2636,172 @@
         "commission_months_received_pair": {
           "name": "commission_months_received_pair",
           "value": "(\"commission_months\".\"received_on\" is null) = (\"commission_months\".\"received\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.error_log": {
+      "name": "error_log",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'error'"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stack": {
+          "name": "stack",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "first_seen": {
+          "name": "first_seen",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen": {
+          "name": "last_seen",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "error_log_fingerprint_uq": {
+          "name": "error_log_fingerprint_uq",
+          "columns": [
+            {
+              "expression": "fingerprint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "error_log_last_seen_idx": {
+          "name": "error_log_last_seen_idx",
+          "columns": [
+            {
+              "expression": "last_seen",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "error_log_source_first_idx": {
+          "name": "error_log_source_first_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "first_seen",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "error_log_source_ck": {
+          "name": "error_log_source_ck",
+          "value": "\"error_log\".\"source\" in ('server','action','client','csp')"
+        },
+        "error_log_level_ck": {
+          "name": "error_log_level_ck",
+          "value": "\"error_log\".\"level\" in ('error','warning')"
+        },
+        "error_log_count_ck": {
+          "name": "error_log_count_ck",
+          "value": "\"error_log\".\"count\" > 0"
         }
       },
       "isRLSEnabled": false
@@ -12364,13 +12530,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "branch_view": {
-          "name": "branch_view",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         }
       },
       "indexes": {},
@@ -12408,10 +12567,6 @@
         "users_manager_branch_ck": {
           "name": "users_manager_branch_ck",
           "value": "\"users\".\"role\" <> 'manager' or \"users\".\"branch_id\" is not null"
-        },
-        "users_branch_view_ck": {
-          "name": "users_branch_view_ck",
-          "value": "jsonb_typeof(\"users\".\"branch_view\") = 'object'"
         }
       },
       "isRLSEnabled": false

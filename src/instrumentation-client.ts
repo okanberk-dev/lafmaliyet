@@ -1,5 +1,7 @@
 import { config } from "zod/v4/core";
 
+import { installClientErrorReporter } from "@/lib/client-error-report";
+
 /*
  * Tarayıcıda uygulama kodundan (ve React'in canlanmasından) önce bir kez çalışır (Next: instrumentation-client).
  *
@@ -10,3 +12,9 @@ import { config } from "zod/v4/core";
  * docs/DEPLOY.md › Güvenlik başlıkları
  */
 config({ jitless: true });
+
+/*
+ * Panelde yakalanmayan tarayıcı hataları ve sözler hata kaydına gider (docs/HATA-KAYDI.md; src/lib/client-error-report.ts):
+ * yalnız /panel'de, sayfa başına en çok 5, bağlantı kopması ve eklenti hataları hariç. Gönderim hata üretmez.
+ */
+installClientErrorReporter();

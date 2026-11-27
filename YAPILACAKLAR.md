@@ -23,7 +23,7 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   yerde "Yalnız şube", muhasebecininki ekranına göre (Vergi ve İşletme geneli giderler firma geneli); müdür ve şubesine
   kilitli personel hep kendi şubesinde (ayar yok). Hep firma geneli kalanlar (tam yedek, vergi beyanı ve takvimi, banka
   ekstresi ve açılış bakiyesi, Paraşüt eşitlemesi, menü, reçete, hammadde fiyatı, tedarikçi kütüğü, site siparişleri)
-  Hesabım'da gerekçesiyle listeli. Göçler 0100 (şube görünümü), 0101 (kontrol listesi kaydı, işlem geçmişi, gönderim
+  Hesabım'da gerekçesiyle listeli. Göç 0101 (şube görünümü; kontrol listesi kaydı, işlem geçmişi, gönderim
   günlüğü ve yatırıma şube). Bağımsız doğrulama (iki şubenin işaretli kayıtlarıyla 259 sınama, Tuzla silinince
   Marina'nın görünümü aynı mı) sekiz sızıntı buldu, hepsi kapandı: Faturalar'ın cari bağları, sabah e-postasının şube
   grubunun Paraşüt bölümü, Mutabakat POS'un şube karoları ve ekstre yükleme penceresi, Maaşlar'ın hesap seçicisi,
@@ -31,6 +31,21 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   Sahibin kararına kalan: nakit planının şube kipindeki "İşletme geneli" satırı firmanın vergisini ve SGK'sını taşır
   (şubenin altı haftalık toplamına girer); Vergi beyanının muhtasar dökümü öbür şubelerin personelini adıyla ve ücretiyle
   yazar (tek vergi numarası); İşletme geneli giderler için "Ciroya göre pay et" kipi.
+
+- **Anahtar değişimi uyumu** (bu PR, 27 Kasım; docs/ASILPOS.md › Şube kurulumu › Anahtar değişimi): 26 Kasım'da iki
+  anahtar yalnız panelde değişti, kasa gece uyguladı, Uzaktan ve site eskisini tuttuğu için Uzaktan bir gün dondu. Panel
+  artık kasanın bağlantı sorgusunu (uyguladığı ve güncel sürüm) şubeye göre saklar ve kendi dağıttığı anahtarın Uzaktan'da
+  ve sitede kabul edildiğini kasanın imzasıyla sınar (sabah işi, Ayarlar › AsilPOS (kasa) › Anahtarları sına, kasanın
+  raporu değişince; saatte en çok bir). Reddeden uç kartta ve yöneticinin zilinde uyarı olur, değişkenlerin adlarıyla adım
+  adım (kasa uyguladıysa kırmızı, bekliyorsa turuncu); anahtar hiçbir yere yazılmaz. Belgede iki anahtarlı yeni sıra (önce
+  Uzaktan ve site, `_ONCEKI` ile; sonra panel; kasalar uygulayınca `_ONCEKI` silinir). Fotoğraf okumasının istemleri banka
+  kısmının kıyas başlığını iki adla da bilir (`PAVO - ASILPOS KARŞILAŞTIRMA`, AsilPOS #189'dan sonra; eskisi de). Kasa
+  tarafı kasa deposunun uyum dalı (Uzaktan `_ONCEKI`'yi tanır), site tarafı sitenin uyum dalı: iki uçta `_ONCEKI` yayında
+  değilken yeni sıranın 2.–3. adımı kullanılmaz (belge söyler). İnceleme düzeltmeleri (aynı gün): turuncu uyarı uç
+  `_ONCEKI`'yi tanıdığını söylemedikçe uçtaki değeri değiştirtmez, paneli eskiye döndürtür (panel önce yayına çıksa da
+  perşembe tekrarlanmaz); kasa sorunca saatte bir sınanır (yalnız uç değişse de uyarı ertesi sabahı beklemez); uçların
+  `x-laf-anahtar` başlığı okunur (yalnız önceki değer olarak kabul: "Panelin Uzaktan anahtarı eski"), Uzaktan'ın
+  `/api/health` › `onceki` bayrağıyla unutulan `_ONCEKI` hatırlatılır; yayın sırası DEPLOY.md § 7.
 
 - **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (#167, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
   şubenin kendi AsilPOS kasası olabilir ("yalnız bir şube" sınırı kalktı); her kasanın kendi anahtarı, geçiş günü, gün
@@ -60,6 +75,20 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   döndürün; (3) bir şubenin e-postası müdür ya da muhasebeci hesabındaysa kurulum bağlantısı o adrese gitmez, başka adres
   yazılır.
 
+- **Hata kaydı** (P3; bu PR, 27 Kasım): sunucu hataları (Next'in `onRequestError` kancası), işlemlerin beklenmeyen
+  hataları (`attempt()`), tarayıcı hataları ve CSP ihlal raporları panelin veritabanında 30 gün; aynı hata tek satır
+  (sayısı, ilk ve son görülüşü, hata kodu). Ekran **Ayarlar › Hata kaydı** (yalnız yönetici; Çözüldü / Hepsi çözüldü).
+  Kişisel veri ve anahtar yazılmaz; kayıt isteği bekletmez ve bozamaz; günlük satır sınırı ve 2.000 satır tavanı. Göç
+  `0100_hata_kaydi`. docs/HATA-KAYDI.md. Sahibe söylenecek:
+  - Sunucuda hata olunca sabah e-postasının alıcılarına günde en çok bir "Panelde hata: …" e-postası gelir (yalnız
+    canlıda, e-posta açıkken); ayrıntı Ayarlar › Hata kaydı'nda. Kullanıcı "Bir şeyler ters gitti" ekranındaki hata
+    kodunu söylerse satır o kodla bulunur (satır son beş görülüşün kodunu tutar; kod her yayında değişir).
+  - **CSP_ENFORCE kararı artık kartta:** "uygulanabilir" (son 7 günde panelin kendi kodundan ihlal yok, kayıt en az 7
+    gündür tutuluyor) deyince Vercel'de `CSP_ENFORCE=1` eklenip yeniden yayınlanır; "henüz uygulanmasın" diyorsa önce
+    satırlar düzeltilir. Çözüldü işaretlemek 7 günlük bekleyişi kısaltmaz: son ihlalden 7 gün sonra karar yeşile döner.
+    Vercel günlüğüne bakmak gerekmez.
+  - Acil durumda kayıt `ERROR_LOG_DISABLED=1` ile kapatılır. Sentry eklenmedi (isteğe bağlı; hesap açılırsa ayrı iş,
+    docs/HATA-KAYDI.md § 7).
 - **Excel'den tam bağımsızlık** (P2; #164 ve bu PR, 26 Kasım): başlangıç verisi uygulamanın dışında
   (`tests/fixtures/baslangic/`; tohum betiği ve testler okur), canlıda boş veritabanına kendiliğinden yüklenmiyor,
   Excel çıkarma betiği kalktı; `npm audit` geliştirme araçları dahil 0 açık; başlangıç verisindeki kişi adları uydurma
@@ -105,14 +134,15 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   0094 (personel). Sahibe söylenecek: Ayarlar › Muhasebeci paketi'ne muhasebecinin adresi yazılmadıkça paket gitmez;
   Marina'nın online ay kaydı yayından sonra işletmeninkiyle bir kez karşılaştırılmalı (site şubeyi süzmüyorsa tahmin
   online tüketimi fazla düşer). Paraşüt güvenliği (aynı vergi no sorusu, POST + tek kullanımlık bağlantı, AsilPOS anahtarı hemen
-  geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); bir hafta Vercel günlüğünde `[csp]` satırı
-  çıkmazsa `CSP_ENFORCE=1` verilip yeniden yayınlanır.
+  geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); raporlar 27 Kasım'dan beri hata kaydında, karar
+  Ayarlar › Hata kaydı'nda (yukarıda).
 
 ## Devam eden (26 Kasım akşamı)
 
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
-- P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
-  rol × ekran duman testi).
+- P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
+  bulgu düzeltilecek, ikinci inceleme, sonra PR.
+- P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi, rol × ekran duman testi).
 - P5 Ayarlar ay bazlı + 2027 vergi kuralları (Ocak'tan önce); P6 Excel'den kalan sabit listeler (fatura / hammadde
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
@@ -127,8 +157,8 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
   Danger Zone › Change visibility › Private; açığa düşmüş anahtarlar yenilensin.
 - [ ] GitHub › Settings › Branches: main için "Tip · Lint · Test · Derleme" zorunlu olsun (kırmızı CI'yla birleştirme olmasın).
 - [ ] GitHub sırrı `ANTHROPIC_API_KEY`: sahip 27 Kasım'da anahtarı ekledi ama inceleme yine düşüyor; depo düzeyindeki sır 23 Ekim tarihli, yeni anahtarla güncellenmeli (kuruluş düzeyindeki sırrı gölgeler).
-- [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`; CSP bir
-  hafta temizse `CSP_ENFORCE=1`.
+- [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`;
+  Ayarlar › Hata kaydı "Güvenlik politikası uygulanabilir" deyince `CSP_ENFORCE=1`.
 - [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›
   Muhasebeci paketi); SGK işveren oranı kararı (%15,75 / %19,75); yedekten geri yükleme provası; dış sağlık izleyicisi.
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.

@@ -67,7 +67,12 @@ değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışm�
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
 görünür); AsilPOS'un sayılan günü reddedilince (Z çakışması, sözleşmeye uymayan gövde, başka şubeye
 ayarlı kasa) aynı başlıkta "Marina gün sonu alınamadı: <neden>", gün ve ne yapılacağıyla, Ayarlar › AsilPOS'a götürür
-(gün ve neden başına bir satır, son 7 gün; [ASILPOS.md](ASILPOS.md) › Durum ve onarım). Yöneticinin, müdürün ve muhasebecinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
+(gün ve neden başına bir satır, son 7 gün; [ASILPOS.md](ASILPOS.md) › Durum ve onarım). AsilPOS Uzaktan ya da site
+panelin kasalara dağıttığı anahtarı reddediyorsa (ya da anahtarı yoksa) aynı başlıkta "Uzaktan'daki anahtar eski" (kasa
+yeni anahtarı uyguladı: kırmızı) ya da "Uzaktan yeni anahtarı kabul etmiyor" (kasa gün kapanınca geçecek: turuncu), uç
+panelin anahtarını yalnız önceki değer olarak kabul ediyorsa "Panelin Uzaktan anahtarı eski" (turuncu), bütün kasalar
+geçtiği hâlde Uzaktan'da önceki anahtar tanımlıysa "Uzaktan'da önceki anahtar hâlâ tanımlı" (bilgi), ne yapılacağı adım
+adım; sınama geçince kalkar ([ASILPOS.md](ASILPOS.md) › Şube kurulumu › Anahtar değişimi). Yöneticinin, müdürün ve muhasebecinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
 giriş: Chrome · Windows · IP 85.105.12.x" durur, Hesabım › Oturumlar'a götürür; aynı uyarı hesabın adresine e-postayla da
 gider ([DEPLOY.md](DEPLOY.md) › 6a). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
@@ -412,6 +417,7 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 | Son yedek 30 günden eski ya da hiç yedek yok (işlerden bağımsız) | mavi, Ayarlar › Yedek'e götürür ([YEDEK.md](YEDEK.md)) | — | — |
 | Otomatik haftalık yedek alınamadı (sabah işinin "Otomatik yedek" adımı) | turuncu, "Sabah işinde bir adım hata verdi" ("Otomatik yedek: <hata>") | — | ertesi sabahın sabah e-postasında ([YEDEK.md](YEDEK.md) § 13) |
 | Veritabanı kotasının %70'i / %90'ı doldu (işlerden bağımsız; sabah işinin ölçümü) | turuncu, Ayarlar › Veritabanı'na götürür; seviye düşene kadar durur | %90'da kırmızı şerit ("Veritabanı") | eşiğin ilk geçildiği sabah ayrı sistem uyarısı e-postası, eşik başına bir kez ([YEDEK.md](YEDEK.md) § 14) |
+| Panelde sunucu hatası: sayfa, API yolu ya da işlemin beklenmeyen hatası (işlerden bağımsız; [HATA-KAYDI.md](HATA-KAYDI.md)) | — (Ayarlar › Hata kaydı'nda, telefonda kapalı satırı kırmızı) | — | günün ilk hatasında ayrı sistem uyarısı e-postası ("L'Affogato · Panelde hata: …"), günde en çok bir (`notification_log` anahtarı `hata-kaydi:<gün>`, önce "gönderiliyor" diye alınır: başka sunucu örneği de göndermez; gidince "gönderildi", takılırsa 5 dakika sonra sonraki hata yeniden alır); tarayıcı ve CSP satırları e-posta göndermez |
 
 - **Bugün ekranı** ([BUGUN.md](BUGUN.md)): kırmızı uyarılar yöneticiye listenin ilk satırında ("Günlük işler", sorun
   var) görünür ve Ayarlar › Günlük işler'e götürür. Bugün'de ayrı bir "Paraşüt eşitlemesi başarısız" satırı olmadığı

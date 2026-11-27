@@ -4,11 +4,16 @@ import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { isCalendarDate } from "@/lib/reminders";
+import { reportActionError } from "@/server/errors/action";
 import { UserError } from "@/server/user-error";
 
 export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; error: string };
 
-/** Eylemi çalıştırır; yönlendirme hatalarını geçirir, diğer hataları kullanıcıya uygun mesaja çevirir. */
+/**
+ * Eylemi çalıştırır; yönlendirme hatalarını geçirir, diğer hataları kullanıcıya uygun mesaja çevirir. Beklenmeyen hata
+ * (doğrulama, UserError ve bilinen veritabanı kısıtları dışında) günlüğe ve hata kaydına da yazılır (docs/HATA-KAYDI.md;
+ * kayıt beklenmez).
+ */
 export async function attempt<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   try {
     return { ok: true, data: await fn() };
@@ -22,6 +27,7 @@ export async function attempt<T>(fn: () => Promise<T>): Promise<ActionResult<T>>
     if (code === "23505") return { ok: false, error: "Bu kayıt zaten var (aynı isim kullanılıyor)" };
     if (code === "23503") return { ok: false, error: "Bu kayıt başka yerlerde kullanıldığı için silinemez" };
     console.error(e);
+    reportActionError(e);
     return { ok: false, error: "İşlem tamamlanamadı. Lütfen tekrar deneyin." };
   }
 }

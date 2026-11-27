@@ -4,6 +4,7 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { reportClientError } from "@/lib/client-error-report";
 import { AUTO_RETRY, takeAutoRetry } from "@/lib/error-retry";
 
 /** Kendiliğinden yeniden denemelerin zamanları (sayfa açık kaldıkça; src/lib/error-retry.ts) */
@@ -12,11 +13,16 @@ const autoRetries: number[] = [];
 /**
  * Hata ekranı (panelin, uygulamanın ve en dıştaki sınırın ortak görünümü). "Tekrar dene" `retry` çağırır: Next sayfayı
  * sunucudan yeniden ister ve çizer (`reset` yalnız aynı hatalı çıktıyı yeniden çizerdi; veritabanının geçici hatası
- * geçse de ekran düzelmiyordu). `auto`: gözetimsiz ekranda (bar) 10 sn sonra kendiliğinden dener.
+ * geçse de ekran düzelmiyordu). `auto`: gözetimsiz ekranda (bar) 10 sn sonra kendiliğinden dener. Tarayıcıda oluşan
+ * çizim hatası hata kaydına gider (docs/HATA-KAYDI.md); sunucuda oluşan (kodlu) hatayı sunucu kancası zaten yazdı.
  */
 export function ErrorView({ error, retry, auto = false }: { error: unknown; retry: () => void; auto?: boolean }) {
   const digest = error && typeof error === "object" && "digest" in error && typeof error.digest === "string" ? error.digest : null;
   const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => {
+    reportClientError("boundary", error);
+  }, [error]);
 
   useEffect(() => {
     if (!auto || !takeAutoRetry(autoRetries, Date.now())) return;

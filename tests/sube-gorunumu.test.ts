@@ -217,10 +217,14 @@ test("çip: sunucu bileşeni kuralı showViewChip'ten okur, düğme eylemi çağ
   assert.match(client, /Bütün ekranlar için: <NoticeLink href=\{BRANCH_VIEW_HREF\}>Hesabım › Şube görünümü<\/NoticeLink>/);
 });
 
-test("migration 0100: kullanıcıya nesne olan tercih sütunu, oturum sürümüne dokunmaz", () => {
-  const entry = readJournal().find((e) => e.tag === "0100_sube_gorunumu");
-  assert.ok(entry, "0100_sube_gorunumu günlükte yok");
-  const sql = read("drizzle/0100_sube_gorunumu.sql");
+test("migration 0101 (şube görünümü bölümü): kullanıcıya nesne olan tercih sütunu, oturum sürümüne dokunmaz", () => {
+  const entry = readJournal().find((e) => e.tag === "0101_sube_ayrimi");
+  assert.ok(entry, "0101_sube_ayrimi günlükte yok");
+  // Göç iki bölüm: önce şube görünümü (yalnız ekleme), sonra dört tablonun şube sütunu (veri doldurur; ayrı test)
+  const all = read("drizzle/0101_sube_ayrimi.sql");
+  const cut = all.indexOf("-- Şube ayrımı parça 3");
+  assert.ok(cut > 0, "şube sütunları bölümü bulunamadı");
+  const sql = all.slice(0, cut);
   assert.match(sql, /ALTER TABLE "users" ADD COLUMN "branch_view" jsonb DEFAULT '\{\}'::jsonb NOT NULL;/);
   assert.match(sql, /ADD CONSTRAINT "users_branch_view_ck" CHECK \(jsonb_typeof\("users"\."branch_view"\) = 'object'\)/);
   assert.doesNotMatch(sql, /session_version|(^|--> statement-breakpoint\n?)\s*(UPDATE|INSERT INTO|DELETE FROM) /m);

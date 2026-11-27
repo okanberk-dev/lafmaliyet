@@ -1,3 +1,9 @@
+-- Şube görünümü (şube ayrımı D, 27 Kasım 2026; docs/SUBE.md › Şube ayrımı): kişinin ekran ekran "yalnız şube" ya da
+-- "firma geneli" tercihi (src/lib/branch-view.ts). Yalnız ekleme: sabit varsayılanlı sütun, eski sürüm okumaz ve yazmaz
+-- (geri dönüşe uygun); oturum sürümü değişmez.
+ALTER TABLE "users" ADD COLUMN "branch_view" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_branch_view_ck" CHECK (jsonb_typeof("users"."branch_view") = 'object');
+--> statement-breakpoint
 -- Şube ayrımı parça 3 (27 Kasım 2026; docs/SUBE.md › Şube ayrımı › Şube sütunu gelen tablolar): şube sütunu olmayan dört
 -- tabloya şube. Production'da `npm run build` sırasında, eski sürüm hâlâ hizmet verirken çalışır: eski sürüm yeni
 -- sütunları bilmez, yazdığı satır aşağıdaki kurallarla doğru kalır.

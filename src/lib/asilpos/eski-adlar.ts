@@ -52,6 +52,23 @@ export const TEL_KART_ALANI = "lafposCard" as const;
 export const TEL_UZAK_ADRES_ENV = "LAFPOS_CLOUD_URL";
 export const TEL_UZAK_ANAHTAR_ENV = "LAFPOS_CLOUD_SECRET";
 
+// ─── Öbür projelerdeki anahtarlar (anahtar uyumu; docs/ASILPOS.md › Anahtar değişimi) ──
+
+/**
+ * AsilPOS Uzaktan'ın Vercel projesi (lafpos.laffogato.net; proje yeniden adlandırılmadı). Kasanın Uzaktan anahtarı
+ * orada `TEL_UZAK_ANAHTAR_ENV` adıyla durur (Uzaktan önce yeni adı, yoksa bunu okur)
+ */
+export const UZAKTAN_PROJESI = "lafpos";
+/** Anahtar değişiminde Uzaktan'ın bir önceki kasa anahtarı (geçişte ikisi de kabul edilir) */
+export const UZAK_ONCEKI_ENV = `${TEL_UZAK_ANAHTAR_ENV}_ONCEKI`;
+/**
+ * Sitenin (laffogato) kasa anahtarı: sitede bu adla durur (kasada `LAFFOGATO_SYNC_SECRET`, panelde ASILPOS_SITE_SECRET);
+ * panelin kendi eşitleme anahtarının eski adıyla aynı ad, değeri ayrı
+ */
+export const SITE_KASA_ANAHTAR_ENV = `${ESKI_ENV_ONEKI}SYNC_SECRET`;
+/** Anahtar değişiminde sitenin bir önceki kasa anahtarı */
+export const SITE_KASA_ONCEKI_ENV = `${SITE_KASA_ANAHTAR_ENV}_ONCEKI`;
+
 // ─── Veritabanında duran değerler ────────────────────────────────────────────
 
 /** branches.pos_source ve pos_day_reports.source: yazılan eski değer, okunurken yenisine çevrilir */
@@ -111,7 +128,8 @@ export const ESKI_BOLUM_CAPASI = "lafpos" as const;
 
 /**
  * Kasanın kâğıdında basılı eski ad (büyük harf, katlanmış metin): eski kasalar ve eski fotoğraflar. Banka kısmının
- * kıyas başlığı ("PAVO - LAFPOS KARŞILAŞTIRMA") yeni kasada da eski adla basılır
+ * kıyas başlığı AsilPOS #189'a kadar eski adla basılır ("PAVO - LAFPOS KARŞILAŞTIRMA"), sonra yeni adla ("PAVO - ASILPOS
+ * KARŞILAŞTIRMA"); okuma ikisini de tanır
  */
 export const ESKI_KAGIT_ADI = "LAFPOS";
 
@@ -150,8 +168,12 @@ export const ESKI_AD_METINLERI: readonly string[] = [
   HESAP_SOZLESMESI,
 ];
 
-/** Eski adla kalan tam ortam değişkeni adları: kasaya telde bu adla gider */
-export const ESKI_ENV_ADLARI: readonly string[] = [TEL_UZAK_ADRES_ENV, TEL_UZAK_ANAHTAR_ENV];
+/**
+ * Eski adla kalan tam ortam değişkeni adları: kasaya telde bu adla gider ya da öbür projelerde (Uzaktan, site) anahtar
+ * değişiminin önceki değeri bu adla durur. Sitenin kasa anahtarı (`SITE_KASA_ANAHTAR_ENV`) burada değil: panelin kendi
+ * değişkeninin eski adıyla aynı, belgede yeni adıyla aynı satırda yazılır
+ */
+export const ESKI_ENV_ADLARI: readonly string[] = [TEL_UZAK_ADRES_ENV, TEL_UZAK_ANAHTAR_ENV, UZAK_ONCEKI_ENV, SITE_KASA_ONCEKI_ENV];
 
 /**
  * Yalnız belgelerde: tırnaktaki tel ve veritabanı değeri, AsilPOS deposunun adı (depo eski adla kaldı), ad değişikliği

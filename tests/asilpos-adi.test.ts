@@ -179,4 +179,4 @@ test("gün sonu fotoğrafının karşılaştırması: satırın eski adlı alan�
 });
 
 /** eski-adlar.ts'teki değerlerin özeti (bilerek güncellenir) */
-const ESKI_ADLAR_OZETI = "45babebbd813bc9dee2a5886350fe7a2872be76c3e3423c3bb73a2e7578b7e8b";
+const ESKI_ADLAR_OZETI = "9d582c58e1fa7255f65f879ceaf326c83dd293cce25ff9d9765cc9831db38bd0";

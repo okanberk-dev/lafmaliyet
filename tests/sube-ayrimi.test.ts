@@ -233,7 +233,7 @@ const BEKLEYEN_B: Record<string, number> = {
 
 /** Şubesi sütundan değil kayıttan okunan tablo: personel isteği (konu, yük ya da kayıt; `requestBranches`) */
 const BRANCH_DERIVED = ["staffRequests"];
-/** Şube sütunu sırada olan tablolar (parça 3 dördünü getirdi: drizzle/0101_sube_ayrimi_kolonlar.sql; boş) */
+/** Şube sütunu sırada olan tablolar (parça 3 dördünü getirdi: drizzle/0101_sube_ayrimi.sql; boş) */
 const BEKLEYEN_KOLON: string[] = [];
 
 test("(b) tablo listesi şemayla aynı: tablonun şube sütunu var (ya da şubesi kayıttan, ya da sütunu sırada)", () => {

@@ -25,7 +25,7 @@ import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { adminLevel } from "@/lib/roles";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
-import { asilposRejectionBell } from "@/server/bell/asilpos";
+import { asilposAnahtarBell, asilposRejectionBell } from "@/server/bell/asilpos";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { vardiyaBell } from "@/server/bell/vardiya";
@@ -592,8 +592,9 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...devices, ...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
-  // çalışmıyorsa ve AsilPOS'un gün sonu reddedildiyse Sistem başlığında (src/server/bell/modpos.ts, src/server/bell/asilpos.ts)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, asilpos, vardiya, staffDocs] = await Promise.all([
+  // çalışmıyorsa, AsilPOS'un gün sonu reddedildiyse ve Uzaktan ya da site kasanın anahtarını reddediyorsa Sistem başlığında
+  // (src/server/bell/modpos.ts, src/server/bell/asilpos.ts)
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, asilpos, anahtar, vardiya, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
     // Ödemeler ve faturalar alanının kapsamı (şube ayrımı parça 4): şube kipinde şubenin ve işletme genelinin
@@ -610,6 +611,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     // ModPOS anahtarının uyarısı seçili şubenin (şube ayrımı); "Tümü"de hepsi
     safe("modpos", currentBranchScope().then((scope) => modposKeyBell(scope))),
     safe("asilpos", asilposRejectionBell()),
+    safe("asilpos", asilposAnahtarBell()),
     // Gelecek haftanın vardiyası yazılmadıysa (Perşembe 18:00'den Pazar'a; docs/VARDIYA.md › Bildirimler)
     safe("vardiya", currentBranchScope().then((scope) => vardiyaBell(scope))),
     safe("belge", staffDocNotifications()),
@@ -635,7 +637,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  // Sistem başlığında AsilPOS'un reddi ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının
+  // Sistem başlığında AsilPOS'un reddi ve anahtar uyarısı ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının
   // ilk satırı, personel belgeleri (süresi dolan / yaklaşan) hemen ardından
-  return [...lost, ...system, ...recipients, ...modpos, ...asilpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  return [...lost, ...system, ...recipients, ...modpos, ...asilpos, ...anahtar, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

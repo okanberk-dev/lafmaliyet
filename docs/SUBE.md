@@ -712,7 +712,7 @@ okunur **Her zaman firma geneli** listesi (gerekçeleriyle). Seçim hemen kayded
   ("Beyan tutarları … her görünümde firmanın"); firma kipinde "Firma geneli · Marina seçili" + **Yalnız Marina'yı göster**.
   Altında "Bütün ekranlar için: Hesabım › Şube görünümü". Düğme aynı tercihi o alan için yazar. Alan ekranında "Marina
   seçili: bu ekran firma geneli" notunun (`CompanyWideNotice`) yerini alır; not yalnız hep firma geneli ekranlarda kalır.
-- **Saklama**: `users.branch_view` (jsonb nesne, migration `0100_sube_gorunumu`; CHECK `jsonb_typeof = 'object'`),
+- **Saklama**: `users.branch_view` (jsonb nesne, migration `0101_sube_ayrimi`; CHECK `jsonb_typeof = 'object'`),
   ör. `{"vergi":"firma"}`; eksik anahtar rolün varsayılanı, bilinmeyen anahtar ve değer okurken düşer (`parseBranchView`).
   Yazım yalnız kişinin satırına, anahtar anahtar (`branch_view || jsonb_build_object(alan, kip)`); oturum sürümü değişmez,
   oturum (`readSessionUser`, `CurrentUser`) tercihi taşımaz. Saklanan değer her alanda `sube` / `firma` (iki alanın
@@ -824,7 +824,7 @@ Bugün, zil, Onaylar, Paraşüt listesi, kişi seçicisi, teslim defteri ve rapo
 ### Şube sütunu gelen tablolar (parça 3)
 
 Dört tablonun şubesi yoktu; şube seçiliyken öbür şubenin kaydını gösteriyor ya da kaydı hiçbir şubeye bağlayamıyordu.
-Migration `0101_sube_ayrimi_kolonlar` sütunları ekler (production'da `npm run build` sırasında, eski sürüm hizmet verirken
+Migration `0101_sube_ayrimi` sütunları ekler (production'da `npm run build` sırasında, eski sürüm hizmet verirken
 çalışır; eski sürümün yazdığı satır da doğru kalır).
 
 | Tablo | Şube | Eski kayıtlar | Okuyanlar (şube seçiliyken) |
