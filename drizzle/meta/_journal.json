@@ -680,6 +680,13 @@
       "when": 1795706529860,
       "tag": "0096_foto_tarama",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795757576153,
+      "tag": "0097_hata_kaydi",
+      "breakpoints": true
     }
   ]
 }
