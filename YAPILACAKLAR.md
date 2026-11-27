@@ -77,6 +77,8 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Devam eden (26 Kasım akşamı)
 
+- [ ] [Ladmin] Şube seçiliyken her ekranda yalnız o şubenin bilgisi ("Tümü"de şube şube); firma geneli ekranlar için sahibin kararı.
+
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
 - P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
   rol × ekran duman testi).
@@ -131,7 +133,8 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - [x] [Ladmin] Muhasebeciye aylık tek paket ve ay kapanış e-postası. (26 Kasım; Ayarlar › Muhasebeci paketi, docs/MUHASEBE-PAKETI.md)
 - [x] [Ladmin] Kontrol listelerinin denetime hazır aylık PDF'i. (26 Kasım; Kontrol › Geçmiş › Aylık PDF)
 - [x] [Ladmin] Asistana fiş fotoğrafı: telefonda çekince kart hazırlanır. (26 Kasım; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı)
-- [ ] [İkisi] Tuzla AsilPOS'a geçecekse iki şubeli AsilPOS.
+- [ ] [İkisi] Çok şubeli kasa: panel B1 (`cok-sube-kasa` dalı: her şubenin kendi AsilPOS kasası, Marina'da ModPOS kapalı, göç 0099), kasa B2 (ikinci kasa açılmadan önce).
+- [ ] [Sahip] B1 canlıya çıkınca: Ayarlar › AsilPOS › Marina bölümünde geçiş günü 22 Kasım 2026 mı bakın; Marina dışındaki şubede Marina'nın anahtarını almış kasa varsa yeni kurulum kodu gönderin; Vercel'de `MODPOS_API_KEY_MARINA`'yı silin (artık okunmuyor). Gün sonu penceresinde (22:00–03:00) birleştirmeyin.
 - [x] [Ladmin] Dönem kapanışı: beyan edilmiş aya sonradan fatura girmesin. Reçete geçmişi tutulsun. (26 Kasım; Ayarlar › Dönem kapanışı, docs/DONEM-KAPANISI.md)
 - [x] [Ladmin] İşçilik maliyeti / ciro oranı: günlük, haftalık ve şube şube. (26 Kasım; Raporlar › İşçilik)
 - [x] [Ladmin] Personel belgeleri (hijyen eğitimi, sağlık raporu, SGK) ve avans takibi. (26 Kasım; Giderler & maaşlar › Belgeler, Avanslar; docs/PERSONEL-BELGE.md)

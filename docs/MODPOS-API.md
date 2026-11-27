@@ -108,9 +108,10 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Alınamayan gün** (bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler, geçmiş onda
   takılmaz, sıradaki eksik güne geçer; iki kez alınamayan gün kartta yazar. Yanıt 2xx ama okunamıyorsa (bozuk, çok
   büyük, yarıda kesik) çalışma durur: sorun büyük olasılıkla her günde aynıdır, ikinci hak harcanmaz.
-- **AsilPOS'a geçiş gününden** itibaren Marina'nın föyü çekilmez (o günleri hiçbir yer okumaz); geçmiş yalnız ondan önceye
-  tamamlanır. Geçiş günü yalnız AsilPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'nın kasası ModPOS'ta kalır,
-  föyü her sabah çekilmeye devam eder (`branchSwitchDay`; denetim 21 Kasım #5, [ASILPOS.md](ASILPOS.md) › Şubeler).
+- **AsilPOS'a geçiş gününden** itibaren bir şubenin föyü sayılmaz (o günleri hiçbir yer okumaz). Kasa kaynağı AsilPOS
+  olan şubenin (Marina, göç 0099'dan beri) föyü hiç çekilmez ve başka şubenin föyünden ona föy yazılmaz; saklı föyü geçiş
+  gününden önceki günler için sayılır. Geçiş günü şubenin kendi kasasınındır: Tuzla'nın kasası ModPOS'ta kalır, föyü her
+  sabah çekilmeye devam eder (`switchDayFor`; çok şube, [ASILPOS.md](ASILPOS.md) › Şubeler).
 - **Aynı anda tek çekim** (integration_state › `modpos.kira`, 90 sn): sabah işi iki kez tetiklenirse ya da **Bu günü
   çek** sabah işiyle çakışırsa ikincisi istek göndermez ("Başka bir ModPOS çekimi sürüyor"). Bu günü çek'in yanıtı yolda
   kaybolursa pencere kapanır ve sayfayı yenileyip kalan hakka bakmak önerilir (çekim yapılmış olabilir).
@@ -237,8 +238,8 @@ yapmadan bütün föylere uygulanır). "Aynı" kapatılınca o anki değer şube
 salt okunur ve Şube ayarları'na götürür. Föy yalnız anahtarı açık şubenin föyüyse aya girer; hiçbir şubede açık değilse
 föy tablosu hiç okunmaz (`modposFallbackBranches`, `src/server/modpos/fallback.ts`). Açıkken kasa raporu (ve AsilPOS gün sonu) olmayan
 günün **kapanmış** föyü ayın açık gün, ciro, ödenmez ve kart payına girer (AsilPOS'un yedek satırıyla aynı kural, G6):
-gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. Marina'nın (AsilPOS'un şubesi) föyü AsilPOS'a geçiş
-gününden önceki günler için, Tuzla'nınki (ModPOS'ta kalan şube) her gün (`modposTillRows`, `branchSwitchDay`). İndirim
+gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. AsilPOS'a geçen şubenin (Marina) föyü kendi geçiş gününden
+önceki günler için, Tuzla'nınki (ModPOS'ta kalan şube) her gün (`modposTillRows`, `switchDayFor`). İndirim
 föyde olmadığı için o günlerin indirimi bilinmez. Elle yazılan ay bilgisi her zaman kazanır (yalnız föyden gelen ayda
 elle yazılan 0 da silinmez). Kapalıyken föy hiçbir hesaba girmez.
 
