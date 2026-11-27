@@ -112,6 +112,27 @@ export function ablativeTR(word: string): string {
   return `${word}${caseSuffix(word, true)}`;
 }
 
+/**
+ * Belirtme hâli, son sözcüğe göre (şube görünümü çipi: "Yalnız Marina'yı göster"): ünlü dörtlü uyumla (a ı → ı, e i → i,
+ * o u → u, ö ü → ü), ünlüyle biten adda kaynaştırma "y": "Marina'yı", "Tuzla'yı", "Kadıköy'ü", "Moda Sahil'i",
+ * "laffogato.net'i", "Bostancı'yı"
+ */
+export function accusativeTR(name: string): string {
+  const lower = name.trim().toLocaleLowerCase("tr-TR");
+  let vowel = "i";
+  for (let i = lower.length - 1; i >= 0; i--) {
+    const c = lower[i];
+    if ("aı".includes(c)) vowel = "ı";
+    else if ("ei".includes(c)) vowel = "i";
+    else if ("ou".includes(c)) vowel = "u";
+    else if ("öü".includes(c)) vowel = "ü";
+    else continue;
+    break;
+  }
+  const last = lower[lower.length - 1] ?? "";
+  return `${name}'${"aıoueiöü".includes(last) ? "y" : ""}${vowel}`;
+}
+
 const ONES_WORD = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"];
 const TENS_WORD = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"];
 

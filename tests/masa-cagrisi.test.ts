@@ -297,7 +297,8 @@ test("ekran: Masa çağrıları kartı, tek dokunuş Gördüm (istekte kapalı, 
   assert.doesNotMatch(read("src/lib/site-orders/calls.ts"), /from "zod"|^import (?!type )[^;]*from "\.\/schema"/m);
   const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /const calls = data\?\.configured \? openCalls\(data\.calls, now\) : \[\];/);
-  assert.match(board, /\{calls\.length \? <TableCalls calls=\{calls\} now=\{now\} \/> : null\}/);
+  // Tek şube seçiliyken "Bütün şubeler" rozetiyle (site çağrının şubesini göndermiyor; şube ayrımı parça 6)
+  assert.match(board, /\{calls\.length \? <TableCalls calls=\{calls\} now=\{now\} siteWide=\{siteWide\} \/> : null\}/);
   const alerts = read("src/components/panel/live/alert-center.tsx");
   assert.match(alerts, /const SEEN_CALLS_KEY = "laf:gorulen-cagrilar";/);
   assert.match(alerts, /const SEEN_ORDERS_KEY = "laf:gorulen-siparisler";/, "siparişlerin anahtarı ayrı kalır");

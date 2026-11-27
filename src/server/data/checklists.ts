@@ -2,7 +2,7 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, pickFormBranch, tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { adminActor, adminLevel, can } from "@/lib/roles";
 import { kontrolDigestBox, photoAccess, rangeText, valueText, whoText } from "@/lib/checklists";
@@ -12,6 +12,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import * as store from "@/server/checklists/store";
 import { closedMarksOn } from "@/server/closed-days";
 import { cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
@@ -35,10 +36,38 @@ function ctxOf(now: Date): store.DayCtx {
 
 /**
  * Listeleme için gün kuralları ve isteğin şube seçimi (docs/KONTROL-LISTELERI.md › Şubeler): tek şube seçiliyken o
- * şubenin ve bütün şubelerin listeleri görünür. Şubesi olan personel kendi şubesinde kilitlidir (src/server/branch-scope.ts).
+ * şubenin ve bütün şubelerin listeleri, kayıtların yalnız o şubedeki görünür; "Tümü"de bütün şubelerin listesi her fiziksel
+ * şubenin satırı (şube ayrımı). Şubesi olan personel kendi şubesinde kilitlidir (src/server/branch-scope.ts).
  */
 async function listCtxOf(now: Date): Promise<store.DayCtx> {
-  return { ...ctxOf(now), branch: await currentBranchScope() };
+  const [branch, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  return { ...ctxOf(now), branch, physical: tillBranches(branches).map((b) => ({ id: b.id, name: b.name })) };
+}
+
+/**
+ * Bütün şubelerin listesinde kaydın şubesi (şube ayrımı, 27 Kasım 2026; docs/KONTROL-LISTELERI.md › Şubeler): formun
+ * gönderdiği şube (`raw`, doldurma ekranının şubesi) `formBranch(…, "checklist")` kuralıyla: etkin fiziksel şube, şubesine
+ * kilitli personelde kendi şubesi; göndermeyen eski sekme seçili fiziksel şubeye yazar, "Tümü"de birden çok şube açıkken
+ * reddedilir (sessizce Tuzla'ya inmez). Şubeli listede kullanılmaz: kaydı listenin şubesinde
+ */
+async function runBranchPick(raw: string | null | undefined): Promise<{ id: string } | { error: string }> {
+  const [scope, known, lock] = await Promise.all([currentBranchScope(), listBranches(), staffBranchLock()]);
+  const picked = pickFormBranch({ raw, kind: "checklist", scope, known, lock, requireExplicit: true });
+  return "error" in picked ? picked : { id: picked.id! };
+}
+
+/**
+ * Doldurma ekranının şubesi (bütün şubelerin listesi): şubesine kilitli personelde kendi şubesi; seçili fiziksel şube;
+ * "Tümü"de adresin `?sube=`'si (Bugün'ün ve zilin şube satırı; seçici onu çereze de benimsetir), yoksa tek fiziksel şube
+ * açıksa o. Birden çok şube açıkken null: ekran şubeyi sorar
+ */
+export async function checklistRunBranch(raw: string | null | undefined): Promise<string | null> {
+  const [scope, known, lock] = await Promise.all([currentBranchScope(), listBranches(), staffBranchLock()]);
+  if (lock) return lock;
+  const physical = tillBranches(known);
+  if (physical.some((b) => b.id === scope)) return scope;
+  if (raw && physical.some((b) => b.id === raw)) return raw;
+  return physical.length === 1 ? physical[0].id : null;
 }
 
 /** Şablonlar; `scoped`: isteğin şube seçimine göre (o şubenin ve bütün şubelerin), Listeler sekmesi hepsini görür */
@@ -61,9 +90,12 @@ export async function loadChecklistDays(days: string[], role: "admin" | "staff",
   return store.loadChecklistDays(getDb(), days, role, await listCtxOf(now));
 }
 
-/** Doldurma ekranı; şube kilidini sayfa uygular (src/app/panel/kontrol/[id]/page.tsx, branchLockAllows) */
-export function loadRunView(templateId: number, day: string, now: Date = new Date()) {
-  return store.loadRunView(getDb(), templateId, day, ctxOf(now));
+/**
+ * Doldurma ekranı; şube kilidini sayfa uygular (src/app/panel/kontrol/[id]/page.tsx, branchLockAllows). `runBranch`:
+ * bütün şubelerin listesinde kaydın şubesi (checklistRunBranch)
+ */
+export function loadRunView(templateId: number, day: string, now: Date = new Date(), runBranch: string | null = null) {
+  return store.loadRunView(getDb(), templateId, day, ctxOf(now), runBranch);
 }
 
 /** Geçmiş: personel yalnız kendi doldurabildiği listeleri, listenin personele açıldığı günden görür (aralık çağıranın) */
@@ -71,8 +103,9 @@ export async function loadChecklistHistory(from: string, to: string, role: "admi
   return store.loadHistory(getDb(), from, to, role, await listCtxOf(now));
 }
 
-export function firstChecklistDay() {
-  return store.firstChecklistDay(getDb());
+/** İlk kontrol listesi günü, seçili şubenin (şube ayrımı; "Tümü"de işletmenin) */
+export async function firstChecklistDay() {
+  return store.firstChecklistDay(getDb(), await currentBranchScope());
 }
 
 /**
@@ -80,15 +113,20 @@ export function firstChecklistDay() {
  * personel yalnız kendi şubesinin ve bütün şubelerin listelerine yazar (docs/KONTROL-LISTELERI.md › Şubeler): listeleme
  * süzer, adresle açılan başka şubenin listesini de burası reddeder.
  */
-export async function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput, now: Date) {
+export async function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput & { branch?: string | null }, now: Date) {
   const lock = await staffBranchLock();
-  return store.writeAnswer(getDb(), { ...adminActor(me), lock }, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
+  const { branch, ...answer } = input;
+  return store.writeAnswer(getDb(), { ...adminActor(me), lock, runBranch: await runBranchPick(branch) }, answer as store.AnswerInput, now, {
+    photos: photoStorage().available,
+    linkPhoto: (id, until, tx) => keepPhoto(id, until, tx),
+  });
 }
 
 /** Fotoğraf yüklemeden önce hedef madde fotoğraf alır mı (almazsa ChecklistError); şube kilidi yazımdaki gibi */
-export async function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number }, now: Date) {
+export async function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number; branch?: string | null }, now: Date) {
   const lock = await staffBranchLock();
-  return store.checkPhotoTarget(getDb(), { ...adminActor(me), lock }, target, now, photoStorage().available);
+  const { branch, ...rest } = target;
+  return store.checkPhotoTarget(getDb(), { ...adminActor(me), lock, runBranch: await runBranchPick(branch) }, rest, now, photoStorage().available);
 }
 
 /**
@@ -102,18 +140,18 @@ export async function logAnswerActivity(me: CurrentUser, r: store.WriteResult): 
   if (r.changed && a) {
     if (item.type === "number" && a.value !== null) {
       if (a.status === "issue" && (r.prev?.value !== a.value || r.prev?.status !== "issue")) {
-        await logActivity(me, "Kontrol: aralık dışı", `${name} · ${item.label} ${valueText(item, a.value)} (${rangeText(item)}) · Not: ${a.note ?? ""}`);
+        await logActivity(me, "Kontrol: aralık dışı", `${name} · ${item.label} ${valueText(item, a.value)} (${rangeText(item)}) · Not: ${a.note ?? ""}`, { branchId: r.run.branchId });
       } else if (r.prev?.value != null && r.prev.value !== a.value) {
-        await logActivity(me, "Kontrol değeri değişti", `${name} · ${item.label}: ${valueText(item, r.prev.value)} → ${valueText(item, a.value)}`);
+        await logActivity(me, "Kontrol değeri değişti", `${name} · ${item.label}: ${valueText(item, r.prev.value)} → ${valueText(item, a.value)}`, { branchId: r.run.branchId });
       }
     }
     if (item.type === "check" && a.status === "issue" && (r.prev?.status !== "issue" || r.prev.note !== a.note)) {
-      await logActivity(me, "Kontrol: sorun bildirildi", `${name} · ${item.label} · Not: ${a.note ?? ""}`);
+      await logActivity(me, "Kontrol: sorun bildirildi", `${name} · ${item.label} · Not: ${a.note ?? ""}`, { branchId: r.run.branchId });
     }
   }
   if (r.completedNow) {
     const open = r.summary.issues.filter((x) => x.open).length;
-    await logActivity(me, "Kontrol listesi tamamlandı", `${name} · ${longDateTR(r.run.date)} · ${whoText(r.summary.contributors)}${open ? ` · ${open} sorun` : ""}`);
+    await logActivity(me, "Kontrol listesi tamamlandı", `${name} · ${longDateTR(r.run.date)} · ${whoText(r.summary.contributors)}${open ? ` · ${open} sorun` : ""}`, { branchId: r.run.branchId });
   }
 }
 

@@ -97,6 +97,8 @@ bu haftanın özeti çarşamba sabahı gider ve satır bunu söyler (anahtar aç
   açıklamada. Önizleme ve örnek pazartesi giden e-posta gibi **işletmenin tamamıyla** okur, soldaki şube seçimiyle
   değil (`collectWeekly` kaynakları `withBranchScope(ALL_BRANCHES, …)` içinde çalıştırır; denetim 21 Kasım #18).
   Önceden Marina seçiliyken önizleme nakit planını Marina'nın cirosuyla kuruyor, kasa maddesi yalnız Marina'yı sayıyordu.
+  Haftalık özetin şube grubu yoktur: şube seçiliyken pencere "Haftalık özet şube şube gitmez: firmaya giden e-posta"
+  notunu yazar (şube ayrımı parça 6, `weeklyPreviewNote`).
 - **Örneği bana gönder:** yalnız tıklayan yöneticinin adresine, konu "Örnek · …"; haftanın asıl gönderimini etkilemez.
   Resend anahtarı yoksa kapalı (önizleme her zaman çalışır).
 - Gönderimler ve örnekler "Son gönderimler"de görünür; gidemeyen haftalık kayıt "Haftalık özet gönderilemedi" (örnek:

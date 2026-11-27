@@ -10,8 +10,10 @@ import { button, C, callout, divider, emailShell, esc, FONT, heading, para, pill
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
-import { holdReasonSentence, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
+import { digestItemInGroup } from "@/lib/notify-recipients";
+import { holdInScope, holdReasonSentence, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { daysLeftLabel, longDateTR, monthShortTR, type NotifyStage, type UpcomingItem } from "@/lib/reminders";
+import type { InvoiceBranchRef } from "@/lib/upcoming-scope";
 import { capped } from "@/server/jobs/capped";
 
 export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato.net").replace(/\/+$/, "");
@@ -57,6 +59,45 @@ export interface DigestInvoices {
 /** Paraşüt bölümünde e-postayı tek başına gönderen haber: yeni fatura, eşitleme hatası, yeni onaya düşen fiyat */
 export function invoiceNewsOf(i: DigestInvoices): boolean {
   return i.items.length > 0 || Boolean(i.syncError) || (i.priceHolds?.fresh ?? 0) > 0;
+}
+
+/**
+ * Fatura bölümünün kalemlerinin şubesi (şube ayrımı doğrulaması, 27 Kasım 2026): şubeye bağlı alıcı grubunun bölümü
+ * bununla süzülür (`groupInvoiceSection`). Dizilerin sırası `DigestInvoices`'takiyle aynı
+ */
+export interface DigestInvoiceRefs {
+  /** Yeni faturaların şubesi (`items` sırasıyla) */
+  items: InvoiceBranchRef[];
+  /** Kontrol bekleyen faturalar: şubesi ve mal alışı sayılmayan mı (E-07) */
+  review: (InvoiceBranchRef & { stockOnly: boolean })[];
+  /** Onay bekleyen fiyatlar: önerinin faturasının şubesi ve son Paraşüt bölümlü gönderimden beri mi geldi */
+  holds: { name: string; pct: number | null; branch: string | null; fresh: boolean }[];
+}
+
+/** Onay bekleyen fiyatların satırı (yoksa null): hepsinin sayısı, son gönderimden beri gelenler, hammadde başına fark */
+export function digestHoldsPart(holds: DigestInvoiceRefs["holds"]): DigestInvoices["priceHolds"] {
+  return holds.length ? { count: holds.length, fresh: holds.filter((h) => h.fresh).length, items: holds.map(({ name, pct }) => ({ name, pct })) } : null;
+}
+
+/**
+ * Şubeye bağlı alıcı grubunun fatura bölümü (şube ayrımı doğrulaması, 27 Kasım 2026): yeni faturalar ve kontrol
+ * bekleyenler grubun şubelerinin ve işletme genelinin (şubesi seçilmemiş fatura her gruba: ödemelerin kuralı,
+ * `digestItemBranch` + `digestItemInGroup`), onay bekleyen fiyatlar önerinin faturasının şubesiyle (`holdInScope`:
+ * şubesi boş faturanın önerisi her gruba). Eşitleme hatası hesabın (her grupta); kasadan faturalı alımları çağıran süzer.
+ * Önceden yalnız kasadan faturalı alımlar süzülüyordu: Marina'ya bağlı alıcıların e-postası Tuzla'nın yeni faturasını
+ * adıyla ve tutarıyla listeliyor, sayılara katıyordu. Boş grup (bütün şubeler) olduğu gibi
+ */
+export function groupInvoiceSection(invoices: DigestInvoices, refs: DigestInvoiceRefs, branchIds: readonly string[]): DigestInvoices {
+  if (!branchIds.length) return invoices;
+  const inGroup = (ref: InvoiceBranchRef | undefined) => digestItemInGroup(ref && ref.branchId && !ref.companyWide ? ref.branchId : null, branchIds);
+  const review = refs.review.filter(inGroup);
+  return {
+    ...invoices,
+    items: invoices.items.filter((_, i) => inGroup(refs.items[i])),
+    reviewCount: review.length,
+    stockOnlyCount: review.filter((r) => r.stockOnly).length,
+    priceHolds: digestHoldsPart(refs.holds.filter((h) => branchIds.some((id) => holdInScope(h.branch, id)))),
+  };
 }
 
 /** Fiyat onayı kartı (Hammaddeler) */

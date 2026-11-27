@@ -36,6 +36,16 @@ export const zSube = z
   .optional()
   .describe("Şube: adı ya da kimliği (ör. Marina, tuzla) ya da 'hepsi' (bütün şubeler); verilmezse panelde seçili kapsam");
 
+/**
+ * Şube görünümü (şube ayrımı D parça 4; docs/SUBE.md › Şube ayrımı): şube seçiliyken alanın kipi. "sube" yalnız o
+ * şubenin (ve işletme genelinin) kayıtları, "firma" firmanın tamamı; verilmezse hesabın Hesabım › Şube görünümü tercihi.
+ * "Tümü"de anlamsız
+ */
+export const zGorunum = z
+  .enum(["sube", "firma"])
+  .optional()
+  .describe("Şube seçiliyken görünüm: 'sube' (yalnız o şube ve işletme geneli) ya da 'firma' (firmanın tamamı); verilmezse hesabın Şube görünümü tercihi");
+
 export const zLimit = (def: number, max: number) => z.number().int().min(1).max(max).default(def).describe(`En çok kaç satır (varsayılan ${def}, en çok ${max})`);
 
 export const ayOzetiInput = z
@@ -80,6 +90,8 @@ export const tedarikciOzetiInput = z
       .default("fatura")
       .describe("Bütün tedarikçiler listesinin sırası: fatura (dönemdeki fatura toplamı büyükten küçüğe) ya da borc (kalan borç büyükten küçüğe)"),
     limit: zLimit(20, 100),
+    sube: zSube,
+    gorunum: zGorunum,
   })
   .strict();
 
@@ -91,6 +103,7 @@ export const odemelerInput = z
     kaynak: z.enum(["hepsi", "fatura", "hatirlatici", "cari"]).default("hepsi").describe("hepsi, fatura, hatirlatici ya da cari (tedarikçiye faturasız borç)"),
     nakitPlani: z.boolean().default(false).describe("true: 6 haftalık nakit planının haftalık özeti de"),
     sube: zSube,
+    gorunum: zGorunum,
   })
   .strict();
 

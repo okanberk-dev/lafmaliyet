@@ -5,7 +5,7 @@
 
 import { and, asc, eq, gte, inArray, isNull, lte, min, or } from "drizzle-orm";
 
-import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_REQUIRED, type BranchScope, tillBranches } from "@/lib/branches";
 import type { AlertList } from "@/lib/checklist-alerts";
 import { businessDate } from "@/lib/cash-report";
 import {
@@ -22,6 +22,8 @@ import {
   rangeText,
   runSummary,
   sameAnswer,
+  sharedListName,
+  sharedRunBranches,
   nextVersions,
   slotLocked,
   slotLockedText,
@@ -187,29 +189,58 @@ export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean;
   });
 }
 
-/** Günlük listenin o günkü kaydı (günlük listede sıra 1) */
-function runWhere(templateId: number, date: string) {
+/** Günlük listenin o günkü, o şubedeki kaydı (günlük listede sıra 1; şube ayrımı: kayıt şube başına, migration 0101) */
+function runWhere(templateId: number, date: string, branchId: string) {
   const r = s.checklistRuns;
-  return and(eq(r.templateId, templateId), eq(r.date, date), eq(r.seq, 1));
+  return and(eq(r.templateId, templateId), eq(r.date, date), eq(r.branchId, branchId), eq(r.seq, 1));
+}
+
+/**
+ * Bir listenin ekrandaki satırı: hangi şubenin kaydı (şube ayrımı, 27 Kasım 2026). Şubeli liste tek satır, kaydı listenin
+ * şubesinde. Bütün şubelerin listesi her fiziksel şubenin kendi satırı (`sharedRunBranches`): tek şube seçiliyken yalnız
+ * o şubeninki, "Tümü"de her açık fiziksel şubeninki (birden çok şube açıkken ad şubeyle başlar), online kanalda hiç.
+ */
+interface ListCopy {
+  branchId: string;
+  shared: boolean;
+  /** "Tümü"de yan yana satırların şube adı (sharedListName); yoksa null */
+  label: string | null;
+}
+
+/** Etkin fiziksel şubeler, sırasıyla (bütün şubelerin listesinin satırları); `ctx.physical` verilmişse o */
+async function physicalOf(db: Db, ctx: Pick<DayCtx, "physical">): Promise<{ id: string; name: string }[]> {
+  if (ctx.physical) return ctx.physical;
+  const rows = await db.select().from(s.branches);
+  return tillBranches(rows).map((b) => ({ id: b.id, name: b.name }));
+}
+
+function copiesOf(t: Pick<TemplateDTO, "branchId">, scope: BranchScope, physical: readonly { id: string; name: string }[]): ListCopy[] {
+  if (t.branchId) return [{ branchId: t.branchId, shared: false, label: null }];
+  const side = scope === ALL_BRANCHES && physical.length > 1;
+  return sharedRunBranches(
+    scope,
+    physical.map((b) => b.id),
+  ).map((id) => ({ branchId: id, shared: true, label: side ? (physical.find((b) => b.id === id)?.name ?? id) : null }));
 }
 
 /** Kayıt yoksa şablonun bugünkü maddeleri (fotoğraf deposu yoksa fotoğraflı maddeler çıkar) */
 const currentItems = (t: TemplateDTO, photos: boolean) => snapshotItems(t.items, { photos });
 
-/** Bir listenin günü: kayıt varsa kaydın adı, aralığı ve maddeleri, yoksa şablonunki */
-function liteOf(t: TemplateDTO, run: RunRow | undefined, answers: AnswerLite[], photos: boolean): ChecklistLite {
+/** Bir listenin günü (bir şubenin satırı): kayıt varsa kaydın adı, aralığı ve maddeleri, yoksa şablonunki */
+function liteOf(t: TemplateDTO, run: RunRow | undefined, answers: AnswerLite[], photos: boolean, copy: ListCopy): ChecklistLite {
   const items = run ? run.items : currentItems(t, photos);
   const summary: RunLite | null = run ? runSummary(items, answers, run.completedAt?.toISOString() ?? null) : null;
   return {
     templateId: t.id,
-    name: run?.name ?? t.name,
+    name: sharedListName(run?.name ?? t.name, copy.label),
     opensAt: run?.opensAt ?? t.opensAt,
     dueAt: run?.dueAt ?? t.dueAt,
     required: items.filter((i) => i.required).length,
     photos: items.filter((i) => i.required && i.type === "photo").length,
     staffAllowed: t.staffAllowed,
     run: summary,
-    branchId: t.branchId,
+    branchId: copy.branchId,
+    ...(copy.shared ? { shared: true } : {}),
   };
 }
 
@@ -228,8 +259,13 @@ export interface DayCtx {
   today: string;
   /** Fotoğraf deposu var mı (yoksa fotoğraflı maddeler yeni kayda girmez) */
   photos: boolean;
-  /** Şube seçimi: günün listeleri ve geçmiş bu şubenin ve şubesiz listeleri gösterir (yoksa hepsi) */
+  /**
+   * Şube seçimi: günün listeleri ve geçmiş bu şubenin ve bütün şubelerin listelerini, kayıtların yalnız bu şubedekini
+   * gösterir (yoksa hepsi; "Tümü"de bütün şubelerin listesi her fiziksel şubenin satırı)
+   */
   branch?: BranchScope;
+  /** Etkin fiziksel şubeler (bütün şubelerin listesinin satırları); verilmezse kütükten okunur */
+  physical?: { id: string; name: string }[];
 }
 
 /**
@@ -240,22 +276,27 @@ export interface DayCtx {
  */
 export async function loadChecklistDays(db: Db, days: string[], role: "admin" | "staff", ctx: DayCtx): Promise<Map<string, ChecklistLite[]>> {
   const out = new Map<string, ChecklistLite[]>(days.map((d) => [d, []]));
-  const templates = await loadTemplates(db, { branch: ctx.branch });
+  const scope = ctx.branch ?? ALL_BRANCHES;
+  const templates = await loadTemplates(db, { branch: scope });
   const visible = templates.filter((t) => t.active && (role === "admin" || t.staffAllowed));
   if (!visible.length || !days.length) return out;
+  const physical = visible.some((t) => !t.branchId) ? await physicalOf(db, ctx) : [];
   const r = s.checklistRuns;
+  // Tek şube seçiliyken yalnız o şubenin kayıtları (bütün şubelerin listesinin öbür şubedeki kaydı okunmaz)
   const runs = await db
     .select()
     .from(r)
-    .where(and(inArray(r.date, days), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id))));
+    .where(and(inArray(r.date, days), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id)), scope === ALL_BRANCHES ? undefined : eq(r.branchId, scope)));
   const answers = runs.length ? (await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id)))).map((a) => ({ runId: a.runId, a: answerLite(a) })) : [];
   for (const day of out.keys()) {
     // Personel: liste personele açılmadan önceki günler (dünkü kayıt, Bugün'ün dünkü listeler satırı) görünmez
     const lists = visible.flatMap((t) => {
       if (role !== "admin" && !staffSeesRun(t, day)) return [];
-      const run = runs.find((x) => x.templateId === t.id && x.date === day);
-      if (!run && !expectedOn(t, day, ctx.today)) return [];
-      return [liteOf(t, run, run ? answers.filter((x) => x.runId === run.id).map((x) => x.a) : [], ctx.photos)];
+      return copiesOf(t, scope, physical).flatMap((copy) => {
+        const run = runs.find((x) => x.templateId === t.id && x.date === day && x.branchId === copy.branchId);
+        if (!run && !expectedOn(t, day, ctx.today)) return [];
+        return [liteOf(t, run, run ? answers.filter((x) => x.runId === run.id).map((x) => x.a) : [], ctx.photos, copy)];
+      });
     });
     out.set(day, lists.sort(byOpening(templates)));
   }
@@ -270,28 +311,33 @@ export async function loadChecklistDays(db: Db, days: string[], role: "admin" | 
 export async function loadAlertLists(db: Db, day: string, ctx: DayCtx): Promise<AlertList[]> {
   const templates = (await loadTemplates(db)).filter((t) => t.active && t.staffAllowed);
   if (!templates.length) return [];
+  // İşletmenin tamamı: bütün şubelerin listesi her fiziksel şubenin kendi listesi (alıcısı o şubenin vardiyası)
+  const physical = templates.some((t) => !t.branchId) ? await physicalOf(db, ctx) : [];
   const r = s.checklistRuns;
   const runs = await db
     .select()
     .from(r)
     .where(and(eq(r.date, day), eq(r.seq, 1), inArray(r.templateId, templates.map((t) => t.id))));
   const answers = runs.length ? await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id))) : [];
-  return templates.flatMap((t) => {
-    const run = runs.find((x) => x.templateId === t.id);
-    if (!run && !expectedOn(t, day, ctx.today)) return [];
-    return [
-      {
-        templateId: t.id,
-        name: run?.name ?? t.name,
-        branchId: t.branchId,
-        opensAt: run?.opensAt ?? t.opensAt,
-        dueAt: run?.dueAt ?? t.dueAt,
-        items: run ? run.items : currentItems(t, ctx.photos),
-        answers: run ? answers.filter((a) => a.runId === run.id).map((a) => ({ itemId: a.itemId, photoAt: a.photoAt?.toISOString() ?? null })) : [],
-        hasRun: Boolean(run),
-      },
-    ];
-  });
+  return templates.flatMap((t) =>
+    copiesOf(t, ALL_BRANCHES, physical).flatMap((copy): AlertList[] => {
+      const run = runs.find((x) => x.templateId === t.id && x.branchId === copy.branchId);
+      if (!run && !expectedOn(t, day, ctx.today)) return [];
+      return [
+        {
+          templateId: t.id,
+          name: sharedListName(run?.name ?? t.name, copy.label),
+          branchId: copy.branchId,
+          ...(copy.shared ? { shared: true } : {}),
+          opensAt: run?.opensAt ?? t.opensAt,
+          dueAt: run?.dueAt ?? t.dueAt,
+          items: run ? run.items : currentItems(t, ctx.photos),
+          answers: run ? answers.filter((a) => a.runId === run.id).map((a) => ({ itemId: a.itemId, photoAt: a.photoAt?.toISOString() ?? null })) : [],
+          hasRun: Boolean(run),
+        },
+      ];
+    }),
+  );
 }
 
 /** Bir günün listeleri (loadChecklistDays'in tek günlüğü) */
@@ -303,6 +349,11 @@ export async function loadChecklistDay(db: Db, day: string, role: "admin" | "sta
 export interface RunViewData {
   template: TemplateDTO;
   day: string;
+  /**
+   * Kaydın şubesi: şubeli listede listenin şubesi, bütün şubelerin listesinde çağıranın verdiği şube. Boş: bütün
+   * şubelerin listesi şube verilmeden açıldı ("Tümü"de birden çok fiziksel şube): ekran önce şubeyi sorar, kayıt okunmaz
+   */
+  branchId: string | null;
   /** Kayıt varsa kaydın (açıldığı andaki) adı ve aralığı */
   name: string;
   opensAt: string;
@@ -317,11 +368,15 @@ export interface RunViewData {
   absent: string | null;
 }
 
-/** Doldurma ekranı: şablon, günün kaydı (yoksa şablonun bugünkü maddeleri) ve yanıtlar; şablon yoksa null */
-export async function loadRunView(db: Db, templateId: number, day: string, ctx: DayCtx): Promise<RunViewData | null> {
+/**
+ * Doldurma ekranı: şablon, günün o şubedeki kaydı (yoksa şablonun bugünkü maddeleri) ve yanıtlar; şablon yoksa null.
+ * `runBranch`: bütün şubelerin listesinde kaydın şubesi (şubeli listede yok sayılır); verilmezse kayıt okunmaz
+ */
+export async function loadRunView(db: Db, templateId: number, day: string, ctx: DayCtx, runBranch: string | null = null): Promise<RunViewData | null> {
   const [t] = await loadTemplates(db, { ids: [templateId] });
   if (!t) return null;
-  const [run] = await db.select().from(s.checklistRuns).where(runWhere(t.id, day)).limit(1);
+  const branchId = t.branchId ?? runBranch;
+  const [run] = branchId ? await db.select().from(s.checklistRuns).where(runWhere(t.id, day, branchId)).limit(1) : [];
   const answers = run ? (await db.select().from(s.checklistAnswers).where(eq(s.checklistAnswers.runId, run.id))).map(answerLite) : [];
   const items = run ? run.items : currentItems(t, ctx.photos);
   const absent = absentReason({ ...timingOf(t), active: t.active }, day);
@@ -329,6 +384,7 @@ export async function loadRunView(db: Db, templateId: number, day: string, ctx: 
   return {
     template: t,
     day,
+    branchId,
     name: run?.name ?? t.name,
     opensAt: run?.opensAt ?? t.opensAt,
     dueAt: run?.dueAt ?? t.dueAt,
@@ -358,14 +414,18 @@ export interface HistoryList {
  * gün) çağıranın aralığıdır (historyRange).
  */
 export async function loadHistory(db: Db, from: string, to: string, role: "admin" | "staff", ctx: DayCtx): Promise<{ day: string; lists: HistoryList[] }[]> {
-  const templates = await loadTemplates(db, { branch: ctx.branch });
+  const scope = ctx.branch ?? ALL_BRANCHES;
+  const templates = await loadTemplates(db, { branch: scope });
   const visible = templates.filter((t) => role === "admin" || t.staffAllowed);
+  const physical = visible.some((t) => !t.branchId) ? await physicalOf(db, ctx) : [];
   const r = s.checklistRuns;
   const runs = visible.length
     ? await db
         .select()
         .from(r)
-        .where(and(gte(r.date, from), lte(r.date, to), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id))))
+        .where(
+          and(gte(r.date, from), lte(r.date, to), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id)), scope === ALL_BRANCHES ? undefined : eq(r.branchId, scope)),
+        )
     : [];
   const shown = runs.filter((x) => role === "admin" || staffSeesRun(visible.find((t) => t.id === x.templateId)!, x.date));
   const answers = shown.length ? await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, shown.map((x) => x.id))) : [];
@@ -373,19 +433,21 @@ export async function loadHistory(db: Db, from: string, to: string, role: "admin
   for (let day = to; day >= from; day = addDays(day, -1)) {
     const lists = visible.flatMap((t): HistoryList[] => {
       if (role !== "admin" && !staffSeesRun(t, day)) return [];
-      const run = shown.find((x) => x.templateId === t.id && x.date === day);
-      if (!run && !expectedOn(t, day, ctx.today)) return [];
-      const mine = run ? answers.filter((a) => a.runId === run.id).map(answerLite) : [];
-      const lite = liteOf(t, run, mine, ctx.photos);
-      return [
-        {
-          template: t,
-          lite,
-          run: run ? { id: run.id, opensAt: lite.opensAt, dueAt: lite.dueAt, completedAt: run.completedAt?.toISOString() ?? null, completedByName: run.completedByName } : null,
-          items: run ? run.items : currentItems(t, ctx.photos),
-          answers: mine,
-        },
-      ];
+      return copiesOf(t, scope, physical).flatMap((copy): HistoryList[] => {
+        const run = shown.find((x) => x.templateId === t.id && x.date === day && x.branchId === copy.branchId);
+        if (!run && !expectedOn(t, day, ctx.today)) return [];
+        const mine = run ? answers.filter((a) => a.runId === run.id).map(answerLite) : [];
+        const lite = liteOf(t, run, mine, ctx.photos, copy);
+        return [
+          {
+            template: t,
+            lite,
+            run: run ? { id: run.id, opensAt: lite.opensAt, dueAt: lite.dueAt, completedAt: run.completedAt?.toISOString() ?? null, completedByName: run.completedByName } : null,
+            items: run ? run.items : currentItems(t, ctx.photos),
+            answers: mine,
+          },
+        ];
+      });
     });
     lists.sort((a, b) => byOpening(templates)(a.lite, b.lite));
     out.push({ day, lists });
@@ -393,11 +455,21 @@ export async function loadHistory(db: Db, from: string, to: string, role: "admin
   return out;
 }
 
-/** İlk kontrol listesi günü (geçmiş bundan eskiye gitmez): ilk kayıt ya da ilk şablonun eklendiği iş günü */
-export async function firstChecklistDay(db: Db): Promise<string | null> {
+/**
+ * İlk kontrol listesi günü (geçmiş bundan eskiye gitmez): ilk kayıt ya da ilk şablonun eklendiği iş günü. `branch`: tek
+ * şube seçiliyken o şubenin ilk kaydı ve o şubenin ya da bütün şubelerin ilk listesi (şube ayrımı; "Tümü"de hepsi)
+ */
+export async function firstChecklistDay(db: Db, branch: BranchScope = ALL_BRANCHES): Promise<string | null> {
+  const one = branch !== ALL_BRANCHES;
   const [[run], [tpl]] = await Promise.all([
-    db.select({ d: min(s.checklistRuns.date) }).from(s.checklistRuns),
-    db.select({ at: min(s.checklistTemplates.createdAt) }).from(s.checklistTemplates),
+    db
+      .select({ d: min(s.checklistRuns.date) })
+      .from(s.checklistRuns)
+      .where(one ? eq(s.checklistRuns.branchId, branch) : undefined),
+    db
+      .select({ at: min(s.checklistTemplates.createdAt) })
+      .from(s.checklistTemplates)
+      .where(one ? or(eq(s.checklistTemplates.branchId, branch), isNull(s.checklistTemplates.branchId)) : undefined),
   ]);
   const days = [run?.d ?? null, tpl?.at ? businessDate(new Date(tpl.at)) : null].filter((d): d is string => Boolean(d)).sort();
   return days[0] ?? null;
@@ -432,7 +504,8 @@ export interface WriteResult {
   /** Değişen ya da geri alınan fotoğraf: yanıttan sonra silinir */
   previousPhotoId: number | null;
   item: ChecklistItemSnap;
-  run: { id: number; name: string; date: string };
+  /** Kaydın şubesi işlem geçmişine yazılır (logAnswerActivity) */
+  run: { id: number; name: string; date: string; branchId: string };
   summary: RunLite;
   /** Bu yanıtla tamamlandı / tamamlanmışken eksildi */
   completedNow: boolean;
@@ -457,6 +530,19 @@ interface Me {
    * src/server/data/checklists.ts her yazımda verir): başka şubenin listesine yazamaz. Boş: serbest
    */
   lock?: string | null;
+  /**
+   * Bütün şubelerin listesinde kaydın şubesi (şube ayrımı; sarmalayıcı formun gönderdiği şubeyi `formBranch(…,
+   * "checklist")` kuralıyla seçer): `{ id }` ya da kullanıcıya gösterilecek ret. Şubeli listede yok sayılır (kayıt
+   * listenin şubesinde). Verilmezse bütün şubelerin listesine yazılmaz
+   */
+  runBranch?: { id: string } | { error: string } | null;
+}
+
+/** Kaydın şubesi: şubeli listede listenin şubesi, bütün şubelerin listesinde yazanın (yoksa ChecklistError) */
+function runBranchOf(templateBranch: string | null, me: Me): string {
+  if (templateBranch) return templateBranch;
+  if (me.runBranch && "id" in me.runBranch) return me.runBranch.id;
+  throw new ChecklistError(me.runBranch && "error" in me.runBranch ? me.runBranch.error : BRANCH_REQUIRED, 409);
 }
 
 type NextAnswer = AnswerContent & { photoAt: Date | null };
@@ -482,8 +568,9 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
     if (me.role !== "admin" && !tpl.staffAllowed) throw new ChecklistError("Bu listeyi yalnız yönetici doldurur.", 403);
     if (me.role !== "admin" && !branchLockAllows(tpl.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);
     if (input.date > businessDate(now)) throw new ChecklistError("Bu gün için liste doldurulamaz.", 400);
+    const branchId = runBranchOf(tpl.branchId, me);
 
-    let [run] = await tx.select().from(s.checklistRuns).where(runWhere(tpl.id, input.date)).for("update").limit(1);
+    let [run] = await tx.select().from(s.checklistRuns).where(runWhere(tpl.id, input.date, branchId)).for("update").limit(1);
     if (!canAnswerDay(input.date, now, Boolean(run))) throw new ChecklistError(DAY_CLOSED_TEXT, 409);
     if (!run) {
       // Geri alınacak ya da notu yazılacak yanıt yokken kayıt açılmaz
@@ -495,9 +582,9 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
       // İki telefon aynı anda ilk yanıtı verirse ikincisi kaydı açmaz, birincinin kaydını kilitleyip ona yazar
       await tx
         .insert(s.checklistRuns)
-        .values({ templateId: tpl.id, date: input.date, seq: 1, name: tpl.name, opensAt: tpl.opensAt, dueAt: tpl.dueAt, items: snap })
+        .values({ templateId: tpl.id, date: input.date, branchId, seq: 1, name: tpl.name, opensAt: tpl.opensAt, dueAt: tpl.dueAt, items: snap })
         .onConflictDoNothing();
-      [run] = await tx.select().from(s.checklistRuns).where(runWhere(tpl.id, input.date)).for("update").limit(1);
+      [run] = await tx.select().from(s.checklistRuns).where(runWhere(tpl.id, input.date, branchId)).for("update").limit(1);
       if (!run) throw new ChecklistError(LIST_CHANGED_TEXT, 409);
     }
 
@@ -514,7 +601,7 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
       .where(and(eq(a.runId, run.id), eq(a.itemId, item.id)))
       .limit(1);
     const prev = prevRow ? answerLite(prevRow) : null;
-    const runRef = { id: run.id, name: run.name, date: run.date };
+    const runRef = { id: run.id, name: run.name, date: run.date, branchId: run.branchId };
 
     // Yeni hâl
     let next: NextAnswer | null;
@@ -628,7 +715,8 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
   if (me.role !== "admin" && !branchLockAllows(t.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);
   if (target.date > businessDate(now)) throw new ChecklistError("Bu gün için liste doldurulamaz.", 400);
   if (!photos) throw new ChecklistError("Fotoğraf deposu bu ortamda kurulu değil.", 503);
-  const [run] = await db.select({ items: s.checklistRuns.items }).from(s.checklistRuns).where(runWhere(t.id, target.date)).limit(1);
+  const branchId = runBranchOf(t.branchId, me);
+  const [run] = await db.select({ items: s.checklistRuns.items }).from(s.checklistRuns).where(runWhere(t.id, target.date, branchId)).limit(1);
   if (!canAnswerDay(target.date, now, Boolean(run))) throw new ChecklistError(DAY_CLOSED_TEXT, 409);
   if (!run && !appliesOn(timingOf(t), target.date)) throw new ChecklistError("Bu liste bugün yok.", 409);
   const item = (run ? run.items : currentItems(t, photos)).find((i) => i.id === target.itemId);
@@ -638,8 +726,8 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
 }
 
 /**
- * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı, açıldığı an ve listenin şubesi (fotoğrafı
- * kim görür); bağlı değilse null
+ * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı, açıldığı an ve kaydın şubesi (fotoğrafı
+ * kim görür; bütün şubelerin listesinde fotoğraf çekildiği şubenin); bağlı değilse null
  */
 export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean; staffSince: string | null; branchId: string | null } | null> {
   const [row] = await db
@@ -647,7 +735,7 @@ export async function photoRun(db: Db, photoId: number): Promise<{ date: string;
       date: s.checklistRuns.date,
       staffAllowed: s.checklistTemplates.staffAllowed,
       staffSince: s.checklistTemplates.staffSince,
-      branchId: s.checklistTemplates.branchId,
+      branchId: s.checklistRuns.branchId,
     })
     .from(s.checklistAnswers)
     .innerJoin(s.checklistRuns, eq(s.checklistRuns.id, s.checklistAnswers.runId))

@@ -9,6 +9,7 @@ import ExcelJS from "exceljs";
 
 import {
   autoSendMonth,
+  BRANCH_PACKAGE_VAT_NOTE,
   buildPackageWorkbook,
   packageFileName,
   packageSummary,
@@ -97,6 +98,53 @@ test("çalışma kitabı: altı sekme, toplamlar, tarih ve dosya adı; yazılıp
   const empty = buildPackageWorkbook({ ...DATA, invoices: [], expenses: [], cash: [], vat: [], fixed: [] });
   assert.equal(empty.getWorksheet("Harcamalar")!.getCell("A4").value, "Bu ay harcama yok", "boş tablo söylenmeli");
   assert.equal(packageFileName("2026-10"), "laffogato-muhasebe-2026-10.xlsx", "dosya adı");
+});
+
+test("şubenin paketi: KDV sütunları, toplamları ve Z KDV dökümü bütün şubelerdeki gibi; altlarında tek gri satır (KDV beyanı firma geneli)", async () => {
+  // Sahibin açıklaması (27 Kasım 2026): ürün ve fatura KDV'si şubenin kayıtlarının gerçeği, şubenin paketinde doğru kalır;
+  // yalnız beyan firma geneli. Aynı veriyle iki paket: rakamlar birebir aynı, şubeninkinde not
+  const read = async (wb: ExcelJS.Workbook) => {
+    const back = new ExcelJS.Workbook();
+    await back.xlsx.load((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+    return back;
+  };
+  const values = (ws: ExcelJS.Worksheet) => {
+    const out: string[] = [];
+    ws.eachRow((r) => r.eachCell((c) => out.push(String(c.value instanceof Date ? c.value.toISOString() : (c.value ?? "")))));
+    return out;
+  };
+  const branch = await read(buildPackageWorkbook({ ...DATA, scope: "Marina", branchFile: true }));
+  const all = await read(buildPackageWorkbook(DATA));
+  assert.deepEqual(branch.worksheets.map((w) => w.name), all.worksheets.map((w) => w.name), "Z KDV dökümü de var");
+  const inv = branch.getWorksheet("Faturalar")!;
+  assert.equal(inv.getCell("H3").value, "KDV", "KDV sütunu yerinde");
+  assert.equal(inv.getRow(7).getCell(8).value, 100, "KDV toplamı yalnız sayılan faturanın");
+  assert.equal(branch.getWorksheet("Kasa raporları")!.getCell("N3").value, "Yazarkasa KDV");
+  assert.equal(branch.getWorksheet("Kasa raporları")!.getCell("N5").value, 436.36, "yazarkasa KDV toplamı");
+  const ov = values(branch.getWorksheet("Özet")!);
+  assert.ok(ov.includes("Faturaların KDV'si") && ov.includes("Yazarkasa KDV %10") && ov.includes("Yazarkasa KDV %20"), "Özet'in KDV satırları");
+  // Sekmeler rakam rakam aynı; şubeninkinde yalnız not satırları fazla (Özet'te kapsamın adı da başka)
+  for (const name of ["Faturalar", "Harcamalar", "Kasa raporları", "Z KDV dökümü", "Sabit giderler"]) {
+    assert.deepEqual(values(branch.getWorksheet(name)!).filter((c) => c !== BRANCH_PACKAGE_VAT_NOTE), values(all.getWorksheet(name)!), name);
+  }
+  assert.equal(BRANCH_PACKAGE_VAT_NOTE, "KDV beyanı firma geneli: beyan için bütün şubelerin paketi");
+  const noteRows = (ws: ExcelJS.Worksheet) => {
+    const rows: number[] = [];
+    ws.eachRow((r, n) => r.eachCell((c) => String(c.value ?? "").startsWith(BRANCH_PACKAGE_VAT_NOTE) && rows.push(n)));
+    return rows;
+  };
+  // Not: Faturalar'da TOPLAM'ın, Z KDV dökümünde oran oran toplamın hemen altında; Özet'te bir kez; öbür sekmelerde yok
+  assert.deepEqual(noteRows(inv), [8]);
+  const zv = branch.getWorksheet("Z KDV dökümü")!;
+  assert.deepEqual(noteRows(zv), [zv.rowCount]);
+  assert.equal(zv.getRow(zv.rowCount - 1).getCell(1).value, "%20");
+  assert.equal(noteRows(branch.getWorksheet("Özet")!).length, 1);
+  for (const name of ["Harcamalar", "Kasa raporları", "Sabit giderler"]) assert.deepEqual(noteRows(branch.getWorksheet(name)!), [], name);
+  for (const ws of all.worksheets) assert.deepEqual(noteRows(ws), [], `bütün şubelerin paketinde not yok: ${ws.name}`);
+  // Boş şube paketi: tablo yoksa not da yok (toplam yok)
+  const empty = buildPackageWorkbook({ ...DATA, scope: "Marina", branchFile: true, invoices: [], vat: [] });
+  assert.deepEqual(noteRows(empty.getWorksheet("Faturalar")!), []);
+  assert.deepEqual(noteRows(empty.getWorksheet("Z KDV dökümü")!), []);
 });
 
 test("e-posta: konu, özet satırları, kaçış ve ek adı", () => {

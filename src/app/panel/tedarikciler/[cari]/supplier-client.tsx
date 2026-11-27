@@ -93,6 +93,7 @@ import {
   paidInParasut,
   payState,
   PLACEHOLDER_SUPPLIER_NAME,
+  requestPayer,
   supplierHref,
   telHref,
   whatsappHref,
@@ -200,14 +201,20 @@ export function SupplierClient({
   cari,
   branchInfo,
   ignoreRule,
+  allInvoices,
 }: {
+  /**
+   * Tedarikçi bakiyelerinin şube kipinde (şube ayrımı parça 4) firmanın bütün faturaları: `invoices` şubenin ve işletme
+   * genelinin faturalarıdır, ekstre ve faturasız alımı bağlama penceresi firmanın carisiyle çalışır. Yoksa `invoices`
+   */
+  allInvoices?: Row[];
   /** Paraşüt kalemleri için "hep hammadde değil" kuralı (Paraşüt bağlıyken ya da kural açıkken); adları kuralın anahtarı */
   ignoreRule?: { reason: NotIngredientReason | null; names: string[] };
   /**
    * Faturaların şubesi (birden çok kasa açıkken; docs/SUBE.md › Faturanın şubesi): seçici seçenekleri, şube adları ve
    * seçili şube ("hepsi" ya da kimlik). Bakiye firma genelidir; şube yalnız gösterim ve varsayılan
    */
-  branchInfo?: { options: { value: string; label: string }[]; scope: string; scopeName: string | null };
+  branchInfo?: { options: { value: string; label: string }[]; scope: string; scopeName: string | null; branchMode?: boolean };
   today: string;
   /**
    * `taxNumber`: kartta yazılı, yoksa faturalardaki tek vergi no; `taxNumbers` faturalardaki numaralar; `viaTax` yalnız
@@ -498,9 +505,10 @@ export function SupplierClient({
   const chosenUnpaid = chosen.filter((r) => r.unpaid);
   /** Ödeme talebine girebilecek (borç, iade değil) faturalar */
   const chosenDebts = chosenUnpaid.filter((r) => openBalance(r) > 0);
-  // Ödeme talebine girebilecek faturasız alımlar (kalanlarıyla)
+  // Ödeme talebine girebilecek faturasız alımlar (kalanlarıyla). Şube kipinde yok: faturasız borç firmanın (İşletme geneli)
+  const branchMode = Boolean(branchInfo?.branchMode && branchInfo.scopeName);
   const purchases = cari.debts
-    .filter((d) => d.invoiceId === null)
+    .filter((d) => d.invoiceId === null && !branchMode)
     .map((d) => ({ id: d.id, date: d.date, description: d.description, amount: debtRemaining(d, cari.allocations) }))
     .filter((d) => d.amount > EPS)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -917,7 +925,7 @@ export function SupplierClient({
               title="Hesap hareketleri"
               description="Faturalar, faturasız alımlar ve ödemeler gün sırasıyla; bakiye satır satır yürür. Gri satırlar faturalardaki ödendi işaretleri ve Paraşüt'te ödenen kısımlardır."
             />
-            <StatementPanel name={supplier.name} today={today} invoices={list} debts={cari.debts} payments={cari.payments} allocations={cari.allocations} foreign={cari.foreignIn} onAction={onStatement} />
+            <StatementPanel name={supplier.name} today={today} invoices={allInvoices ?? list} debts={cari.debts} payments={cari.payments} allocations={cari.allocations} foreign={cari.foreignIn} onAction={onStatement} />
           </Card>
         ) : (
           <Card id="faturalar" className="min-w-0 scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
@@ -1219,10 +1227,11 @@ export function SupplierClient({
             .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: r.payable, dueDate: null, paymentRequestedAt: null, open: r.unpaid }))
             .sort((a, b) => a.date.localeCompare(b.date))}
           purchases={purchases}
-          accountCredit={cari.credit}
+          // Şube kipinde hesaptaki para firmanın: talepten düşülmez; talep şubenin adıyla ("Ödeme talebi · L'Affogato · Marina")
+          accountCredit={branchMode ? 0 : cari.credit}
           selected={requestFor}
           termDays={termDays}
-          payer={PRODUCT_NAME}
+          payer={requestPayer(PRODUCT_NAME, branchMode ? branchInfo!.scopeName : null)}
           onClose={() => setRequestFor(null)}
           onEditCard={() => {
             setRequestFor(null);
@@ -1338,7 +1347,7 @@ export function SupplierClient({
           supplierName={supplier.name}
           today={today}
           debts={cari.debts.filter((d) => d.invoiceId === null)}
-          invoices={list
+          invoices={(allInvoices ?? list)
             .filter((r) => linkableInvoice(r) && !cari.debts.some((d) => d.invoiceId === r.id))
             .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, payable: r.payable, amount: r.amount, discount: r.discount, category: r.category, vat: r.vat }))}
           expenses={cari.expenses}
@@ -1501,7 +1510,7 @@ function BranchNotice({
   onEdit,
 }: {
   invoices: Row[];
-  info: { options: { value: string; label: string }[]; scope: string; scopeName: string | null };
+  info: { options: { value: string; label: string }[]; scope: string; scopeName: string | null; branchMode?: boolean };
   card: SupplierCard | null;
   onEdit: () => void;
 }) {
@@ -1510,7 +1519,9 @@ function BranchNotice({
   const fallback = supplierDefaultValue(card);
   const label = (v: string) => info.options.find((o) => o.value === v)?.label ?? v;
   const here = info.scopeName ? invoices.filter((i) => i.branchId === info.scope) : [];
-  if (!unassigned.length && !info.scopeName) return null;
+  // Şube kipinde bakiye şubenin: not sayfanın üstünde (SharedCariNotice); firma kipinde "bakiye firma geneli"
+  const firmNote = info.scopeName && !info.branchMode;
+  if (!unassigned.length && !firmNote) return null;
   const apply = () =>
     start(async () => {
       if (!fallback) return;
@@ -1520,7 +1531,7 @@ function BranchNotice({
     });
   return (
     <div className="mb-4 grid gap-2">
-      {info.scopeName ? (
+      {firmNote ? (
         <Notice
           tone="neutral"
           title={`${info.scopeName} seçili: bakiye ve ödemeler firma geneli`}

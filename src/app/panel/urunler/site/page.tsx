@@ -12,6 +12,7 @@ import { newFromSiteDraft } from "@/lib/site-menu/new-product";
 import { requireAdmin } from "@/server/auth/dal";
 import { pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { loadTillScope } from "@/server/data/till-scope";
+import { currentBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { siteUrl } from "@/server/site-link";
 import { syncSiteMenu } from "@/server/site-menu/sync";
@@ -93,8 +94,9 @@ async function SiteMenuContent() {
       .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
       .orderBy(asc(s.categories.sortOrder), asc(s.products.sortOrder), asc(s.products.id)),
     getDb().select({ id: s.categories.id, name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.sortOrder), asc(s.categories.id)),
-    // Bekleyen yeni ürün önerileri: aynı ad + boyda öneri varken "Panelde aç ve bağla" açmaz (önce öneri onaylanır)
-    pendingNewProposalRows(),
+    // Bekleyen yeni ürün önerileri: aynı ad + boyda öneri varken "Panelde aç ve bağla" açmaz (önce öneri onaylanır).
+    // Önerenin şubesine göre (şube ayrımı doğrulaması); öbür şubede bekleyen aynı ad + boyu eylem adsız reddeder
+    currentBranchScope().then((scope) => pendingNewProposalRows(getDb(), scope)),
   ]);
   const items = site.snapshot.at ? site.snapshot.items : [];
   const products: MatchProduct[] = rows.map((r) => ({

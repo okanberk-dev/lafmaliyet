@@ -191,7 +191,7 @@ test("kaynak: geçiş günü, ModPOS ay yedeği ve komisyon süreleri eski genel
   assert.match(commission, /resolveForTills\(COMMISSION_GROUP, db\)/);
   assert.match(commission, /return businessPayDays\(/);
   assert.match(commission, /settings: channelSettings,/);
-  assert.match(commission, /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionReport\(\)\), withBranchScope\(scope, \(\) => loadCommissionReport\(\)\)/);
+  assert.match(commission, /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionReport\(\)\),\s*withBranchScope\(scope, \(\) => loadCommissionReport\(\)\),/);
   assert.match(read("src/server/actions/commission.ts"), /await putBranchSetting\(tx, COMMISSION_GROUP, branchId, /);
 });
 

@@ -36,7 +36,9 @@ export default function ChecklistTemplatesPage() {
 
 async function TemplatesContent() {
   await requireAdmin();
-  const [templates, all, scope] = await Promise.all([loadChecklistTemplates(), listBranches(), currentBranchScope()]);
+  // Şube seçiliyken o şubenin ve bütün şubelerin listeleri (şube ayrımı, 27 Kasım 2026; Kontrol listeleri gibi `scoped`):
+  // önceden Marina seçiliyken Tuzla'ya özel listeler de düzenlenebilir görünüyordu. "Tümü"de hepsi
+  const [templates, all, scope] = await Promise.all([loadChecklistTemplates({ scoped: true }), listBranches(), currentBranchScope()]);
   const branches = all.filter((b) => b.kind === "fiziksel" && b.active).map((b) => ({ id: b.id, name: b.name }));
   const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const storage = photoStorage();

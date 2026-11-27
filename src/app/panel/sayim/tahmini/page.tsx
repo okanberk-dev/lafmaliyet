@@ -20,6 +20,7 @@ import {
   MIN_AVG_DAYS,
   parseLeadDays,
   receiptListNote,
+  receiptsElsewhereText,
   SAFETY_DAYS,
   STOCK_ESTIMATE_BRANCH,
   STOCK_ESTIMATE_PATH,
@@ -125,7 +126,8 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
   // Faturanın şubesi kartı yalnız yöneticide ve tahmin başladıysa (dönemin faturaları)
   const siteBranch = siteBranchOf(STOCK_ESTIMATE_BRANCH);
   const [receipts, branches, scope, onlineState] = await Promise.all([
-    admin && estimate.from ? loadReceiptInvoices(estimate.from, today) : Promise.resolve<ReceiptList>({ invoices: [], total: 0, unassigned: 0 }),
+    // Seçimle (şube ayrımı parça 5): Marina seçiliyken Marina'nın ve şubesi seçilmemiş faturalar, öbürü sayı olarak
+    admin && estimate.from ? loadReceiptInvoices(estimate.from, today, undefined, undefined, selected) : Promise.resolve<ReceiptList>({ invoices: [], total: 0, unassigned: 0 }),
     admin ? listBranches() : Promise.resolve<BranchRow[]>([]),
     currentBranchScope(),
     admin && estimate.online?.missingMonths.length && siteBranch ? readBranchSalesState(siteBranch) : Promise.resolve<BranchSalesSyncState | null>(null),
@@ -136,6 +138,7 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
   // Sayaç bütün dönemden (liste en çok 100 faturayı gösterir; bulgu 42)
   const unassigned = receipts.unassigned;
   const listNote = receiptListNote(receipts.invoices.length, receipts.total, receipts.unassigned);
+  const elsewhereNote = receiptsElsewhereText(receipts.elsewhere);
   const meta =
     estimate.from !== null
       ? `${estimate.lastDay ? `Son gün sonu ${dayMonthTR(estimate.lastDay)}` : "Henüz gün sonu gelmedi"} · bugünün satışı gün sonuyla gelir`
@@ -342,6 +345,7 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
                 <p className="pb-1 text-[13px] text-ink-mute">Bu dönemde hammaddeye bağlı kalemi olan fatura yok.</p>
               )}
               {listNote ? <p className="border-t border-line-strong/70 pt-3 pb-1 text-[13px] text-ink-mute">{listNote}</p> : null}
+              {elsewhereNote ? <p className="border-t border-line-strong/70 pt-3 pb-1 text-[13px] text-ink-mute">{elsewhereNote}</p> : null}
             </CardContent>
           </Card>
         ) : null}

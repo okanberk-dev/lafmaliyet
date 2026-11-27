@@ -58,9 +58,15 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Kontrol listesi (`liste-{şablon}`) | İkisi | Bugün beklenen her liste ayrı satır, açılış saatine göre (personelde yalnız "Personel doldurabilir" listeler; pasif liste yok). Aralıktan önce sonra ("08:00–11:00"), aralıkta yapılacak (başladıysa "3 / 13 madde · Ayşe · son saat 11:00" ve kalan fotoğraf), son saatten sonra sorun var ("Gecikti"; personele "Gün 05:00'te kapanır."), bitince tamam (kim, saat, geç bittiyse "geç", fotoğraf sayısı). Yöneticide açık sorunu olan bitmiş liste "1 sorun" (sorun var). Okunamazsa tek gri "Kontrol listeleri · Okunamadı" satırı |
 | Zayi & ikram (`zayi`) | Personel | Gün içinde "Gün içinde" (bilgi), akşam rapor gönderilmeden "Rapordan önce" (yapılacak), rapor gönderilince tamam. Günün kayıt sayısı ve özeti |
 | Kasa raporu (`kasa`) | İkisi | Gündüz "Akşam" (sonra), 20:00'den sonra yapılacak, gönderilince personelde "Gönderildi" (tamam), yöneticide farkı ve bütünlüğü (dünkü gibi). Personelin akşam metni günün kasasıyla: "Kapanışta ModPOS'tan Z raporunu alın …", AsilPOS'a geçiş gününden itibaren "Kapanışta AsilPOS'ta Günü kapat'a basın (gün sonu panele gönderilir) …" (`eveningCashText`; denetim B11) |
+| Kanalın kasası (`kanal`) | İkisi | Yalnız online kanal (laffogato.net) seçiliyken (şube ayrımı, 27 Kasım 2026; [SUBE.md](SUBE.md#şube-ayrımı-27-kasım-2026)): kasa, sayım ve zayi satırlarının yerinde tek satır "laffogato.net: kasa ve stok" · "Bu kanalın kasası ve stoğu yok: kasa raporu, sayım ve kasadaki fiyatlar şubelerde. …", rozet "Yok", "Tümü'nü göster" (`?sube=hepsi`). Önceden kanal seçiliyken Tuzla'nın kasası ve sayımı görünüyordu |
 | Ay sonu stok sayımı (`sayim-son`) | İkisi | Ayın son günü: başlamadıysa "Sayıma başla", yarıdaysa "12 / 40", bittiyse tamam (sayım formundaki "kalem sayıldı" ile aynı kural) |
 
-Personelin satır sırası: `kasa-dun`, `liste-dun`, `sayim-gecen`, `liste-*`, `modpos`, `zayi`, `kasa`, `sayim-son`.
+Personelin satır sırası: `kasa-dun`, `liste-dun`, `sayim-gecen`, `liste-*`, `modpos`, `zayi`, `kasa`, `kanal`, `sayim-son`.
+
+**Şube seçiliyken** (şube ayrımı, 27 Kasım 2026) yöneticinin sayıları yalnız o şubenin: Faturalar (`fatura`) şubenin ve
+işletme genelinin kontrol bekleyen faturaları (Faturalar'ın süzgeciyle aynı; şubesi seçilmemiş fatura yalnız "Tümü"de),
+Ürün bağlantıları (`urun`) o faturaların kalemleri, Onaylar (`onay`) şubenin personel istekleri (`pendingByKindInScope`)
+ve önerenin şubesine göre reçete önerileri; şubesi bilinmeyen istek ve şubesiz hesabın önerisi her şubede görünür.
 Hızlı sayım (`hizli-sayim`), mal siparişi (`mal-siparisi`) ve onaylanan sipariş taslağı (`mal-taslak`) satırları 26
 Ekim 2026'da özellikleriyle birlikte kalktı ([MAL-SIPARISI.md](MAL-SIPARISI.md)); Onaylar satırı eski taslakları
 saymaz. Yöneticiye zayi satırı gösterilmez (zayi ve ikram kasa raporu e-postasında gelir).

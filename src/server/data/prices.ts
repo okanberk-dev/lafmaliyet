@@ -137,6 +137,8 @@ export async function loadRecentPosMarks({ days = 14, now, tills }: { days?: num
   const db = getDb();
   const scopeTills = tills ?? (await loadTillScopes(db, now));
   const branchIds = scopeTills.map((t) => t.branchId);
+  // Online kanal seçiliyken kasa yok (loadTillScopes boş)
+  if (!branchIds.length) return [];
   const m = s.posMarks;
   const rows = await db
     .select({
@@ -334,7 +336,8 @@ export async function loadProductPriceHistory(productId: number, limit = 20): Pr
     rows: rows.map(toHistoryRow),
     price: p?.price ?? null,
     pos: p ? pos.filter((x): x is ProductPosState => x !== null) : [],
-    kasa: tills[0].kasa,
+    // Online kanal seçiliyken kasa yok (loadTillScopes boş): metinler ModPOS'a göre
+    kasa: tills[0]?.kasa ?? "ModPOS",
   };
 }
 

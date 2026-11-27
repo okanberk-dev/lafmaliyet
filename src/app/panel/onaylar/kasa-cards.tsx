@@ -45,7 +45,8 @@ export function KasaRequestCards({
   siteSlots = {},
 }: {
   cards: CashRequestCard[];
-  counters: { id: number; name: string }[];
+  /** "Kasayı sayan" seçenekleri kartın kasasına göre (şube kimliği; kasası bilinmeyen kart "") */
+  counters: Record<string, { id: number; name: string }[]>;
   categories: { id: number; name: string }[];
   /** Kapalı gün kartlarının site sayıları (sunucuda, kart başına ayrı Suspense) */
   siteSlots?: Record<number, ReactNode>;
@@ -64,7 +65,7 @@ export function KasaRequestCards({
           ) : c.kind === "kasa-silme" ? (
             <DeleteItem key={c.id} card={c} />
           ) : c.kind === "kasa-gec" ? (
-            <LateItem key={c.id} card={c} counters={counters} />
+            <LateItem key={c.id} card={c} counters={counters[c.branch?.id ?? ""] ?? []} />
           ) : c.kind === "kasa-cikan" ? (
             <CashOutItem key={c.id} card={c} categories={categories} />
           ) : c.kind === "kapali-gun" ? (

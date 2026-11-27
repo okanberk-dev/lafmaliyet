@@ -188,6 +188,7 @@ export function OrdersBoard({
   recipes,
   serverNow,
   ordersOff = null,
+  siteWide = null,
 }: {
   role: Role;
   siteBase: string;
@@ -195,6 +196,11 @@ export function OrdersBoard({
   serverNow: number;
   /** Uygulama siparişi seçili şubede kullanılmıyorsa kartın tek satırı (şube özelliği; masa çağrıları açık kalabilir) */
   ordersOff?: string | null;
+  /**
+   * Tek şube seçili ve birden çok şube açıkken "Bütün şubeler" rozeti (şube ayrımı parça 6; siteWideBadge): site siparişin
+   * ve çağrının şubesini göndermiyor, liste süzülemez
+   */
+  siteWide?: string | null;
 }) {
   const { data, list, calls, now, prefs } = useOrdersFeed(role, serverNow);
   // Sayfanın çizdiği metin ya da canlı ucun işareti (seçim başka sekmede değişince sayfa yenilenene dek de doğru söyler)
@@ -221,7 +227,7 @@ export function OrdersBoard({
               }
             />
           ) : null}
-          {calls.length ? <TableCalls calls={calls} now={now} /> : null}
+          {calls.length ? <TableCalls calls={calls} now={now} siteWide={siteWide} /> : null}
         </>
       ) : null}
       <Card>
@@ -230,12 +236,15 @@ export function OrdersBoard({
           title="Uygulama siparişleri"
           description="Aşamayı buradan tek dokunuşla ilerletin; iade ve iptal sitenin panelinde."
           meta={
-            list.length ? (
+            list.length || siteWide ? (
               <>
-                <Badge tone={fresh ? "amber" : "gray"} dot>
-                  {num(list.length)} açık{fresh ? ` · ${num(fresh)} yeni` : ""}
-                </Badge>
+                {list.length ? (
+                  <Badge tone={fresh ? "amber" : "gray"} dot>
+                    {num(list.length)} açık{fresh ? ` · ${num(fresh)} yeni` : ""}
+                  </Badge>
+                ) : null}
                 {tables ? <Badge tone="violet">{num(tables)} masada</Badge> : null}
+                {siteWide ? <Badge tone="gray">{siteWide}</Badge> : null}
               </>
             ) : undefined
           }

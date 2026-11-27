@@ -33,6 +33,12 @@ import type { SiteSalesMonth } from "./site-sales/schema";
  */
 export const STOCK_ESTIMATE_BRANCH = LEGACY_POS_BRANCH_ID;
 
+/**
+ * Marina dışında bir şube seçiliyken tahminin ve kaçak raporunun yerindeki metin (şube ayrımı, 27 Kasım 2026; Kaçak
+ * raporu, panel asistanının stok_tahmini aracı)
+ */
+export const STOCK_ESTIMATE_OTHER_BRANCH = "Bu şube için tahmini stok yok";
+
 /** Ekranın adresi (Stok sayımı'nın alt ekranı: personel de açar, src/lib/roles.ts) */
 export const STOCK_ESTIMATE_PATH = "/panel/sayim/tahmini";
 
@@ -716,4 +722,27 @@ export function receiptListNote(shown: number, total: number, unassigned: number
   return `${num(shown)} fatura gösteriliyor (şubesi seçilmeyenler önce), ${num(hidden)} fatura daha var${
     open ? `: ${num(open)} tanesinin şubesi seçilmedi, seçtikçe listede yerini alır.` : "; hepsinin şubesi seçildi."
   }`;
+}
+
+/**
+ * Kartın listesi seçimle (şube ayrımı parça 5): "Tümü"de bütün faturalar; şube seçiliyken şubenin ve şubesi seçilmemiş
+ * faturalar (iş bekleyen; seçilince yerine geçer), öbür şubenin ve işletme genelinin faturası sayı olarak
+ */
+export function receiptsInScope<T extends { branchId: string | null; companyWide: boolean }>(list: readonly T[], scope: BranchScope): { shown: T[]; elsewhere: { branches: number; shared: number } } {
+  if (scope === ALL_BRANCHES) return { shown: [...list], elsewhere: { branches: 0, shared: 0 } };
+  const shown = list.filter((i) => i.branchId === scope || (i.branchId === null && !i.companyWide));
+  return {
+    shown,
+    elsewhere: {
+      branches: list.filter((i) => i.branchId !== null && i.branchId !== scope).length,
+      shared: list.filter((i) => i.branchId === null && i.companyWide).length,
+    },
+  };
+}
+
+/** "3 fatura başka şubede, 1 fatura işletme geneli: Tümü'de görünür." (yoksa null) */
+export function receiptsElsewhereText(e: { branches: number; shared: number } | undefined): string | null {
+  if (!e || (!e.branches && !e.shared)) return null;
+  const parts = [e.branches ? `${num(e.branches)} fatura başka şubede` : null, e.shared ? `${num(e.shared)} fatura işletme geneli` : null].filter(Boolean);
+  return `${parts.join(", ")}: Tümü'de görünür.`;
 }

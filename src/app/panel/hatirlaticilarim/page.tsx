@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { adminActor } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { loadMyReminders, assignablePeople } from "@/server/data/user-reminders";
 
 import { MyReminders } from "./my-reminders";
@@ -46,8 +47,9 @@ async function MyRemindersContent() {
   const user = adminActor(await requireCan("kayit.yaz"));
   const [{ open, done }, people] = await Promise.all([
     loadMyReminders(user.id),
-    // Yalnız yönetici başkasına hatırlatıcı kurabilir (src/server/actions/user-reminders.ts assignTarget)
-    user.role === "admin" ? assignablePeople(user.id) : Promise.resolve([]),
+    // Yalnız yönetici başkasına hatırlatıcı kurabilir (src/server/actions/user-reminders.ts assignTarget). Kişiler seçili
+    // şubenin ve şubesi olmayanlar (şube ayrımı; "Tümü"de herkes)
+    user.role === "admin" ? currentBranchScope().then((scope) => assignablePeople(user.id, scope)) : Promise.resolve([]),
   ]);
   return (
     <>

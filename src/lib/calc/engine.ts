@@ -960,7 +960,7 @@ export interface PnlMonthCalc {
    * (bir kez); tek şube seçiliyken bölümlere ve kâra girmez, "İşletme geneli payı (bilgi)" satırıdır. `keys`: tamamı
    * işletme geneli olan hücreler (harcama hücresi şubede şubenin kendi kaydıdır, işletme geneli kısmı `parts`'ta)
    */
-  shared: { total: number; parts: { key: string; label: string; amount: number }[]; keys: ReadonlySet<string> };
+  shared: { total: number; parts: { key: string; label: string; amount: number }[]; keys: ReadonlySet<string>; hidden?: boolean };
   /**
    * Şubeye yazılan giderler, şube kimliği başına (Faz 5; Tümü'nün şube kırılımı, src/lib/branch-breakdown.ts): şubesi
    * seçilmiş sabit gider ve stopajı, şubesi seçilmiş harcama kaydı (mal dışı), kişinin şubesine göre personel. Fiziksel
@@ -2051,6 +2051,11 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
   /** Kalem şube seçiliyken işletme geneli mi (şubesi boş; Faz 5, sahibin kararı 4): şubenin kârına ve başabaşına girmez */
   const sharedInView = (f: Pick<FixedExpense, "branchId">) => Boolean(ds.branchView) && (f.branchId ?? null) === null;
   /**
+   * İşletme geneli giderlerin tutarı gizli (şube ayrımı parça 6; İşletme geneli giderler alanı "Yalnız not" kipinde, tek
+   * şube seçiliyken): bilgi satırı, bileşim ve standart sabit giderin işletme geneli kısmı yazılmaz. Şubenin kârı değişmez
+   */
+  const sharedHidden = Boolean(ds.branchView && ds.sharedCostsHidden);
+  /**
    * O ayda şubenin hesabına giren sabit giderler: "Tümü"de hepsi, şube seçiliyken işletme geneli kalemler hariç
    * (Gelir-gider'in bölümleri gibi; başabaş, standart aylık sabit gider, Analiz ve Sabit giderler'in özeti bunlarla)
    */
@@ -2065,8 +2070,12 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
   function fixedStandardTotalFor(month: string): number {
     return personnelFor(month).total + sum(fixedOwnInMonth(month).map((f) => fixedMonthly(f, st) + rentStopajMonthly(f, month)));
   }
-  /** Şube seçiliyken standart sabit gidere girmeyen işletme geneli kalemlerin toplamı (stopajıyla; bilgi). "Tümü"de 0 */
+  /**
+   * Şube seçiliyken standart sabit gidere girmeyen işletme geneli kalemlerin toplamı (stopajıyla; bilgi). "Tümü"de ve
+   * İşletme geneli giderler "Yalnız not" kipindeyken 0 (`sharedHidden`)
+   */
   function fixedStandardSharedFor(month: string): number {
+    if (sharedHidden) return 0;
     return sum(fixedInMonth(month).filter(sharedInView).map((f) => fixedMonthly(f, st) + rentStopajMonthly(f, month)));
   }
 
@@ -3058,7 +3067,8 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       countClosing: cl.value,
       officialRent,
       sections,
-      shared: { total: sum(sharedParts.map((x) => x.amount)), parts: sharedParts, keys: sharedKeys },
+      // İşletme geneli giderler alanı "Yalnız not" kipinde (şube ayrımı parça 6): tutar ve bileşim yazılmaz, yalnız not
+      shared: sharedHidden ? { total: 0, parts: [], keys: sharedKeys, hidden: true } : { total: sum(sharedParts.map((x) => x.amount)), parts: sharedParts, keys: sharedKeys },
       byBranch,
       expenses,
       revenue,
@@ -3231,8 +3241,9 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       kom({ key: k, label: `${k.slice("commission:".length).toLocaleUpperCase("tr-TR")} KOMİSYONU`, kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (Komisyon kategorisi)." });
     }
     kom({ key: "total:komisyon", label: "KOMİSYON GİDERLERİ TOPLAMI", kind: "total", editable: false, strong: true });
-    // İşletme geneli payı (Faz 5, sahibin kararı 4): yalnız şube seçiliyken, bilgi satırı (kâra girmez)
-    if (ds.branchView) {
+    // İşletme geneli payı (Faz 5, sahibin kararı 4): yalnız şube seçiliyken, bilgi satırı (kâra girmez). İşletme geneli
+    // giderler alanı "Yalnız not" kipindeyse (şube ayrımı parça 6) satır yok: ekranın notu söyler
+    if (ds.branchView && !sharedHidden) {
       sec("isletme")({ key: SHARED_KEY, label: SHARED_ROW_LABEL, kind: "info", editable: false, hint: SHARED_ROW_HINT });
     }
 

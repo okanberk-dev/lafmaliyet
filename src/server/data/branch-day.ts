@@ -2,14 +2,14 @@ import "server-only";
 
 import { and, gte, lte } from "drizzle-orm";
 
-import { ALL_BRANCHES } from "@/lib/branches";
+import { compareBranchesIn } from "@/lib/branch-view";
 import { branchDaySummary, type BranchDaySource, type BranchDaySummary } from "@/lib/branch-day";
 import { businessDate } from "@/lib/cash-report";
 import { posZSchema } from "@/lib/asilpos/day";
 import { foyZ } from "@/lib/modpos/z";
 import { addDays } from "@/lib/reminders";
 import { requireCan } from "@/server/auth/dal";
-import { staffBranchLock, withBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhere, staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { modposFallbackSheets, modposTillRow } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
@@ -17,9 +17,10 @@ import { earliestSwitchDay, isCountedPosDay } from "@/lib/pos/tills";
 import { loadSwitchDays } from "@/server/pos/tills";
 
 /**
- * Bugün › "Şubelerde gün" kartının verisi (src/lib/branch-day.ts, docs/BUGUN.md). Yalnız yönetici: tutar, ödeme ve kasa
- * farkı taşır. Seçili şubeden bağımsızdır (kartın işi şubeleri yan yana koymak): kayıtlar şube kimliğiyle okunur,
- * seçili şubenin kapsam süzgeci kullanılmaz. Okunan aralık: dün ve bugün ile bir hafta öncesi (8 gün).
+ * Bugün › "Şubelerde gün" kartının verisi (src/lib/branch-day.ts, docs/BUGUN.md). Yönetici ve müdür: tutar, ödeme ve kasa
+ * farkı taşır. Şubeleri yan yana alanının kipiyle (şube ayrımı parça 6): "Tümü"de ve "Yan yana" kipinde bütün açık
+ * fiziksel şubeler, "Yalnız seçili şube" kipinde (yöneticinin varsayılanı) yalnız seçili şube; müdürde hep kendi şubesi.
+ * Kayıtlar alanın kapsamıyla okunur. Okunan aralık: dün ve bugün ile bir hafta öncesi (8 gün).
  * AsilPOS gün sonu yalnız geçiş gününden itibaren sayılır (deneme günleri hiçbir hesaba girmez; tillRows ile aynı).
  * Kapanmış ModPOS föyü, ay rakamına yedek açıkken ve yalnız ModPOS günlerinde, üçüncü kaynaktır (tillRows ile aynı kural,
  * modposTillRow): Genel bakış'ın günlük grafiği o günü sayarken kartın çizgisi eksik göstermesin (denetim 13 Kasım HM-09).
@@ -29,12 +30,17 @@ export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySu
   const db = getDb();
   const today = businessDate(now);
   const from = addDays(today, -8);
-  const [all, switchDays, lock] = await Promise.all([listBranches(db), loadSwitchDays(db), staffBranchLock()]);
+  // Şubeleri yan yana alanı: "Yan yana" kipinde "Tümü", "Yalnız seçili şube" kipinde seçim (müdürde hep kendi şubesi)
+  // şube-ayrımı: alan.karsilastirma
+  const [all, switchDays, lock, compareScope] = await Promise.all([listBranches(db), loadSwitchDays(db), staffBranchLock(), areaScope("karsilastirma")]);
   // Çok şube (R1): her kasanın günü kendi geçiş gününden itibaren; kasası ModPOS olan şubenin deneme günü ciro sayılmaz
   const switchDay = earliestSwitchDay(switchDays);
-  // Müdür yalnız kendi şubesinin satırını görür (docs/ROLLER.md); kayıtlar aşağıda şube kimliğiyle okunur, kart yalnız
+  // Müdür yalnız kendi şubesinin satırını görür (docs/ROLLER.md); kayıtlar aşağıda alanın kapsamıyla okunur, kart yalnız
   // bu şubelerin satırını kurar
-  const branches = all.filter((b) => b.active && b.kind === "fiziksel" && (lock === null || b.id === lock));
+  const branches = compareBranchesIn(
+    all.filter((b) => b.active && b.kind === "fiziksel" && (lock === null || b.id === lock)),
+    compareScope,
+  );
   if (!branches.length) return null;
 
   const asilposFrom = switchDay === null || switchDay > today ? null : switchDay > from ? switchDay : from;
@@ -54,16 +60,16 @@ export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySu
         cashDiff: s.cashReports.cashDiff,
       })
       .from(s.cashReports)
-      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, today))),
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, today), branchWhere(s.cashReports.branchId, compareScope))),
     asilposFrom === null
       ? Promise.resolve([])
       : db
           .select({ branchId: s.posDayReports.branchId, date: s.posDayReports.date, z: s.posDayReports.z })
           .from(s.posDayReports)
-          .where(and(gte(s.posDayReports.date, asilposFrom), lte(s.posDayReports.date, today)))
+          .where(and(gte(s.posDayReports.date, asilposFrom), lte(s.posDayReports.date, today), branchWhere(s.posDayReports.branchId, compareScope)))
           .then((rows) => rows.filter((r) => isCountedPosDay(switchDays, r.branchId, r.date))),
-    // Bütün şubelerin föyleri (kart seçili şubeden bağımsız); anahtar kapalıyken föy tablosu okunmaz
-    withBranchScope(ALL_BRANCHES, () => modposFallbackSheets(db, from, today)),
+    // Alanın kapsamındaki şubelerin föyleri; anahtar kapalıyken föy tablosu okunmaz
+    withBranchScope(compareScope, () => modposFallbackSheets(db, from, today)),
   ]);
 
   const sources: BranchDaySource[] = [

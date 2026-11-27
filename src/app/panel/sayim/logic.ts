@@ -11,6 +11,7 @@ import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { isLastDayOfMonth } from "@/lib/reminders";
 
 // ---------------------------------------------------------------- Hangi ay açılsın?
@@ -131,6 +132,28 @@ export function coverageText(share: number): string {
 }
 
 /** Payın ve kalanın metni: yüzde bir kez yuvarlanır, kalan 100'e tamamlar (%13 + %87; ayrı yuvarlamada %13 + %88) */
+/** Şube kipinde faturalardan karşılanan pay bunun altındaysa sayım kartı uyarır (şube ayrımı parça 5) */
+export const LOW_LOT_COVERAGE = 0.5;
+
+/**
+ * Sayım kartının FIFO havuzu satırı (Stok değeri alanı, şube ayrımı parça 5): şube kipinde (`lots`: sayılan şubenin adı)
+ * havuz şubenin ve işletme genelinin faturaları, kapsam düşükse uyarı; firma kipinde birden çok şube açıkken (`shared`)
+ * şubeler aynı faturaları paylaşır. Tek şubede null
+ */
+export function lotScopeNote(o: { lots?: string | null; shared?: boolean; coveredShare: number; total: number }): { text: string; low: boolean } | null {
+  if (o.lots) {
+    const low = o.total > 0 && o.coveredShare < LOW_LOT_COVERAGE;
+    return {
+      text: `Şube görünümü: havuz yalnız ${genitive(o.lots)} ve işletme genelinin faturaları; öbür şubenin ve şubesi seçilmemiş fatura bu havuzda değil.${
+        low ? " Faturalardan karşılanan pay düşük: Faturalar'da şubesini seçin ya da firma geneli görünüme geçin." : ""
+      }`,
+      low,
+    };
+  }
+  if (o.shared) return { text: "Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz.", low: false };
+  return null;
+}
+
 export function coverageSplit(share: number): { covered: string; rest: string } {
   const n = Math.round(Math.max(0, Math.min(1, share)) * 100);
   return { covered: percentText(n), rest: percentText(100 - n) };
@@ -216,6 +239,8 @@ export interface SavedExtra {
   unit: string;
   qty: number;
   unitPrice: number;
+  /** Ek kalemin şubesi (stock_extras.branch_id): fiyat geçmişinde şubenin kendi fiyatı önce (`prefer`) */
+  branchId?: string | null;
 }
 
 export interface StaffExtraInput {
@@ -235,12 +260,15 @@ export interface StaffExtraPlan {
  * - Aynı ad + birimle kayıtlı satırın yalnızca miktarı güncellenir (fiyatı kalır).
  * - Yeni satırın fiyatı, aynı kalemin önceki aylardaki en son fiyatından gelir; hiç yoksa 0 (yönetici girer).
  * - Fiyatı girilmemiş satırı personel silebilir; fiyatlı satırı silemez (rafta kalmadıysa miktarı 0 yazılır).
- * `history` önceki ayların ek kalemleri (bu ay hariç).
+ * `history` önceki ayların ek kalemleri (bu ay hariç). `prefer` (Stok değeri alanının şube kipi, şube ayrımı parça 5):
+ * sayılan şube; aynı kalemin o şubedeki son fiyatı önce, şubede hiç yoksa öbür şubelerin son fiyatı. Verilmezse bütün
+ * şubelerin son fiyatı (firma kipi; fiyat şubeye göre değişmez)
  */
 export function planStaffExtras(
   existing: SavedExtra[],
   incoming: StaffExtraInput[],
   history: SavedExtra[],
+  prefer: string | null = null,
 ): { ok: true; plan: StaffExtraPlan } | { ok: false; error: string } {
   const seen = new Set<string>();
   for (const e of incoming) {
@@ -248,13 +276,15 @@ export function planStaffExtras(
     if (seen.has(k)) return { ok: false, error: `"${e.name.trim()}" iki kez yazılmış; miktarları tek satırda toplayın.` };
     seen.add(k);
   }
-  // Aynı kalemin en son (en yeni ay, en son kayıt) fiyatı
-  const lastPrice = new Map<string, { month: string; id: number; price: number }>();
+  // Aynı kalemin en son (en yeni ay, en son kayıt) fiyatı; şube kipinde sayılan şubenin kaydı her zaman önce
+  const lastPrice = new Map<string, { month: string; id: number; price: number; own: boolean }>();
   for (const h of history) {
     if (!(h.unitPrice > 0)) continue;
     const k = extraKey(h.name, h.unit);
+    const own = prefer !== null && h.branchId === prefer;
     const cur = lastPrice.get(k);
-    if (!cur || h.month > cur.month || (h.month === cur.month && h.id > cur.id)) lastPrice.set(k, { month: h.month, id: h.id, price: h.unitPrice });
+    const newer = !cur || h.month > cur.month || (h.month === cur.month && h.id > cur.id);
+    if (!cur || (own && !cur.own) || (own === cur.own && newer)) lastPrice.set(k, { month: h.month, id: h.id, price: h.unitPrice, own });
   }
   const pool = [...existing].sort((a, b) => a.id - b.id);
   const used = new Set<number>();

@@ -2,21 +2,23 @@ import { AlarmClock, CalendarClock, CircleCheck, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { tillBranches, tillRowsInScope } from "@/lib/branches";
+import { ALL_BRANCHES, tillBranches, tillRowsInScope } from "@/lib/branches";
 import { invoiceBranchOptions } from "@/lib/invoice-branch";
 import { paidInMonthOf, type CariAccount } from "@/lib/cari/account";
-import { currentBranchScope } from "@/server/branch-scope";
+import { sharedCariParts } from "@/lib/cari/branch-account";
+import { areaScope, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadCariIndex } from "@/server/data/cari";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 
 import { listBreakdowns, SOON_TEXT } from "./breakdowns";
+import { SharedCariNotice, sharedTotals } from "./shared-cari";
 import { isHiddenSupplier, matchesSupplierFilter, missingInfo, paidInParasut, sameTaxNames, taxNameIndex, type HiddenSupplierRow, type SupplierListRow, type SupplierSummary } from "./logic";
 import { CountUp, SuppliersClient } from "./suppliers-client";
 
@@ -68,8 +70,18 @@ export default function SuppliersPage() {
 
 async function SuppliersContent() {
   await requireAdmin();
-  const { today, termDays, groups } = await loadSupplierLedger();
+  // Tedarikçi bakiyeleri alanı (şube ayrımı parça 4): şube kipinde şubenin ve işletme genelinin faturaları, faturasız
+  // borç ve hesaptaki para "İşletme geneli" satırında; firma kipinde ve "Tümü"de tedarikçinin bütün carisi
+  // şube-ayrımı: alan.tedarikciler
+  const area = await areaScope("tedarikciler");
+  const ledger = await loadSupplierLedger(area, { keepAll: true });
+  const { today, termDays } = ledger;
   const [index, scope, branches] = await Promise.all([loadCariIndex(today), currentBranchScope(), listBranches()]);
+  const branchName = area === ALL_BRANCHES ? null : (branches.find((b) => b.id === area)?.name ?? area);
+  const shared = branchName ? sharedTotals(ledger.groups.map((g) => g.shared)) : null;
+  // Şube kipinde listede kapsamda faturası, İşletme geneli satırı ya da şubenin kasasında işlenmemiş satırı olan tedarikçi
+  const kasaCards = new Set(index.kasaPending.filter((l) => scope === ALL_BRANCHES || l.branchId === scope).map((l) => l.cardId));
+  const groups = ledger.groups.filter((g) => !g.shared || g.invoices.length > 0 || sharedCariParts(g.shared) !== null || (g.card !== null && kasaCards.has(g.card.id)));
   const month = today.slice(0, 7);
   const isHidden = (g: (typeof groups)[number]) => isHiddenSupplier(g.card, g.summary, { ...g.account, lastEntry: g.lastEntry });
   // Listeden kaldırılanlar listede görünmez (borçları yok; isHiddenSupplier); ödemeleri "Bu ay ödenen"de sayılır
@@ -85,7 +97,7 @@ async function SuppliersContent() {
   const kasaElsewhere = kasaLines.length - kasaShown.length;
   const kasaBy = new Map<number, number>();
   for (const l of kasaShown) kasaBy.set(l.cardId, (kasaBy.get(l.cardId) ?? 0) + 1);
-  const bySlug = new Map(groups.map((g) => [g.card?.id ?? -1, g]));
+  const bySlug = new Map(ledger.groups.map((g) => [g.card?.id ?? -1, g]));
   const rows: SupplierListRow[] = shown.map((g) => ({
     key: g.key,
     slug: g.slug,
@@ -140,8 +152,9 @@ async function SuppliersContent() {
   return (
     <>
       <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} more={MORE} />
-      {/* Şube seçiliyken: cari firmanın (şube kapsamı C P1-12, P2-1) */}
-      <CompanyWideNotice screen="tedarikciler" className="mb-4" />
+      {/* Şube seçiliyken: görünüm çipi; şube kipinde bakiyeler şubenin, faturasız borç ve hesaptaki para İşletme geneli */}
+      <BranchViewChip area="tedarikciler" className="mb-4" />
+      {branchName && shared ? <SharedCariNotice name={branchName} shared={shared} /> : null}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown title="Kalan borç" description="Ödenmemiş faturaların kalan tutarı (KDV dahil), tedarikçi tedarikçi. Tedarikçiye dokununca sayfası açılır." groups={breakdown.open} total={open} totalLabel="Kalan borç" exact empty="Ödenmemiş fatura yok.">

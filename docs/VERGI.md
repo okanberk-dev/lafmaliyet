@@ -15,6 +15,14 @@ damga, hepsini Türkiye'ye göre hesaplasın ama dikkatli yap." Ekran **Vergi, K
   diğer gelir ve giderleri Vergi kârı › **Düzeltme ekle** ile girilir (kapsam çipi değişir).
 - Her rakam dayanağını gösterir: formül, girdiler, oran, kanun maddesi, kaynak bağlantısı ve kural tablosunun
   derlendiği gün ("Nasıl hesaplandı").
+- **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım 2026; [SUBE.md › Vergi şubeye
+  bölünmez](SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)): Vergi beyanı firmanın tek vergi numarasıyla.
+  Özet, Vergi kârı ve Demirbaş (KDV, muhtasar, geçici ve kurumlar vergisi, devreden KDV, takvim, eksik belgeler,
+  demirbaşlar) şube seçiliyken de bütün şubelerle hesaplanır; başlığın altında "Marina seçili: bu ekran firma geneli"
+  notu. Şubenin payı, matraha katkısı ya da şubeye süzülen liste yok; Hesabım › Şube görünümü'nde Vergi'nin ayarı yok
+  ("Her zaman firma geneli" listesinde). Nakit planının şube kipinde vergi ve SGK yok ("Vergi ve SGK ödemeleri firma
+  geneli: Tümü'de görünür"); dışa aktarımın şube dosyasında Vergi sekmesi firmanın, muhasebeci paketinin şube dosyasında
+  KDV yok.
 - Beyanname hazırlanmaz, e-beyanname gönderilmez; danışmanlık yapılmaz. Belgesi olmayan ödemelerin kalem kalem
   listesi dışa aktarılmaz, işlem geçmişine yazılmaz.
 - Eksik veriyle hesaplanan geçici ve kurumlar vergisi **Taslak**'tır; taslak tutar nakit planına ve takvimin tutar

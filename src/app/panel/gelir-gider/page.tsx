@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { HashScroll } from "@/components/panel/hash-scroll";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -125,7 +126,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const sourceMonths = throughIdx.length ? throughIdx.map((i) => months[i]) : months.slice(0, 1);
   const yt = yearTotals(model, year);
   // Şube görünümü (soldaki seçici; docs/SUBE.md): bilgi notu, mal maliyeti şubenin satışından reçeteye göre
-  const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView) : null;
+  const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView, { sharedHidden: Boolean(model.ds.sharedCostsHidden) }) : null;
   // "Tümü"nün şube kırılımı (Faz 5, sahibin kararı 4; docs/SUBE.md): birden çok fiziksel şube açıkken, yıl kartlarıyla aynı
   // aylar. Her şube kendi görünümündeki gibi (işletme geneli şubeye bölünmez), işletme geneli ayrı sütunda bir kez.
   // Okunamazsa kart çizilmez
@@ -147,11 +148,15 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           })
       : null;
   const countedIdx = indexes((m) => yt.counted.includes(m));
-  // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
-  const expected = await loadExpectedDebtsInYear(year).catch((e) => {
-    console.error("[gelir-gider] faturası beklenen alımlar", e);
-    return {};
-  });
+  // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok.
+  // Şube seçiliyken satır yok (şube ayrımı, 27 Kasım 2026): cari kaydının şubesi yok (supplier_entries.branch_id
+  // gelene kadar), önceden Marina'nın Gelir-gider'inde Tuzla'nın beklenen alımları da görünüyordu
+  const expected = model.ds.branchView
+    ? {}
+    : await loadExpectedDebtsInYear(year).catch((e) => {
+        console.error("[gelir-gider] faturası beklenen alımlar", e);
+        return {};
+      });
   const defs = model.pnlRowDefs(months);
   const years = [...new Set([...known.map((k) => Number(k.slice(0, 4))), year])].sort();
 
@@ -405,6 +410,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           {branchNote.text}
         </Notice>
       ) : null}
+      {/* İşletme geneli giderler alanının çipi (şube ayrımı parça 6): "Yalnız not" ya da "Tutarla göster" */}
+      <BranchViewChip area="ortak_gider" className="mb-4" />
       {/* Sayımı olmayan ay: mal maliyeti tahmini (para riski, katlanmaz); cirosu girilmemiş ayın gideri gri dipnot.
           Yıl kartlarına girmeyen aylar tabloda yine görünür */}
       {yt.uncounted.length ? (

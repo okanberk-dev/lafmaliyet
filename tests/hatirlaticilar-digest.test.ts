@@ -671,7 +671,9 @@ test("sabah e-postası: ek kutular ötekilerle aynı anda yüklenir; haber, teki
   assert.ok(run.indexOf("const extrasP = loadDigestExtras(today);") > run.indexOf('off: "nokey"'));
   assert.ok(run.indexOf("const extrasP = loadDigestExtras(today);") < run.indexOf("await loadDigestInvoices()"));
   // Alıcı grupları (şube kapsamı C P1-11): grubun haberi bütün şubelerinkiyle aynı kural; grubun kutuları
-  assert.match(run, /const news = groupFresh\.length > 0 \|\| invoiceNews \|\| !!prices \|\| system\.length > 0 \|\| groupExtras\.news;/);
+  assert.match(run, /const news = groupFresh\.length > 0 \|\| groupInvoiceNews \|\| !!prices \|\| system\.length > 0 \|\| groupExtras\.news;/);
+  // Grubun fatura haberi kendi bölümünden (şube ayrımı doğrulaması): öbür şubenin yeni faturası bu grubu göndermez
+  assert.match(run, /const groupInvoiceNews = g\.branchIds\.length \? invoiceNewsOf\(groupInvoices\) : invoiceNews;/);
   assert.match(run, /system\.length \? \{ items: system \} : null,\s*g\.extras\.extras,\s*g\.branch,\s*\);/);
   // Tekil anahtarın tohumu kutusuzken ve bütün şubelerin grubunda eskisiyle aynı (boş dizi yayılır, ayraç eklenmez)
   assert.match(run, /system\.length \? `sys:\$\{system\.map\(\(p\) => p\.key\)\.join\(","\)\}` : "",\s*\/\/[^\n]*\n\s*\.\.\.\(g\.extras\.logKeys\.length \? \[`ek:\$\{g\.extras\.logKeys\.join\(","\)\}`\] : \[\]\),/);
@@ -687,9 +689,11 @@ test("sabah e-postası: ek kutular ötekilerle aynı anda yüklenir; haber, teki
   // Önizleme kutuları yazmadan yükler; örnek satır yalnız hiç haber yoksa
   const actions = read("src/server/actions/reminders.ts");
   const preview = actions.slice(actions.indexOf("export async function previewDigest"), actions.indexOf("export async function runDigestNow"));
-  assert.match(preview, /loadDigestExtras\(today, \{ preview: true \}\)/);
+  // Şube seçiliyken o şubenin grubunun kutuları (şube ayrımı parça 6), "Tümü"de firmanınki
+  assert.match(preview, /loadDigestExtras\(today, group \? \{ preview: true, scope: group\.id \} : \{ preview: true \}\)/);
   assert.match(preview, /const sample = !due\.length && !invoiceNews && !prices && !system\.length && !extras\.news;/);
-  assert.match(preview, /extras\.extras,\s*\);/);
+  // Şubenin grubunun e-postası şubenin başlığıyla (sabah işinin şube grubu gibi)
+  assert.match(preview, /extras\.extras,\s*group\?\.name \?\? null,\s*\);/);
 });
 
 test("bildirim özeti: haber olan ek kutuların parçaları fiyat onayından sonra, zamdan önce", () => {
@@ -709,7 +713,7 @@ test("sabah e-postası seçiciden bağımsız: gönderim (sabah işi ve şimdi g
   assert.doesNotMatch(digest, /export async function sendReminderDigest/);
   const actions = read("src/server/actions/reminders.ts");
   const preview = actions.slice(actions.indexOf("export async function previewDigest"), actions.indexOf("export async function runDigestNow"));
-  assert.match(preview, /await requireAdmin\(\);\s+(?:\/\/[^\n]*\n\s+)*return withBranchScope\(ALL_BRANCHES, digestPreview\);/);
+  assert.match(preview, /await requireAdmin\(\);[\s\S]*?(?:\/\/[^\n]*\n\s+)*return withBranchScope\(ALL_BRANCHES, \(\) => digestPreview\(group \? \{ id: group\.id, name: group\.name \} : null\)\);/);
   // Şimdi gönder sabah işiyle aynı yoldan
   const now = actions.slice(actions.indexOf("export async function runDigestNow"));
   assert.match(now, /const r = await runReminderDigest\("manual"\);/);

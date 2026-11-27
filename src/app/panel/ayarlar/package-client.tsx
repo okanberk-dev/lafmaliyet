@@ -9,13 +9,27 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Select, Textarea } from "@/components/ui/form";
 import { ToggleRow } from "@/components/ui/toggle-row";
+import { packageHref } from "@/app/panel/muhasebe/package-download";
 import { savePackageOptions, sendPackageNow } from "@/server/actions/muhasebe";
 
 /**
  * Ayarlar › Muhasebeci paketi'nin istemci kısmı: alıcılar ve "ay kapanınca gönder" (Kaydet ile), ay seçimi, paketi
  * indir (düz bağlantı) ve "Şimdi gönder" (onaylı; kaydedilmiş alıcılara gider).
  */
-export function PackageOptions({ recipients, auto, months, emailReady }: { recipients: string[]; auto: boolean; months: { month: string; title: string }[]; emailReady: boolean }) {
+export function PackageOptions({
+  recipients,
+  auto,
+  months,
+  emailReady,
+  branch = null,
+}: {
+  recipients: string[];
+  auto: boolean;
+  months: { month: string; title: string }[];
+  emailReady: boolean;
+  /** Şube seçili: indirme o şubenin paketi (şube ayrımı parça 6); "Şimdi gönder" ve aylık e-posta hep bütün şubeler */
+  branch?: { id: string; name: string } | null;
+}) {
   const [pending, start] = useActionTransition();
   const [saved, setSaved] = useState({ text: recipients.join("\n"), auto });
   const [text, setText] = useState(recipients.join("\n"));
@@ -75,9 +89,14 @@ export function PackageOptions({ recipients, auto, months, emailReady }: { recip
           </Select>
         </Field>
         {/* Dosya indiren rota: düz bağlantı. Adres seçicinin değerinden değil, listedeki ayın kendisinden kurulur */}
-        <a href={`/api/muhasebe/paket?ay=${encodeURIComponent(picked?.month ?? months[0]?.month ?? "")}`} download className={buttonClass("secondary", "md")}>
-          <FileSpreadsheet size={16} aria-hidden="true" /> Paketi indir (.xlsx)
+        <a href={packageHref(picked?.month ?? months[0]?.month ?? "", branch?.id ?? null)} download className={buttonClass("secondary", "md")}>
+          <FileSpreadsheet size={16} aria-hidden="true" /> {branch ? `Paketi indir · ${branch.name} (.xlsx)` : "Paketi indir (.xlsx)"}
         </a>
+        {branch ? (
+          <a href={packageHref(picked?.month ?? months[0]?.month ?? "", null)} download className={buttonClass("ghost", "md")}>
+            Bütün şubeler (.xlsx)
+          </a>
+        ) : null}
         <Button variant="secondary" onClick={() => setAsking(true)} disabled={pending || !savedCount || !emailReady || dirty}>
           <Send size={16} aria-hidden="true" /> Şimdi gönder
         </Button>

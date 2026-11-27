@@ -42,6 +42,12 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "AsilPOS yalnız bir şubenin kasası" sınırı kalkar).
 - **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Vergi, Nakit
   planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
+  **Durum (27 Kasım):** `sube-ayrimi` dalında hazır (#167'nin üstünde; göçler 0100, 0101): altı parça, bağımsız doğrulama
+  testi (`tests/sube-ayrimi-db.test.ts`) ve doğrulamanın sekiz sızıntısının düzeltmesi. Dal gönderilmedi, PR açılmadı:
+  açıklaması `~/Downloads/lafmaliyet-ekler/sube-ayrimi-pr.md`; #167'den sonra birleşir. Sahibin kararına kalanlar
+  (nakit planının işletme geneli satırı, Vergi beyanının personel dökümü, "Ciroya göre pay et") YAPILACAKLAR.md ›
+  Bitenler'de ve docs/SUBE.md › Doğrulama düzeltmeleri'nde. Tam yedek ayarsız firma geneli kaldı (geri yüklenebilir
+  yedek bütün veritabanını ister).
 - **P8'e ek:** banka POS Z'sinin ÖZET bölümündeki "Toplam KDV" okunmadı ("fotoğrafta yok"), fiş yanlışlıkla "farklı"
   çıktı: kodla okuma + istem örnekleri + regresyon seti.
 - **Sıra:** P1 (bitti) → AsilPOS (panel adı, kasa adı, çoklu şube + Marina) → P2 → şube ayrımı → P3–P9. P2 (#165) hazır ve

@@ -134,7 +134,7 @@ export async function pushPlanReminders(db: DB = getDb(), now: Date = new Date()
     const text = planReminderText(b, monday, { manyBranches });
     const [claimed] = await db
       .insert(s.notificationLog)
-      .values({ key: `vardiya-plan:${b.id}:${monday}:${today}`, channel: "push", subject: text.title, recipients: "(yöneticiler)", ok: true })
+      .values({ key: `vardiya-plan:${b.id}:${monday}:${today}`, channel: "push", subject: text.title, recipients: "(yöneticiler)", ok: true, branchId: b.id })
       .onConflictDoNothing()
       .returning({ key: s.notificationLog.key });
     if (!claimed) continue;

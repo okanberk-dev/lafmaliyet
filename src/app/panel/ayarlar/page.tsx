@@ -12,7 +12,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { logPerson } from "@/lib/activity-person";
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM } from "@/lib/branches";
 import { AUTO_BACKUP_KEEP, storedBackupLabel } from "@/lib/backup/auto";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
@@ -21,7 +21,7 @@ import { missedPingShown } from "@/lib/site-orders/follow";
 import { activityActionLabel } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
-import { currentBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhereWithShared, currentBranchScope, selectedBranchRow } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadAutoBackupInfo, type AutoBackupInfo } from "@/server/backup/auto";
 import { loadBackupInfo } from "@/server/backup/state";
@@ -143,6 +143,9 @@ function UsersLinkCard() {
  * (src/lib/job-health.ts › systemAlerts). Geri yükleme panelde yok: bilgisayardan bir komutla yapılır.
  */
 async function BackupCard() {
+  // Dışa aktarım şube seçiliyken o şubenin dosyası (şube ayrımı parça 6; sekmeler alanlarının kipiyle), yanında bütün
+  // şubelerin dosyası. Geri yüklenebilir tam yedek her zaman bütün veritabanı (yedek.tam)
+  const exportBranch = await selectedBranchRow();
   const [info, auto] = await Promise.all([
     loadBackupInfo().catch((e) => {
       console.error("Yedek bilgisi okunamadı", e);
@@ -177,9 +180,20 @@ async function BackupCard() {
         <>
           <BackupDownload uploads={info?.uploads ?? { count: 0, bytes: 0 }} last={last ? { dataBytes: last.dataBytes } : null} />
           {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin) */}
-          <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
-            <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar (.xlsx)
-          </a>
+          {exportBranch ? (
+            <>
+              <a href={`/api/export?${BRANCH_PARAM}=${encodeURIComponent(exportBranch.id)}`} download className={buttonClass("secondary", "md", "max-sm:w-full")}>
+                <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar · {exportBranch.name} (.xlsx)
+              </a>
+              <a href="/api/export" download className={buttonClass("ghost", "md", "max-sm:w-full")}>
+                Bütün şubeler (.xlsx)
+              </a>
+            </>
+          ) : (
+            <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
+              <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar (.xlsx)
+            </a>
+          )}
         </>
       }
     >
@@ -438,23 +452,35 @@ function fifoMonthOptions(counted: string[], start: string | null, current: stri
 async function SettingsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, log, accounts, scope, branches] = await Promise.all([
+  // İşlem geçmişi şube seçiliyken o şubenin ve şubesiz (işletme geneli, 0101'den önceki) kayıtları (şube ayrımı)
+  const scope = await currentBranchScope();
+  const [model, log, accounts, branches] = await Promise.all([
     loadModel(),
-    db.select().from(s.activityLog).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
+    db.select().from(s.activityLog).where(branchWhereWithShared(s.activityLog.branchId, scope)).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
     // Kaydın hesabı: ad tek başına yanıltabiliyorsa (sonradan değişti ya da başka hesap aynı adı taşıyor) e-postası da
     db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
-    // Kasa kartları seçili şubeye göre (AsilPOS, ModPOS; src/lib/pos-cards.ts)
-    currentBranchScope(),
     listBranches(),
   ]);
+  // Birden çok şube açıkken kaydın şubesi satırda ("Tümü"de şube adı; şube seçiliyken yalnız işletme geneli kayıtlarda)
+  const branchNames = new Map(branches.map((b) => [b.id, b.name]));
+  const manyBranches = branches.filter((b) => b.active).length > 1;
+  const logBranch = (id: string | null): string | null => {
+    if (!manyBranches) return null;
+    if (scope === ALL_BRANCHES) return id ? (branchNames.get(id) ?? id) : null;
+    return id ? null : "İşletme geneli";
+  };
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
   const dayLabel = dayLabeler(new Date());
-  // Stok değerleme işletme geneli bir ayar (settings.stokFifoBaslangic): Tümü'nün kâr-zararını değiştirir. Önizleme de
-  // "Tümü"nün sayımlarıyla ve elle girilmiş devirleriyle; şube seçiliyken şubenin kısmi stoğu ve süzülen stock:*
-  // satırları yanıltırdı (denetim 21 Kasım #32; Genel bakış'ın nakit planı kartıyla aynı kalıp)
-  const company = model.ds.branchView ? await loadModel({ scope: ALL_BRANCHES }) : model;
+  // Stok değerleme işletme geneli bir ayar (settings.stokFifoBaslangic): Tümü'nün kâr-zararını değiştirir. Önizleme Stok
+  // değeri alanının kipiyle (şube ayrımı parça 5): firma kipinde (ve "Tümü"de) "Tümü"nün sayımları ve elle girilmiş
+  // devirleriyle (denetim 21 Kasım #32), şube kipinde şubenin sayımları ve şubenin ve işletme genelinin faturalarıyla
+  // (sayım ekranının tutarı; ayar yine firmanın)
+  // şube-ayrımı: alan.stok_degeri
+  const valuationScope = model.ds.branchView ? await areaScope("stok_degeri") : ALL_BRANCHES;
+  const company = model.ds.branchView && valuationScope === ALL_BRANCHES ? await loadModel({ scope: valuationScope }) : model;
+  const valuationBranch = valuationScope === ALL_BRANCHES ? null : (model.ds.branchView?.name ?? null);
   const fifoOptions = fifoMonthOptions(company.countedMonths, company.fifoStart, company.ds.currentMonth ?? currentMonthTR());
 
   return (
@@ -468,6 +494,7 @@ async function SettingsContent() {
         rows={valuationRows(company, fifoOptions)}
         months={fifoOptions}
         openingOverrides={company.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
+        branch={valuationBranch}
       />
       <ClosedPeriodCard />
       <PackageCard />
@@ -486,6 +513,7 @@ async function SettingsContent() {
             viaAssistant: l.via === "asistan",
             action: activityActionLabel(l.action),
             detail: l.detail,
+            branch: logBranch(l.branchId),
           }))}
         />
       </div>

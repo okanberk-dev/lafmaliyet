@@ -116,12 +116,12 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
       await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, sort_order) VALUES (${b.id}, ${b.name}, ${b.kind}, ${source}, ${b.sortOrder}) ON CONFLICT DO NOTHING`);
     }
     await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, active, sort_order) VALUES ('eski', 'Eski', 'fiziksel', 'modpos', false, 9)`);
+    // Kullanıcılar da düz SQL ile: 0077'de sonraki göçlerin sütunları yok (ör. 0101 `branch_view`)
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
-      const [u] = await db
-        .insert(s.users)
-        .values({ email: `${k}@test.local`, name: users[k].name, passwordHash: "x", role: users[k].role, branchId: users[k].branchId })
-        .returning({ id: s.users.id });
-      users[k].id = u.id;
+      const rows = await db.execute<{ id: number }>(
+        sql`INSERT INTO users (email, name, password_hash, role, branch_id) VALUES (${`${k}@test.local`}, ${users[k].name}, 'x', ${users[k].role}, ${users[k].branchId}) RETURNING id`,
+      );
+      users[k].id = Number((rows as unknown as { id: number }[])[0].id);
     }
   });
 

@@ -3,6 +3,7 @@ import "server-only";
 import { and, gte, lte } from "drizzle-orm";
 
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
+import { compareBranchesIn } from "@/lib/branch-view";
 import { isPartTime, staffShiftRef } from "@/lib/calc/engine";
 import { businessDate } from "@/lib/cash-report";
 import {
@@ -25,7 +26,7 @@ import { cellReader } from "@/lib/kiyas";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { can } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
-import { staffBranchLock, withBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhere, staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
@@ -71,8 +72,9 @@ export interface LaborReport {
 }
 
 /**
- * İşçilik / ciro raporu (docs/RAPORLAR.md › İşçilik / ciro; hesap src/lib/iscilik.ts). Yönetici ve müdür; soldaki
- * seçiciden bağımsız, açık fiziksel şubeler kendi görünümüyle (Gelir-gider'in şube hesabı: kişiler o şubenin, o ayın
+ * İşçilik / ciro raporu (docs/RAPORLAR.md › İşçilik / ciro; hesap src/lib/iscilik.ts). Yönetici ve müdür; Şubeleri yan
+ * yana alanının kipiyle (şube ayrımı parça 6: "Yan yana" kipinde ve "Tümü"de açık fiziksel şubeler, "Yalnız seçili şube"
+ * kipinde seçili şube; müdürde hep kendi şubesi), her şube kendi görünümüyle (Gelir-gider'in şube hesabı: kişiler o şubenin, o ayın
  * maaşıyla; part-time'ın çalıştığı günler Vardiya'dan). Günün cirosu kasa satırından (Kıyas'ın hücresi). Açık şube yoksa
  * null. Müdürün raporu kişisel ücretsiz (`wages` false): Vardiya'ya bağlı hiçbir rakam yok, tutar yok, günlük satır yok.
  */
@@ -93,20 +95,23 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   const to = lastSunday < today ? lastSunday : today;
   if (`${month}-01` > today) return null;
 
+  // Şubeleri yan yana alanı: "Yan yana" kipinde "Tümü", "Yalnız seçili şube" kipinde seçim (müdürde kilit de daraltır)
+  // şube-ayrımı: alan.karsilastirma
+  const compareScope = await areaScope("karsilastirma");
   const all = await listBranches(db);
-  const branches = tillBranches(all).filter((b) => lock === null || b.id === lock);
+  const branches = compareBranchesIn(tillBranches(all), compareScope).filter((b) => lock === null || b.id === lock);
   if (!branches.length) return null;
   const range = dayRange(from, to);
   const months = [...new Set(range.map((d) => d.slice(0, 7)))];
 
   const [models, rows, switchDay, reports, closed] = await Promise.all([
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
-    withBranchScope(ALL_BRANCHES, () => tillRows(db)),
+    withBranchScope(compareScope, () => tillRows(db)),
     loadSwitchDays(db),
     db
       .select({ branchId: s.cashReports.branchId, date: s.cashReports.date, receipts: s.cashReports.receipts })
       .from(s.cashReports)
-      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to))),
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), branchWhere(s.cashReports.branchId, compareScope))),
     Promise.all(branches.map(async (b) => [b.id, new Set(await closedDaysBetween(from, to, db, b.id))] as const)),
   ]);
   const closedBy = new Map(closed);

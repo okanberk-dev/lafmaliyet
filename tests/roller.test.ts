@@ -608,7 +608,7 @@ describe("sunucu eylemleri: her biri bir yetki kapısından geçer; muhasebeciye
   };
   /**
    * Muhasebecinin de geçtiği kapılar (requireUser, requireSignedIn): yalnız kendi hesabı (parola, iki adımlı, oturumlar,
-   * bu cihazın bildirim aboneliği) ya da salt okuma (şube seçimi çerezi, kasa raporunun WhatsApp metni)
+   * bu cihazın bildirim aboneliği, şube görünümü tercihi) ya da salt okuma (şube seçimi çerezi, kasa raporunun WhatsApp metni)
    */
   const OWN_OR_READ = new Set([
     "changePasswordAction",
@@ -624,6 +624,8 @@ describe("sunucu eylemleri: her biri bir yetki kapısından geçer; muhasebeciye
     "setPushTopics",
     "sendTestPush",
     "chooseBranchScope",
+    // Şube görünümü: yalnız kendi hesabının tercihi (users.branch_view; docs/SUBE.md › Şube ayrımı)
+    "saveBranchView",
     "cashReportWhatsapp",
   ]);
 

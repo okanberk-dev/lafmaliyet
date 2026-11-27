@@ -6,6 +6,7 @@ import { businessDate } from "@/lib/cash-report";
 import { monthTitle, prevMonth } from "@/lib/closed-period";
 import { dateTimeTR } from "@/lib/format";
 import { BLOCK_ROW_TEXT } from "@/lib/notify-recipients";
+import { selectedBranchRow } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { loadPackageSettings } from "@/server/muhasebe/paket";
 import { sendableRecipients } from "@/server/notify/recipients";
@@ -24,7 +25,7 @@ const MONTHS = 12;
  * indirilen hesap; docs/BILDIRIMLER.md › Alıcılar ve hesaplar): kartta adıyla söylenir (zilde de)
  */
 export async function PackageCard() {
-  const settings = await loadPackageSettings();
+  const [settings, branch] = await Promise.all([loadPackageSettings(), selectedBranchRow()]);
   const { dropped } = await sendableRecipients(getDb(), settings.recipients);
   const months: { month: string; title: string }[] = [];
   let m = prevMonth(businessDate().slice(0, 7));
@@ -62,7 +63,7 @@ export async function PackageCard() {
             }
           />
         ) : null}
-        <PackageOptions recipients={settings.recipients} auto={settings.auto} months={months} emailReady={emailReady} />
+        <PackageOptions recipients={settings.recipients} auto={settings.auto} months={months} emailReady={emailReady} branch={branch ? { id: branch.id, name: branch.name } : null} />
         {last ? (
           <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink ring-1 ring-line">
             <span className="text-ink-mute">Son gönderim:</span> {monthTitle(last.month)} paketi · {dateTimeTR(last.at)} · {last.by} → {last.to.join(", ")}

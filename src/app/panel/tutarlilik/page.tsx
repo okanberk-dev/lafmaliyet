@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
@@ -17,6 +17,7 @@ import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { ALL_BRANCHES } from "@/lib/branches";
+import { createModel } from "@/lib/calc/engine";
 import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { monthKasa, type MonthKasa } from "@/lib/asilpos/kasa";
@@ -24,11 +25,15 @@ import { HOLDS_HREF } from "@/lib/price-hold";
 import { salesSourceOf } from "@/lib/sales-source";
 import { sizeLabel } from "@/lib/site-sales/calc";
 import { requireAdmin } from "@/server/auth/dal";
+import { areaScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
+import { loadBranchPurchases } from "@/server/data/purchase-lots";
 import { pendingWasteSummary } from "@/server/data/waste-requests";
-import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { availableMonths, loadDataset, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret } from "@/server/site-link";
 
+import { branchPurchaseNote } from "./branch-note";
 import { consistencyBreakdowns, hasNegative } from "./breakdowns";
 import { ConsistencyTable, CountUp, Findings, SeverityBar } from "./consistency-client";
 import { severityOf } from "./severity";
@@ -75,18 +80,31 @@ const ALERT_STYLE: Record<Alert["level"], { icon: typeof Info; tone: PastelTone;
 async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/panel/tutarlilik">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, findings, linkedRows] = await Promise.all([
-    // Tutarlılık işletme geneli: faturalar (alınan mal) şubeye bölünmez, sayım, satış ve zayi bütün şubelerden
-    // (docs/SUBE.md › Neyi süzer); şube seçiliyken alım ile tek şubenin tüketimi karşılaştırılmaz
-    loadModel({ scope: ALL_BRANCHES }),
+  // Tutarlılık alanının kipi (şube ayrımı parça 5; docs/SUBE.md › Şube ayrımı): şube kipinde şubenin satışı, Z'si, reçete
+  // kullanımı, sayımı ve zayisi; alınan yalnız şubeye seçilmiş faturalardan (işletme geneli fatura ve elle alım dahil
+  // değil, sayısı söylenir). Firma kipinde ve "Tümü"de bütün şubeler ve bütün faturalar (bugünkü gibi)
+  // şube-ayrımı: alan.tutarlilik
+  const scope = await areaScope("tutarlilik");
+  const branchMode = scope !== ALL_BRANCHES;
+  const [data, findings, linkedRows, own, branches] = await Promise.all([
+    loadDataset({ scope }),
+    // Bulgular firmanın (şube sütunu yok): her kipte hepsi, şube kipinde "Firma geneli" rozetiyle
     getDb().select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
     // Paraşüt'teki bir ürüne bağlı hammaddeler: alımı faturadan gelir; bu ay faturası yoksa toplu "Alım yok (0)"
     getDb().selectDistinct({ id: s.parasutProductLinks.ingredientId }).from(s.parasutProductLinks),
+    branchMode ? loadBranchPurchases(scope).catch(() => null) : null,
+    listBranches(),
   ]);
+  // Şube kipinde alınan (ve çarpanı şüpheli alış) şubeye seçilmiş faturalardan: veri kümesinin firmanın alımı yerine
+  const model = createModel(own ? { ...data, purchaseQuantities: own.quantities, heldPurchases: own.held } : data);
   const linked = new Set(linkedRows.map((r) => r.id));
   const month = resolveMonth(sp.ay, model);
-  // Bu aya düşen, onay bekleyen geç zayi / ikram ve silme istekleri (dalga 10 §2.8): onaylanırsa tutarlılık değişir
-  const waiting = await pendingWasteSummary({ month }).catch(() => null);
+  // Bu aya düşen, onay bekleyen geç zayi / ikram ve silme istekleri (dalga 10 §2.8): onaylanırsa tutarlılık değişir.
+  // Görünümün şubesinin istekleri (şube kipinde öbür şubenin isteği bu şubenin tutarlılığını değiştirmez)
+  const waiting = await pendingWasteSummary({ month, scope }).catch(() => null);
+  const branchName = branchMode ? (branches.find((b) => b.id === scope)?.name ?? scope) : null;
+  const outside = own?.outside[month] ?? { invoices: 0, manual: 0 };
+  const basisNote = branchMode ? branchPurchaseNote(outside) : null;
   const c = consistency(model, month);
   const autos = alerts(model, month);
   const st = model.settings;
@@ -155,8 +173,9 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
         tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
       />
-      {/* Şube seçiliyken: tutarlılık işletme geneli (şube kapsamı C P2-1) */}
-      <CompanyWideNotice screen="tutarlilik" className="mb-4" />
+      {/* Şube seçiliyken: Tutarlılık alanının kipi (şube ayrımı D) */}
+      <BranchViewChip area="tutarlilik" className="mb-4" />
+      {branchMode && basisNote ? <Notice tone="neutral" size="sm" className="mb-4" title={`Alınan yalnız ${branchName} şubesine seçilmiş faturalardan`} text={basisNote} /> : null}
 
       {waiting?.count ? (
         <Notice
@@ -298,6 +317,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         monthLabel={ml}
         kasa={mk.short}
         salesSource={{ missing: source.missing, manual: source.manual }}
+        readOnly={branchMode ? "Elle alım firmanın: Tümü'de ya da firma geneli görünümde yazılır." : null}
         rows={c.rows.map((r) => ({
           ingredientId: r.ingredient.id,
           name: r.ingredient.name,
@@ -410,6 +430,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
 
       <div className="mt-6">
         <Findings
+          scopeBadge={branchMode ? "Firma geneli" : null}
           items={findings.map((f) => ({
             id: f.id,
             section: f.section,

@@ -37,7 +37,7 @@ export async function setBranchFeatureTx(
   const next = withFeature(current, d.feature, d.on);
   if (next.length === current.length && next.every((f, i) => f === current[i])) return { features: next, changed: false };
   await tx.update(s.branches).set({ features: next, updatedAt: new Date() }).where(eq(s.branches.id, d.branchId));
-  await logSetting(tx, me, "Şube özelliği", `${branch.name} · ${featureLabel(d.feature)}: ${d.on ? "açıldı" : "kapatıldı"}`);
+  await logSetting(tx, me, "Şube özelliği", `${branch.name} · ${featureLabel(d.feature)}: ${d.on ? "açıldı" : "kapatıldı"}`, d.branchId);
   return { features: next, changed: true };
 }
 

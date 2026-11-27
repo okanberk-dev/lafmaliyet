@@ -287,7 +287,9 @@ test("Excel 'Vergi' sayfasının kaynağı: route vergi görünümünü okur, ha
   // Ay satırları yalnız mali belgeli aylardan; hariç tutulan kalemler (excluded, belgesi yok) hiç okunmaz
   assert.match(body, /const fiscal = months\.filter\(isFiscal\);/);
   assert.doesNotMatch(body, /\.excluded|noDoc|EXCLUDE_REASON_TEXT/);
-  assert.match(wbSrc, /if \(extras\.tax\) addTax\(wb, extras\.tax\);/);
+  // Şube dosyasında da firmanın, yalnız "Firma geneli · beyan" satırıyla; şubenin payı yok (vergi şubeye bölünmez)
+  assert.match(wbSrc, /if \(extras\.tax\) addTax\(wb, extras\.tax, \{ branchFile: extras\.scope\?\.branch === true \}\);/);
+  assert.doesNotMatch(wbSrc, /taxShare|BranchTaxShare|ŞUBENİN PAYI/);
 });
 
 test("personel sızıntı betiği: Vergi'nin dört adresi personel çereziyle (HTML ve RSC) Bugün'e döner", async () => {

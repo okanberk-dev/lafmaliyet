@@ -3,7 +3,7 @@
 import { Info, ListChecks, Pencil, Plus, Scale, SearchX, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { useOptimistic, useRef, useState, type FormEvent } from "react";
+import { createContext, useContext, useOptimistic, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
@@ -263,11 +263,19 @@ function ActualUsage({ row, month, compact }: { row: Row; month: string; compact
 }
 
 /**
+ * Tutarlılık alanının şube kipi (şube ayrımı parça 5): alınan miktar şubeye seçilmiş faturalardan okunur; elle alım
+ * (purchase_quantities) firmanındır, bu görünümde yazılmaz. Değer doluysa alım hücreleri düz metin, "Alım ekle",
+ * "Alım yok (0)" ve düzenle düğmeleri yok; metin nedenini söyler
+ */
+const PurchasesReadOnly = createContext<string | null>(null);
+
+/**
  * "Alım yok (0)": bu ay alınan miktarı girilmemiş malzemelere 0 yazar (setNoPurchase); sayım sapması hesaplanır. Tek
  * satırda doğrudan, toplu (faturası olmayan bağlı malzemeler) onayla. "Geri al" aynı satırları siler. Faturası sonradan
  * gelen ayın 0'ının yerine eşitleme faturadaki miktarı yazar.
  */
 function NoPurchaseButton({ month, rows, bulk }: { month: string; rows: Row[]; bulk?: boolean }) {
+  const readOnly = useContext(PurchasesReadOnly);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const ids = rows.map((r) => r.ingredientId);
@@ -290,6 +298,7 @@ function NoPurchaseButton({ month, rows, bulk }: { month: string; rows: Row[]; b
       },
     });
   }
+  if (readOnly) return null;
   return (
     <>
       <Button
@@ -331,6 +340,7 @@ function UnrecipedBadge({ row }: { row: Row }) {
 
 /** Satır içi alınan miktar: Enter ya da odaktan çıkınca kaydeder, Esc geri alır; silmeden önce sorar */
 function PurchaseCell({ month, row, className, id }: { month: string; row: Row; className?: string; id?: string }) {
+  const readOnly = useContext(PurchasesReadOnly);
   // 3 ondalık: Paraşüt miktarı 1/1000'e yuvarlı saklanır, kutuda olduğu gibi görünür (2'ye yuvarlanınca odaktan çıkmak yazardı)
   const saved = row.purchased === null ? "" : num(row.purchased, 3);
   const [value, setValue] = useState(saved);
@@ -370,6 +380,12 @@ function PurchaseCell({ month, row, className, id }: { month: string; row: Row; 
     } else toast.success(`${row.name}: ${num(v, 2)} ${row.unit} kaydedildi`);
   }
 
+  if (readOnly)
+    return (
+      <span id={id} title={readOnly} className={cn("inline-flex items-center justify-end tabular", className)}>
+        {row.purchased === null ? "–" : num(row.purchased, 3)}
+      </span>
+    );
   return (
     <>
       <NumberInput
@@ -465,7 +481,16 @@ function sortRows(rows: Row[], sort: { key: SortKey; dir: SortDir } | null): Row
   });
 }
 
-export function ConsistencyTable({
+/** Reçete ↔ fatura tablosu; şube kipinde alım hücreleri salt okunur (`readOnly`, PurchasesReadOnly) */
+export function ConsistencyTable(props: Parameters<typeof ConsistencyTableBody>[0]) {
+  return (
+    <PurchasesReadOnly.Provider value={props.readOnly ?? null}>
+      <ConsistencyTableBody {...props} />
+    </PurchasesReadOnly.Provider>
+  );
+}
+
+function ConsistencyTableBody({
   month,
   monthLabel,
   rows,
@@ -477,9 +502,12 @@ export function ConsistencyTable({
   fire,
   kasa = "ModPOS",
   salesSource,
+  readOnly = null,
 }: {
   month: string;
   monthLabel: string;
+  /** Şube kipinde alım elle yazılmaz (PurchasesReadOnly): nedeni; firma kipinde ve "Tümü"de null */
+  readOnly?: string | null;
   /** Ayın kasası (src/lib/asilpos/kasa.ts monthKasa: "ModPOS", "AsilPOS", geçiş ayında "Kasa") */
   kasa?: MonthKasa["short"];
   /** Ayın satış kaynağı (src/lib/sales-source.ts): boş listenin metni ve düğmesi elle yüklenen ayda "yükle" der */
@@ -547,7 +575,11 @@ export function ConsistencyTable({
       <CardHeader
         icon={<Scale />}
         title={`Reçete ↔ fatura: ${monthLabel}`}
-        description="Satılanlara göre harcanması gereken malzeme (fire hariç) ile ay içinde faturayla alınan. Alınan miktarı tıklayıp yazabilirsiniz."
+        description={
+          readOnly
+            ? `Satılanlara göre harcanması gereken malzeme (fire hariç) ile ay içinde şubeye seçilmiş faturalarla alınan. ${readOnly}`
+            : "Satılanlara göre harcanması gereken malzeme (fire hariç) ile ay içinde faturayla alınan. Alınan miktarı tıklayıp yazabilirsiniz."
+        }
         meta={
           <>
             <span>Malzeme · {num(rows.length)}</span>
@@ -556,9 +588,11 @@ export function ConsistencyTable({
           </>
         }
         actions={
-          <Button onClick={() => setDialog("new")}>
-            <Plus size={16} /> Alım ekle
-          </Button>
+          readOnly ? null : (
+            <Button onClick={() => setDialog("new")}>
+              <Plus size={16} /> Alım ekle
+            </Button>
+          )
         }
       />
 
@@ -715,9 +749,11 @@ export function ConsistencyTable({
                       className="h-11 w-auto min-w-0 flex-1"
                     />
                     <span className="w-9 shrink-0 text-xs text-ink-mute">{r.unit}</span>
-                    <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)} className="size-11">
-                      <Pencil size={16} />
-                    </IconButton>
+                    {readOnly ? null : (
+                      <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)} className="size-11">
+                        <Pencil size={16} />
+                      </IconButton>
+                    )}
                   </div>
                   {r.held && (r.stock !== "held" || !hasStock) ? (
                     <div className="mt-1.5">
@@ -866,9 +902,11 @@ export function ConsistencyTable({
                       </TD>
                       <TD>
                         <div className="flex justify-end">
-                          <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)}>
-                            <Pencil size={15} />
-                          </IconButton>
+                          {readOnly ? null : (
+                            <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)}>
+                              <Pencil size={15} />
+                            </IconButton>
+                          )}
                         </div>
                       </TD>
                     </TR>
@@ -933,9 +971,11 @@ export function ConsistencyTable({
                 <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
                   {salesSource.manual ? "Satış raporu yükle" : "Satışlar'a git"}
                 </ButtonLink>
-                <Button onClick={() => setDialog("new")}>
-                  <Plus size={16} /> Alım ekle
-                </Button>
+                {readOnly ? null : (
+                  <Button onClick={() => setDialog("new")}>
+                    <Plus size={16} /> Alım ekle
+                  </Button>
+                )}
               </>
             }
           />
@@ -976,7 +1016,7 @@ export function ConsistencyTable({
         </CardFooter>
       ) : null}
 
-      {dialog ? <PurchaseDialog month={month} ingredients={ingredients} rows={rows} row={dialog === "new" ? null : dialog} onClose={() => setDialog(null)} /> : null}
+      {dialog && !readOnly ? <PurchaseDialog month={month} ingredients={ingredients} rows={rows} row={dialog === "new" ? null : dialog} onClose={() => setDialog(null)} /> : null}
     </Card>
   );
 }
@@ -1235,7 +1275,7 @@ function FindingStatusIcon({ done }: { done: boolean }) {
   );
 }
 
-export function Findings({ items }: { items: FindingItem[] }) {
+export function Findings({ items, scopeBadge = null }: { items: FindingItem[]; /** Şube seçiliyken "Firma geneli" (bulgunun şubesi yok) */ scopeBadge?: string | null }) {
   const reduce = useCalmMotion() ?? false;
   const [viewParam, setView] = useQueryState<FindingView>("durum", "acik");
   const [sectionParam, setSection] = useQueryState<string>("bolum", "");
@@ -1282,7 +1322,15 @@ export function Findings({ items }: { items: FindingItem[] }) {
     <Card>
       <CardHeader
         icon={<ListChecks />}
-        title="Bulgular ve yapılacaklar"
+        title={
+          scopeBadge ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              Bulgular ve yapılacaklar <Badge tone="gray">{scopeBadge}</Badge>
+            </span>
+          ) : (
+            "Bulgular ve yapılacaklar"
+          )
+        }
         description="Reçetede olmayan alımlar, fiyat ve fatura kontrolleri. Çözülen maddeyi soldaki halkayla işaretleyin; düzenlemek için maddeye dokunun."
         meta={
           <>

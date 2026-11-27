@@ -49,7 +49,9 @@ test("fotoğraf: kilitli personel başka şubenin listesinin fotoğrafını gör
 test("kaynak: doldurma ekranı kilitli personeli başka şubenin listesinden geri gönderir", () => {
   const page = read("src/app/panel/kontrol/[id]/page.tsx");
   assert.match(page, /import \{ staffBranchLock \} from "@\/server\/branch-scope";/);
-  assert.match(page, /Promise\.all\(\[loadRunView\(tid, today, now\), admin \? null : staffBranchLock\(\)\]\)/);
+  // Bütün şubelerin listesinde kaydın şubesi önce seçilir (şube ayrımı), kilit aynı anda okunur
+  assert.match(page, /Promise\.all\(\[checklistRunBranch\(typeof sube === "string" \? sube : null\), admin \? null : staffBranchLock\(\), listBranches\(\)\]\)/);
+  assert.match(page, /const first = await loadRunView\(tid, today, now, runBranch\);/);
   const guard = page.indexOf('if (!admin && !branchLockAllows(view.template.branchId, lock)) redirect("/panel/kontrol");');
   assert.ok(guard > 0, "şube kilidi denetimi");
   // Hiçbir şey çizilmeden ve dünün kaydına bakılmadan önce
@@ -60,9 +62,9 @@ test("kaynak: doldurma ekranı kilitli personeli başka şubenin listesinden ger
 test("kaynak: yazım ve fotoğraf hedefi kilidi her çağrıda alır; veritabanı katmanı reddeder; fotoğraf kuralı kilide bakar", () => {
   const data = read("src/server/data/checklists.ts");
   const write = data.slice(data.indexOf("export async function writeChecklistAnswer("), data.indexOf("export async function checkPhotoTarget("));
-  assert.match(write, /const lock = await staffBranchLock\(\);\s*return store\.writeAnswer\(getDb\(\), \{ \.\.\.adminActor\(me\), lock \}/);
+  assert.match(write, /const lock = await staffBranchLock\(\);[\s\S]*return store\.writeAnswer\(getDb\(\), \{ \.\.\.adminActor\(me\), lock, runBranch: await runBranchPick\(branch\) \}/);
   const target = data.slice(data.indexOf("export async function checkPhotoTarget("), data.indexOf("export async function logAnswerActivity("));
-  assert.match(target, /const lock = await staffBranchLock\(\);\s*return store\.checkPhotoTarget\(getDb\(\), \{ \.\.\.adminActor\(me\), lock \}/);
+  assert.match(target, /const lock = await staffBranchLock\(\);[\s\S]*return store\.checkPhotoTarget\(getDb\(\), \{ \.\.\.adminActor\(me\), lock, runBranch: await runBranchPick\(branch\) \}/);
   assert.match(data, /const \[run, lock\] = await Promise\.all\(\[store\.photoRun\(getDb\(\), photo\.id\), staffBranchLock\(\)\]\);/);
   assert.match(data, /photoAccess\(\{ role: adminLevel\(me\.role\), userId: me\.id, createdBy: photo\.createdBy, run, lock, now: new Date\(\) \}\)/);
 
@@ -73,7 +75,8 @@ test("kaynak: yazım ve fotoğraf hedefi kilidi her çağrıda alır; veritaban�
   assert.ok(answer.includes(guard) && answer.indexOf(guard) < answer.indexOf("insert(s.checklistRuns)"));
   const photo = store.slice(store.indexOf("export async function checkPhotoTarget("), store.indexOf("export async function photoRun("));
   assert.ok(photo.includes('if (me.role !== "admin" && !branchLockAllows(t.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);'));
-  assert.match(store, /branchId: s\.checklistTemplates\.branchId,/);
+  // Fotoğrafın şubesi kaydın şubesi (bütün şubelerin listesinde fotoğrafın çekildiği şube; şube ayrımı)
+  assert.match(store, /staffSince: s\.checklistTemplates\.staffSince,\s*branchId: s\.checklistRuns\.branchId,/);
 
   // Her iki giriş yolu da bu sarmalayıcılardan geçer (eylem ve fotoğraf yolu)
   assert.match(read("src/server/actions/checklists.ts"), /r = await writeChecklistAnswer\(me, op, now\);/);

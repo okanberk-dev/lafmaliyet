@@ -8,7 +8,7 @@ import { ALL_BRANCHES, branchPnlEntry, DEFAULT_BRANCH_ID, DEFAULT_POS_RATE, mont
 import { activeFromRange, createModel, currentMonthTR, type ModelOptions } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
-import { isReportRow, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
+import { isReportRow, pendingLateDays, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { countedRecords, redateLots } from "@/lib/closed-period";
@@ -20,7 +20,8 @@ import { countedTillIds, earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, typ
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
-import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { sharedCostsHidden } from "@/lib/branch-view";
+import { areaScope, branchWhere, branchWhereWithShared, currentBranchScope, currentBranchView, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { invoiceAccountDates, loadClosedPeriods } from "@/server/closed-period";
 import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { loadSplitLines } from "./invoice-split";
@@ -28,6 +29,7 @@ import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadPosTills, loadSwitchDays } from "@/server/pos/tills";
+import { requestBranches } from "@/server/staff-requests/branch";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
@@ -69,8 +71,11 @@ export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
 async function readDataset(): Promise<Dataset> {
   const db = getDb();
   // Satışlar'ın içe aktarmasının yazdığı şube (seçili şube, "Tümü"de Tuzla): kartın listesinin son günü (writeCoverage)
-  const [scope, branches, writeBranch, posTills] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch(), loadPosTills(db)]);
+  // İşletme geneli giderler alanının kipi (şube ayrımı parça 6): "Yalnız not" kipinde tek şube seçiliyken işletme geneli
+  // giderlerin tutarı yazılmaz (sharedCostsHidden; şubenin kârı değişmez, işletme geneli zaten ona girmez)
+  const [scope, branches, writeBranch, posTills, sharedMode] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch(), loadPosTills(db), currentBranchView("ortak_gider")]);
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
+  const sharedHidden = sharedCostsHidden(branch !== null, sharedMode);
   const [
     storedSettings,
     ingredients,
@@ -133,8 +138,11 @@ async function readDataset(): Promise<Dataset> {
       })
       .from(s.ingredientPrices)
       .orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
-    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts)
-    loadPurchaseLots(),
+    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts). Stok değeri
+    // alanının kipiyle (şube ayrımı parça 5): şube kipinde şubenin ve işletme genelinin faturaları, firma kipinde ve
+    // "Tümü"de bütün faturalar
+    // şube-ayrımı: alan.stok_degeri
+    areaScope("stok_degeri").then(loadPurchaseLots),
     // Çarpanı onay bekleyen alışlar: alınan miktara girmedi, Tutarlılık işaretler (aynı yüklem)
     loadHeldPurchases(),
     // Fiyatı onay bekleyen hammaddeler: fiyatsızsa "paket fiyatını girin" değil, onaya götürülür (Genel bakış, zil)
@@ -179,11 +187,16 @@ async function readDataset(): Promise<Dataset> {
       .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY])),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
     tillRows(),
-    // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor"
+    // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor".
+    // Şubesiyle (şube ayrımı): her şubenin ayı yalnız kendi bekleyen günlerini söyler (requestBranches, requestInScope kuralı)
     db
-      .selectDistinct({ day: s.staffRequests.day })
+      .select({ id: s.staffRequests.id, kind: s.staffRequests.kind, subject: s.staffRequests.subject, payload: s.staffRequests.payload, day: s.staffRequests.day })
       .from(s.staffRequests)
-      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
+      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending")))
+      .then(async (rows) => {
+        const branchOf = await requestBranches(db, rows);
+        return rows.map((r) => ({ day: r.day, branchId: branchOf.get(r.id) ?? null }));
+      }),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
     // Şubesiyle (boş = işletme geneli): şubenin ayında yalnız kendi kapalı günleri ve işletme geneli sayılır (KP-05)
     db
@@ -213,8 +226,9 @@ async function readDataset(): Promise<Dataset> {
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da
-  // başka şubenin kaleminin elle girilmiş hücresi de buna göre ayıklanır: branchPnlEntry)
-  const fixedInScope = fixedExpenses.filter((f) => branch === null || f.branchId === null || f.branchId === branch.id);
+  // başka şubenin kaleminin elle girilmiş hücresi de buna göre ayıklanır: branchPnlEntry). İşletme geneli giderler "Yalnız
+  // not" kipindeyken işletme geneli kalem şubenin görünümüne hiç gelmez (Sabit giderler listesi, dışa aktarım; parça 6)
+  const fixedInScope = fixedExpenses.filter((f) => branch === null || (f.branchId === null ? !sharedHidden : f.branchId === branch.id));
   const fixedIds = new Set(fixedInScope.map((f) => f.id));
   const allFixedIds = new Set(fixedExpenses.map((f) => f.id));
   const pnlInScope = branch === null ? pnlEntries : pnlEntries.filter((e) => branchPnlEntry(e.rowKey, fixedIds, allFixedIds));
@@ -280,15 +294,17 @@ async function readDataset(): Promise<Dataset> {
   // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu olan
   // ay da gelir. Kaynaklar (sources) ve kasanın değerleri (kasa) ekranlar için Month'ta taşınır. Eksik günler onay
   // bekleyen geç raporları ve kapalı işaretli günleri ayrı söyler
-  const lateDays = lateWaiting.flatMap((r) => (r.day ? [r.day] : []));
+  // Onay bekleyen geç raporun günü yalnız kendi şubesinin ayında (şube ayrımı); "Tümü"nün birleşik satırlarında hepsi
+  const lateDays = pendingLateDays(lateWaiting, branch?.id ?? null);
+  const lateDaysOf = (id: string) => pendingLateDays(lateWaiting, id);
   // Kapalı gün şubenin (docs/SUBE.md › Kapalı gün): şube görünümünde ve "Tümü"nün şube şube çözümünde yalnız o şubenin
   // ve işletme genelinin kapalı günleri (Tuzla'nın kapalı günü Marina'nın eksik gününü "kapalı" yapmaz); birleşik
   // satırlarda (bütün şubeler) herhangi bir şubenin işareti, raporlu gün hariç
   const scopeClosedRows = closedRows.filter((r) => closedRowApplies(r, branch?.id));
   const closedFor = (rows: typeof closedRows, reports: readonly TillRow[]) => closedDaysIn(rows, "2000-01-01", through, reports.filter(isReportRow).map((r) => r.date));
   const closedPast = closedFor(scopeClosedRows, reportRows);
-  const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast) =>
-    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, posFroms);
+  const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast, late: string[] = lateDays) =>
+    tillMonths(rows, through, undefined, late, closed, undefined, undefined, openedOn, posFroms);
   const entriesOf = (rows: typeof months): MonthEntry[] =>
     rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
   // "Tümü": her şube kendi elle yazılanı ve kasasıyla (açılış günüyle: tillOpenedOn) çözülür, sonra toplanır; bir şubenin
@@ -311,6 +327,8 @@ async function readDataset(): Promise<Dataset> {
           rowsOf([id]),
           tillOpenedOn(branches.find((b) => b.id === id)),
           closedFor(closedRows.filter((r) => closedRowApplies(r, id)), rowsOf([id])),
+          // Şubenin kendi bekleyen geç raporları (Tuzla'nın isteği Marina'nın eksik gününü "onay bekliyor" yapmaz)
+          lateDaysOf(id),
         ),
       })),
       monthsOf(rowsAll, openedOfFirst(rowsAll), closedAll),
@@ -326,6 +344,7 @@ async function readDataset(): Promise<Dataset> {
   const companyMonths =
     branch === null
       ? null
+      // şube-ayrımı: dataset.companyMonths
       : await withBranchScope(ALL_BRANCHES, async () => {
           const [allMonths, allTill] = await Promise.all([db.select().from(s.months).orderBy(asc(s.months.month)), tillRows()]);
           return allBranchMonths(allMonths, allTill, closedFor(closedRows, allTill));
@@ -337,6 +356,7 @@ async function readDataset(): Promise<Dataset> {
     posSwitchDays: allSwitchDays,
     currentMonth,
     branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
+    ...(sharedHidden ? { sharedCostsHidden: true } : {}),
     // Ay hücreleri yazılmaz: "Tümü"de birden çok kasanın toplamı, online kanalda kasa satışı yok (monthWriteLock)
     monthTotalsLocked: monthWriteLock(scope, branches) !== null,
     monthLockText: monthWriteLock(scope, branches),
@@ -630,6 +650,7 @@ async function companyWaterSales(
 ): Promise<NonNullable<Dataset["waterSales"]>> {
   const switchMonths = Object.values(input.switchDays).flatMap((d) => (d ? [d.slice(0, 7)] : []));
   const read = [...new Set([...input.months, ...switchMonths])];
+  // şube-ayrımı: dataset.companyWaterSales
   return withBranchScope(ALL_BRANCHES, async () => {
     const [lines, till, site] = await Promise.all([
       db.select().from(s.salesLines).where(inArray(s.salesLines.month, read)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),

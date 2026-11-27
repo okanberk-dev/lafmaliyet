@@ -1,16 +1,21 @@
-import { asc, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
+import { branchPurchaseNote } from "@/app/panel/tutarlilik/branch-note";
+import { modeOfScope } from "@/lib/branch-view";
 import { ALL_BRANCHES, BRANCH_PARAM, branchScopeLabel, parseBranchScope, type BranchScope } from "@/lib/branches";
+import { createModel } from "@/lib/calc/engine";
 import { getCurrentUser } from "@/server/auth/dal";
-import { withBranchScope } from "@/server/branch-scope";
+import { areaScope, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadCariExport } from "@/server/data/cari";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadInvestments } from "@/server/data/investments";
+import { loadBranchPurchases } from "@/server/data/purchase-lots";
 import { loadTaxView } from "@/server/data/tax";
 import { getDb, schema as s } from "@/server/db";
 
-import { buildWorkbook } from "./workbook";
+import { buildWorkbook, type ExportExtras } from "./workbook";
 
 /**
  * Dışa aktar: panelin bütün sayfaları tek .xlsx çalışma kitabında (yalnızca yönetici).
@@ -20,9 +25,12 @@ import { buildWorkbook } from "./workbook";
  * Vergi sekmesi Vergi sayfasının yılını yazar (tahmin; geliri mali belgeden gelmeyen çeyrek yazılmaz).
  * Sekme düzeni ve testleri: ./workbook.ts, tests/export-workbook.test.ts.
  *
- * Kapsam (docs/SUBE.md › Neyi süzer; şube kapsamı C P1-9): `?sube=` verilirse (Genel bakış'ın düğmesi ekranın seçimini
- * gönderir) satış, kasa, personel ve giderler o şubenin; firma geneli olanlar (Vergi, Cari hareketleri) yine "Tümü"yle.
- * Verilmezse (Ayarlar'daki tam yedek) seçiciden bağımsız, bütün şubeler. Dosyanın ilk sayfası kapsamı yazar.
+ * Kapsam (docs/SUBE.md › Şube ayrımı › parça 6): `?sube=` verilirse (Genel bakış'ın ve Ayarlar'ın düğmesi şube seçiliyken
+ * seçimi gönderir) satış, kasa, personel ve giderler o şubenin; öbür sekmeler kendi alanının kipiyle (kişinin Şube
+ * görünümü): Tutarlılık (Tutarlılık alanı), Cari hareketleri (Tedarikçi bakiyeleri), stok değeri (veri kümesi), işletme
+ * geneli giderlerin tutarı (İşletme geneli giderler). Vergi her dosyada firmanın: şubeye bölünmez (sahibin kararı 27 Kasım
+ * 2026). Bulgular ve Alım Miktarları firma geneli (şube sütunu yok). Verilmezse bütün şubeler. Dosyanın ilk sayfası
+ * kapsamı yazar.
  */
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -38,30 +46,48 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
     const db = getDb();
     const branches = await listBranches();
     const whole = scope === ALL_BRANCHES;
+    // Alanların kapsamı (şube ayrımı parça 6): dosyanın kapsamı içinde kişinin Şube görünümüyle; "Tümü" dosyasında hepsi "Tümü"
+    // şube-ayrımı: alan.tedarikciler
+    const cariScope = await areaScope("tedarikciler");
+    // şube-ayrımı: alan.tutarlilik
+    const consistencyScope = await areaScope("tutarlilik");
     const [model, investments, findings, cari] = await Promise.all([
       loadModel(),
-      db.select().from(s.investments).orderBy(asc(s.investments.id)),
+      // Yatırımlar dosyanın şubesinin ve işletme genelinin (şube ayrımı; toplam şubeninki, işletme geneli bilgi)
+      loadInvestments(scope),
+      // Bulgular firmanın (şube sütunu yok): her dosyada hepsi, şube dosyasında "Firma geneli" yazısıyla
       db.select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
-      // Tedarikçilere elle girilen borç ve ödemeler ("Cari hareketleri" sekmesi; kayıt yokken sekme yok). Firma geneli
-      withBranchScope(ALL_BRANCHES, () => loadCariExport()),
+      // Tedarikçilere elle girilen borç ve ödemeler ("Cari hareketleri" sekmesi; kayıt yokken sekme yok)
+      loadCariExport(cariScope),
     ]);
     const month = resolveMonth(request.nextUrl.searchParams.get("ay") ?? undefined, model);
     // "Vergi" sekmesi (dalga 12, docs/VERGI.md): Vergi sayfasının varsayılan yılı (30 Nisan'a kadar geçen yıl), takvimi
-    // nakit planıyla. Okunamazsa sekme yok, dosyanın geri kalanı iner
-    // Vergi firma geneli: şube dosyasında da bütün şubelerin modeliyle (Vergi sayfası gibi)
+    // nakit planıyla. Okunamazsa sekme yok, dosyanın geri kalanı iner. Vergi şubeye bölünmez: şube dosyasında da bütün
+    // şubelerin modeliyle, şubenin payı yok (Vergi sayfası gibi)
+    // şube-ayrımı: vergi.beyan
     const tax = await withBranchScope(ALL_BRANCHES, async () => loadTaxView(whole ? model : await loadModel({ scope: ALL_BRANCHES })))
       .then((d) => ({ view: d.view, settings: d.inputs.settings }))
       .catch((e) => {
         console.error("[export] Vergi sekmesi hazırlanamadı", e);
         return null;
       });
+    // Tutarlılık sekmesi alanının kipiyle: firma kipinde bütün şubeler, şube kipinde şubenin satışı ve sayımı, alınan
+    // yalnız şubeye seçilmiş faturalardan (Tutarlılık sayfası gibi)
+    const consistency = whole ? undefined : await consistencyOf(consistencyScope, model, month, branches);
+    // İşletme geneli giderler "Yalnız not" kipinde işletme geneli yatırım da dosyada yok (Sabit giderler sayfası gibi)
+    const sharedHidden = Boolean(model.ds.sharedCostsHidden);
     const wb = buildWorkbook(model, month, {
-      investments,
+      investments: sharedHidden ? investments.filter((i) => i.branchId !== null) : investments,
       findings,
       // Faturanın kalan borcu faturanın kendisinden (Paraşüt'ün kalanı ve panelde sayılan ödemeler; openBalance)
       cari,
       tax,
-      scope: { label: branchScopeLabel(scope, branches), branch: !whole },
+      consistency,
+      scope: {
+        label: branchScopeLabel(scope, branches),
+        branch: !whole,
+        areas: { tutarlilik: modeOfScope(consistencyScope), tedarikciler: modeOfScope(cariScope), sharedHidden },
+      },
       branchNames: new Map(branches.map((b) => [b.id, b.name])),
     });
     const buffer = await wb.xlsx.writeBuffer();
@@ -79,4 +105,20 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
     });
   }
+}
+
+/**
+ * Şube dosyasının Tutarlılık sekmesi (Tutarlılık alanı): firma kipinde bütün şubelerin modeli, şube kipinde şubenin
+ * modeli ve şubeye seçilmiş faturaların alımı (okunamazsa şubenin modeli, notuyla)
+ */
+async function consistencyOf(read: BranchScope, model: Awaited<ReturnType<typeof loadModel>>, month: string, branches: Awaited<ReturnType<typeof listBranches>>): Promise<ExportExtras["consistency"]> {
+  if (read === ALL_BRANCHES) return { model: await loadModel({ scope: read }), label: "Firma geneli", note: "Tutarlılık firma geneli: bütün şubelerin satışı, sayımı ve bütün faturaların alımı." };
+  const name = branchScopeLabel(read, branches);
+  const own = await loadBranchPurchases(read).catch(() => null);
+  if (!own) return { model, label: name, note: "Şubeye seçilmiş faturaların alımı okunamadı; alınan firmanın alım miktarlarından." };
+  return {
+    model: createModel({ ...model.ds, purchaseQuantities: own.quantities, heldPurchases: own.held }),
+    label: name,
+    note: `Alınan yalnız ${name} şubesine seçilmiş faturalardan; ${branchPurchaseNote(own.outside[month] ?? { invoices: 0, manual: 0 })}`,
+  };
 }

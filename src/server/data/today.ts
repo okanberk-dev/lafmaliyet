@@ -18,7 +18,7 @@ import {
 import { featureInScope, karaokeBranchOf } from "@/lib/branch-features";
 import { adminLevel, cashAudience } from "@/lib/roles";
 import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
-import { ALL_BRANCHES, requestInScope, tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, requestInScope, selectedChannel, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { branchDayKey, businessDate } from "@/lib/cash-report";
@@ -29,7 +29,7 @@ import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
 import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { blindForStaff, cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
@@ -59,7 +59,8 @@ import { loadModposSheets } from "@/server/modpos/store";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 import { readOrdersSnapshot, readOrdersState, type OrdersSnapshot, type OrdersSyncState } from "@/server/site-orders/sync";
-import { countPendingByKind } from "@/server/staff-requests/core";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
+import { pendingByKindInScope } from "@/server/staff-requests/branch";
 
 import { opsFacts } from "./today-ops";
 import { safe } from "./today-safe";
@@ -146,10 +147,11 @@ interface RoleFacts {
 
 /**
  * Kasa satırlarının kasası (docs/SUBE.md › Kasa raporu: rapor, devir ve bütünlük şubenin kendi kasasınındır):
- * - personel kendi kasasını görür (`till`: kilitli şube, seçili fiziksel şube; "Tümü"de ve online kanalda Tuzla), kasa
- *   sayfasının formu da ona yazar;
+ * - personel kendi kasasını görür (`till`: kilitli şube, seçili fiziksel şube; "Tümü"de Tuzla), kasa sayfasının
+ *   formu da ona yazar;
  * - yönetici "Tümü"de birden çok kasa açıkken her şubeyi ayrı (`tills`); değilse tek kasa (`till`): seçili fiziksel
- *   şube, online kanal seçiliyken ve tek kasa açıkken Tuzla (`currentTillBranch`). Zil (bell/kasa.ts bellTills) ve Kasa
+ *   şube, tek kasa açıkken o (`currentTillBranch`). Online kanal seçiliyken kasa hiç okunmaz (şube ayrımı, 27 Kasım
+ *   2026; loadToday › channel): kanalın kasası yok, önceden burada Tuzla'nınki görünüyordu. Zil (bell/kasa.ts bellTills) ve Kasa
  *   sayfası da aynı kasayı okur: online kanalın kasası olmaz, şubesiz okuma `branch_id = 'online'` arayıp hiç rapor
  *   bulamıyordu (dünün eksik raporu görünmüyor, bugünkü "Henüz girilmedi" kalıyordu; denetim 21 Kasım #26).
  */
@@ -169,8 +171,9 @@ async function cashView(admin: boolean): Promise<CashView> {
 /**
  * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez; maliyet modeli verilmez)
  */
-async function staffFacts(c: DayContext): Promise<RoleFacts> {
-  const [waste] = await Promise.all([safe(dayWaste(c.day))]);
+async function staffFacts(c: DayContext, channel = false): Promise<RoleFacts> {
+  // Online kanalın zayisi yok (kasası ve stoğu yok)
+  const [waste] = await Promise.all([channel ? null : safe(dayWaste(c.day))]);
   return {
     // AsilPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
     facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram, asilpos: waste.asilpos !== null } : null },
@@ -184,6 +187,9 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
  * görünümü ("Tümü"de birden çok kasa: zincir ve işaretler şube şube).
  */
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>, view: Promise<CashView | null>): Promise<RoleFacts> {
+  // Seçili kapsam (şube ayrımı, 27 Kasım 2026): faturaların, eşlenmemiş ürünlerin, onayların ve ödemelerin sayısı yalnız
+  // seçili şubenin (ve işletme genelinin); "Tümü"de hepsi
+  const scope = await currentBranchScope();
   // Yemek kartı seçili kapsamda kullanılıyor mu (şube özelliği; okunamazsa bugünkü gibi var sayılır)
   const commissionHere = Promise.all([currentBranchScope(), listBranches()])
     .then(([scope, branches]) => featureInScope("yemek_karti", scope, branches))
@@ -200,12 +206,19 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     isProductionRuntime()
       ? safe(Promise.all([loadJobsOverview(now), lastParasutSyncOkAt()]).then(([o, okAt]) => systemIssues(o, now, okAt)))
       : Promise.resolve([]),
-    // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
-    safe(loadUpcoming(undefined, { branch: await currentBranchScope() })),
+    // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri ve faturaları (docs/SUBE.md › Ödemeler); kişinin şube
+    // görünümü "Firma geneli" ise bütün şubelerin (şube ayrımı parça 4). Müdürde hep şubesi
+    // şube-ayrımı: alan.odemeler
+    safe(areaScope("odemeler").then((branch) => loadUpcoming(undefined, { branch }))),
+    // Kontrol bekleyen faturalar seçili şubenin ve işletme genelinin (Faturalar'ın süzgeciyle aynı: invoiceScopeWhere);
+    // şubesi seçilmemiş fatura tek şubede sayılmaz, "Tümü"de sayılır
     safe(
       Promise.all([
-        db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
-        countStockOnlyReview(db),
+        db
+          .select({ n: count() })
+          .from(s.invoices)
+          .where(and(eq(s.invoices.needsReview, true), invoiceScopeWhere(scope))),
+        countStockOnlyReview(db, scope),
         // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar; okunamazsa satır
         // yalnız faturaları söyler. Seçili şubenin kasasından çıkanlar (docs/SUBE.md › Ödemeler)
         Promise.all([loadCashOutInvoiceState(db), currentBranchScope()])
@@ -220,7 +233,8 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
             : null,
       })),
     ),
-    safe(countUnlinkedProducts()),
+    // Seçili şubenin ve işletme genelinin faturalarındaki eşlenmemiş ürünler (Paraşüt ekranının "Bekleyen" sayısıyla aynı)
+    safe(countUnlinkedProducts(scope)),
     safe(loadUnpricedIngredients()),
     // Onay bekleyenler: reçete değişiklikleri ve yeni ürünler (boyları tek öneri), ilk ürün adları; personel istekleri
     // türüne göre (docs/ONAYLAR.md) ve hepsinin en eskisi
@@ -228,14 +242,16 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       (async () => {
         const [recipe, requests] = await Promise.all([
           (async () => {
-            if (!(await countPendingRequests())) return { changes: 0, newProducts: 0, names: [] as string[], oldest: null };
-            const { pending } = await loadReviewQueue(0);
+            // Reçete önerileri önerenin şubesine göre (proposerScopeWhere)
+            if (!(await countPendingRequests(scope))) return { changes: 0, newProducts: 0, names: [] as string[], oldest: null };
+            const { pending } = await loadReviewQueue(0, scope);
             const changes = pending.filter((r) => r.kind === "change");
             const proposals = groupNewProposals(pending.filter((r) => r.kind === "new").map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message })));
             const names = [...new Set([...changes.map((r) => r.productName), ...proposals.map((p) => p.name)])];
             return { changes: changes.length, newProducts: proposals.length, names, oldest: pending[0]?.createdAt ?? null };
           })(),
-          countPendingByKind(db, now),
+          // Personel istekleri seçili şubenin (Onaylar'ın kartlarıyla aynı: requestInScope)
+          pendingByKindInScope(db, scope, now),
         ]);
         const oldest = [recipe.oldest, ...requests.map((r) => r.oldestAt)].filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0];
         return {
@@ -247,7 +263,8 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         };
       })(),
     ),
-    safe(pendingHoldSummary().then((h) => ({ count: h.count, items: h.items.map(({ name, pct }) => ({ name, pct })) }))),
+    // Fiyat önerisi seçimle (şube ayrımı parça 5): öbür şubenin faturasından gelen öneri bu şubede sayılmaz
+    safe(pendingHoldSummary(scope).then((h) => ({ count: h.count, items: h.items.map(({ name, pct }) => ({ name, pct })) }))),
     // Hammadde zammı: Genel bakış ve zil ile aynı metin (ayda TL etkisiyle); personelde model hiç kurulmaz
     safe(
       (async () => {
@@ -313,22 +330,25 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const ordersHere = featureInScope("siparis", karaokeScope, featureRows);
   // Kasa satırlarının kasası (CashView): personel kendi kasasını okur; yönetici "Tümü"de iki şubenin raporunu birlikte
   // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin); değilse tek kasanın (online kanalda Tuzla'nın)
-  const viewP = safe(cashView(admin));
+  // Online kanal seçiliyken (şube ayrımı, 27 Kasım 2026) kanalın kasası ve stoğu yok: kasa ve sayım okunmaz, satırların
+  // yerinde "Bu kanalın kasası ve stoğu yok" (bugun/logic.ts channelRow). Önceden kanal seçiliyken Tuzla'nın kasası okunuyordu
+  const channel = selectedChannel(karaokeScope, featureRows);
+  const viewP = channel ? Promise.resolve(null) : safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   // Kör kasa (bulgu 0): personelin AsilPOS günü raporu sayımsız (fark satırda yok)
-  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, cashAudience(user.role)))));
+  const cashP = channel ? Promise.resolve(null) : safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, cashAudience(user.role)))));
   // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
   // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)
   const tillHoursP = safe(viewP.then((v) => (v?.tills?.length ? resolveForTills(CALENDAR_GROUP) : null)));
   const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, asilposSwitch, switchRaw, noCounts] = await Promise.all([
     cashP,
-    safe(tillScoped(() => firstCashReportDate())),
+    channel ? null : safe(tillScoped(() => firstCashReportDate())),
     viewP,
     safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => withBranchScope(b.id, () => firstCashReportDate()))))),
     // Her şubenin dünkü kapalı gün durumu (kapalı gün şubenin): bir şubenin kapalı günü ötekinin satırını gizlemez
     safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => closedYesterday(user, now, b.id))))),
-    safe(stockProgress(c.month, c.prevMonth)),
+    channel ? null : safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
     karaokeHere ? safe(loadSessions(range.from, range.to, { admin })) : Promise.resolve(null),
     configured && ordersHere ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
@@ -338,7 +358,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     safe(closedYesterday(user, now)),
     // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
     opsFacts(user, now),
-    admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c),
+    admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c, channel !== null),
     // AsilPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
     // günü (çok şube): ModPOS'ta kalan şubede metinler ModPOS der
     safe(Promise.all([loadSwitchDays(), currentTillBranch()]).then(([d, b]) => switchDayFor(d, b))),
@@ -380,6 +400,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     now,
     eveningHour,
     asilposSwitch,
+    channel: channel?.name ?? null,
     cash: reports
       ? {
           today: tills ? (tills[0]?.today ?? null) : lite(c.day),

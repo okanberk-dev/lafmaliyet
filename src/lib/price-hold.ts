@@ -8,6 +8,7 @@
  * sessizce uygulanır. Onay bekleyen fiyat ingredient_prices'a yazılmaz: onaylanana kadar zam da sayılmaz.
  */
 
+import { ALL_BRANCHES, type BranchScope } from "./branches";
 import { priceProduct, type Model } from "./calc/engine";
 import { dateTR, num, tl2, tlUnit } from "./format";
 import { sameFactor, type PackEvidence } from "./product-match";
@@ -26,6 +27,21 @@ const EPS = 1e-9;
 /** Hammaddeler sayfasındaki "Onay bekleyen fiyatlar" kartının çapası; zil, Genel bakış ve e-posta buraya getirir */
 export const HOLDS_ANCHOR = "fiyat-onayi";
 export const HOLDS_HREF = `/panel/hammaddeler#${HOLDS_ANCHOR}`;
+
+/**
+ * Önerinin seçimdeki yeri (şube ayrımı parça 5): öneri bir faturadan gelir, faturanın şubesi önerinin şubesidir. "Tümü"de
+ * hepsi; şube seçiliyken o şubenin faturasından ve şubesi boş (işletme geneli ya da seçilmemiş) faturadan gelenler,
+ * faturası okunamayan da. Öbür şubenin faturasından gelen öneri sayı olarak ("öbür şubelerde N öneri"). Onay ve red
+ * hammaddenin ortak fiyatını değiştirir: eylem seçime bakmaz
+ */
+export function holdInScope(invoiceBranch: string | null | undefined, scope: BranchScope): boolean {
+  return scope === ALL_BRANCHES || invoiceBranch === null || invoiceBranch === undefined || invoiceBranch === scope;
+}
+
+/** "Öbür şubelerde 2 öneri daha: Tümü'de görünür." (yoksa null) */
+export function holdsElsewhereText(n: number): string | null {
+  return n > 0 ? `Öbür şubelerde ${num(n)} öneri daha: Tümü'de görünür.` : null;
+}
 
 export type PriceStep = "same" | "apply" | "hold";
 

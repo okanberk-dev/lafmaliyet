@@ -14,6 +14,7 @@ import { isStaleFailure } from "@/lib/site-menu/push";
 import { panelIsActive } from "@/lib/site-menu/slot";
 import { keepSeen } from "@/lib/site-menu/sold-out";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { loadModel, loadSettings } from "@/server/data/dataset";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
@@ -140,12 +141,14 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
     const me = await requireAdmin();
     const data = productSchema.parse(input);
     const copyFromId = z.number().int().positive().nullish().parse(input.copyFromId) ?? null;
+    // Denetim bütün şubelerin önerisine bakar (menü ortak); öbür şubenin önerisi önerenin adı olmadan (şube ayrımı)
+    const scope = await currentBranchScope();
     // Aynı ad + boy denetimi, kopyalama, kategoriden zayi oranı, sıra ve fiyat geçmişinin ilk satırı: personelin yeni
     // ürün önerisinin onayıyla ortak yardımcıda (src/server/data/product-create.ts). Aynı ad + boyda bekleyen öneri
     // varsa ürün açılmaz: öneri onayda "zaten var"a takılır, reçetesi ürüne ulaşmazdı (denetim B14)
     const result = await getDb().transaction(async (tx) => {
       await lockNewProducts(tx);
-      const pending = pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx), "önce Onaylar'da onaylayın ya da reddedin");
+      const pending = pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx, scope, "adsiz"), "önce Onaylar'da onaylayın ya da reddedin");
       if (pending) throw new UserError(pending);
       return insertProduct(tx, data, { copyFromId, changedBy: me.name, changedById: me.id });
     });

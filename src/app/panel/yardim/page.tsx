@@ -615,7 +615,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
           <>
-            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Döküm Nakit planındaki KDV tahmini kartında:
+            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Döküm Nakit planındaki KDV tahmini kartında (şube seçiliyken: Tümü ya da Firma geneli):
             önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV düşülür; sonuç ayın 28&apos;inde plana girer.
             Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin beyannamesindedir. Muhasebeciniz tutarı
             söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın, plan onu kullanır.
@@ -741,13 +741,19 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Şube seçimi: Tuzla, Marina, Tümü",
         a: (
           <>
-            Şube seçiliyken ekranlar, zil, Bugün ve Claude yalnız o şubenin verisini gösterir; Vergi, Nakit planı, Ödemeler ve cari firma geneli kalır,
-            ekran bunu söyler. Tümü seçiliyken şubeye ait bir kayıt (kasa raporu, sayım, zayi, ay bilgisi, satış listesi) yazacaksanız ekran önce şubeyi
-            sorar; sessizce Tuzla&apos;ya yazılmaz. Şubeye kilitli personel yalnız kendi şubesini görür ve yazar.
+            Şube seçiliyken ekranlar, zil, Bugün ve panel asistanı yalnız o şubenin kayıtlarını gösterir; işletme geneli kayıtlar (kira, muhasebe)
+            şubenin toplamına girmez. Online kanalın kasası ve stoğu yoktur. Tümü seçiliyken şubeye ait kayıtta ekran önce şubeyi sorar; şubeye
+            kilitli personel yalnız kendi şubesini görür. Ödemeler, Nakit planı, Tutarlılık, Raporlar gibi ekranlarda üstteki düğme ya da{" "}
+            <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong> yalnız şubeyi ya da firmanın tamamını seçer; işletme geneli
+            giderler varsayılan olarak yalnız notla yazılır. Dışa aktar ve muhasebeci paketi seçili şubenin dosyasını indirir. Vergi ve SGK şubeye
+            bölünmez, hep firmanındır; banka ekstresi ve tam yedek de. Siparişler ve Tükendi &quot;Bütün şubeler&quot; yazar.
           </>
         ),
         icon: Globe,
-        links: [{ href: "/panel/subeler", label: "Şubeler" }],
+        links: [
+          { href: "/panel/subeler", label: "Şubeler" },
+          { href: "/panel/hesap#sube-gorunumu", label: "Hesabım (Şube görünümü)" },
+        ],
       },
       {
         id: "sube-ayarlari",

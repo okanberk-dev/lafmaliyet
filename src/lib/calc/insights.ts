@@ -257,6 +257,8 @@ export interface FixedMonthBreakdown {
    * 0 (işletme geneli kalemler satırlarda ve toplamda)
    */
   shared: number;
+  /** İşletme geneli giderler "Yalnız not" kipinde (şube ayrımı parça 6): tutar yerine yalnız not (`shared` 0) */
+  sharedHidden: boolean;
 }
 
 /**
@@ -434,6 +436,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     overrideRows,
     flow,
     shared: branchView ? pm.shared.total : 0,
+    sharedHidden: Boolean(branchView && pm.shared.hidden),
   };
 }
 
@@ -591,9 +594,11 @@ export interface BreakEven {
   toCover: number;
   /**
    * Şube seçiliyken başabaşa girmeyen işletme geneli standart sabit gider (bilgi; model.fixedStandardSharedFor). Şubenin
-   * kârı gibi başabaşı da işletme genelini saymaz (sahibin kararı 4); "Tümü"de 0
+   * kârı gibi başabaşı da işletme genelini saymaz (sahibin kararı 4); "Tümü"de ve "Yalnız not" kipinde 0
    */
   shared: number;
+  /** İşletme geneli giderler "Yalnız not" kipinde (şube ayrımı parça 6): tutar yerine yalnız not */
+  sharedHidden: boolean;
   /** Başabaş aylık ciro (KDV dahil); brüt kâr oranı sıfır ya da eksiyse null */
   monthly: number | null;
   /** Başabaş günlük ciro (KDV dahil): aylık ÷ Ayarlar'daki ayda açık gün */
@@ -628,6 +633,7 @@ export function breakEvenOf(model: Model, month: string): BreakEven {
     onlineCover,
     toCover,
     shared: model.fixedStandardSharedFor(month),
+    sharedHidden: Boolean(model.ds.branchView && model.ds.sharedCostsHidden),
     monthly,
     daily: monthly === null ? null : monthly / acikGun,
     acikGun,

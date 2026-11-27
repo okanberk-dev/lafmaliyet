@@ -2,12 +2,13 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, gt, inArray, isNull, like, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, like, or } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
+import { digestItemBranch, scopeUpcoming, type InvoiceBranchRef } from "@/lib/upcoming-scope";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
 import { allDroppedSentence, digestGroups, digestItemInGroup, droppedListText, droppedLogSuffix, type DroppedRecipient } from "@/lib/notify-recipients";
 import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
@@ -15,17 +16,28 @@ import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
-import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
+import { stockOnlyIds } from "@/server/data/stock-only-invoices";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
-import { withBranchScope } from "@/server/branch-scope";
+import { branchWhereWithShared, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { latestParasutRun } from "@/server/jobs/runs";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
 import { loadDigestExtras } from "./digest-extras";
-import { invoiceNewsOf, renderDigest, type DigestBox, type DigestExtras, type DigestExtrasResult, type DigestInvoices, type DigestPrices } from "./digest-template";
+import {
+  digestHoldsPart,
+  groupInvoiceSection,
+  invoiceNewsOf,
+  renderDigest,
+  type DigestBox,
+  type DigestExtras,
+  type DigestExtrasResult,
+  type DigestInvoiceRefs,
+  type DigestInvoices,
+  type DigestPrices,
+} from "./digest-template";
 import { activeDigestEmails, activeDigestRecipients, sendableRecipients } from "./recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, sendFailureText } from "./resend";
 import { loadNotifySettings } from "./settings";
@@ -42,9 +54,11 @@ export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
  */
 /**
  * Yaklaşan ödemeler: hatırlatıcılar, ödenmemiş faturalar ve faturasız borçlar. `opts.branch` tek şube verilirse
- * hatırlatıcılar o şubenin ve işletme genelinin olanlarıyla gelir (docs/SUBE.md › Ödemeler); faturalar ve cari
- * işletme genelidir, süzülmez. Verilmezse (sabah e-postası, nakit planı, vergi, haftalık özet) bütün ödemeler — para
- * işletmenindir. "Tümü"nde şubeye ait hatırlatıcının başlığına şubesi eklenir ("Kira · Marina").
+ * (Ödemeler ve faturalar alanının şube kipi, `areaScope("odemeler")`; docs/SUBE.md › Şube ayrımı) hatırlatıcılar o
+ * şubenin ve işletme genelinin, faturalar şubenin ve işletme genelinin (şubesi seçilmemişler `unassigned` sayısında),
+ * faturasız borçlar (cari) firmanın "İşletme geneli" bölümünde (`shared`; src/lib/upcoming-scope.ts). Mahsup firmanın
+ * hesabıyla yapılır: liste bütün faturalarla kurulur, sonra süzülür. Verilmezse (sabah e-postası, vergi, haftalık özet)
+ * bütün ödemeler. "Tümü"nde şubeye ait hatırlatıcının başlığına şubesi eklenir ("Kira · Marina").
  */
 export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchScope } = {}) {
   const db = getDb();
@@ -63,6 +77,8 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
         allocated: s.invoices.allocated,
         ledgerBase: s.invoices.ledgerBase,
         supplierTaxNumber: s.invoices.supplierTaxNumber,
+        branchId: s.invoices.branchId,
+        companyWide: s.invoices.companyWide,
       })
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true)),
@@ -77,7 +93,7 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
     rowsP,
     loadCariIndex(today, { unpaid: rowsP.then((r) => r.map((i) => ({ date: i.date, supplier: i.supplier, tax: i.supplierTaxNumber }))) }),
   ]);
-  const invoices = rows.map(({ supplierTaxNumber, ...i }) => ({
+  const invoices = rows.map(({ supplierTaxNumber, branchId: _b, companyWide: _c, ...i }) => ({
     ...i,
     termDays: i.dueDate ? null : index.termDays(i.supplier, supplierTaxNumber),
     cardId: index.resolveCard(i.supplier, supplierTaxNumber),
@@ -92,10 +108,24 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
   const branchNames = !single && reminders.some((r) => r.branchId) ? new Map((await listBranches(db)).map((b) => [b.id, b.name])) : null;
   const labelled = branchNames ? reminders.map((r) => (r.branchId ? { ...r, title: `${r.title} · ${branchNames.get(r.branchId) ?? r.branchId}` } : r)) : reminders;
   const up = upcomingWithCari({ reminders: labelled, invoices, debts, credit: index.credit, hints, hrefOf: index.hrefOf }, today, opts);
-  const items = up.items;
+  // Faturanın şubesi: alanın şube kipinde süzmek ve sabah e-postasında kalemi şubesinin alıcısına göndermek için
+  const invoiceBranches = new Map<number, InvoiceBranchRef>(rows.map((r) => [r.id, { branchId: r.branchId, companyWide: r.companyWide }]));
+  const scoped = scopeUpcoming({ items: up.items, later: up.later, covered: up.covered }, single ?? ALL_BRANCHES, (id) => invoiceBranches.get(id));
+  const items = scoped.items;
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
-  const laterInvoices: UpcomingItem[] = up.later;
-  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index, single) };
+  const laterInvoices: UpcomingItem[] = scoped.later;
+  return {
+    today,
+    settings,
+    reminders,
+    items,
+    laterInvoices,
+    covered: scoped.covered,
+    shared: scoped.shared,
+    unassigned: scoped.unassigned,
+    invoiceBranches,
+    cari: cariSummary(index, single),
+  };
 }
 
 /**
@@ -139,13 +169,23 @@ const INVOICE_LOG_PREFIX = "invoices:";
 /** İlk kez (hiç gönderim yokken) geriye bakılan süre */
 const FIRST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
+/** Sabah e-postasının fatura bölümü ve onu şube grubuna süzmenin bilgisi */
+export interface DigestInvoiceLoad {
+  invoices: DigestInvoices;
+  failedRunKey: string | null;
+  sinceKey: string;
+  cashOutState: CashOutState;
+  refs: DigestInvoiceRefs;
+}
+
 /**
  * Sabah e-postasının Paraşüt bölümü: son Paraşüt bölümlü e-postadan bu yana eşitlemenin açtığı faturalar,
  * kontrol bekleyenlerin sayısı, (henüz bildirilmediyse) başarısız son eşitleme ve onay bekleyen hammadde fiyatları
  * (`fresh`: aynı andan bu yana onaya düşenler). `sinceKey` son Paraşüt bölümlü gönderimin anıdır (hiç yoksa ""):
- * aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir.
+ * aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir. Okuma bütün şubelerin (firmaya giden e-posta);
+ * şubeye bağlı alıcı grubunun bölümü `refs` ile süzülür (`groupDigestInvoices`).
  */
-export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; failedRunKey: string | null; sinceKey: string; cashOutState: CashOutState }> {
+export async function loadDigestInvoices(): Promise<DigestInvoiceLoad> {
   const db = getDb();
   const [lastSent] = await db
     .select({ at: s.notificationLog.sentAt })
@@ -154,7 +194,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
     .orderBy(desc(s.notificationLog.sentAt))
     .limit(1);
   const since = lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS);
-  const [rows, [{ n }], [lastRun], holds, stockOnly, cashOuts] = await Promise.all([
+  const [rows, review, [lastRun], holds, cashOuts] = await Promise.all([
     db
       .select({
         supplier: s.invoices.supplier,
@@ -164,21 +204,19 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
         needsReview: s.invoices.needsReview,
         unpaid: s.invoices.unpaid,
         dueDate: s.invoices.dueDate,
+        branchId: s.invoices.branchId,
+        companyWide: s.invoices.companyWide,
       })
       .from(s.invoices)
       .where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, since)))
       .orderBy(desc(s.invoices.date), desc(s.invoices.id)),
-    db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
+    // Kontrol bekleyenler: şubesiyle (şubeye bağlı alıcı grubu yalnız kendi faturalarını sayar)
+    db.select({ id: s.invoices.id, branchId: s.invoices.branchId, companyWide: s.invoices.companyWide }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
     latestParasutRun(db).then((r) => (r ? [r] : [])),
     pendingHoldSummary().catch((e) => {
       console.error("Sabah e-postası fiyat onayları", e);
       return null;
-    }),
-    // Kontrol bekleyenlerin kategorisi tahmin olmayanı: kalemi hammaddeye bağlı, mal alışı sayılmıyor (E-07)
-    countStockOnlyReview(db).catch((e) => {
-      console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
-      return 0;
     }),
     // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar
     loadCashOutInvoiceState(db).catch((e) => {
@@ -186,10 +224,19 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       return { pending: [], duplicates: [] };
     }),
   ]);
+  // Kontrol bekleyenlerin kategorisi tahmin olmayanı: kalemi hammaddeye bağlı, mal alışı sayılmıyor (E-07)
+  const stockOnly = new Set(
+    await stockOnlyIds(
+      db,
+      review.map((r) => r.id),
+    ).catch((e) => {
+      console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
+      return [] as number[];
+    }),
+  );
   const sinceIso = since.toISOString();
-  const priceHolds = holds?.count
-    ? { count: holds.count, fresh: holds.items.filter((i) => i.createdAt > sinceIso).length, items: holds.items.map(({ name, pct }) => ({ name, pct })) }
-    : null;
+  const holdRefs = (holds?.items ?? []).map((i) => ({ name: i.name, pct: i.pct, branch: i.branch, fresh: i.createdAt > sinceIso }));
+  const priceHolds = digestHoldsPart(holdRefs);
   let syncError: string | null = null;
   let failedRunKey: string | null = null;
   if (lastRun?.status === "error" && Date.now() - lastRun.startedAt.getTime() < 36 * 60 * 60 * 1000) {
@@ -202,17 +249,40 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   }
   // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
   // (sabah işi + elle) aynı anahtarı paylaşmazdı
+  const reviewRefs = review.map((r) => ({ branchId: r.branchId, companyWide: r.companyWide, stockOnly: stockOnly.has(r.id) }));
   return {
-    invoices: { items: rows, reviewCount: n, stockOnlyCount: Math.min(stockOnly, n), cashOuts: cashOutPartOf(cashOuts), syncError, priceHolds },
+    invoices: {
+      items: rows.map((r) => ({ supplier: r.supplier, date: r.date, payable: r.payable, category: r.category, needsReview: r.needsReview, unpaid: r.unpaid, dueDate: r.dueDate })),
+      reviewCount: reviewRefs.length,
+      stockOnlyCount: reviewRefs.filter((r) => r.stockOnly).length,
+      cashOuts: cashOutPartOf(cashOuts),
+      syncError,
+      priceHolds,
+    },
     failedRunKey,
     sinceKey: lastSent?.at?.toISOString() ?? "",
     cashOutState: cashOuts,
+    refs: { items: rows.map((r) => ({ branchId: r.branchId, companyWide: r.companyWide })), review: reviewRefs, holds: holdRefs },
   };
 }
 
 type CashOutState = Awaited<ReturnType<typeof loadCashOutInvoiceState>>;
 
-/** Fatura bölümünün "kasadan faturalı alımlar" satırı (yoksa null) */
+/**
+ * Şubeye bağlı alıcı grubunun fatura bölümü (şube ayrımı; sahibin isteği 27 Kasım 2026): yeni faturalar, kontrol
+ * bekleyenler ve onay bekleyen fiyatlar grubun şubelerinin (`groupInvoiceSection`, saf kural digest-template.ts'te),
+ * kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle yapıldı; yalnız gösterim süzülür). Bütün
+ * şubelerin grubunda (boş) olduğu gibi. Sabah e-postası ve önizlemesi
+ */
+export function groupDigestInvoices(load: Pick<DigestInvoiceLoad, "invoices" | "cashOutState" | "refs">, branchIds: readonly string[]): DigestInvoices {
+  const { invoices, cashOutState, refs } = load;
+  if (!branchIds.length) return invoices;
+  return {
+    ...groupInvoiceSection(invoices, refs, branchIds),
+    cashOuts: cashOutPartOf({ pending: cashOutState.pending.filter((r) => branchIds.includes(r.branchId)), duplicates: cashOutState.duplicates.filter((r) => branchIds.includes(r.branchId)) }),
+  };
+}
+
 function cashOutPartOf({ pending, duplicates }: CashOutState): DigestInvoices["cashOuts"] {
   return pending.length || duplicates.length
     ? { count: pending.length, summary: pendingCashOutSummary(pending), ...(duplicates.length ? { duplicates: duplicates.length } : {}) }
@@ -286,12 +356,14 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
  * işletme geneli rakamı göndermesini engelliyordu (denetim 21 Kasım #18).
  */
 export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number } = {}): Promise<DigestResult> {
+  // şube-ayrımı: eposta.firma
   return withBranchScope(ALL_BRANCHES, () => sendReminderDigest(trigger, ctx));
 }
 
 async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number }): Promise<DigestResult> {
   const db = getDb();
-  const { today, settings, items, reminders } = await loadUpcoming();
+  // şube-ayrımı: eposta.firma
+  const { today, settings, items, reminders, invoiceBranches } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };
   if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: "nokey" };
 
@@ -301,7 +373,8 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   const sent = due.length ? await db.select({ key: s.notificationLog.key }).from(s.notificationLog).where(inArray(s.notificationLog.key, due.map((d) => d.key))) : [];
   const sentKeys = new Set(sent.map((r) => r.key));
   const fresh = due.filter((d) => !sentKeys.has(d.key));
-  const { invoices, failedRunKey, sinceKey, cashOutState } = await loadDigestInvoices();
+  const invoiceLoad = await loadDigestInvoices();
+  const { invoices, failedRunKey, sinceKey } = invoiceLoad;
   const prices = await loadDigestPrices().catch((e) => {
     console.error("Sabah e-postası zam bölümü", e);
     return null;
@@ -326,21 +399,21 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   const [recipientRows, branchRows] = await Promise.all([activeDigestRecipients(db), listBranches(db)]);
   const tills = tillBranches(branchRows);
   const reminderBranch = new Map(reminders.map((r) => [r.id, r.branchId ?? null]));
-  const itemBranch = (item: UpcomingItem) => (item.source === "reminder" ? (reminderBranch.get(item.sourceId) ?? null) : null);
+  // Kalemin şubesi: hatırlatıcının ve şubeye seçilmiş faturanın (şube ayrımı parça 4); işletme geneli, şubesi seçilmemiş
+  // fatura ve faturasız borç her gruba gider
+  const itemBranch = (item: UpcomingItem) => digestItemBranch(item, (id) => reminderBranch.get(id) ?? null, (id) => invoiceBranches.get(id));
   const groups = await Promise.all(
     digestGroups(recipientRows, tills).map(async (g) => {
       const branch = g.branchIds.length ? g.branchIds.map((id) => tills.find((b) => b.id === id)?.name ?? id).join(", ") : null;
       const groupExtras = g.branchIds.length ? await branchGroupExtras(today, g.branchIds) : extras;
       const groupFresh = g.branchIds.length ? fresh.filter((f) => digestItemInGroup(itemBranch(f.item), g.branchIds)) : fresh;
-      // Kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle yapıldı; yalnız gösterim süzülür)
-      const groupInvoices = g.branchIds.length
-        ? {
-            ...invoices,
-            cashOuts: cashOutPartOf({ pending: cashOutState.pending.filter((r) => g.branchIds.includes(r.branchId)), duplicates: cashOutState.duplicates.filter((r) => g.branchIds.includes(r.branchId)) }),
-          }
-        : invoices;
-      const news = groupFresh.length > 0 || invoiceNews || !!prices || system.length > 0 || groupExtras.news;
-      return { ...g, branch, extras: groupExtras, fresh: groupFresh, invoices: groupInvoices, news };
+      // Fatura bölümü grubun şubelerinin ve işletme genelinin; kasadan faturalı alımlar kasanın şubesinin (eşleştirme
+      // bütün şubelerle yapıldı; yalnız gösterim süzülür). Grubun fatura haberi kendi bölümünden: öbür şubenin yeni
+      // faturası bu grubun e-postasını göndermez
+      const groupInvoices = groupDigestInvoices(invoiceLoad, g.branchIds);
+      const groupInvoiceNews = g.branchIds.length ? invoiceNewsOf(groupInvoices) : invoiceNews;
+      const news = groupFresh.length > 0 || groupInvoiceNews || !!prices || system.length > 0 || groupExtras.news;
+      return { ...g, branch, extras: groupExtras, fresh: groupFresh, invoices: groupInvoices, invoiceNews: groupInvoiceNews, news };
     }),
   );
   // Adres yokken de "gönderilecek bir şey var mı" bütün şubelerin içeriğiyle (bugünkü sıra: önce içerik, sonra adres)
@@ -374,7 +447,7 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
     const { subject, html, text } = renderDigest(
       g.fresh,
       today,
-      invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
+      g.invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
       prices,
       system.length ? { items: system } : null,
       g.extras.extras,
@@ -395,7 +468,7 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
     ].join("|");
     const keys: [string, string][] = [
       ...g.fresh.map((f): [string, string] => [f.key, f.key]),
-      ...(invoiceNews ? [["inv", `${INVOICE_LOG_PREFIX}${today}:${Date.now()}`] as [string, string]] : []),
+      ...(g.invoiceNews ? [["inv", `${INVOICE_LOG_PREFIX}${today}:${Date.now()}`] as [string, string]] : []),
       ...(failedRunKey ? [[failedRunKey, failedRunKey] as [string, string]] : []),
       ...(prices ? [["zam", `${PRICE_LOG_PREFIX}${today}:${Date.now()}`] as [string, string]] : []),
       ...system.map((p): [string, string] => [p.key, p.key]),
@@ -418,7 +491,8 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
       if (res.uncertain) console.error("Sabah e-postası gönderimi belirsiz:", res.error);
       await db
         .insert(s.notificationLog)
-        .values({ key: `error:${today}:${Date.now()}${g.branchIds.length ? `:${g.branchIds.join(",")}` : ""}`, subject, recipients: to.join(", "), ok: false, error: failed })
+        // Tek şubeye bağlı grubun düşen e-postası o şubenin kaydı (Son gönderimler şube seçiliyken; şube ayrımı)
+        .values({ key: `error:${today}:${Date.now()}${g.branchIds.length ? `:${g.branchIds.join(",")}` : ""}`, subject, recipients: to.join(", "), ok: false, error: failed, branchId: g.branchIds.length === 1 ? g.branchIds[0] : null })
         .onConflictDoNothing();
       continue;
     }
@@ -454,9 +528,12 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   };
 }
 
-/** Son gönderimler (ekrandaki günlük) */
-export async function recentNotifications(limit = 12) {
-  return getDb().select().from(s.notificationLog).orderBy(desc(s.notificationLog.sentAt)).limit(limit);
+/**
+ * Son gönderimler (ekrandaki günlük). `scope`: tek şube seçiliyken o şubenin (gün sonu, AsilPOS, vardiya, şubeye bağlı
+ * alıcının e-postası) ve şubesiz (işletme geneli e-postalar, 0101'den önceki) kayıtlar (şube ayrımı)
+ */
+export async function recentNotifications(limit = 12, scope: BranchScope = ALL_BRANCHES) {
+  return getDb().select().from(s.notificationLog).where(branchWhereWithShared(s.notificationLog.branchId, scope)).orderBy(desc(s.notificationLog.sentAt)).limit(limit);
 }
 
 /** Deneme e-postası: kayıtlı gönderenle, etkin adreslere (personel ya da pasif hesabın adresi düşer; `skipped` onlar) */

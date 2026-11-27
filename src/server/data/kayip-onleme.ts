@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
 
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
@@ -11,6 +11,7 @@ import { switchDayFor } from "@/lib/pos/tills";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { monthDays } from "@/lib/sube-karsilastirma";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope, currentBranchWhere } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -29,8 +30,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 const nameKey = (name: string) => `x:${name.trim().toLocaleLowerCase("tr-TR")}`;
 
 /**
- * Kişi bazında kayıp önleme özeti (docs/RAPORLAR.md › Kayıp önleme; hesap src/lib/kayip-onleme.ts). Yalnız yönetici;
- * soldaki seçiciden bağımsız, açık fiziksel şubeler. Kişi bilgisi panelde olanlardan: kasa raporunun sayanı, kör sayımı
+ * Kişi bazında kayıp önleme özeti (docs/RAPORLAR.md › Kayıp önleme; hesap src/lib/kayip-onleme.ts). Yalnız yönetici.
+ * "Tümü"de açık fiziksel şubeler; tek şube seçiliyken yalnız o şube (şube ayrımı, 27 Kasım 2026: her okuma seçimle
+ * süzülür, önceden rapor seçiciden bağımsızdı ve Marina seçiliyken Tuzla'nın kişileri de görünüyordu). Online kanal
+ * seçiliyken kasası olmadığı için null. Kişi bilgisi panelde olanlardan: kasa raporunun sayanı, kör sayımı
  * kilitleyen ve değiştiren (cash_counts), zayi / ikram kaydını giren, o gün çalışanlar (AsilPOS'un listesi, yoksa Vardiya).
  * Yalnız okur; AsilPOS'un göndermediği alan (iptal eden, ikram eden, indirim yapan, AsilPOS'ta kasayı sayan) uydurulmaz:
  * ekran bunu yazar.
@@ -46,10 +49,14 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
   const monthEnd = addDays(`${shiftMonth(last, 1)}-01`, -1);
   const to = monthEnd < today ? monthEnd : today;
 
-  const all = await listBranches(db);
-  const branches = tillBranches(all);
+  const [all, scope] = await Promise.all([listBranches(db), currentBranchScope()]);
+  const branches = tillBranches(all).filter((b) => scope === ALL_BRANCHES || b.id === scope);
   if (!branches.length) return null;
 
+  const posP = db
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, ikram: s.posDayReports.ikram, iptal: s.posDayReports.iptal, workedStaff: s.posDayReports.workedStaff })
+    .from(s.posDayReports)
+    .where(and(gte(s.posDayReports.date, from), lte(s.posDayReports.date, to), await currentBranchWhere(s.posDayReports.branchId)));
   const [cash, counts, waste, posDays, shifts, staff, users, switchDay, model] = await Promise.all([
     db
       .select({
@@ -64,7 +71,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
         submittedByName: s.cashReports.submittedByName,
       })
       .from(s.cashReports)
-      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to))),
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), await currentBranchWhere(s.cashReports.branchId))),
     // Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım): günün ilk satırı kilit, sonrakiler değişiklik
     db
       .select({
@@ -77,7 +84,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
         createdAt: s.cashCounts.createdAt,
       })
       .from(s.cashCounts)
-      .where(and(gte(s.cashCounts.date, from), lte(s.cashCounts.date, to))),
+      .where(and(gte(s.cashCounts.date, from), lte(s.cashCounts.date, to), await currentBranchWhere(s.cashCounts.branchId))),
     db
       .select({
         branchId: s.wasteEntries.branchId,
@@ -91,19 +98,24 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
         createdByName: s.wasteEntries.createdByName,
       })
       .from(s.wasteEntries)
-      .where(and(gte(s.wasteEntries.date, from), lte(s.wasteEntries.date, to))),
-    db
-      .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, ikram: s.posDayReports.ikram, iptal: s.posDayReports.iptal, workedStaff: s.posDayReports.workedStaff })
-      .from(s.posDayReports)
-      .where(and(gte(s.posDayReports.date, from), lte(s.posDayReports.date, to))),
+      .where(and(gte(s.wasteEntries.date, from), lte(s.wasteEntries.date, to), await currentBranchWhere(s.wasteEntries.branchId))),
+    posP,
     db
       .select({ branchId: s.shifts.branchId, date: s.shifts.date, personRef: s.shifts.personRef, personName: s.shifts.personName })
       .from(s.shifts)
-      .where(and(eq(s.shifts.kind, "work"), gte(s.shifts.date, from), lte(s.shifts.date, to))),
-    db.select({ id: s.staff.id, name: s.staff.name, userId: s.staff.userId, personRef: s.staff.personRef }).from(s.staff),
+      .where(and(eq(s.shifts.kind, "work"), gte(s.shifts.date, from), lte(s.shifts.date, to), await currentBranchWhere(s.shifts.branchId))),
+    // Personel: seçili şubenin kişileri ve AsilPOS'a göre o şubede çalışmış başka şubenin kişileri (adıyla görünsün)
+    posP.then(async (pos) => {
+      const worked = [...new Set(pos.flatMap((p) => (p.workedStaff ?? []).map((ref) => Number(ref.slice(2))).filter((id) => Number.isInteger(id) && id > 0)))];
+      return db
+        .select({ id: s.staff.id, name: s.staff.name, userId: s.staff.userId, personRef: s.staff.personRef })
+        .from(s.staff)
+        .where(scope === ALL_BRANCHES ? undefined : or(await currentBranchWhere(s.staff.branchId), worked.length ? inArray(s.staff.id, worked) : undefined));
+    }),
     db.select({ id: s.users.id, name: s.users.name }).from(s.users),
     loadSwitchDays(db),
-    loadModel({ scope: ALL_BRANCHES }),
+    // Zayi / ikramın maliyeti seçili görünümün modeliyle ("Tümü"de işletmenin)
+    loadModel(),
   ]);
 
   // Adlar: hesap adı önce, sonra personel ve Vardiya'daki ad

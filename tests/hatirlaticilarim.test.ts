@@ -358,7 +358,8 @@ test("ekran: sürekli ses ve kimin kurduğu listede rozetle görünür", () => {
   assert.match(src, /\{!initial && people\.length \?/);
   // Sayfa listeyi yalnız yöneticide yükler
   const page = readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilarim/page.tsx"), "utf8");
-  assert.match(page, /user\.role === "admin" \? assignablePeople\(user\.id\) : Promise\.resolve\(\[\]\)/);
+  // Kişiler seçili şubenin ve şubesi olmayanlar (şube ayrımı, 27 Kasım 2026)
+  assert.match(page, /user\.role === "admin" \? currentBranchScope\(\)\.then\(\(scope\) => assignablePeople\(user\.id, scope\)\) : Promise\.resolve\(\[\]\)/);
 });
 
 test("sabah bildirimi: gecikmiş 'bugün' sayılmaz; başlık ayırır, gövdede önce bugünküler", () => {

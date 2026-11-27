@@ -3,22 +3,23 @@ import "server-only";
 import type { z } from "zod";
 
 import { ALL_BRANCHES, branchScopeLabel, mcpBranchScope, type BranchScope, tillBranches } from "@/lib/branches";
+import { areaKapsam, modeOfScope } from "@/lib/branch-view";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { PRICE_ALERT_DAYS } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
 import { cashReportSummary } from "@/lib/mcp/answers/cash";
 import { checkRange, ToolInputError } from "@/lib/mcp/answers/common";
 import { monthSummary, yearSummary } from "@/lib/mcp/answers/month";
-import { upcomingPayments } from "@/lib/mcp/answers/payments";
+import { sharedPaymentsAnswer, upcomingPayments } from "@/lib/mcp/answers/payments";
 import { priceRiseImpact } from "@/lib/mcp/answers/prices";
 import { productProfitability } from "@/lib/mcp/answers/products";
 import { searchResults } from "@/lib/mcp/answers/search";
-import { supplierSummary } from "@/lib/mcp/answers/suppliers";
+import { sharedCariAnswer, supplierSummary } from "@/lib/mcp/answers/suppliers";
 import { araInput, ayOzetiInput, kasaRaporlariInput, odemelerInput, tedarikciOzetiInput, urunKarliligiInput, zamEtkisiInput } from "@/lib/mcp/schemas";
 import { addDays, daysBetween, todayTR } from "@/lib/reminders";
-import { currentBranchScope, staffBranchLock, withBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope, staffBranchLock, withAreaView, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { loadCashPlan } from "@/server/data/cash-plan";
+import { loadAreaCashPlan } from "@/server/data/cash-plan";
 import { cashReportsBetween, firstCashReportDate, previousCarryOver, previousCarryOverByBranch } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
@@ -69,19 +70,21 @@ async function kasaTills(from: string): Promise<{ id: string; name: string; firs
 
 /**
  * Aracın şube kapsamı (şube kapsamı C P2-13): `sube` verilirse o şube (adı ya da kimliği; "hepsi" bütün şubeler),
- * verilmezse panelin seçimi (Claude bağlantısında çerez yok: "Tümü"). Şubesine kilitli hesap başka şubeyi isteyemez.
- * Araç `fn`'i o kapsamda çalıştırır; çıktının başına `kapsam` ("Tümü", "Marina") yazılır
+ * verilmezse panelin seçimi (bağlantıda çerez yok: "Tümü"). Şubesine kilitli hesap başka şubeyi isteyemez.
+ * Araç `fn`'i o kapsamda çalıştırır; çıktının başına `kapsam` ("Tümü", "Marina") yazılır. `fn` kapsamı ve adını alır:
+ * alanı olan araç `kapsam`'ı alanın kipiyle kendisi yazar (şube ayrımı parça 4, `areaKapsam`)
  */
-async function scoped(raw: string | undefined, fn: () => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
+async function scoped(raw: string | undefined, fn: (scope: BranchScope, label: string) => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
   const [branches, lock, current] = await Promise.all([listBranches(), staffBranchLock(), currentBranchScope()]);
   const picked = raw === undefined ? { scope: current } : mcpBranchScope(raw, branches);
   if ("error" in picked) throw new ToolInputError(picked.error);
   const scope: BranchScope = picked.scope;
   if (lock !== null && scope !== lock) throw new ToolInputError(`Hesabınız ${branchScopeLabel(lock, branches)} şubesinde; başka şubenin verisi okunamaz`);
-  return { kapsam: branchScopeLabel(scope, branches), ...(await withBranchScope(scope, fn)) };
+  const label = branchScopeLabel(scope, branches);
+  return { kapsam: label, ...(await withBranchScope(scope, () => fn(scope, label))) };
 }
 
-/** Firma geneli araçların kapsamı (tedarikçiler, arama): şubeye bölünmez */
+/** Firma geneli araçların kapsamı (arama): şubeye bölünmez */
 const COMPANY_WIDE = "Firma geneli";
 
 export const TOOLS = [
@@ -143,12 +146,24 @@ export const TOOLS = [
       "Bir tedarikçinin (ya da bütün tedarikçilerin) dönemdeki faturaları, ödendi işaretli tutar, kalan borç, geciken ve vadesi yaklaşanlar; faturasız borçlar, hesapta sayılmamış ödeme, net bakiye ve son ödemeler. Ödemeler panelde elle girilir; banka bağlı değil. Örnek: 'Bu yıl Kaldi'ye ne ödedik?', 'En çok kime borcumuz var?'" +
       DESCRIPTION_TAIL,
     inputSchema: tedarikciOzetiInput,
-    run: async (args, ctx) => {
-      const ledger = await loadSupplierLedger();
-      const baslangic = args.baslangic ?? `${ledger.today.slice(0, 4)}-01-01`;
-      const bitis = args.bitis ?? ledger.today;
-      return { kapsam: COMPANY_WIDE, ...supplierSummary(ledger, { tedarikci: args.tedarikci, baslangic, bitis, limit: args.limit, siralama: args.siralama }, ctx) };
-    },
+    run: async ({ sube, gorunum, ...args }, ctx) =>
+      scoped(sube, async (scope, label) =>
+        // Tedarikçi bakiyeleri alanı (şube ayrımı parça 4): şube kipinde şubenin ve işletme genelinin faturaları, faturasız
+        // borç ve hesaptaki para `isletmeGeneli`nde; firma kipinde ve "Tümü"de bütün cari
+        withAreaView("tedarikciler", gorunum, async () => {
+          // şube-ayrımı: alan.tedarikciler
+          const area = await areaScope("tedarikciler");
+          const ledger = await loadSupplierLedger(area);
+          const baslangic = args.baslangic ?? `${ledger.today.slice(0, 4)}-01-01`;
+          const bitis = args.bitis ?? ledger.today;
+          const answer = supplierSummary(ledger, { tedarikci: args.tedarikci, baslangic, bitis, limit: args.limit, siralama: args.siralama }, ctx);
+          return {
+            kapsam: areaKapsam(label, scope, [{ area: "tedarikciler", mode: modeOfScope(area) }]),
+            ...answer,
+            ...(area === ALL_BRANCHES ? {} : { isletmeGeneli: sharedCariAnswer(ledger.groups, args.tedarikci) }),
+          };
+        }),
+      ),
   }),
   tool({
     name: "odemeler",
@@ -157,23 +172,34 @@ export const TOOLS = [
       "Ödemeler ekranındaki liste: geciken, bu hafta, bu ay ve 45 gün içindeki fatura, faturasız borç (cari) ve hatırlatıcı ödemeleri; istenirse 6 haftalık nakit planının haftalık özeti. Örnek: 'Bu hafta ne ödeyeceğiz?', 'Geciken ödeme var mı?'" +
       DESCRIPTION_TAIL,
     inputSchema: odemelerInput,
-    run: async ({ sube, ...args }, ctx) =>
-      scoped(sube, async () => {
-        // Şube seçiliyken o şubenin ve işletme genelinin hatırlatıcıları (Ödemeler gibi); faturalar ve cari firma geneli
-        const up = await loadUpcoming(undefined, { branch: await currentBranchScope() });
-        // Nakit planı firmanın: şube seçiliyken de bütün şubelerle (Nakit planı ekranı gibi)
-        const plan = args.nakitPlani
-          ? await withBranchScope(ALL_BRANCHES, async () => {
-              const model = await loadModel();
-              const view = await loadCashPlan(model, await loadUpcoming());
-              return { plan: view.plan, komisyon: model.settings.komisyon, acikGun: model.settings.acikGun };
-            }).catch((e: Error) => {
-              console.error("[mcp] nakit planı", e);
-              return null;
-            })
-          : null;
-        return { ...upcomingPayments({ today: up.today, items: up.items, invoiceTermDays: up.settings.invoiceTermDays }, args, plan, ctx) };
-      }),
+    run: async ({ sube, gorunum, ...args }, ctx) =>
+      scoped(sube, async (scope, label) =>
+        // Ödemeler ve faturalar alanı (şube ayrımı parça 4): şube kipinde şubenin ve işletme genelinin hatırlatıcıları ve
+        // faturaları, faturasız borçlar `isletmeGeneli`nde; firma kipinde bütün şubelerin. Nakit planı kendi alanıyla
+        withAreaView("odemeler", gorunum, async () => {
+          // şube-ayrımı: alan.odemeler
+          const payArea = await areaScope("odemeler");
+          const up = await loadUpcoming(undefined, { branch: payArea });
+          const plan = args.nakitPlani
+            ? await withAreaView("nakit", gorunum, async () => {
+                // şube-ayrımı: alan.nakit
+                const area = await areaScope("nakit");
+                const { model, view, flow } = await loadAreaCashPlan(area);
+                return { area, flow, plan: view.plan, komisyon: model.settings.komisyon, acikGun: model.settings.acikGun };
+              }).catch((e: Error) => {
+                console.error("[mcp] nakit planı", e);
+                return null;
+              })
+            : null;
+          const parts = [{ area: "odemeler" as const, mode: modeOfScope(payArea) }, ...(plan ? [{ area: "nakit" as const, mode: modeOfScope(plan.area) }] : [])];
+          const shared = payArea === ALL_BRANCHES ? null : sharedPaymentsAnswer(up.shared, up.unassigned, plan?.flow ?? null);
+          return {
+            kapsam: areaKapsam(label, scope, parts),
+            ...upcomingPayments({ today: up.today, items: up.items, invoiceTermDays: up.settings.invoiceTermDays }, args, plan, ctx),
+            ...(shared ? { isletmeGeneli: shared } : {}),
+          };
+        }),
+      ),
   }),
   tool({
     name: "kasa_raporlari",

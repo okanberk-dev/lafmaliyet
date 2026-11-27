@@ -153,3 +153,22 @@ export function upcomingPayments(
     panelAdresi: panelUrl(ctx.base, `/panel/hatirlaticilar?aralik=${input.aralik}`),
   };
 }
+
+/**
+ * Şube kipinin İşletme geneli bilgisi (odemeler; şube ayrımı parça 4): şubenin listesine girmeyen faturasız borçlar,
+ * şubesi seçilmemiş faturalar ve (nakit planı istendiyse) planın İşletme geneli satırlarının toplamı. Başlık ve tedarikçi
+ * adı gönderilmez
+ */
+export function sharedPaymentsAnswer(
+  shared: readonly Pick<UpcomingItem, "amount">[],
+  unassigned: { count: number; total: number },
+  flow: { sharedTotal: number } | null,
+): { faturasizBorc: { adet: number; toplam: number }; subesiSecilmemisFatura: { adet: number; toplam: number }; nakitPlaniIsletmeGeneli: number | null; aciklama: string } {
+  return {
+    faturasizBorc: { adet: shared.length, toplam: r2(shared.reduce((a, i) => a + (i.amount ?? 0), 0)) },
+    subesiSecilmemisFatura: { adet: unassigned.count, toplam: r2(unassigned.total) },
+    nakitPlaniIsletmeGeneli: flow ? r2(flow.sharedTotal) : null,
+    aciklama:
+      "Şube görünümünde liste yalnız bu şubenin ve işletme genelinin ödemeleri ve faturaları; faturasız borçlar firmanın, şubesi seçilmemiş faturalar hiçbir şubenin listesinde değil (Tümü'de var). Nakit planında işletme geneli ödemeler ayrı satırda, şubenin akışına girmez. Vergi ve SGK ödemeleri firma geneli: şubeye bölünmez, nakit planının şube görünümünde yok (Tümü'de görünür).",
+  };
+}

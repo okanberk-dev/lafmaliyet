@@ -62,6 +62,7 @@ const STALE_TEXT = "Panel güncellendi; sayfayı yenileyip yeniden deneyin.";
  */
 export function RunForm({
   templateId,
+  branch = null,
   day,
   title,
   items,
@@ -72,6 +73,8 @@ export function RunForm({
   me,
 }: {
   templateId: number;
+  /** Bütün şubelerin listesinde kaydın şubesi (her yanıtla gider; şube ayrımı). Şubeli listede null */
+  branch?: string | null;
   day: string;
   title: string;
   items: ChecklistItemSnap[];
@@ -126,7 +129,7 @@ export function RunForm({
         if (optimistic !== undefined) setShown({ itemId: item.id, answer: optimistic });
         let res: Awaited<ReturnType<typeof answerChecklistItem>>;
         try {
-          res = await answerChecklistItem({ templateId, date: day, itemId: item.id, ...op });
+          res = await answerChecklistItem({ templateId, date: day, itemId: item.id, branch, ...op });
         } catch (e) {
           unreachable(e);
           resolve(false);
@@ -197,7 +200,7 @@ export function RunForm({
               ) : item.type === "text" ? (
                 <TextItem item={item} answer={answer} submit={submit} draft={draft} />
               ) : (
-                <PhotoItem item={item} answer={answer} templateId={templateId} day={day} photos={photos} submit={submit} onUploaded={onUploaded} onRefused={refused} />
+                <PhotoItem item={item} answer={answer} templateId={templateId} branch={branch} day={day} photos={photos} submit={submit} onUploaded={onUploaded} onRefused={refused} />
               )}
             </ItemRow>
           );

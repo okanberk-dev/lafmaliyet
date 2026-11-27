@@ -2,6 +2,7 @@ import { Boxes, FileWarning, PackageSearch } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
@@ -58,7 +59,9 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
   await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
-  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; docs/SUBE.md › Şube ayrımı): demirbaşlar, amortisman ve
+  // demirbaş adayları şube seçiliyken de bütün şubelerin faturalarıyla (tek vergi numarası)
+  // şube-ayrımı: vergi.beyan
   const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     return { model, ...(await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null, cashPlan: null })) };
@@ -107,6 +110,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
       <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
+        {/* Şube seçiliyken: vergi firmanın, şubeye bölünmez (sahibin kararı 27 Kasım 2026) */}
+        <CompanyWideNotice screen="vergi" />
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
           <Stat compact label="Demirbaşlar (maliyet)" value={money(totals.cost)} sub={`${assets.length} demirbaş`} />
           <Stat

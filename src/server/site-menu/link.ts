@@ -10,6 +10,7 @@ import { changeText, rowLabel, type MenuSyncPlan, type SaleValues } from "@/lib/
 import { fromMinor, isSingleSize, slotLabel, slotPriceMinor, type SiteMenuSlot } from "@/lib/site-menu/slot";
 import { logActivity } from "@/server/actions/log";
 import { UserError } from "@/server/actions/util";
+import { currentBranchScope } from "@/server/branch-scope";
 import { insertProduct } from "@/server/data/product-create";
 import { lockNewProducts, pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { getDb, schema as s } from "@/server/db";
@@ -203,6 +204,8 @@ export async function createLinkedProducts(user: { name: string }, input: NewFro
     return { ...r, price: fromMinor(minor) };
   });
   const at = new Date();
+  // Bekleyen öneri denetimi bütün şubelerin önerisine bakar (menü ortak); öbür şubenin önerisi önerenin adı olmadan
+  const scope = await currentBranchScope();
   const result = await getDb().transaction(async (tx) => {
     await lockMenu(tx);
     // Yeni ürün önerisinin kilidi menü kilidinden sonra (öneri ve onay menü kilidini almaz): aynı ad + boyda bekleyen
@@ -213,7 +216,7 @@ export async function createLinkedProducts(user: { name: string }, input: NewFro
     const sizes = rows.map((r) => r.size);
     const taken =
       newFromSiteTaken(name, sizes, await tx.select({ name: s.products.name, size: s.products.size }).from(s.products)) ??
-      pendingProposalIssue(name, sizes, await pendingNewProposalRows(tx), NEW_FROM_SITE_PENDING_THEN);
+      pendingProposalIssue(name, sizes, await pendingNewProposalRows(tx, scope, "adsiz"), NEW_FROM_SITE_PENDING_THEN);
     if (taken) throw new UserError(taken);
     const created: { productId: number; size: "M" | "L" | "Tek"; slot: SiteMenuSlot }[] = [];
     for (const r of rows) {

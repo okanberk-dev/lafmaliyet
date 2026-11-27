@@ -10,7 +10,7 @@ import { logActivity } from "@/server/actions/log";
 import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
 import { adminActor } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
-import { formCountBranch, withBranchScope } from "@/server/branch-scope";
+import { areaScope, formCountBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { countItemSchema, createCountItem } from "@/server/data/count-item";
 import { lockExtras } from "@/server/data/stock-extras";
@@ -72,12 +72,16 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
     return withBranchScope(sube, async () => {
       const db = getDb();
       const buSube = and(eq(s.stockExtras.month, m), eq(s.stockExtras.branchId, sube));
+      // Yeni kalemin fiyatı: Stok değeri alanının şube kipinde önce sayılan şubenin geçmişinden (şube ayrımı parça 5),
+      // firma kipinde (alan "Tümü" döner) bütün şubelerin son fiyatı
+      // şube-ayrımı: alan.stok_degeri
+      const prefer = (await areaScope("stok_degeri")) === sube ? sube : null;
       const { saved, changed } = await db.transaction(async (tx) => {
         // Aynı anda tek kayıt; formun gördüğü liste değiştiyse yazılmaz (yöneticinin kaydıyla aynı kapı)
         const existing = await lockExtras(tx, m, sube, b);
-        // Fiyat geçmişi işletme geneli: fiyat şubeye göre değişmez, Marina'nın yeni satırı Tuzla'nın son fiyatını alır
+        // Fiyat geçmişi bütün şubelerden; şube kipinde şubenin kendi son fiyatı önce, yoksa öbür şubenin
         const history = await tx.select().from(s.stockExtras).where(lt(s.stockExtras.month, m));
-        const res = planStaffExtras(existing, data, history);
+        const res = planStaffExtras(existing, data, history, prefer);
         if (!res.ok) throw new UserError(res.error);
         const { updates, deletes, inserts } = res.plan;
         for (const u of updates) await tx.update(s.stockExtras).set({ qty: u.qty }).where(and(eq(s.stockExtras.id, u.id), buSube));

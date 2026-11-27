@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
@@ -76,13 +77,16 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
   // Şube seçiliyken toplam şubenin kendi kayıtlarıdır; şubesi boş kayıtlar ve bağlı faturalar işletme geneli, ayrı
   // gösterilir (şube kapsamı C P1-4; Gelir-gider'in harcama hücresiyle aynı kural, expenseSplit)
   const branchView = model.ds.branchView?.id ?? null;
+  // İşletme geneli giderler alanı "Yalnız not" kipinde (şube ayrımı parça 6): işletme geneli kayıtlar ve faturalar listede
+  // ve tutarda yok, yalnız not
+  const sharedHidden = Boolean(branchView && model.ds.sharedCostsHidden);
   const split = expenseSplit(allEntries.filter((e) => monthOfDate(e.date) === month), branchView);
   const prevSplit = expenseSplit(allEntries.filter((e) => monthOfDate(e.date) === prev), branchView);
   const prevAmounts = new Map(model.expenseAmounts(prev).map((x) => [x.cat.id, branchView ? (prevSplit.get(x.cat.id)?.own ?? 0) : x.total]));
   const usage = new Map<number, number>();
   for (const e of allEntries) usage.set(e.categoryId, (usage.get(e.categoryId) ?? 0) + 1);
 
-  const categories: CategoryRow[] = amounts.map(({ cat, entries, invoices, total }) => ({
+  const categories: CategoryRow[] = amounts.map(({ cat, entries, invoices, invoicesOwn, invoicesShared, total }) => ({
     id: cat.id,
     name: cat.name,
     section: cat.section,
@@ -93,10 +97,11 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
     expected: model.expenseExpected(cat, month),
     entryCount: usage.get(cat.id) ?? 0,
     monthEntries: branchView ? (split.get(cat.id)?.own ?? 0) : entries,
-    monthInvoices: invoices,
+    monthInvoices: sharedHidden ? invoicesOwn : invoices,
     monthTotal: branchView ? (split.get(cat.id)?.own ?? 0) : total,
     prevTotal: prevAmounts.get(cat.id) ?? 0,
-    sharedTotal: branchView ? (split.get(cat.id)?.shared ?? 0) + invoices : 0,
+    sharedTotal: branchView && !sharedHidden ? (split.get(cat.id)?.shared ?? 0) + invoices : 0,
+    ...(sharedHidden && (split.get(cat.id)?.shared ?? 0) + invoicesShared > 0 ? { sharedNote: true } : {}),
   }));
 
   // Kasadan çıkan fişten yazılan kayıtların fotoğrafı ve kasa günü (veri kümesi dosyalarına dokunmadan)
@@ -105,7 +110,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
   const cariCards = [...new Set([...extras.values()].flatMap((x) => (x.cariCardId !== null ? [x.cariCardId] : [])))];
   const cariHref = new Map(await Promise.all(cariCards.map(async (id) => [id, await supplierSlugOf(id)] as const)));
   const entries: EntryRow[] = allEntries
-    .filter((e) => monthOfDate(e.date) === month)
+    .filter((e) => monthOfDate(e.date) === month && !(sharedHidden && (e.branchId ?? null) === null))
     .map((e) => {
       const x = extras.get(e.id);
       return {
@@ -129,7 +134,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
 
   const mapped = new Map(categories.filter((c) => c.invoiceCategory).map((c) => [c.invoiceCategory!, c.id]));
   const invoices: InvoiceItem[] = model.ds.invoices
-    .filter((i) => monthOfDate(i.date) === month && mapped.has(i.category))
+    .filter((i) => monthOfDate(i.date) === month && mapped.has(i.category) && !(sharedHidden && i.branchId !== branchView))
     .map((i) => ({ id: i.id, date: i.date, supplier: i.supplier, net: i.amount - i.discount, categoryId: mapped.get(i.category)!, invoiceCategory: i.category }))
     .sort((a, b) => b.date.localeCompare(a.date));
 
@@ -153,6 +158,8 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
   return (
     <>
       <Header actions={<MonthPicker months={months} value={month} />} role={viewer.role} />
+      {/* İşletme geneli giderler alanının çipi (şube ayrımı parça 6) */}
+      <BranchViewChip area="ortak_gider" className="mb-4" />
       {/* Ay değişince form baştan kurulur: tarih yeni ayın tarihi olur (yalnız ?ay= değişince istemci durumu korunurdu) */}
       <MonthlyExpenses
         key={month}
@@ -165,6 +172,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         invoiceCategories={MAPPABLE}
         branches={branches}
         branchName={model.ds.branchView?.name ?? null}
+        sharedHidden={sharedHidden}
       />
     </>
   );

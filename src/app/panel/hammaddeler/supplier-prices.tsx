@@ -94,6 +94,9 @@ export function SupplierPrices({ ingredientId, onNavigate }: { ingredientId: num
         </>
       )}
 
+      {data?.elsewhere ? (
+        <p className="mt-2 text-xs text-ink-mute">{num(data.elsewhere)} fatura öbür şubelerde ya da şubesi seçilmemiş: Tümü&apos;de görünür.</p>
+      ) : null}
       {data && (data.ingredient.current !== null || skipped) && (data.rows.length || skipped) ? (
         <p className="mt-2 text-xs text-ink-mute">
           {data.ingredient.current !== null ? (

@@ -5,6 +5,7 @@ import { and, count, eq, gt } from "drizzle-orm";
 import { failedBellRows, logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
 import { paymentBellRows } from "@/lib/bell-payments";
 import { featureInScope } from "@/lib/branch-features";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
@@ -29,7 +30,7 @@ import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { vardiyaBell } from "@/server/bell/vardiya";
 import { newDeviceBellRows } from "@/server/auth/new-device";
-import { currentBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedMarksOn } from "@/server/closed-days";
 import { heldCounts } from "@/server/closed-period";
@@ -49,6 +50,8 @@ import { latestParasutRun } from "@/server/jobs/runs";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
 import { loadUpcoming } from "@/server/notify/digest";
 import { blockedRecipientsNow } from "@/server/notify/recipients";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
+import { parasutAccountInfoOf } from "@/server/parasut/accounts";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 
 export interface PanelNotification {
@@ -168,9 +171,11 @@ async function reminderNotifications(user: CurrentUser): Promise<PanelNotificati
  */
 async function recipeNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   if (user.role === "admin") {
-    const n = await countPendingRequests();
+    // Tek şube seçiliyken yalnız o şubenin personelinin ve şubesi bilinmeyenlerin önerileri (şube ayrımı; proposerScopeWhere)
+    const scope = await currentBranchScope();
+    const n = await countPendingRequests(scope);
     if (!n) return [];
-    const { pending } = await loadReviewQueue(0);
+    const { pending } = await loadReviewQueue(0, scope);
     const changes = pending.filter((r) => r.kind === "change");
     const out: PanelNotification[] = [];
     if (changes.length) {
@@ -263,7 +268,8 @@ async function unpricedNotifications(): Promise<PanelNotification[]> {
  * öneri gelince yeniden okunmamış olur.
  */
 async function holdNotifications(): Promise<PanelNotification[]> {
-  const h = await pendingHoldSummary();
+  // Seçimle (şube ayrımı parça 5): öbür şubenin faturasından gelen öneri bu şubenin zilinde yok
+  const h = await pendingHoldSummary(await currentBranchScope());
   if (!h.count) return [];
   return [
     {
@@ -279,18 +285,31 @@ async function holdNotifications(): Promise<PanelNotification[]> {
   ];
 }
 
-/** Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler */
+/**
+ * Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler.
+ * Tek şube seçiliyken (şube ayrımı, 27 Kasım 2026) sayılar o şubenin ve işletme genelinin faturalarından (Faturalar'ın
+ * süzgeciyle aynı: `invoiceScopeWhere`), eşitleme satırı şubenin Paraşüt hesabının; hesap başka şubeyle ortaksa başlık
+ * "hesap geneli" der. Önceden Marina seçiliyken Tuzla'nın faturaları da sayılıyordu
+ */
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const scope = await currentBranchScope();
+  const account = scope === ALL_BRANCHES ? null : await parasutAccountInfoOf(scope).catch(() => null);
   const [[review], [fresh], [lastRun], unlinked, stockOnly, cashState, held] = await Promise.all([
-    db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
-    db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
+    db
+      .select({ n: count() })
+      .from(s.invoices)
+      .where(and(eq(s.invoices.needsReview, true), invoiceScopeWhere(scope))),
+    db
+      .select({ n: count() })
+      .from(s.invoices)
+      .where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo), invoiceScopeWhere(scope))),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
-    latestParasutRun(db).then((r) => (r ? [r] : [])),
-    countUnlinkedProducts().catch(() => 0),
+    latestParasutRun(db, account ? [account.id] : undefined).then((r) => (r ? [r] : [])),
+    countUnlinkedProducts(scope).catch(() => 0),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
-    countStockOnlyReview(db).catch(() => 0),
+    countStockOnlyReview(db, scope).catch(() => 0),
     // Kasadan faturalı alımlar: faturası Faturalar'da yok, Aylık harcamalar'a da yazılmadı (E-42); yazılmışken
     // faturası sonradan gelenler (iki kez sayılıyor). Seçili şubenin kasasından çıkanlar (docs/SUBE.md › Ödemeler); zilin
     // kimliği süzülmüş listeden üretilir, öbür şubenin yeni satırı bu şubenin zilini yeniden okunmamış yapmaz
@@ -298,7 +317,10 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
       .catch(() => ({ pending: [], duplicates: [] })),
     // Kapalı döneme düşen, kararı bekleyen fatura ve harcamalar (docs/DONEM-KAPANISI.md); kapalı ay yoksa sorgu yok
-    heldCounts(db).catch(() => ({ invoices: 0, expenses: 0 })),
+    // Kapalı aya düşen kayıtlar seçili şubenin ve işletme genelinin (şube ayrımı parça 4)
+    currentBranchScope()
+      .then((scope) => heldCounts(db, scope))
+      .catch(() => ({ invoices: 0, expenses: 0 })),
   ]);
   const cashOuts = cashState.pending;
   const twice = cashState.duplicates;
@@ -307,7 +329,8 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
     out.push({
       id: `fatura-eşitleme-${lastRun.id}`,
       kind: "danger",
-      title: "Paraşüt eşitlemesi başarısız",
+      // Şubenin hesabı başka şubeyle ortaksa eşitleme hesabındır, şubenin değil
+      title: account && account.users.length > 1 ? "Paraşüt eşitlemesi başarısız (hesap geneli)" : "Paraşüt eşitlemesi başarısız",
       body: (lastRun.message ?? "Bilinmeyen hata").slice(0, 200),
       timeLabel: dateTR(dayTR(lastRun.startedAt)),
       unread: true,
@@ -574,7 +597,9 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, asilpos, anahtar, vardiya, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
-    currentBranchScope()
+    // Ödemeler ve faturalar alanının kapsamı (şube ayrımı parça 4): şube kipinde şubenin ve işletme genelinin
+    // şube-ayrımı: alan.odemeler
+    areaScope("odemeler")
       .then((branch) => loadUpcoming(undefined, { branch }))
       .catch(upcomingFailed),
     safe("fatura", invoiceNotifications()),
@@ -583,7 +608,8 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     safe("bekletme", holdNotifications()),
     safe("komisyon", commissionNotifications()),
     safe("alici", recipientNotifications()),
-    safe("modpos", modposKeyBell()),
+    // ModPOS anahtarının uyarısı seçili şubenin (şube ayrımı); "Tümü"de hepsi
+    safe("modpos", currentBranchScope().then((scope) => modposKeyBell(scope))),
     safe("asilpos", asilposRejectionBell()),
     safe("asilpos", asilposAnahtarBell()),
     // Gelecek haftanın vardiyası yazılmadıysa (Perşembe 18:00'den Pazar'a; docs/VARDIYA.md › Bildirimler)

@@ -225,7 +225,10 @@ Aynı hatırlatmanın ikinci kez gitmemesi `notification_log` tablosundaki tekil
 girmez; metin değişmez, yalnız faturasız borcun ayrıntı etiketi yenidir. Geciken dönemin
 yanında görünen sonraki dönem de aynı anahtarı kullanır: Ekim kirası gecikmişken Kasım için "yaklaşıyor" gittiyse,
 Ekim ödenip Kasım gerçek döneme dönünce aynı e-posta ikinci kez gitmez. Gönderim başarısız olursa anahtar yazılmaz,
-ertesi sabah yeniden denenir; hata ekrandaki "Son gönderimler"de görünür.
+ertesi sabah yeniden denenir; hata ekrandaki "Son gönderimler"de görünür. **Son gönderimler şubeye göre** (şube ayrımı,
+27 Kasım 2026; `notification_log.branch_id`, migration 0101): şube seçiliyken o şubenin gönderimleri (gün sonu e-postası,
+AsilPOS gün sonu, vardiya hatırlatması, şubeye bağlı alıcının düşen sabah e-postası) ve işletme geneli gönderimler
+(sabah ve haftalık e-postası, iş uyarıları, 0101'den önceki kayıtlar); "Tümü"de hepsi.
 
 Resend'e her e-posta içerikten türeyen bir tekil anahtarla (`Idempotency-Key`) gider: aynı iletinin yeniden denemesi
 ve sabah işiyle elle gönderimin çakışması tek e-posta olur. Paraşüt bölümünün anahtarı son Paraşüt bölümlü gönderimin
@@ -274,7 +277,14 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
   ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla. Önizleme ve **Bugünküleri şimdi
   gönder** sabah işi gibi işletmenin tamamıyla okur, soldaki şube seçimiyle değil (`withBranchScope(ALL_BRANCHES, …)`;
   denetim 21 Kasım #18): önceden Marina seçiliyken zammın "ayda ≈ X ₺"ı Marina'nın satışından hesaplanıp gidiyor ve
-  sabah işi o zamları işletme geneli rakamla bir daha bildirmiyordu;
+  sabah işi o zamları işletme geneli rakamla bir daha bildirmiyordu. Birden çok kasa açıkken soldan bir şube seçiliyse
+  önizleme **o şubeye bağlı alıcıların e-postasıdır** (şube ayrımı parça 6; sabah işinin şube grubu: şubenin ve işletme
+  genelinin ödemeleri, şubenin kutuları ve kasadan faturalı alımları, başlıkta şubenin adı; doğrulama düzeltmelerinden
+  beri Paraşüt bölümü de: grubun şubelerinin ve işletme genelinin yeni faturaları ve kontrol bekleyenleri, önerinin
+  faturası şubeninki ya da şubesiz olan fiyat onayları; şubesi seçilmemiş fatura her gruba; grubun fatura haberi kendi
+  bölümünden, öbür şubenin yeni faturası bu grubun e-postasını göndermez); pencerenin açıklaması hangi
+  grubun e-postası olduğunu yazar ("Marina şubesine bağlı alıcıların e-postası" / "Firmaya giden e-posta"). Okuma yine
+  "Tümü"yle, süzme gönderimin kuralıyla (`digestPreviewGroup`, `groupDigestInvoices`);
 - **Deneme gönder** (kayıtlı gönderenle, etkin adreslere; düşen adres bildirimin alt satırında "Gönderilmedi: …");
 - **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez). Bildirimde ne gittiği
   yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";

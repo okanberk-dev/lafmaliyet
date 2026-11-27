@@ -1,6 +1,7 @@
 import { after, connection, type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { zFormBranch } from "@/lib/branches";
 import { MAX_PHOTO_BYTES, PHOTO_MIMES, UPLOADS_PER_HOUR, type PhotoMime } from "@/lib/photo-rules";
 import { can, READ_ONLY_TEXT } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
@@ -25,6 +26,8 @@ const fields = z.object({
   templateId: z.coerce.number().int().positive(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   itemId: z.coerce.number().int().positive(),
+  // Doldurma ekranının şubesi: bütün şubelerin listesinde kaydın şubesi (şube ayrımı; şubeli listede yok sayılır)
+  branch: zFormBranch,
 });
 
 const log = (what: string, id: number) => (e: unknown) => console.error(`[kontrol] ${what}`, id, e instanceof Error ? e.message : e);
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return Response.json({ error: BAD_FORM }, { status: 400 });
   }
-  const parsed = fields.safeParse({ templateId: form.get("templateId"), date: form.get("date"), itemId: form.get("itemId") });
+  const parsed = fields.safeParse({ templateId: form.get("templateId"), date: form.get("date"), itemId: form.get("itemId"), branch: form.get("branch") || null });
   if (!parsed.success) return Response.json({ error: "Liste değişti; sayfayı yenileyin." }, { status: 400 });
   const target = parsed.data;
   const file = form.get("foto");

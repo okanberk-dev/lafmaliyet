@@ -147,7 +147,7 @@ test("tekrarı ikinci kayıt yazan eylemler maybeSaved ile, gönderen ve çeken 
     ["src/app/panel/personel/staff-editor.tsx", /tryAction\(\(\) => saveStaff\(list\), \{ maybeSaved: !row \}\)/],
     ["src/app/panel/personel/staff-editor.tsx", /itibarıyla devam ediyor`,\s+true,\s+\);/],
     ["src/app/panel/giderler/expenses-client.tsx", /effectiveFrom: !row \|\| amountChanged \? eff : row\.valueMonth,\s+\}\),\s+\/\/[^\n]*\n\s+\{ maybeSaved: !row \},/],
-    ["src/app/panel/giderler/expenses-client.tsx", /saveInvestment\(\{ id: row\?\.id \?\? null, name, amount: parsed, date, note \}\), \{ maybeSaved: !row \}\)/],
+    ["src/app/panel/giderler/expenses-client.tsx", /saveInvestment\(\{ id: row\?\.id \?\? null, name, amount: parsed, date, note, \.\.\.branchPart \}\), \{ maybeSaved: !row \}\)/],
     ["src/app/panel/giderler/expenses-client.tsx", /itibarıyla devam ediyor`,\s+true,\s+\);/],
     ["src/app/panel/tutarlilik/consistency-client.tsx", /saveFinding\(\{ id: item\?\.id \?\? null, section, title, detail, clientKey: item \? null : clientKey \}\), \{ maybeSaved: !item \}\)/],
     ["src/app/panel/kontrol/duzenle/templates-client.tsx", /createChecklistTemplate\(draftOf\(draft\)\), \{ maybeSaved: true \}\)/],

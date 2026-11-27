@@ -158,9 +158,11 @@ test("#4 kaynak: yükleyici şube seçiliyken faturalı ayların satışını 'T
   assert.match(oku("src/app/panel/hammaddeler/page.tsx"), /model\.waterUsage\(model\.water\.month\)/);
 });
 
-test("#32 kaynak: Ayarlar › Stok değerleme önizlemesi şube seçiliyken Tümü modeliyle", () => {
+test("#32 kaynak: Ayarlar › Stok değerleme önizlemesi şube seçiliyken Stok değeri alanının kipiyle (firma kipinde Tümü modeli)", () => {
   const p = oku("src/app/panel/ayarlar/page.tsx");
-  assert.match(p, /const company = model\.ds\.branchView \? await loadModel\(\{ scope: ALL_BRANCHES \}\) : model;/);
+  // Şube ayrımı parça 5: firma kipinde "Tümü"nün modeli (#32), şube kipinde şubenin modeli (şubenin havuzu)
+  assert.match(p, /const valuationScope = model\.ds\.branchView \? await areaScope\("stok_degeri"\) : ALL_BRANCHES;/);
+  assert.match(p, /const company = model\.ds\.branchView && valuationScope === ALL_BRANCHES \? await loadModel\(\{ scope: valuationScope \}\) : model;/);
   assert.match(p, /fifoMonthOptions\(company\.countedMonths, company\.fifoStart, company\.ds\.currentMonth \?\? currentMonthTR\(\)\)/);
   assert.match(p, /start=\{company\.fifoStart\}/);
   assert.match(p, /rows=\{valuationRows\(company, fifoOptions\)\}/);

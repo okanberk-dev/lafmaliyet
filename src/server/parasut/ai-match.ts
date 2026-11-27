@@ -28,6 +28,7 @@ import {
 } from "@/lib/product-match-ai";
 import { extractMatch, matchSuggestStatus } from "@/server/ai/claude";
 import { MATCH_TIMEOUTS } from "@/server/ai/run";
+import { currentBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -143,7 +144,9 @@ export interface MatchBatchResult {
  */
 export async function suggestNextBatch(me: { id: number }, now = new Date(), startedAt = Date.now()): Promise<MatchBatchResult> {
   const db = getDb();
-  const [{ items: products }, ingredients, links, store] = await Promise.all([unlinkedProducts(40), matchIngredients(db), exampleLinks(db), loadStore(db)]);
+  // Paraşüt ekranının listesiyle aynı ürünler: seçili şubenin ve işletme genelinin faturalarından (şube ayrımı)
+  const scope = await currentBranchScope();
+  const [{ items: products }, ingredients, links, store] = await Promise.all([unlinkedProducts(40, scope), matchIngredients(db), exampleLinks(db), loadStore(db)]);
   const active = ingredients.filter((i) => i.active);
   if (!active.length) throw new UserError("Önce hammadde ekleyin: AI yalnız listedeki hammaddelerden önerir.");
   const hash = ingredientsHash(active);

@@ -31,7 +31,8 @@ import {
   type UpcomingItem,
 } from "@/lib/reminders";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
-import { emailKey, recipientRefusal } from "@/lib/notify-recipients";
+import { digestItemInGroup, digestPreviewGroup, emailKey, recipientRefusal } from "@/lib/notify-recipients";
+import { digestItemBranch } from "@/lib/upcoming-scope";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
 import { reminderUnchanged } from "@/lib/recent-paid";
 import { unreachable } from "@/lib/unreachable";
@@ -43,11 +44,11 @@ import { dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
-import { currentExpenseBranch, withBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, currentExpenseBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
-import { invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
+import { groupDigestInvoices, invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
 import { loadDigestExtras } from "@/server/notify/digest-extras";
 import { blockedAccounts } from "@/server/notify/recipients";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
@@ -663,20 +664,30 @@ export async function sendTestNotification() {
  * E-posta önizlemesi: bugün gidecek sabah e-postasının HTML'i (gönderilmez, günlüğe yazılmaz). Gerçek gönderim gibi
  * Paraşüt bölümü (yeni faturalar, kontrol bekleyenler, eşitleme hatası), yeni zamlar, ek kutular (yükleyicileri
  * önizlemede yazmaz) ve (canlıda) günlük işlerin sorunları da girer; ödeme, yeni fatura, zam, sistem uyarısı ya da
- * haber olan ek kutu yoksa örnek bir ödeme satırıyla gösterilir.
+ * haber olan ek kutu yoksa örnek bir ödeme satırıyla gösterilir. Soldan bir şube seçiliyken (birden çok kasa açık)
+ * o şubeye bağlı alıcıların e-postası (şube ayrımı parça 6; sabah işinin şube grubu: şubenin ve işletme genelinin
+ * ödemeleri, şubenin kutuları ve kasadan faturalı alımları); "Tümü"de firmaya giden e-posta.
  */
 export async function previewDigest() {
   return attempt(async () => {
     await requireAdmin();
-    // Gerçek gönderim gibi seçiciden bağımsız, "Tümü"yle okur (runReminderDigest): Marina seçiliyken önizlemenin zam
-    // tutarı ve ek kutuları Marina'nınki oluyordu (denetim 21 Kasım #18)
-    return withBranchScope(ALL_BRANCHES, digestPreview);
+    const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+    const group = digestPreviewGroup(scope, tillBranches(branches));
+    // Gerçek gönderim gibi "Tümü"yle okur, şubenin grubu gönderimin kuralıyla süzülür (runReminderDigest): önceden Marina
+    // seçiliyken önizlemenin zam tutarı ve ek kutuları Marina'nın görünümünden hesaplanıyordu (denetim 21 Kasım #18)
+    // şube-ayrımı: eposta.firma
+    return withBranchScope(ALL_BRANCHES, () => digestPreview(group ? { id: group.id, name: group.name } : null));
   });
 }
 
-async function digestPreview() {
-  const { today, items } = await loadUpcoming();
-  const due = dueNotifications(items);
+async function digestPreview(group: { id: string; name: string } | null) {
+  // şube-ayrımı: eposta.firma
+  const { today, items, reminders, invoiceBranches } = await loadUpcoming();
+  // Şubenin grubu: şubenin ve işletme genelinin kalemleri (hatırlatıcının ve faturanın şubesi; digestItemInGroup)
+  const reminderBranch = new Map(reminders.map((r) => [r.id, r.branchId ?? null]));
+  const inGroup = (item: UpcomingItem) =>
+    !group || digestItemInGroup(digestItemBranch(item, (id) => reminderBranch.get(id) ?? null, (id) => invoiceBranches.get(id)), [group.id]);
+  const due = dueNotifications(items).filter((d) => inGroup(d.item));
   // Yükleyiciler yalnız okur; failedRunKey gönderimden sonra günlüğe yazmak içindir, burada kullanılmaz
   const [sent, { invoices }, prices, system, extras] = await Promise.all([
     due.length
@@ -685,10 +696,11 @@ async function digestPreview() {
           .from(s.notificationLog)
           .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
       : [],
-    loadDigestInvoices(),
+    // Şubenin grubunun fatura bölümü: şubenin ve işletme genelinin faturaları, onay bekleyen fiyatları ve kasadan alımları
+    loadDigestInvoices().then((r) => ({ invoices: groupDigestInvoices(r, group ? [group.id] : []) })),
     loadDigestPrices().catch(() => null),
     isProductionRuntime() ? loadEmailProblems("digest").catch(() => []) : [],
-    loadDigestExtras(today, { preview: true }),
+    loadDigestExtras(today, group ? { preview: true, scope: group.id } : { preview: true }),
   ]);
   const invoiceNews = invoiceNewsOf(invoices);
   const example: UpcomingItem = {
@@ -715,10 +727,13 @@ async function digestPreview() {
     prices,
     system.length ? { items: system } : null,
     extras.extras,
+    group?.name ?? null,
   );
   return {
     subject,
     html,
+    /** Önizlenen alıcı grubu: şubeye bağlı alıcılar (şubenin adı) ya da firmaya giden e-posta (null) */
+    group: group?.name ?? null,
     count: due.length,
     alreadySent: sent.length,
     invoices: invoices.items.length,

@@ -33,8 +33,12 @@ Bölümler sırasıyla, her biri kendi yükleme alanında (biri düşerse öteki
 Tek şube seçiliyken (şube kapsamı C, 24 Kasım 2026; [SUBE.md](SUBE.md)) Kasa, Zayi ve ikram ve Karaoke bölümleri
 yalnız o şubenin isteklerini gösterir (isteğin şubesi konudan, yükten ya da kaydından; şubesi bilinmeyen her yerde);
 üstte "öbür şubelerde N istek daha onay bekliyor" ve "Tümünü göster" çıkar. Yöneticinin zili aynı kuralla sayar;
-şubeye bağlı bildirim adresinin sabah e-postası da. "Tümü"de kart şubesini adıyla söyler. Reçete önerileri işletme
-genelidir.
+şubeye bağlı bildirim adresinin sabah e-postası da. "Tümü"de kart şubesini adıyla söyler. **Reçete önerileri** 27 Kasım
+2026'dan beri (şube ayrımı, [SUBE.md](SUBE.md#şube-ayrımı-27-kasım-2026)) önerenin hesabının şubesine göre: Marina
+seçiliyken Marina personelinin ve şubesiz hesapların (yönetici, şubesiz personel) önerileri; öbür şubenin önerileri üstteki
+"öbür şubelerde N istek daha" sayısına girer. Bugün, zil ve Reçete defterinin rozetleri aynı kuralla sayar
+(`proposerScopeWhere`). **Son kararlar** da seçili şubenin isteklerini gösterir; geç rapor kartının "Kasayı sayan"
+seçeneği kartın kasasınınki (kasa formu gibi).
 
 Kartların çapası `#istek-<id>` (reçete kartlarınınki `#oneri-<id>`); zil ve sabah e-postası doğrudan karta götürür.
 Reddederken yazılan not personele görünür: **tutar yazmayın**. Onayla / Reddet parola sormaz (parola onayı yalnız hesap

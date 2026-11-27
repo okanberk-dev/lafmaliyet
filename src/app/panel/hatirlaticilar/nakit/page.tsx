@@ -1,16 +1,15 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
-import { ALL_BRANCHES, companyWideNote } from "@/lib/branches";
 import { planNotes } from "@/lib/cash-plan";
+import { branchFlowNote } from "@/lib/cash-plan-branch";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadCashPlan } from "@/server/data/cash-plan";
-import { loadModel } from "@/server/data/dataset";
-import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
-import { listBranches } from "@/server/branches";
+import { areaScope } from "@/server/branch-scope";
+import { loadAreaCashPlan } from "@/server/data/cash-plan";
 
 import { CashPlanClient } from "./cash-plan-client";
 
@@ -34,17 +33,29 @@ export default function CashPlanPage() {
   );
 }
 
-/** Ödemeler'in alt ekranı: önümüzdeki 6 haftanın planı (src/lib/cash-plan.ts, docs/NAKIT-PLANI.md); yalnız yönetici */
+/**
+ * Ödemeler'in alt ekranı: önümüzdeki 6 haftanın planı (src/lib/cash-plan.ts, docs/NAKIT-PLANI.md); yalnız yönetici.
+ * Şube seçiliyken kişinin şube görünümüne göre (şube ayrımı parça 4): "Yalnız şube" kipinde şubenin nakit akışı ve
+ * hafta hafta İşletme geneli satırı (src/lib/cash-plan-branch.ts), "Firma geneli" kipinde firmanın planı
+ */
 async function CashPlanContent() {
   await requireAdmin();
-  // Ödemeler ve nakit işletmenindir: şube seçiciden bağımsız, bütün şubeler (docs/SUBE.md › Neyi süzer)
-  const { model, plan, state, carry, invoiceTermDays } = await withBranchScope(ALL_BRANCHES, async () => {
-    const model = await loadModel();
-    return { model, ...(await loadCashPlan(model)) };
-  });
+  // şube-ayrımı: alan.nakit
+  const area = await areaScope("nakit");
+  const { model, view, flow } = await loadAreaCashPlan(area);
+  const { plan, state, carry, invoiceTermDays } = view;
   const notes = planNotes(plan, { komisyon: model.settings.komisyon, acikGun: model.settings.acikGun, invoiceTermDays });
-  // Şube seçiliyken ekran yine firmanın: not bunu söyler (şube kapsamı C P1-12, P2-1)
-  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
-  const scopeNote = companyWideNote("nakit", scope, branches);
-  return <CashPlanClient title={TITLE} description={DESCRIPTION} plan={plan} state={state} carry={carry} notes={notes} scopeNote={scopeNote} />;
+  return (
+    <CashPlanClient
+      title={TITLE}
+      description={DESCRIPTION}
+      plan={plan}
+      state={state}
+      carry={carry}
+      notes={notes}
+      flow={flow}
+      scopeChip={<BranchViewChip area="nakit" className="mb-4" />}
+      scopeNote={flow ? branchFlowNote(flow.name) : null}
+    />
+  );
 }

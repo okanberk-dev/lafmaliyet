@@ -137,6 +137,11 @@ export function waterBreakdown(
   items: Pick<Ingredient, "id" | "name" | "priceSource">[],
   usage: ReadonlyMap<number, number>,
   online: ReadonlyMap<number, number> = new Map(),
+  /**
+   * Şube seçiliyken (şube ayrımı parça 5): litre fiyatı yine firmanın faturası ÷ bütün şubelerin litresi; dökümün litre
+   * satırları şubenin kendi satışından, öbür şubelerin ve online'ın litresi tek satırda ("Öbür şubeler ve online")
+   */
+  branch: { name: string; usage: ReadonlyMap<number, number>; online: ReadonlyMap<number, number> } | null = null,
 ): WaterBreakdown {
   const perLiter = perLiterText(water.perLiter);
   switch (water.reason) {
@@ -157,18 +162,24 @@ export function waterBreakdown(
     case "ok": {
       const month = water.month!;
       const m = monthLabel(month);
+      const own = branch ?? { usage, online };
       const liters = items
         .filter((i) => i.priceSource === "water")
         .map((i): BreakdownRow => {
-          const list = (usage.get(i.id) ?? 0) / 1000;
-          const web = (online.get(i.id) ?? 0) / 1000;
+          const list = (own.usage.get(i.id) ?? 0) / 1000;
+          const web = (own.online.get(i.id) ?? 0) / 1000;
           const l = list + web;
           // Bağlantı yok: "?ara=Su" adı "su" geçen başka malzemeleri de süzerdi
           const sub = web > 0 ? `Satış listesi ${num(list, 1)} L + laffogato.net ${num(web, 1)} L` : "Satış adedi × reçetedeki miktar";
-          return { key: `litre:${i.id}`, label: i.name, sub, amount: l, display: `${num(l, 1)} L` };
+          return { key: `litre:${i.id}`, label: branch ? `${i.name} · ${branch.name}` : i.name, sub, amount: l, display: `${num(l, 1)} L` };
         })
         .filter((r) => r.amount > 0)
         .sort((a, b) => b.amount - a.amount);
+      if (branch) {
+        // Öbür şubelerin ve online'ın litresi: faturanın bölündüğü toplamdan şubeninki düşülür (adları ve dökümü yok)
+        const rest = Math.max(0, water.liters - liters.reduce((a, r) => a + r.amount, 0));
+        if (rest > 0.05) liters.push({ key: "litre:obur", label: "Öbür şubeler ve online", sub: "Litre fiyatı firmanın faturasından, bütün satışa bölünür", amount: rest, display: `${num(rest, 1)} L` });
+      }
       const skipped = water.latestBillMonth && water.latestBillMonth !== month ? water.latestBillMonth : null;
       return {
         description: `Reçetelerdeki su ve buzun litre maliyeti: ${m} SU GİDERİ (KDV hariç) ÷ o ay satılan ürünlerin (satış listesi ve laffogato.net online siparişleri) reçetesine göre harcanan su + buz. SU GİDERİ girilmiş ve ürün satış listesi olan en son ay kullanılır.`,

@@ -104,7 +104,7 @@ export async function emailReport(
     await getDb()
       .insert(s.notificationLog)
       // İşlem geçmişinin anahtarı şubenin günü: iki şubenin aynı günkü raporu birbirinin kaydını ezmez
-      .values({ key: cashLogKey(row), channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .values({ key: cashLogKey(row), channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error, branchId: row.branchId })
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
   }
   await getDb()

@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, eq, exists, gte, isNull, type SQL } from "drizzle-orm";
 
-import { ALL_BRANCHES, namedTill, tillBranches, type BranchRow } from "@/lib/branches";
+import { ALL_BRANCHES, namedTill, selectedChannel, tillBranches, type BranchRow } from "@/lib/branches";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { tillScope, type TillScope } from "@/lib/asilpos/kasa";
 import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
@@ -42,12 +42,15 @@ export async function loadTillScope(db: Pick<DB, "select"> = getDb(), now: Date 
 }
 
 /**
- * Seçimin kasaları (docs/FIYATLAR.md › Kasaya işle): tek şube seçiliyken onunki (online kanalda Tuzla), "Tümü"de birden
- * çok kasa açıkken her kasa ayrı (ekranlar şube şube satır gösterir), tek kasada o. Şubesine kilitli personelde kendi
- * şubesi (seçim kilitli).
+ * Seçimin kasaları (docs/FIYATLAR.md › Kasaya işle): tek şube seçiliyken onunki, "Tümü"de birden çok kasa açıkken her
+ * kasa ayrı (ekranlar şube şube satır gösterir), tek kasada o. Şubesine kilitli personelde kendi şubesi (seçim kilitli).
+ * Online kanal seçiliyken boş (şube ayrımı, 27 Kasım 2026): kanalın kasası yok; önceden Tuzla'nın kasası okunuyordu,
+ * kanal seçiliyken Bugün, zil ve Kasaya işle Tuzla'nın bekleyen fiyatlarını gösteriyordu. Ekran "Bu kanalın kasası ve
+ * stoğu yok" der (`CHANNEL_NO_TILL`)
  */
 export async function loadTillScopes(db: Pick<DB, "select"> = getDb(), now: Date = new Date()): Promise<BranchTill[]> {
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  if (selectedChannel(scope, branches)) return [];
   const tills = tillBranches(branches);
   if (scope !== ALL_BRANCHES || tills.length < 2) return [await loadTillScope(db, now)];
   const switchDays = await loadSwitchDays(db);

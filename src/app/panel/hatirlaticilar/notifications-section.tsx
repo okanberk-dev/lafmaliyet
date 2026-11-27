@@ -14,7 +14,7 @@ import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR } from "@/lib/format";
-import { BLOCK_ROW_TEXT, type BlockReason } from "@/lib/notify-recipients";
+import { BLOCK_ROW_TEXT, type BlockReason, previewGroupText } from "@/lib/notify-recipients";
 import { digestSummary } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { weeklyLogText } from "@/lib/weekly/text";
@@ -103,7 +103,7 @@ export function NotificationsSection({
   const [daysBefore, setDaysBefore] = useState(String(settings.invoiceDaysBefore));
   const [term, setTerm] = useState(String(settings.invoiceTermDays));
   const [removing, setRemoving] = useState<Recipient | null>(null);
-  const [preview, setPreview] = useState<{ subject: string; html: string; count: number; alreadySent: number; invoices: number; prices: number; syncError: boolean; system?: number; holds?: number; boxes?: string[]; sample: boolean } | null>(null);
+  const [preview, setPreview] = useState<{ subject: string; html: string; group?: string | null; count: number; alreadySent: number; invoices: number; prices: number; syncError: boolean; system?: number; holds?: number; boxes?: string[]; sample: boolean } | null>(null);
   const addrRef = useRef<HTMLInputElement>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const settingsForm = useId();
@@ -495,11 +495,11 @@ export function NotificationsSection({
           onClose={() => setPreview(null)}
           size="lg"
           title="E-posta önizlemesi"
-          description={
+          description={`${previewGroupText(preview.group ?? null)}${
             preview.sample
               ? "Bugün haber verilecek ödeme, yeni fatura ya da zam yok; örnek bir satırla gösteriliyor."
               : `Bugün: ${digestSummary(preview)}.${preview.alreadySent ? ` ${preview.alreadySent} hatırlatma zaten gönderildi.` : ""} Gönderilmez, yalnızca görünüm.`
-          }
+          }`}
           bodyClassName="px-0 sm:px-0 pb-0"
           footer={
             <Button variant="secondary" onClick={() => setPreview(null)} className={SHEET_BTN}>
@@ -516,3 +516,4 @@ export function NotificationsSection({
     </section>
   );
 }
+

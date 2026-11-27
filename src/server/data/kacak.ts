@@ -6,7 +6,9 @@ import { businessDate } from "@/lib/cash-report";
 import { leakReport, type LeakReport } from "@/lib/kacak";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { countedQty, STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadModel } from "@/server/data/dataset";
@@ -21,13 +23,17 @@ export type LeakState =
   /** Seçilen ay Marina'da sayılmadı */
   | "sayim-yok"
   /** Ay bitmedi: ay sonu sayımı ay bitince */
-  | "ay-bitmedi";
+  | "ay-bitmedi"
+  /** Soldan Marina dışında bir şube (ya da kanal) seçili: o şube için tahmini stok yok (şube ayrımı, 27 Kasım 2026) */
+  | "baska-sube";
 
 export interface LeakData {
   month: string;
   state: LeakState;
   /** Şubenin adı (Marina) */
   branchName: string;
+  /** "baska-sube": seçili şubenin adı */
+  selectedName?: string;
   /** Marina'nın sayıldığı bitmiş aylar (seçici) */
   months: string[];
   /** AsilPOS satışlarının sayıldığı ilk gün: tahmin bu günden sonra başlayan dönemde var */
@@ -36,8 +42,9 @@ export interface LeakData {
 }
 
 /**
- * Marina ay sonu kaçak raporu (docs/RAPORLAR.md › Kaçak raporu; hesap src/lib/kacak.ts). Yalnız yönetici; hep Marina'nın
- * (tahmini stoğun şubesi, AsilPOS'un şubesi; soldaki seçimden bağımsız). Tahmin ayın son günüyle okunur
+ * Marina ay sonu kaçak raporu (docs/RAPORLAR.md › Kaçak raporu; hesap src/lib/kacak.ts). Yalnız yönetici; Marina'nın
+ * (tahmini stoğun şubesi, AsilPOS'un şubesi): "Tümü" ya da Marina seçiliyken. Başka şube seçiliyken rapor yok, ekran
+ * "Bu şube için tahmini stok yok" der (şube ayrımı, 27 Kasım 2026: önceden Tuzla seçiliyken Marina'nın raporu görünüyordu). Tahmin ayın son günüyle okunur
  * (loadStockEstimate, o ayın sayımı başlangıç sayılmaz), ayın sayımıyla karşılaştırılır, fark Stok sayımı'nın ay sonu
  * birim maliyetiyle (unitCostAtMonthEnd) TL'ye çevrilir. Yalnız okur.
  */
@@ -45,8 +52,9 @@ export async function loadLeakReport(month: string | null, now: Date = new Date(
   await requireAdmin();
   const db = getDb();
   const current = businessDate(now).slice(0, 7);
-  const [branches, countMonths] = await Promise.all([
+  const [branches, scope, countMonths] = await Promise.all([
     listBranches(db),
+    currentBranchScope(),
     db
       .selectDistinct({ month: s.stockCounts.month })
       .from(s.stockCounts)
@@ -58,6 +66,9 @@ export async function loadLeakReport(month: string | null, now: Date = new Date(
   // Varsayılan: Marina'nın sayıldığı son bitmiş ay; hiç yoksa geçen ay
   const chosen = month ?? months[months.length - 1] ?? shiftMonth(current, -1);
   const base = { month: chosen, branchName, months, asilposFrom: null, report: null };
+  if (scope !== ALL_BRANCHES && scope !== STOCK_ESTIMATE_BRANCH) {
+    return { ...base, months: [], state: "baska-sube", selectedName: branches.find((b) => b.id === scope)?.name ?? scope };
+  }
   if (chosen >= current) return { ...base, state: "ay-bitmedi" };
 
   const monthEnd = addDays(`${shiftMonth(chosen, 1)}-01`, -1);

@@ -2,6 +2,7 @@ import { Calculator, FileSpreadsheet, SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -65,7 +66,9 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   const rawQuarter = pick(sp.ceyrek);
-  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; docs/SUBE.md › Şube ayrımı): çeyreğin vergi kârı, geçici
+  // vergi ve eksik belgeler şube seçiliyken de bütün şubelerle (tek vergi numarası)
+  // şube-ayrımı: vergi.beyan
   const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     const loaded = await loadTaxView(model, {
@@ -129,6 +132,8 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
       <HashScroll key={`capa-${q.key}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
+        {/* Şube seçiliyken: vergi firmanın, şubeye bölünmez (sahibin kararı 27 Kasım 2026) */}
+        <CompanyWideNotice screen="vergi" />
         {missing && (missing.unclassified.count > 0 || missing.candidates.count > 0) ? (
           // Belgesi seçilmemiş gider vergi hesabına girmez: vergi yüksek çıkar (yasal sonuç, katlanmaz)
           <Notice

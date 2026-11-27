@@ -1409,6 +1409,25 @@ export function groupOf(report: Pick<CommissionReport, "groups">, kind: ChannelK
   return report.groups.find((g) => g.kind === kind && g.month === month) ?? null;
 }
 
+/**
+ * Şubenin o ay bu kanaldan (ya da gruptan) satışı var mı (şube ayrımı parça 4, Komisyon ve hakediş alanının şube kipi):
+ * kanalın kendi satışı (AsilPOS, tek kanallı ay) ya da grubun Z'si (yemek kartı, online). `branch` şubenin raporu
+ */
+export function hasBranchSales(branch: Pick<CommissionReport, "rows" | "groups">, kind: ChannelKind, month: string, channel?: ChannelKey): boolean {
+  if (channel && (rowOf(branch, channel, month)?.autoSales?.amount ?? 0) > 0) return true;
+  return (groupOf(branch, kind, month)?.zTotal ?? 0) > 0;
+}
+
+/**
+ * İşletmenin raporu şubenin kipinde (zil, Bugün'ün Hakedişler satırı, ekranın hakediş kartı): yalnız şubenin o ay satışı
+ * olan kanallar ve gruplar (`hasBranchSales`). Hakediş, oran ve faturalar işletmenin kalır (şubeye bölünmez); öbür
+ * şubenin kullandığı kanalın gecikmesi bu şubede görünmez. "Tümü"de ve firma kipinde süzülmez (çağıran karar verir)
+ */
+export function scopeCommissionReport<R extends Pick<CommissionReport, "rows" | "groups" | "pending">>(all: R, branch: Pick<CommissionReport, "rows" | "groups">): R {
+  const rowIn = (r: Pick<ChannelMonth, "kind" | "month" | "channel">) => hasBranchSales(branch, r.kind, r.month, r.channel);
+  return { ...all, rows: all.rows.filter(rowIn), pending: all.pending.filter(rowIn), groups: all.groups.filter((g) => hasBranchSales(branch, g.kind, g.month)) };
+}
+
 /** Ekranda kartı çıkan kanallar: seçilen ayda ya da önceki beş ayda faturası ya da işareti olan, kayıt sırasıyla */
 export function shownChannels(report: Pick<CommissionReport, "rows">, kind: ChannelKind, month: string): ChannelKey[] {
   const from = shiftMonth(month, -5);

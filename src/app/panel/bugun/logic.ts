@@ -3,6 +3,7 @@
 // ekranın kendiliğinden yenileneceği an. Olguları sunucu toplar (src/server/data/today.ts); yöneticiye ait olgular
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
+import { ALL_BRANCHES, BRANCH_PARAM, CHANNEL_NO_TILL } from "@/lib/branches";
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import {
   branchDayKey,
@@ -18,7 +19,7 @@ import {
   type CarryCheck,
   type CashRevisionRow,
 } from "@/lib/cash-report";
-import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
+import { checklistHref, checklistKey, isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
@@ -41,7 +42,8 @@ import type { OpsDayFacts } from "./rows-ops";
 
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
- * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
+ * `liste-dun`, `liste-{templateId}` (bütün şubelerin listesinin şube satırı `liste-{templateId}-{şube}`, şube ayrımı;
+ * checklistKey) ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
  * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı. "Tümü"de birden çok
  * kasa açıkken yöneticinin kasa satırları şube başına: `kasa-dun:{şube}`, `kasa:{şube}`.
  */
@@ -52,6 +54,7 @@ export type DayTaskKey =
   | `kasa:${string}`
   | "liste-dun"
   | `liste-${number}`
+  | `liste-${number}-${string}`
   | "liste"
   | "odeme"
   | "komisyon"
@@ -67,6 +70,7 @@ export type DayTaskKey =
   | "sayim-ek-fiyat"
   | "zayi"
   | "kasa"
+  | "kanal"
   | "sayim-son";
 
 export interface DayTask {
@@ -168,6 +172,12 @@ export interface DayFacts {
    * sayılacak kalem
    */
   stock: { month: string; counted: number; total: number; prevMonth: string; prevHasData: boolean; prevCounted: number; prevTotal: number } | null;
+  /**
+   * Seçim bir online kanal (şube ayrımı, 27 Kasım 2026): kanalın adı. Kanalın kasası, stoğu ve vardiyası yok; kasa ve
+   * sayım satırları yerine tek satır "Bu kanalın kasası ve stoğu yok" (`channelRow`). Önceden kanal seçiliyken Tuzla'nın
+   * kasası ve sayımı görünüyordu. Yoksa ya da null bugünkü gibi
+   */
+  channel?: string | null;
   // ---- Yalnız yönetici
   /** Günlük işlerin ciddi sorunları (ops'un sistem uyarıları, yalnız canlıda; systemIssues) */
   system?: { title: string; body: string }[] | null;
@@ -386,6 +396,8 @@ function ofTill(t: DayTask, b: Pick<CashTill, "id" | "name">): DayTask {
  * onay bekliyorsa tek satır)
  */
 const cashYesterday: Row = (f, c) => {
+  // Online kanal seçili: kasası yok (satır channelRow'da)
+  if (f.channel) return null;
   const tills = tillsOf(f);
   if (!tills) return cashYesterdayOf(f, c, f.cash);
   const out: DayTask[] = [];
@@ -491,6 +503,7 @@ export function eveningCashText(kasa: KasaName): string {
  * çok kasa açıkken yöneticiye şube başına
  */
 const cashToday: Row = (f, c) => {
+  if (f.channel) return null;
   const tills = tillsOf(f);
   if (tills) {
     return tills.flatMap((t) => {
@@ -534,6 +547,23 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
   const later = kasa === "AsilPOS" ? "Kapanışta AsilPOS'ta Günü kapat'a basılır; rapor AsilPOS'tan gelir." : "Kapanışta girilir: Z raporu ve kasa sayımı.";
   return { key: "kasa", title, status: "later", badge: "Akşam", detail: later, href: "/panel/kasa", action: "Kasa raporu" };
 }
+
+/**
+ * Online kanal seçiliyken kasa ve sayım satırlarının yerinde tek bilgi satırı (şube ayrımı, 27 Kasım 2026; iki rolde):
+ * kanalın kasası ve stoğu yok, bağlantı "Tümü"nü seçer (`?sube=hepsi`; seçici çereze benimsetir)
+ */
+const channelRow: Row = (f) => {
+  if (!f.channel) return null;
+  return {
+    key: "kanal",
+    title: `${f.channel}: kasa ve stok`,
+    status: "done",
+    badge: "Yok",
+    detail: `${CHANNEL_NO_TILL}: kasa raporu, sayım ve kasadaki fiyatlar şubelerde. Soldan bir şube ya da Tümü'nü seçin.`,
+    href: `/panel/bugun?${BRANCH_PARAM}=${ALL_BRANCHES}`,
+    action: "Tümü'nü göster",
+  };
+};
 
 // ---------------------------------------------------------------- Zayi (personel)
 
@@ -652,7 +682,8 @@ const countMonthEnd: Row = (f, c) => {
 function listRow(f: DayFacts, day: string, l: ChecklistLite, nowBm: number): DayTask {
   const admin = f.role === "admin";
   const run = l.run;
-  const base = { key: `liste-${l.templateId}` as const, title: listTitle(l.name), href: `/panel/kontrol/${l.templateId}` };
+  // Bütün şubelerin listesinin şube satırı: anahtar ve bağlantı şubeyi taşır (şube ayrımı; "Tümü"de iki şubenin satırı)
+  const base = { key: `liste-${checklistKey(l)}` as DayTaskKey, title: listTitle(l.name), href: checklistHref(l) };
   const state = listState(l, nowBm, false);
   const started = isStarted(l);
   const progress = run ? `${num(run.done)} / ${num(run.required)}` : `0 / ${num(l.required)}`;
@@ -942,6 +973,7 @@ const ADMIN_ROWS: Row[] = [
   countExtrasPrice, // sayim-ek-fiyat
   checklistRows, // liste-{templateId} (açılış saatine göre)
   cashToday, // kasa
+  channelRow, // kanal
   countMonthEnd, // sayim-son
 ];
 
@@ -957,6 +989,7 @@ const STAFF_ROWS: Row[] = [
   posRow, // modpos
   wasteRow, // zayi
   cashToday, // kasa
+  channelRow, // kanal
   countMonthEnd, // sayim-son
 ];
 

@@ -34,6 +34,11 @@ export interface Candidate {
   ref?: string | null;
   /** Ekrandaki bağlantı */
   href?: string | null;
+  /**
+   * Kaydın şubesi (şube ayrımı parça 5, src/lib/mutabakat/branch.ts): harcamanın, faturanın, kasadan teslimin şubesi;
+   * şubesi boş (işletme geneli harcama ve fatura, cari ödeme) null. Eşleştirmeye katılmaz, yalnız şube kipinde gösterim
+   */
+  branchId?: string | null;
 }
 
 /** Yöneticinin satır kararı. `elle`: bu kayıtla eşleşir; `yoksay`: listeden düşer; `ayir`: kendiliğinden eşleşmez; `pos`: POS hakedişi */

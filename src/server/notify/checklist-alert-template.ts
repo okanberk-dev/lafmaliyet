@@ -1,5 +1,5 @@
 import { ALERT_MISSING_MAX, alertSubject, alertText, alertTitle, type ChecklistAlert } from "@/lib/checklist-alerts";
-import { listTitle } from "@/lib/checklists";
+import { checklistHref, listTitle } from "@/lib/checklists";
 import { button, C, divider, emailShell, esc, FONT, heading, para, pill, TABLE, type Tone } from "@/lib/email-kit";
 import { dateTR } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
@@ -9,8 +9,8 @@ import { APP_URL } from "./digest-template";
 /** Personel e-postasının alt notu */
 export const ALERT_FOOTER = "Bu e-posta kontrol listelerini dolduran personele gönderildi. Liste tamamlanınca hatırlatma gelmez.";
 
-/** Listenin doldurma ekranı */
-export const alertLink = (templateId: number) => `${APP_URL}/panel/kontrol/${templateId}`;
+/** Listenin doldurma ekranı; bütün şubelerin listesinin şube satırında o şubenin kaydı (`?sube=`, şube ayrımı) */
+export const alertLink = (a: Pick<ChecklistAlert, "templateId" | "branchId" | "shared">) => `${APP_URL}${checklistHref(a)}`;
 
 /** Uyarının rozeti: gecikme kırmızı, zamanı gelen turuncu (sabah e-postasının "gecikmiş" ve "bugün"üyle aynı ton; kelime yanında) */
 const KIND: Record<ChecklistAlert["kind"], { word: string; tone: Tone }> = {
@@ -55,7 +55,7 @@ function alertBlock(a: ChecklistAlert, n: number): string {
     n ? subHeading(title) : heading(title),
     para(alertText(a), { top: 8 }),
     todoList(missing, a.missing.length - missing.length),
-    button(alertLink(a.templateId), "Listeyi aç", { top: 22, secondary: n > 0 }),
+    button(alertLink(a), "Listeyi aç", { top: 22, secondary: n > 0 }),
   ]
     .filter(Boolean)
     .join("\n");
@@ -86,7 +86,7 @@ export function renderChecklistAlert(alerts: ChecklistAlert[], today: string) {
       alertText(a),
       ...a.missing.slice(0, ALERT_MISSING_MAX).map((m) => `- ${m}`),
       ...(a.missing.length > ALERT_MISSING_MAX ? [`ve ${a.missing.length - ALERT_MISSING_MAX} madde daha`] : []),
-      `Listeyi aç: ${alertLink(a.templateId)}`,
+      `Listeyi aç: ${alertLink(a)}`,
     ]),
     "",
     ALERT_FOOTER,

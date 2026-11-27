@@ -38,6 +38,7 @@ export function PhotoItem({
   item,
   answer,
   templateId,
+  branch = null,
   day,
   photos,
   submit,
@@ -47,6 +48,8 @@ export function PhotoItem({
   item: ChecklistItemSnap;
   answer: AnswerLite | null;
   templateId: number;
+  /** Bütün şubelerin listesinde kaydın şubesi (şube ayrımı); şubeli listede null */
+  branch?: string | null;
   day: string;
   photos: boolean;
   submit: Submit;
@@ -75,6 +78,7 @@ export function PhotoItem({
     form.append("templateId", String(templateId));
     form.append("date", day);
     form.append("itemId", String(item.id));
+    if (branch) form.append("branch", branch);
     let status = 0;
     let body: unknown = null;
     try {

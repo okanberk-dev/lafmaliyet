@@ -198,7 +198,8 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
       kinds.push({
         name: "kontrol listesi",
         add: async () => {
-          const [r] = await db.insert(s.checklistRuns).values({ templateId: tpl.id, date: D, seq: 99, name: "Açılış", items: [] }).returning({ id: s.checklistRuns.id });
+          // Kaydın şubesi (şube ayrımı, 0101): şubeli listede tetikleyici listenin şubesini yazar
+          const [r] = await db.insert(s.checklistRuns).values({ templateId: tpl.id, date: D, branchId: "tuzla", seq: 99, name: "Açılış", items: [] }).returning({ id: s.checklistRuns.id });
           return () => db.delete(s.checklistRuns).where(eq(s.checklistRuns.id, r.id));
         },
       });

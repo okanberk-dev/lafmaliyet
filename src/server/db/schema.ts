@@ -89,12 +89,20 @@ export const users = pgTable(
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
     /** Parola, iki adımlı doğrulama ya da yetki değişince artar; eski oturumlar geçersiz olur */
     sessionVersion: integer("session_version").notNull().default(1),
+    /**
+     * Şube görünümü (docs/SUBE.md › Şube ayrımı; src/lib/branch-view.ts): şube seçiliyken ekran ekran "yalnız şube" ya da
+     * "firma geneli" tercihi, `{"nakit":"firma"}`. Eksik anahtar rolün varsayılanı; okurken bilinmeyen anahtar ve değer
+     * düşer (`parseBranchView`). Yalnız kişinin kendisi yazar (Hesabım ve ekranın çipi, `saveBranchView`)
+     */
+    branchView: jsonb("branch_view").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
   },
   (t) => [
     // Tanınmayan rol yazılamaz (oturum da tanımaz: src/server/auth/session.ts)
     check("users_role_ck", sql`${t.role} in ('admin','manager','staff','accountant')`),
     // Müdür şubesine kilitli: şubesiz müdür olmaz (src/server/auth/dal.ts › managerWithoutBranch)
     check("users_manager_branch_ck", sql`${t.role} <> 'manager' or ${t.branchId} is not null`),
+    // Şube görünümü nesne olmalı ("||" ile anahtar anahtar yazılır)
+    check("users_branch_view_ck", sql`jsonb_typeof(${t.branchView}) = 'object'`),
   ],
 );
 
@@ -982,6 +990,11 @@ export const investments = pgTable("investments", {
   amount: doublePrecision("amount").notNull().default(0),
   date: text("date"),
   note: text("note"),
+  /**
+   * Yatırımın şubesi; boş: işletme geneli (şube ayrımı, migration 0101; eski kayıtlar işletme geneli). Şube seçiliyken
+   * Sabit giderler › Tek seferlik yatırımlar o şubenin ve işletme genelinin kayıtlarını gösterir, toplam şubeninkidir
+   */
+  branchId: branchIdNullable(),
 });
 
 // ---------------------------------------------------------------- Aylık harcamalar
@@ -1170,6 +1183,12 @@ export const activityLog = pgTable(
      * › İşlem geçmişi); boş = kişi ekrandan kendisi yaptı. İşlem geçmişi "… (asistan aracılığıyla)" diye gösterir
      */
     via: text("via"),
+    /**
+     * Kaydın şubesi (şube ayrımı, migration 0101): yazımın şubesi (formun şubesi ya da seçili şube); boş: "Tümü"de,
+     * sistemin ve işletme geneli kayıtlar ile 0101'den önceki kayıtlar. İşlem geçmişi ve zilin bilgi satırları tek şube
+     * seçiliyken o şubenin ve şubesiz kayıtları gösterir. Şube silinirse boşalır (kayıt şubeyi silmeye engel değil)
+     */
+    branchId: text("branch_id").references(() => branches.id, { onDelete: "set null" }),
   },
   (t) => [index("activity_log_at_idx").on(t.at)],
 );
@@ -1363,6 +1382,12 @@ export const notificationLog = pgTable(
     ok: boolean("ok").notNull().default(true),
     error: text("error"),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Gönderimin şubesi (şube ayrımı, migration 0101): gün sonu e-postası, AsilPOS gün sonu, vardiya bildirimi ve şubeye
+     * bağlı alıcının sabah e-postası; boş: işletme geneli (sabah ve haftalık e-postası, iş uyarıları) ve 0101'den önceki
+     * kayıtlar. Ödemeler › Son gönderimler tek şube seçiliyken o şubenin ve şubesiz kayıtları gösterir
+     */
+    branchId: text("branch_id").references(() => branches.id, { onDelete: "set null" }),
   },
   (t) => [uniqueIndex("notification_log_key_uq").on(t.key), index("notification_log_sent_idx").on(t.sentAt)],
 );
@@ -2304,7 +2329,10 @@ export const checklistItems = pgTable(
   (t) => [index("checklist_items_template_idx").on(t.templateId, t.sortOrder)],
 );
 
-/** Bir listenin bir iş günündeki kaydı (`seq` "her seferinde" listeler için ayrıldı; günlük listede 1). İlk yanıtta açılır */
+/**
+ * Bir listenin bir iş günündeki kaydı (`seq` "her seferinde" listeler için ayrıldı; günlük listede 1). İlk yanıtta açılır.
+ * Şube başına (şube ayrımı, migration 0101): bütün şubelerin listesinin her şubede kendi kaydı olur
+ */
 export const checklistRuns = pgTable(
   "checklist_runs",
   {
@@ -2314,6 +2342,14 @@ export const checklistRuns = pgTable(
       .references(() => checklistTemplates.id, { onDelete: "restrict" }),
     /** İş günü (YYYY-MM-DD, 05:00'te döner) */
     date: text("date").notNull(),
+    /**
+     * Kaydın şubesi: şubeli listede listenin şubesi, bütün şubelerin listesinde dolduranın şubesi (src/lib/checklists.ts ›
+     * sharedRunBranches; yazımda `formBranch(…, "checklist")`). Varsayılanı yok: sütunu bilmeyen yazımda (göç sırasında
+     * hizmet veren eski sürüm) tetikleyici listenin şubesini, o da yoksa Tuzla'yı yazar (0101)
+     */
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => branches.id),
     seq: integer("seq").notNull().default(1),
     /** Açıldığı andaki ad, aralık ve maddeler: şablon sonradan değişse de kayıt aynı kalır */
     name: text("name").notNull(),
@@ -2326,7 +2362,7 @@ export const checklistRuns = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("checklist_runs_template_day_uq").on(t.templateId, t.date, t.seq), index("checklist_runs_date_idx").on(t.date)],
+  (t) => [uniqueIndex("checklist_runs_template_day_uq").on(t.templateId, t.date, t.branchId, t.seq), index("checklist_runs_date_idx").on(t.date)],
 );
 
 /** Maddenin yanıtı (kayıt başına madde başına bir satır); değişince önceki hâli history'ye geçer */

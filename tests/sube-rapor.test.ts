@@ -115,14 +115,19 @@ test("#26 Bugün: yönetici 'Tümü'de birden çok kasa açık değilse tek kasa
 test("#27 Genel bakış: 'Yaklaşan ödemeler' ve gecikme satırı şube seçimine uyar; nakit planı ve cari işletmenin", () => {
   const src = read("src/app/panel/page.tsx");
   assert.match(src, /return await loadUpcoming\(undefined, \{ branch \}\);/);
-  assert.match(src, /scope === ALL_BRANCHES \? Promise\.resolve\(null\) : loadPayments\(scope\),/);
-  assert.match(src, /const shownPayments = scope === ALL_BRANCHES \? upcoming : branchPayments;/);
+  // Ödemeler ve faturalar alanının kapsamıyla (şube ayrımı parça 4): şube kipinde şubenin, firma kipinde bütün şubelerin
+  assert.match(src, /const paymentsArea = scope === ALL_BRANCHES \? ALL_BRANCHES : await areaScope\("odemeler"\);/);
+  assert.match(src, /paymentsArea === ALL_BRANCHES \? Promise\.resolve\(null\) : loadPayments\(paymentsArea\),/);
+  assert.match(src, /const shownPayments = paymentsArea === ALL_BRANCHES \? upcoming : branchPayments;/);
   assert.match(src, /<DashboardPayments items=\{shownPayments\.items\} \/>/);
   assert.match(src, /paymentFacts\(shownPayments\.items, unpaidSummary\(model\.ds\.invoices\), debtFacts\(\[\.\.\.shownPayments\.items, \.\.\.shownPayments\.laterInvoices\]\)\)/);
   assert.doesNotMatch(src, /<DashboardPayments items=\{upcoming\.items\} \/>/);
-  // Nakit planı ve cari uyarıları şubesiz okumayla (işletmenin parası)
-  assert.match(src, /withBranchScope\(ALL_BRANCHES, \(\) => loadCashPlan\(m, upcoming\)\)/);
-  assert.match(src, /const cari = upcoming \? cariAlerts\(upcoming\.cari\) : \[\];/);
+  // Nakit planı kendi alanıyla (loadAreaCashPlan); cari uyarıları firmanın: şube kipinde yok (İşletme geneli)
+  assert.match(src, /loadAreaCashPlan\(area, \{ model: firmModel \?\? undefined, upcoming \}\)/);
+  assert.match(src, /const cari = upcoming && paymentsArea === ALL_BRANCHES \? cariAlerts\(upcoming\.cari\) : \[\];/);
   // Bugün'ün kartı da şubeyle
-  assert.match(read("src/server/data/today.ts"), /loadUpcoming\(undefined, \{ branch: await currentBranchScope\(\) \}\)/);
+  // Bugün'ün kartı da şubeyle (adminFacts'in kapsamı: şube ayrımı, 27 Kasım 2026)
+  const today = read("src/server/data/today.ts");
+  assert.match(today, /const scope = await currentBranchScope\(\);/);
+  assert.match(today, /areaScope\("odemeler"\)\.then\(\(branch\) => loadUpcoming\(undefined, \{ branch \}\)\)/);
 });

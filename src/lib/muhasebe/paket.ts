@@ -122,8 +122,14 @@ export interface PackageFixed {
 
 export interface PackageData {
   month: string;
-  /** Dosyanın kapsamı: muhasebe şirketindir, bütün şubeler */
+  /** Dosyanın kapsamı: muhasebe şirketindir, bütün şubeler; elle indirmede şube seçiliyken şubenin adı */
   scope: string;
+  /**
+   * Şubenin paketi (şube ayrımı parça 6; elle indirme, şube seçiliyken). KDV sütunları, toplamları ve Z KDV dökümü bütün
+   * şubelerin paketindeki gibi, paketin kendi kayıtlarından; yalnız Özet'in, Faturalar'ın ve Z KDV dökümünün altında
+   * `BRANCH_PACKAGE_VAT_NOTE` (KDV beyanı firma geneli; sahibin açıklaması 27 Kasım 2026). Verilmezse bütün şubelerin paketi
+   */
+  branchFile?: boolean;
   createdAt: Date;
   /** Dönem kapanışı: ay kapalıysa kim ve ne zaman */
   closed: { at: string; by: string } | null;
@@ -178,7 +184,8 @@ export function packageSummary(d: PackageData): PackageSummary {
 }
 
 /** Dosyanın adı: laffogato-muhasebe-2026-10.xlsx */
-export const packageFileName = (month: string) => `laffogato-muhasebe-${month}.xlsx`;
+/** Dosyanın adı; şubenin paketinde şube kimliğiyle biter ("laffogato-muhasebe-2026-10-marina.xlsx"; şube ayrımı parça 6) */
+export const packageFileName = (month: string, branch: string | null = null) => `laffogato-muhasebe-${month}${branch ? `-${branch.replace(/[^a-z0-9-]/gi, "")}` : ""}.xlsx`;
 
 // ---------------------------------------------------------------------------- Çalışma kitabı
 
@@ -239,8 +246,15 @@ function finish(ws: ExcelJS.Worksheet, cols: Col[], rows: number, total: Record<
 }
 
 /**
+ * Şubenin paketinde KDV toplamlarının altındaki gri satır: rakamlar paketin kendi faturaları (şubenin, kipine göre işletme
+ * geneli de) ve şubenin Z'leridir, doğru kalır; beyan rakamı değildir (KDV beyanı firmanın tek vergi numarasıyla)
+ */
+export const BRANCH_PACKAGE_VAT_NOTE = "KDV beyanı firma geneli: beyan için bütün şubelerin paketi";
+
+/**
  * Muhasebeci paketi: Özet, Faturalar, Harcamalar, Kasa raporları, Z KDV dökümü, Sabit giderler. Tarihler Excel tarihi,
- * tutarlar ₺ biçimli sayı; her tablonun başlığı donuk ve süzgeçli, sonunda TOPLAM.
+ * tutarlar ₺ biçimli sayı; her tablonun başlığı donuk ve süzgeçli, sonunda TOPLAM. Şubenin paketinde (`branchFile`)
+ * sekmeler ve sütunlar aynı; Özet'in, Faturalar'ın ve Z KDV dökümünün altında `BRANCH_PACKAGE_VAT_NOTE`
  */
 export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
@@ -279,6 +293,11 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
   line("Sabit giderlerin aylık karşılığı", s.fixedMonthly, "Sabit giderler sekmesi", MONEY);
   ov.addRow([]);
   ov.addRow(["Panelin kayıtlarıdır; resmi defter ve beyan muhasebecinindir. Yazarkasa KDV dökümü kasa raporlarına girilen (ya da fotoğraftan okunan) Z'lerdendir."]).font = MUTED;
+  // Şubenin paketi: KDV rakamları şubenin kendi kayıtlarından, beyanla karışmasın
+  const branchVatNote = (ws: ExcelJS.Worksheet, key: string) => {
+    if (d.branchFile) ws.addRow({ [key]: BRANCH_PACKAGE_VAT_NOTE }).font = MUTED;
+  };
+  if (d.branchFile) ov.addRow([`${BRANCH_PACKAGE_VAT_NOTE}. Bu paketin KDV rakamları yalnız bu paketteki faturalardan ve Z'lerden.`]).font = MUTED;
 
   // ---------------------------------------------------------------- Faturalar
   const invCols: Col[] = [
@@ -315,6 +334,7 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
     });
   const countedInv = d.invoices.filter((i) => !i.held && i.accountDate.slice(0, 7) === d.month);
   finish(inv, invCols, d.invoices.length, { amount: sum(countedInv.map((i) => i.amount)), discount: sum(countedInv.map((i) => i.discount)), vat: s.invoiceVat, payable: s.invoicePayable }, "Bu ay fatura yok");
+  if (d.invoices.length) branchVatNote(inv, "date");
 
   // ---------------------------------------------------------------- Harcamalar
   const expCols: Col[] = [
@@ -396,6 +416,7 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
     const head = vat.addRow({ date: "Oran oran toplam" });
     head.font = { bold: true };
     for (const r of s.vatByRate) vat.addRow({ date: `%${r.rate}`, total: r.total, vat: r.vat });
+    branchVatNote(vat, "date");
   }
 
   // ---------------------------------------------------------------- Sabit giderler

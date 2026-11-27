@@ -342,11 +342,13 @@ test("vergi yükleyicileri: Özet nakit planını vergi girdisiyle okur; nakit p
   assert.match(data, /loadCashPlan\(model, upcoming \?\? undefined, \{ taxInputs \}\)/);
   assert.match(data, /Promise\.all\(\[/);
   const plan = read("src/server/data/cash-plan.ts");
-  assert.match(plan, /export async function loadCashPlan\(model: Model, upcoming\?: Awaited<ReturnType<typeof loadUpcoming>>, opts: \{ taxInputs\?: TaxInputs \} = \{\}\)/);
-  assert.match(plan, /opts\.taxInputs \?\? taxInputsForPlan\(\)/);
+  assert.match(plan, /export async function loadCashPlan\(\s*model: Model,\s*upcoming\?: Awaited<ReturnType<typeof loadUpcoming>>,\s*opts: \{ taxInputs\?: TaxInputs; branch\?: string \} = \{\},?\s*\)/);
+  // Şubenin akışında (şube ayrımı parça 4) vergi satırı yok: vergi firmanın, şubeye bölünmez (Tümü'de görünür)
+  assert.match(plan, /branch \? null : \(opts\.taxInputs \?\? taxInputsForPlan\(\)\)/);
   assert.match(plan, /tax = loadTaxPlanFeed\(model, today, taxInputs\);/);
-  // Besleme yoksa stopajlı sabit gider brüt ödenir (P4: stopaj ve KDV-2 satırı da yok)
-  assert.match(plan, /planInputFromModel\(model, today, taxInputs\?\.settings, \{ feed: tax !== null \}\)/);
+  // Besleme yoksa stopajlı sabit gider brüt ödenir (P4: stopaj ve KDV-2 satırı da yok). Şubenin akışında (vergi şubeye
+  // bölünmez) stopajlı sabit gider net: stopaj muhtasarla firmanın
+  assert.match(plan, /planInputFromModel\(model, today, taxInputs\?\.settings \?\? branchTaxSettings \?\? undefined, \{ feed: branch \? true : tax !== null \}\)/);
   assert.match(plan, /console\.error\("\[vergi\] nakit planı: vergi beslemesi hesaplanamadı", e\)/);
   // Saf vergi kodu sunucuya ve veritabanına uzanmaz
   for (const f of ["assets", "calendar", "checks", "corporate", "edit", "inputs", "muhtasar", "payroll", "pnl", "rules", "rules-2026", "settings", "stamp", "view"]) {

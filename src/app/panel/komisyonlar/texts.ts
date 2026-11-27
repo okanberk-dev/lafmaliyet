@@ -190,6 +190,22 @@ export function commissionBranchNote(name: string): { title: string; text: strin
 }
 
 /**
+ * Komisyon ve hakediş alanının şube kipi (şube ayrımı parça 4; docs/SUBE.md › Şube ayrımı): ana görünüm şubenin payı ve
+ * şubenin satışı olan kanalların hakedişi; işletmenin raporu (faturalar, oran, bütün kanallar) katlı ekte
+ */
+export function commissionBranchModeNote(name: string): { title: string; text: string } {
+  return {
+    title: `${genitive(name)} payı ana görünüm`,
+    text:
+      "Bekleyen hakedişler yalnız bu şubenin o ay satışı olan kanallarda; komisyon faturaları, oran ve hakediş tutarı işletmenindir (şubeye bölünmez). " +
+      "Bütün kanalların faturaları ve oranları aşağıda “İşletmenin raporu” bölümünde.",
+  };
+}
+
+/** İşletmenin raporunun katlı bölümünün alt satırı (şube kipi) */
+export const COMPANY_REPORT_FOLD = "Komisyon faturaları, oranlar ve bütün kanalların hakedişi; bütün şubelerin satışıyla";
+
+/**
  * Şube payı kartının alt satırı (BranchShareCard; şubenin raporunun grupları, GroupMonth.unbranded): şubenin markası
  * belirsiz tutarı hiçbir kanala yazılmaz, şubenin payına da girmez (işletmenin oranı da onsuz hesaplanır). Yoksa null
  */

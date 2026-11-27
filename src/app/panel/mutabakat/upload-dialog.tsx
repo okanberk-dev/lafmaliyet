@@ -23,22 +23,25 @@ interface SupplierOption {
   invoices: number;
 }
 
-/** Ekstre yükle: tür, hesap (ya da tedarikçi), dosya; önizleme ve gerekirse sütun seçimi, sonra kaydet */
-export function UploadButton({ suppliers, accounts }: { suppliers: SupplierOption[]; accounts: string[] }) {
+/**
+ * Ekstre yükle: tür, hesap (ya da tedarikçi), dosya; önizleme ve gerekirse sütun seçimi, sonra kaydet. `supplierNote`:
+ * Mutabakat alanının şube kipinde listenin kapsamı ("Marina'nın faturası olan tedarikçiler …")
+ */
+export function UploadButton({ suppliers, accounts, supplierNote = null }: { suppliers: SupplierOption[]; accounts: string[]; supplierNote?: string | null }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button onClick={() => setOpen(true)}>
         <Upload size={16} /> Ekstre yükle
       </Button>
-      {open ? <UploadDialog suppliers={suppliers} accounts={accounts} onClose={() => setOpen(false)} /> : null}
+      {open ? <UploadDialog suppliers={suppliers} accounts={accounts} supplierNote={supplierNote} onClose={() => setOpen(false)} /> : null}
     </>
   );
 }
 
 const EMPTY_MAP = (headerRow: number): ColumnMap => ({ headerRow, date: 0, description: null, amount: null, debit: null, credit: null, balance: null, ref: null });
 
-function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOption[]; accounts: string[]; onClose: () => void }) {
+function UploadDialog({ suppliers, accounts, supplierNote, onClose }: { suppliers: SupplierOption[]; accounts: string[]; supplierNote: string | null; onClose: () => void }) {
   const ids = { account: useId(), supplier: useId(), file: useId(), list: useId() };
   const router = useRouter();
   const [kind, setKind] = useState<StatementKind>("banka");
@@ -175,7 +178,7 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
             </datalist>
           </Field>
         ) : (
-          <Field label="Tedarikçi" htmlFor={ids.supplier} hint="Ekstre bu tedarikçinin faturaları ve ödemeleriyle eşleşir.">
+          <Field label="Tedarikçi" htmlFor={ids.supplier} hint={`Ekstre bu tedarikçinin faturaları ve ödemeleriyle eşleşir.${supplierNote ? ` ${supplierNote}` : ""}`}>
             <Select
               id={ids.supplier}
               value={supplier}

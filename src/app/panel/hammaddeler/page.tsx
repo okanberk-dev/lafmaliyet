@@ -18,6 +18,7 @@ import {
   evidenceSuggestionText,
   HOLDS_ANCHOR,
   holdImpact,
+  holdsElsewhereText,
   holdSuggestion,
   livePct,
   ratioSuggestionText,
@@ -28,6 +29,7 @@ import { packEvidence } from "@/lib/product-match";
 import { addDays, todayTR } from "@/lib/reminders";
 import { importedPriceRow } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { ingredientHistoryCounts } from "@/server/data/product-history";
 import { loadModel } from "@/server/data/dataset";
 import { priceWindowStart } from "@/server/data/price-alerts";
@@ -70,11 +72,13 @@ export default function IngredientsPage() {
 async function IngredientsContent() {
   await requireAdmin();
   const db = getDb();
+  const scope = await currentBranchScope();
   const [model, history, links, holds, readState, deps, thresholds, recentWaste] = await Promise.all([
     loadModel(),
     db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
-    loadPriceHolds(),
+    // Fiyat önerileri seçimle (şube ayrımı parça 5): öbür şubenin faturasından gelen öneri sayı olarak
+    loadPriceHolds(scope),
     holdReadingState(),
     // Silme engeli bütün şubelerden (eylemle aynı tablolar; şube kapsamı C P2-6)
     ingredientHistoryCounts(db),
@@ -219,9 +223,15 @@ async function IngredientsContent() {
   const unused = active.filter((r) => !activeUses(r)).length;
   // Kartların dökümü (karta dokununca açılan pencere): yüklenen satırlardan ve modelin su hesabından
   const breakdown = ingredientBreakdowns(rows);
-  // Litre satırları motorun su hesabıyla aynı kaynaktan: şube seçiliyken de işletme genelinin satışı (model.waterUsage)
+  // Litre satırları motorun su hesabıyla aynı kaynaktan: şube seçiliyken de işletme genelinin satışı (model.waterUsage).
+  // Litre fiyatı tek faturadan (firmanın); döküm şube seçiliyken şube şube (şube ayrımı parça 5): şubenin kendi litresi
+  // malzeme malzeme, öbür şubelerinki ve online tek satırda
   const waterUse = model.water.month ? model.waterUsage(model.water.month) : null;
-  const waterDokum = waterBreakdown(model.water, rows, waterUse?.list ?? new Map<number, number>(), waterUse?.online);
+  const branchWater =
+    model.ds.branchView && model.water.month
+      ? { name: model.ds.branchView.name, usage: model.ingredientUsage(model.water.month), online: model.onlineUsage(model.water.month) }
+      : null;
+  const waterDokum = waterBreakdown(model.water, rows, waterUse?.list ?? new Map<number, number>(), waterUse?.online, branchWater);
   const categoryCount = new Set(active.map((r) => r.category)).size;
   const estimateShare = active.length ? pct(estimates / active.length, 0) : null;
   // Yeni malzemeye önerilen Alış KDV'si: sayım grubunun olağan oranı (Ayarlar › Oranlar)
@@ -315,6 +325,7 @@ async function IngredientsContent() {
           Onay bekleyen fiyat şu an yok: Paraşüt faturasındaki fiyatı %40&apos;tan fazla farklı gelen hammadde olunca burada sorulur.
         </AnchorNote>
       )}
+      {holdsElsewhereText(holds.elsewhere) ? <p className="-mt-3 mb-6 text-xs text-ink-mute">{holdsElsewhereText(holds.elsewhere)}</p> : null}
       {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
       <ListAnchor>
         {/* Şube seçiliyken kullanım o şubenin satışından (şube kapsamı C P2-8) */}

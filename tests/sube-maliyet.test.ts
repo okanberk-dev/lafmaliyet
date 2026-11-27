@@ -117,7 +117,8 @@ test("veri yükleyici: şube süzgeci her tabloda, giderde işletme geneli de; o
   }
   assert.match(d, /branchWhereWithShared\(s\.expenseEntries\.branchId, scope\)/);
   // Sabit gider: şubenin ve işletme genelinin kalemleri (şubesi boş)
-  assert.match(d, /f\.branchId === null \|\| f\.branchId === branch\.id/);
+  // İşletme geneli kalem şubede de gelir; İşletme geneli giderler "Yalnız not" kipinde gelmez (şube ayrımı parça 6)
+  assert.match(d, /branch === null \|\| \(f\.branchId === null \? !sharedHidden : f\.branchId === branch\.id\)/);
   assert.match(d, /scope === ALL_BRANCHES \|\| branch\?\.kind === "online" \? loadSiteSales\(\) : Promise\.resolve\(\[\]\)/);
   assert.match(d, /branchView: branch \? \{ id: branch\.id, name: branch\.name, kind: branch\.kind \} : null/);
   assert.match(d, /opts\.scope === undefined \? readDataset\(\) : withBranchScope\(opts\.scope, readDataset\)/);
@@ -128,11 +129,15 @@ test("veri yükleyici: şube süzgeci her tabloda, giderde işletme geneli de; o
 });
 
 test("işletme geneli ekranlar şube seçiminden bağımsız: vergi, nakit planı, tutarlılık, dışa aktarım", () => {
-  for (const p of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx", "src/app/panel/hatirlaticilar/nakit/page.tsx", "src/app/api/export/route.ts"]) {
+  for (const p of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx", "src/app/api/export/route.ts"]) {
     const s = oku(p);
     assert.match(s, /withBranchScope\(ALL_BRANCHES,/, p);
   }
-  assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /loadModel\(\{ scope: ALL_BRANCHES \}\)/);
+  // Nakit planı şube ayrımı parça 4'ten beri kişinin şube görünümüyle (areaScope("nakit")); firmanın planı yine "Tümü"yle
+  assert.match(oku("src/app/panel/hatirlaticilar/nakit/page.tsx"), /areaScope\("nakit"\)/);
+  assert.match(oku("src/server/data/cash-plan.ts"), /withBranchScope\(ALL_BRANCHES,/);
+  // Tutarlılık şube ayrımı parça 5'ten beri kişinin şube görünümüyle (areaScope("tutarlilik")); Vergi'nin beyanı "Tümü"yle
+  assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /const scope = await areaScope\("tutarlilik"\);/);
   // Seçimi geçersiz kılan kapsam isteğin seçiminden önce gelir
   const kapsam = oku("src/server/branch-scope.ts");
   // Müdürde verilen kapsam da şubesine daralır (managerLock; docs/ROLLER.md), öteki rollerde verilen kapsam geçerli

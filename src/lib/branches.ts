@@ -177,6 +177,19 @@ export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sort
 }
 
 /**
+ * Seçim bir online kanal mı (şube ayrımı, 27 Kasım 2026; docs/SUBE.md › Şube ayrımı › Ayarsız sızıntılar): kanalın kasası,
+ * stoğu ve vardiyası yoktur. Kanal seçiliyken Bugün, zil ve kasa listeleri Tuzla'nın kasasını göstermez; "Bu kanalın
+ * kasası ve stoğu yok" der. Kanalın satırı; "Tümü", fiziksel şube ya da bilinmeyen kimlikte null
+ */
+export function selectedChannel<T extends Pick<BranchRow, "id" | "kind">>(scope: BranchScope, known: readonly T[]): T | null {
+  if (scope === ALL_BRANCHES) return null;
+  return known.find((b) => b.id === scope && b.kind === "online") ?? null;
+}
+
+/** Online kanal seçiliyken kasa ve stok satırlarının yerindeki tek metin (Bugün, Kasadaki fiyatlar) */
+export const CHANNEL_NO_TILL = "Bu kanalın kasası ve stoğu yok";
+
+/**
  * İşletme geneli ekranda gösterilen kasa satırları (Tedarikçiler'in işlenmemiş kasa ödemeleri; docs/SUBE.md › Ödemeler):
  * her satır kasasının adını (birden çok kasa açıkken, `namedTill`) ve seçili kapsamda olup olmadığını taşır. Tek şube
  * seçiliyken ekran yalnız o şubenin satırlarını gösterir, öbür şubelerinkini yalnız sayar ("Öbür şubede N satır daha");
@@ -274,9 +287,11 @@ function lockError(raw: string, name: string, known: readonly BranchRow[], lock:
  * - `till`, `count`, `waste`: kasa, stok sayımı, zayi ve ikram. Etkin fiziksel şube (kanalın kasası, stoğu, zayisi olmaz);
  * - `sales`: Satışlar ve Gelir-gider'in ay bilgisi (ciro, açık gün, not) ve satış listesi. Etkin fiziksel şube: online
  *   kanalın kasa satışı yoktur, kanal seçiliyken yazılan ay "online" şubesine inmesin;
- * - `expense`: aylık harcama ve cari giderleri. Etkin herhangi bir şube ya da açıkça işletme geneli (`EXPENSE_SHARED`).
+ * - `expense`: aylık harcama ve cari giderleri. Etkin herhangi bir şube ya da açıkça işletme geneli (`EXPENSE_SHARED`);
+ * - `checklist`: bütün şubelerin kontrol listesinin günlük kaydı (şube ayrımı, 27 Kasım 2026). Etkin fiziksel şube: her
+ *   şube listeyi kendi kaydına doldurur; şubeli listenin kaydı hep listenin şubesindedir (bu kapıdan geçmez).
  */
-export type FormBranchKind = "till" | "count" | "waste" | "sales" | "expense";
+export type FormBranchKind = "till" | "count" | "waste" | "sales" | "expense" | "checklist";
 
 /** Gider formunun "İşletme geneli" seçimi: şubesiz gider (sahibin kararı 4 Kasım 2026) */
 export const EXPENSE_SHARED = "isletme";
@@ -301,6 +316,7 @@ export function formBranchError(raw: string, kind: FormBranchKind, known: readon
   if (kind === "till") return formTillError(raw, known, lock);
   if (kind === "count") return formCountError(raw, known, lock);
   if (kind === "waste") return formPhysicalError(raw, known, lock, { has: "zayisi", to: "zayisine" });
+  if (kind === "checklist") return formPhysicalError(raw, known, lock, { has: "kontrol listesi", to: "kontrol listesine" });
   if (kind === "expense" && raw === EXPENSE_SHARED) {
     return lock === null ? null : `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; işletme geneline yazamazsınız`;
   }
@@ -527,13 +543,16 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
   return "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için şube seçiciden şubeyi seçin.";
 }
 
-/** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */
-export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat" | "raporlar";
+/**
+ * Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir. Şube ayrımı
+ * (27 Kasım 2026) Vergi dışındakileri kişinin şube görünümüne bağladı (çip, src/components/panel/branch-view-chip.tsx);
+ * not bugün yalnız Vergi'nin üç sekmesinde çizilir: vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026;
+ * tests/sube-ayrimi.test.ts › (c))
+ */
+export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
-  // Raporlar (docs/RAPORLAR.md): şubeler yan yana; Kaçak raporu hep Marina'nın
-  raporlar: "Raporlar şubeleri yan yana gösterir: her açık şube kendi görünümüyle okunur, soldaki seçim raporu süzmez.",
-  vergi: "Vergi ve KDV firmanın: bütün şubelerin satışı, faturaları ve giderleri birlikte hesaplanır (tek vergi numarası).",
+  vergi: "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez: bütün şubelerin satışı, faturaları, personeli ve giderleri birlikte hesaplanır.",
   nakit: "Nakit planı firmanın: bütün şubelerin kasası, ödemeleri ve faturaları birlikte.",
   tedarikciler:
     "Tedarikçilerin cari hesabı firmanındır; borç ve ödemeler şubeye bölünmez. Faturanın şubesi tedarikçi sayfasında rozetinde; kasadan yapılan ödemeler kasanın şubesiyle ayrılır.",
@@ -558,14 +577,18 @@ export function companyWideNote(screen: CompanyWideScreen, scope: BranchScope, k
  * Şube görünümünün bilgi notu (Gelir-gider, Genel bakış): neyin şubenin, neyin işletme genelinin olduğu
  * (docs/SUBE.md › Şube görünümünde maliyet)
  */
-export function branchViewNote(b: { name: string; kind: BranchKind }): { title: string; text: string } {
+export function branchViewNote(b: { name: string; kind: BranchKind }, opts: { sharedHidden?: boolean } = {}): { title: string; text: string } {
   const [what, to, of] = b.kind === "online" ? ["kanal", "kanala", "kanalın"] : ["şube", "şubeye", "şubenin"];
+  // İşletme geneli giderler alanı (şube ayrımı parça 6): "Yalnız not" kipinde tutar yazılmaz, "Tutarla göster" kipinde
+  // bilgi satırı (Faz 5)
+  const shared = opts.sharedHidden
+    ? `${of} kârına girmez, tutarı burada yazılmaz; Tümü'de bir kez sayılır (bölüştürme yok; tutarıyla görmek için Hesabım › Şube görünümü › İşletme geneli giderler: Tutarla göster).`
+    : `${of} kârına girmez: "İşletme geneli payı (bilgi)" satırında toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok).`;
   return {
-    title: `${b.name} seçili: yalnız bu ${what}; işletme geneli giderler bilgi olarak`,
+    title: `${b.name} seçili: yalnız bu ${what}; işletme geneli giderler ${opts.sharedHidden ? "yalnız not" : "bilgi olarak"}`,
     text:
       `Ciro, kasa, personel ve bu ${to} bağlı giderler yalnız bu ${of}. İşletme geneli giderler (şubesi seçilmemiş harcama ve sabit ` +
-      `gider, işletme geneli faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${of} kârına girmez: "İşletme geneli ` +
-      `payı (bilgi)" satırında toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok). Bu ${to} seçilmiş faturalar ${of} giderinde; ` +
+      `gider, işletme geneli faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${shared} Bu ${to} seçilmiş faturalar ${of} giderinde; ` +
       `şubesi seçilmemiş faturalar hiçbir şubede yok (Faturalar › Tümü'de "Şubesi seçilmemiş" kutusu). Mal maliyeti ${of} satışından ` +
       `reçeteye göre (stok devri işletme genelinde). İşletmenin toplamı, sayımlı mal maliyeti ve elle yazılan tutarlar için soldan Tümü'nü seçin.`,
   };

@@ -4,7 +4,7 @@ import { inArray } from "drizzle-orm";
 
 import { logBellFailed, type BellFailed } from "@/lib/bell-failed";
 import { CALENDAR_GROUP, TILL_DEVICE_GROUP, tillDeviceGenitive, type TillDevice } from "@/lib/branch-settings/groups";
-import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, DEFAULT_BRANCH_ID, selectedChannel, tillBranches } from "@/lib/branches";
 import {
   branchDayKey,
   businessDate,
@@ -67,7 +67,7 @@ interface TillOf {
 
 /**
  * Yöneticinin zilindeki kasalar: "Tümü"de birden çok kasa açıkken her şube ayrı (`many`); değilse tek kasa (`till`:
- * seçili fiziksel şube; "Tümü"de ve online kanalda Tuzla, kasa sayfasının formu gibi)
+ * seçili fiziksel şube; tek kasa açıkken "Tümü"de Tuzla, kasa sayfasının formu gibi; online kanalda kasa satırı yok)
  */
 interface BellTills {
   of: (branchId: string) => TillOf;
@@ -105,6 +105,10 @@ const kasaHref = (date: string, t: TillOf) => `/panel/kasa?gun=${date}${t.named 
 async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   const day = businessDate(now);
+  // Online kanal seçiliyken kasa satırı yok (şube ayrımı, 27 Kasım 2026): kanalın kasası yok; önceden Tuzla'nın kasası
+  // okunuyordu (Bugün de "Bu kanalın kasası ve stoğu yok" der)
+  const [selected, known] = await Promise.all([currentBranchScope(), listBranches()]);
+  if (selectedChannel(selected, known)) return [];
   const tills = user.role === "admin" ? await bellTills() : null;
   // Okunan kasa: personelin ve yöneticinin tek kasası (okumalar onun kapsamında); "Tümü"de birden çok kasa açıkken
   // süzülmez (hepsi birlikte, şube şube ayrılır)
@@ -416,7 +420,8 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
       pendingCashBellRows(scope),
       cashOutBellRow(now, scope),
       pendingClosedRows(scope),
-      closedInfoRows(new Date(now.getTime() - 3 * 86_400_000)).catch(() => []),
+      // Kapalı gün olayları ve personelin özel günleri: şubenin ve işletme geneli (şube ayrımı, kaydın şubesi)
+      closedInfoRows(new Date(now.getTime() - 3 * 86_400_000), scope).catch(() => []),
     ]);
     const out: PanelNotification[] = rows.map((r) => ({
       id: `istek-${r.id}-${r.bumpedAt.getTime()}`,
@@ -501,16 +506,17 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
 }
 
 /**
- * Şubesiz personelin akşam satırları "Tümü"de (ya da online kanal seçiliyken) birden çok kasa açıkken (şube kapsamı C
- * P2-10): önceden tek satır Tuzla'nın kasasına bakıyordu; Marina'nın raporu girilmemişken susuyordu. Raporu girilmemiş
- * her kasa "Marina: Bugünün kasa raporu bekliyor", bağlantı o şubeyi seçer. Tek kasada ya da seçim bir kasaysa null
- * (bugünkü tek satır)
+ * Şubesiz personelin akşam satırları "Tümü"de birden çok kasa açıkken (şube kapsamı C P2-10): önceden tek satır Tuzla'nın
+ * kasasına bakıyordu; Marina'nın raporu girilmemişken susuyordu. Raporu girilmemiş her kasa "Marina: Bugünün kasa raporu
+ * bekliyor", bağlantı o şubeyi seçer. Tek kasada ya da seçim bir şubeyse null (bugünkü tek satır). Online kanal seçiliyken
+ * buraya gelinmez (cashNotifications kasa satırı üretmez; şube ayrımı): önceden kanal seçiliyken de bütün kasalar okunuyordu
  */
 async function staffTillsWaiting(day: string, now: Date, evening: Awaited<ReturnType<typeof tillEvenings>>): Promise<PanelNotification[] | null> {
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
-  if (tills.length < 2 || tills.some((b) => b.id === scope)) return null;
-  const [reports, switchDays] = await Promise.all([withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)), loadSwitchDays().catch(() => ({}))]);
+  if (scope !== ALL_BRANCHES || tills.length < 2) return null;
+  // Seçim "Tümü": okuma süzülmez, her kasanın raporu gelir
+  const [reports, switchDays] = await Promise.all([cashReportsBetween(day, day), loadSwitchDays().catch(() => ({}))]);
   return tills
     // Kasanın kendi saatinden sonra (şube ayarı isletme.takvim)
     .filter((b) => isCashEvening(now, evening.hourOf(b.id)) && !reports.some((r) => r.branchId === b.id && r.date === day))

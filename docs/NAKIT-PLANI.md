@@ -385,6 +385,36 @@ Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
   (bakiye zaten kısa ömürlü).
 - Tam yedek (docs/YEDEK.md) `integration_state` tablosuyla bu anahtarı da alır.
 
+## Şubenin nakit akışı (27 Kasım 2026)
+
+Şube seçiliyken plan kişinin şube görünümüyle (Hesabım › Şube görünümü ya da ekranın çipi; [SUBE.md › Alanlar](SUBE.md#alanlar-ödemeler-nakit-planı-tedarikçiler-komisyon-parça-4)).
+**Firma geneli** kipinde bugünkü firmanın planı. **Yalnız şube** kipinde **Şubenin nakit akışı** (`loadAreaCashPlan`,
+`src/lib/cash-plan-branch.ts`): gelen şubenin satış tahmini ve kasa devri; giden şubenin hatırlatıcıları, şubeye seçilmiş
+faturaları, personelinin maaşı, şubenin kendi sabit giderleri ve mal tahmini. Açılış bakiyesi firmanındır: şubenin akışı
+bakiyesiz kurulur, hafta satırı ve karo **Net akış** yazar, "Elinizdeki para · Firma geneli" karosu firmanın bakiyesini
+bilgi olarak gösterir. İşletme geneli hatırlatıcı ve fatura ve faturasız borçlar firmanın planından hafta hafta tek
+**İşletme geneli** satırında toplanır (en büyük üç kalemiyle), şubenin akışına girmez. Şubesi seçilmemiş fatura hiçbir
+şubenin akışında yoktur ("Tümü"de vardır). Genel bakış'ın kartı şube kipinde "6 haftada net akış" ve işletme geneli
+toplamını yazar ("· vergi ve SGK Tümü'de").
+
+**Vergi ve SGK şubeye bölünmez** (sahibin kararı 27 Kasım 2026; [SUBE.md › Vergi şubeye
+bölünmez](SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)): şube kipinde KDV, KDV-2, muhtasar, geçici ve
+kurumlar vergisi, damga ve SGK ne şubenin akışında ne İşletme geneli satırında. Ödemeler'deki vergi ve SGK hatırlatıcıları
+(türü "Vergi / SGK" ya da başlığı KDV, muhtasar, stopaj, geçici vergi, damga, ÇTV, SGK, Bağkur; `isTaxPlanReminder`)
+şubenin de olsa şubesiz de olsa girmez. KDV tahmini kartı yok; yerinde kısa not durur: **"KDV tahmini, devreden KDV ve
+Ödendi kayıtları firma geneli"** · "Tümü'de ya da Firma geneli görünümde; vergi şubeye bölünmez.", "Firma geneline geç"
+düğmesiyle (çipin eylemi; `BRANCH_VAT_NOTE`, `FirmVatNotice`). Vergi takviminin, Yardım'ın ve asistanın `#kdv`
+bağlantısı bu nota iner. "Tahmine katılanlar"da KDV, vergi ve SGK satırı yok; "Nasıl hesaplandı" bunların yerine tek
+not yazar: **"Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür."** (`branchPlanWithoutTax`, `FIRM_TAX_NOTE`).
+Bordronun neti Vergi › Kurallar'daki ayarlarla (hesap dönemi, asgari ücret desteği), firmanın planındaki gibi; ayarlar
+okunamazsa varsayılanlar. Stopajlı sabit gider şubenin akışında net ödenir (stopaj muhtasarla firmanın). Bağlantının
+`odemeler` aracının nakit planı da aynı notu taşır. Tümü ve Firma geneli kipi değişmedi.
+
+Firma geneli olan **KDV beyanı ve ödemesi**dir (sahibin açıklaması 27 Kasım 2026: "ürün KDV'si falan hesaplansın, nasıl
+doğruysa öyle olsun"); şubenin kendi ödemelerindeki KDV şubenin akışında durur, Tümü'deki gibi: şubeye seçilmiş faturanın
+ödenecek tutarı KDV dahil (tevkifatlı faturada tedarikçiye ödenen kısım; tevkifat 2 No.lu KDV'yle firmanın), şubenin
+sabit giderine faturadaki KDV eklenir, mal tahmini ve satış tahmini KDV dahil tutarlarla.
+
 ## Kod
 
 | Dosya | İş |

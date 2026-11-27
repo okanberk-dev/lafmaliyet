@@ -22,6 +22,7 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { SHARED_COSTS_NOTE } from "@/lib/branch-view";
 import { shiftMonth, type FixedHistoryEntry, type RangeStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { FixedPeriod, FixedSection, LandlordType } from "@/lib/calc/types";
@@ -274,7 +275,8 @@ export function FixedSummary({
   /** Gelecek ay toplam değişiyorsa (planlı zam, biten kalem): o ayın toplamı */
   next: { month: string; total: number } | null;
   /** Şube seçiliyken toplama ve başabaşa girmeyen işletme geneli kalemler (sahibin kararı 4); "Tümü"de null */
-  shared?: { branch: string; amount: number } | null;
+  /** Şube seçiliyken işletme geneli kalemler (bilgi); `hidden`: İşletme geneli giderler "Yalnız not" kipinde, tutar yok (parça 6) */
+  shared?: { branch: string; amount: number; hidden?: boolean } | null;
 }) {
   return (
     <Card className="mb-6 p-5">
@@ -290,7 +292,11 @@ export function FixedSummary({
             <CountUp value={total} />
           </p>
           <p className="mt-1 text-[13px] text-ink-mute">{acikGun} açık gün varsayımıyla · KDV hariç</p>
-          {shared && shared.amount > 0 ? (
+          {shared?.hidden ? (
+            <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
+              {shared.branch} seçili: işletme geneli kalemler bu listede, toplamda ve başabaşta yok. {SHARED_COSTS_NOTE}.
+            </p>
+          ) : shared && shared.amount > 0 ? (
             <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
               {shared.branch} seçili: işletme geneli kalemler (<span className="font-medium whitespace-nowrap text-ink tabular">{tl(shared.amount)}</span>, bilgi) bu
               toplama ve başabaşa girmez; Tümü&apos;de bir kez sayılır.
@@ -1490,7 +1496,17 @@ function FixedDialog({
 
 // ============================================================================ Yatırımlar
 
-type Investment = { id: number; name: string; amount: number; date: string | null; note: string | null };
+type Investment = {
+  id: number;
+  name: string;
+  amount: number;
+  date: string | null;
+  note: string | null;
+  /** Yatırımın şubesi; boş: işletme geneli (şube ayrımı, migration 0101) */
+  branchId: string | null;
+  /** Listede gösterilecek şube ("İşletme geneli" dahil): birden çok açık şube varken; yoksa null */
+  branchName: string | null;
+};
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -1500,7 +1516,22 @@ function periodText(date: string | null) {
   return MONTH_RE.test(date) ? monthLabel(date) : date;
 }
 
-export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: number }) {
+/**
+ * Tek seferlik yatırımlar (şube ayrımı, 27 Kasım 2026): şube seçiliyken liste o şubenin ve işletme genelinin yatırımları,
+ * toplam yalnız şubeninki; `shared` işletme geneli yatırımların toplamı (bilgi, şubenin toplamına girmez). "Tümü"de null
+ */
+export function InvestmentsClient({
+  rows,
+  total,
+  shared = null,
+  branches,
+}: {
+  rows: Investment[];
+  total: number;
+  /** `hidden`: İşletme geneli giderler "Yalnız not" kipinde (şube ayrımı parça 6): işletme geneli yatırım listede yok */
+  shared?: { branch: string; amount: number; count: number; hidden?: boolean } | null;
+  branches: FixedBranches;
+}) {
   const [editing, setEditing] = useState<Investment | "new" | null>(null);
   const [deleting, setDeleting] = useState<Investment | null>(null);
   const [deletePending, setDeletePending] = useState(false);
@@ -1537,7 +1568,13 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
       <CardHeader
         icon={<PiggyBank />}
         title="Tek seferlik yatırımlar"
-        description="Bilgi amaçlı, aylık gidere dahil değil."
+        description={
+          shared?.hidden
+            ? `Bilgi amaçlı, aylık gidere dahil değil. Yalnız ${shared.branch} şubesinin yatırımları; işletme geneli yatırımlar Tümü'de.`
+            : shared
+              ? `Bilgi amaçlı, aylık gidere dahil değil. Toplam yalnız ${shared.branch} şubesinin; işletme geneli ${shared.count} kayıt (${tl(shared.amount)}) listede, toplama girmez.`
+              : "Bilgi amaçlı, aylık gidere dahil değil."
+        }
         meta={
           <>
             <span className="font-medium text-ink tabular">Toplam {tl(total)}</span>
@@ -1571,7 +1608,10 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
                     onClick={() => setEditing(r)}
                   >
                     {/* Uzun not sütunu adı sıkıştırmasın (1024'te ad üç satıra iniyordu) */}
-                    <TD className="min-w-52 font-medium">{r.name}</TD>
+                    <TD className="min-w-52 font-medium">
+                      {r.name}
+                      {r.branchName ? <span className="block text-xs font-normal text-ink-mute">{r.branchName}</span> : null}
+                    </TD>
                     <TD className="whitespace-nowrap text-ink-soft" title={r.date ?? undefined}>
                       {periodText(r.date)}
                     </TD>
@@ -1621,7 +1661,10 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
                 >
                   <button type="button" onClick={() => setEditing(r)} className="min-w-0 flex-1 cursor-pointer self-stretch text-left">
                     <span className="block font-medium break-words text-ink">{r.name}</span>
-                    <span className="mt-0.5 block text-xs text-ink-mute">{periodText(r.date)}</span>
+                    <span className="mt-0.5 block text-xs text-ink-mute">
+                      {periodText(r.date)}
+                      {r.branchName ? ` · ${r.branchName}` : null}
+                    </span>
                     {r.note ? <span className="mt-1 line-clamp-2 text-xs text-ink-mute">{r.note}</span> : null}
                   </button>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -1653,7 +1696,7 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
         />
       )}
       {editing ? (
-        <InvestmentDialog row={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={setFlash} onDelete={setDeleting} />
+        <InvestmentDialog row={editing === "new" ? null : editing} branches={branches} onClose={() => setEditing(null)} onSaved={setFlash} onDelete={setDeleting} />
       ) : null}
       <ConfirmDialog
         open={deleting !== null}
@@ -1676,11 +1719,14 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
 
 function InvestmentDialog({
   row,
+  branches,
   onClose,
   onSaved,
   onDelete,
 }: {
   row: Investment | null;
+  /** Şube seçimi (birden çok açık şube varken): yeni yatırım seçili şubeyle, "Tümü"de işletme geneliyle başlar */
+  branches: FixedBranches;
   onClose: () => void;
   /** Kayıttan sonra listede vurgulanacak satır */
   onSaved: (id: number) => void;
@@ -1695,6 +1741,7 @@ function InvestmentDialog({
   const [amount, setAmount] = useState(row ? num(row.amount, 2) : "");
   const [date, setDate] = useState(row?.date ?? "");
   const [note, setNote] = useState(row?.note ?? "");
+  const [branch, setBranch] = useState((row ? row.branchId : branches.fallback) ?? "");
   // Ay seçici yalnızca dönem boşsa ya da YYYY-AA ise; elle yazılmış eski değerler metin olarak kalır
   const [monthPicker] = useState(() => !row?.date || MONTH_RE.test(row.date));
   const parsed = amount.trim() === "" ? 0 : parseNumberTR(amount);
@@ -1712,7 +1759,9 @@ function InvestmentDialog({
     if (!name.trim()) return nameRef.current?.focus();
     if (amountError || parsed === null) return amountRef.current?.focus();
     setBusy(true);
-    const res = await tryAction(() => saveInvestment({ id: row?.id ?? null, name, amount: parsed, date, note }), { maybeSaved: !row });
+    // Tek şube açıkken şube sorulmaz: düzenlemede yatırımın şubesi kalır, yenisi işletme geneli
+    const branchPart = branches.options.length > 1 ? { branchId: branch || null } : {};
+    const res = await tryAction(() => saveInvestment({ id: row?.id ?? null, name, amount: parsed, date, note, ...branchPart }), { maybeSaved: !row });
     setBusy(false);
     if (!res) return;
     if (!res.ok) return toast.error(res.error);
@@ -1760,6 +1809,18 @@ function InvestmentDialog({
             data-autofocus={row ? undefined : true}
           />
         </Field>
+        {branches.options.length > 1 ? (
+          <Field label="Şube" htmlFor="iv-b" tip="İşletme geneli yatırım her şubenin listesinde bilgi olarak görünür, şubenin toplamına girmez; şubeye bağlı yatırım yalnız o şubede.">
+            <Select id="iv-b" value={branch} onChange={(e) => setBranch(e.target.value)}>
+              <option value="">İşletme geneli</option>
+              {branches.options.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Tutar (₺, KDV hariç)" htmlFor="iv-a" error={amountError}>
             <NumberInput

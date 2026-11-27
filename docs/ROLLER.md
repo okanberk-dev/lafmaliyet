@@ -115,7 +115,7 @@ ve kalemleriyle), **Gelir-gider**, **Vergi** (alt sayfaları, kişi kişi bordro
 düğmeleri gizli.
 
 - Hiçbir kayıt değiştiremez: her sunucu eylemi reddeder. Geçenler yalnız kendi hesabının eylemleri (parola, iki
-  adımlı, oturumlar, bu cihazın bildirim aboneliği) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
+  adımlı, oturumlar, bu cihazın bildirim aboneliği, şube görünümü tercihi) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
   metni). Veri uçları da: fotoğraf yükleyemez, sipariş eşitleyemez, vardiya PDF'ini alamaz, belge taramada yapay
   zekâya köşe ipucu soramaz (`/api/foto/kenar` ve çekirdeği `scanHintFor`: ücretli istek, `ai_calls` satırı ve
   işletmenin ortak günlük sınırı; [FOTOGRAF.md](FOTOGRAF.md) › Belge tarama).
@@ -130,8 +130,13 @@ düğmeleri gizli.
   `src/lib/calc/engine.ts` › `ModelOptions.personal` (varsayılan kapalı; `loadModel`, `createModel`), Gelir-gider
   `personal: can(rol, "maas")` ile açar. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı);
   e-postanın neden gitmediğini görmez, sabit metni görür (ham hata yalnız yöneticinin; `emailErrorFor`).
+- **Şube görünümü** (Hesabım; [SUBE.md › Şube ayrımı](SUBE.md#şube-ayrımı-27-kasım-2026)): yönetici ve muhasebeci şube
+  seçiliyken ekran ekran "yalnız şube" ya da "firma geneli" seçer (muhasebecinin varsayılanı Vergi'de firma geneli);
+  müdür ve şubesine kilitli personelde ayar yok, her ekran yalnız kendi şubesi (`saveBranchView` reddeder).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**
-  (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)).
+  (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)). Şube seçiliyken paketin elle indirmesi o şubenin
+  (`?sube=`, işletme geneli kalemler muhasebecinin İşletme geneli giderler kipiyle: varsayılanı "Tutarla göster"); aylık
+  e-posta bütün şubeler (şube ayrımı parça 6).
 
 ## Kullanıcı yönetimi ve davet
 

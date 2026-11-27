@@ -774,6 +774,8 @@ export type LogEntry = {
   viaAssistant?: boolean;
   action: string;
   detail: string | null;
+  /** Kaydın şubesi (şube ayrımı): "Tümü"de şubenin adı, şube seçiliyken şubesiz kayıtta "İşletme geneli"; yoksa null */
+  branch?: string | null;
 };
 
 type LogKind = { kind: string; label: string; keys: string[]; Icon: LucideIcon; tone: PastelTone };
@@ -900,6 +902,7 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
                               <span className="font-medium text-ink-soft">{l.person.name}</span>
                               {l.person.email ? <span className="break-all text-ink-mute"> ({l.person.email})</span> : null}
                               {l.viaAssistant ? <span className="text-ink-mute"> (asistan aracılığıyla)</span> : null}
+                              {l.branch ? <span className="text-ink-mute"> · {l.branch}</span> : null}
                               {l.detail ? ` · ${l.detail}` : null}
                             </span>
                           }

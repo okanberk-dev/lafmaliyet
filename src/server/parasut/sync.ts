@@ -1875,7 +1875,7 @@ export async function updateIgnoredSuppliers(change: (list: IgnoredSupplier[]) =
 }
 
 /** Hammaddeye bağlanmayı bekleyen ürün sayısı (zil ve ana sayfa için; listeyle aynı süzgeç) */
-export async function countUnlinkedProducts(): Promise<number> {
+export async function countUnlinkedProducts(scope: BranchScope = ALL_BRANCHES): Promise<number> {
   const db = getDb();
   const [ignored, rules] = await Promise.all([ignoredProducts(), ignoredSuppliers()]);
   const ignoredKeys = ignored.map((i) => i.productKey);
@@ -1888,6 +1888,8 @@ export async function countUnlinkedProducts(): Promise<number> {
         inArray(s.invoices.category, LINKABLE_CATEGORIES),
         notInArray(s.parasutBillLines.productKey, db.select({ k: s.parasutProductLinks.productKey }).from(s.parasutProductLinks)),
         ignoredKeys.length ? notInArray(s.parasutBillLines.productKey, ignoredKeys) : undefined,
+        // Tek şube seçiliyken o şubenin ve işletme genelinin faturalarının kalemleri (unlinkedProducts ile aynı; şube ayrımı)
+        invoiceScopeWhere(scope),
       ),
     );
   // Tedarikçi kuralı ("hep hammadde değil"): o tedarikçinin kalemi bekleyen sayılmaz

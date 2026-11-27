@@ -154,14 +154,15 @@ async function ParasutContent() {
       .groupBy(invoiceMonth, s.invoices.origin, hasBill, hasEInvoice),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, parasutKey(CURSOR_KEY, account))).limit(1),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, parasutKey(PENDING_KEY, account))).limit(1),
-    // E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri UBL belgesinden okunur
+    // E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri UBL belgesinden okunur. Seçili şubenin ve işletme
+    // genelinin (şube ayrımı, 27 Kasım 2026; Bekleyen ürünler gibi): ortak hesapta öbür şubenin e-faturaları sayılmaz
     db
       .select({
         read: sql<number>`count(*) filter (where ${s.invoices.ublReadAt} is not null)`.mapWith(Number),
         pending: sql<number>`count(*) filter (where ${s.invoices.ublReadAt} is null)`.mapWith(Number),
       })
       .from(s.invoices)
-      .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId), mine)),
+      .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId), mine, invoiceScopeWhere(scope))),
     ignoredProducts(),
     // Bağlı her ürünün en yeni kalemi: adındaki paket boyu bağlantının çarpanıyla tutuyor mu (Kontrol edilecek bağlantılar)
     db
@@ -177,12 +178,13 @@ async function ParasutContent() {
       .innerJoin(s.parasutProductLinks, eq(s.parasutProductLinks.productKey, s.parasutBillLines.productKey))
       .orderBy(s.parasutBillLines.productKey, desc(s.invoices.date), desc(s.parasutBillLines.id)),
     invoiceReadingState(),
-    // Panele girmeyen iadeler (docs/PARASUT.md §2a) ve elle girilmiş eksi faturalar (tedarikçiye iade girildi mi)
+    // Panele girmeyen iadeler (docs/PARASUT.md §2a) ve elle girilmiş eksi faturalar (tedarikçiye iade girildi mi). Eksi
+    // faturalar seçili şubenin ve işletme genelinin (şube ayrımı): Marina seçiliyken Tuzla'nın iadesi "girildi" sayılmaz
     db.select().from(s.integrationState).where(eq(s.integrationState.key, parasutKey(RETURNS_KEY, account))).limit(1),
     db
       .select({ date: s.invoices.date, supplier: s.invoices.supplier, payable: s.invoices.payable, supplierTaxNumber: s.invoices.supplierTaxNumber })
       .from(s.invoices)
-      .where(lt(s.invoices.payable, 0)),
+      .where(and(lt(s.invoices.payable, 0), invoiceScopeWhere(scope))),
     // Bağlantı ayarları: alan alan panel, yoksa (varsayılan hesapta) ortam değişkeni (client_secret'ın değeri ekrana gitmez)
     loadParasutSettings(account),
     // Paraşüt'ten fatura geldiyse firma numarası panelden değiştirilemez

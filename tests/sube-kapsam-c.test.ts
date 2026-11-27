@@ -93,7 +93,7 @@ test("kaynak: kasa ve sayım 'Tümü'de birden çok kasa açıkken formdan önce
   assert.ok(fn > 0 && at > fn && at < kasa.indexOf("const till = await currentTillBranch();", fn), "kasa: soru formdan önce");
   assert.match(kasa, /title="Hangi şubenin kasası\?"/);
   const sayim = read("src/app/panel/sayim/page.tsx");
-  assert.ok(sayim.indexOf("if (tills.length > 1 && !tills.some((b) => b.id === scope)) {") < sayim.indexOf("const model = await loadModel({ scope: branch.id });"), "sayım: soru modelden önce");
+  assert.ok(sayim.indexOf("if (tills.length > 1 && !tills.some((b) => b.id === scope)) {") < sayim.indexOf("loadModel({ scope: branch.id })"), "sayım: soru modelden önce");
   assert.match(sayim, /title="Hangi şubeyi sayıyorsunuz\?"/);
 });
 
@@ -106,17 +106,22 @@ test("kaynak: Satışlar'ın ay bilgisi 'Tümü'de birden çok kasa açıkken ş
   assert.match(read("src/app/panel/satislar/sales-client.tsx"), /\{num\(clearCount\)\} \{asilpos \? "ModPOS" : "satış"\} satırı silinecek\./);
 });
 
-test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, Vergi ve Cari firma geneli", () => {
+test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, sekmeler alanlarının kipiyle", () => {
   assert.match(read("src/app/panel/page.tsx"), /href=\{`\/api\/export\?ay=\$\{month\}&\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(scope\)\}`\}/);
   const route = read("src/app/api/export/route.ts");
   assert.match(route, /const scope = raw \? parseBranchScope\(raw, await listBranches\(\)\) : ALL_BRANCHES;/);
-  assert.match(route, /withBranchScope\(ALL_BRANCHES, \(\) => loadCariExport\(\)\)/);
+  // Şube ayrımı parça 6: Cari hareketleri Tedarikçi bakiyeleri alanının kipiyle, beyan her kipte "Tümü"yle
+  assert.match(route, /const cariScope = await areaScope\("tedarikciler"\);/);
+  assert.match(route, /loadCariExport\(cariScope\)/);
+  assert.match(route, /withBranchScope\(ALL_BRANCHES, async \(\) => loadTaxView\(/);
   // Kapak "Kapsam" satırı ve sayfaların üst bilgisi (davranışı tests/export-bicim.test.ts sınar)
   const wbSrc = read("src/app/api/export/workbook.ts");
-  assert.match(wbSrc, /scope\?\.branch\s*\? `\$\{scope\.label\} şubesi: /);
+  assert.match(wbSrc, /`\$\{n\} şubesi: satış, kasa, personel/);
   assert.match(wbSrc, /const period = `\$\{label\} · \$\{extras\.scope\?\.label \?\? "Tümü"\}`;/);
-  // Ayarlar'daki tam yedek seçicisiz ("Tümü")
-  assert.match(read("src/app/panel/ayarlar/page.tsx"), /<a href="\/api\/export" download/);
+  // Ayarlar'daki dışa aktarım şube seçiliyken şubenin dosyası, yanında bütün şubeler (şube ayrımı parça 6)
+  const ayarlar = read("src/app/panel/ayarlar/page.tsx");
+  assert.match(ayarlar, /<a href="\/api\/export" download/);
+  assert.match(ayarlar, /href=\{`\/api\/export\?\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(exportBranch\.id\)\}`\}/);
 });
 
 test("sabah e-postası alıcı grupları: şubesiz ve bütün kasaları seçen adres tek e-posta; şubeye bağlı adres ayrı", () => {
@@ -170,14 +175,26 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
   assert.match(note!.text, /cari hesabı firmanındır/);
   // Faturalar firma geneli değil (25 Kasım 2026, docs/SUBE.md › Faturanın şubesi): seçili şubenin faturaları
   assert.doesNotMatch(read("src/app/panel/faturalar/page.tsx"), /<CompanyWideNotice/);
-  // Ekranlar notu çizer (şube kapsamı C P1-12, P2-1)
-  for (const [file, screen] of [
-    ["src/app/panel/vergi/page.tsx", "vergi"],
-    ["src/app/panel/tedarikciler/page.tsx", "tedarikciler"],
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): üç sekmesi notu çizer, çipi yok
+  const vergi = companyWideNote("vergi", "marina", known);
+  assert.equal(vergi?.title, "Marina seçili: bu ekran firma geneli");
+  assert.match(vergi!.text, /^Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez/);
+  for (const file of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx"]) {
+    assert.match(read(file), /<CompanyWideNotice screen="vergi" \/>/, file);
+    assert.doesNotMatch(read(file), /<BranchViewChip/, file);
+  }
+  // Alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube ayrımı parça 4: Tedarikçiler, Nakit planı; parça 5:
+  // Tutarlılık, Mutabakat)
+  for (const [file, area] of [
     ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
-  ] as const)
-    assert.match(read(file), new RegExp(`<CompanyWideNotice screen="${screen}"`), file);
-  assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\("nakit", scope, branches\)/);
+    ["src/app/panel/mutabakat/page.tsx", "mutabakat"],
+  ] as const) {
+    assert.match(read(file), new RegExp(`<BranchViewChip area="${area}"`), file);
+    assert.doesNotMatch(read(file), /<CompanyWideNotice/, file);
+  }
+  assert.match(read("src/app/panel/tedarikciler/page.tsx"), /<BranchViewChip area="tedarikciler"/);
+  assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /<BranchViewChip area="nakit"/);
+  assert.doesNotMatch(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\(/);
 });
 
 test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve bilinmeyen şube seçenekleriyle reddedilir", () => {
@@ -192,8 +209,11 @@ test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve
   assert.deepEqual(mcpBranchScope("hepsi", known), { scope: ALL_BRANCHES });
   assert.deepEqual(mcpBranchScope("Eski", known), { error: 'Şube bulunamadı: "Eski". Seçenekler: Tuzla, Marina, hepsi' });
   const tools = read("src/server/mcp/tools.ts");
-  // Satış, kasa ve ödemeler şubeyle; tedarikçi ve arama firma geneli
-  assert.equal((tools.match(/scoped\((?:args\.)?sube, async \(\) => \{/g) ?? []).length, 5);
-  assert.equal((tools.match(/kapsam: COMPANY_WIDE/g) ?? []).length, 2);
+  // Satış, kasa, ödemeler ve (şube ayrımı parça 4'ten beri) tedarikçi şubeyle; arama firma geneli. Alanı olan iki araç
+  // kapsamı alanın kipiyle yazar (areaKapsam)
+  assert.equal((tools.match(/scoped\((?:args\.)?sube, async \(\) => \{/g) ?? []).length, 4);
+  assert.equal((tools.match(/scoped\(sube, async \(scope, label\) =>/g) ?? []).length, 2);
+  assert.equal((tools.match(/kapsam: areaKapsam\(label, scope, /g) ?? []).length, 2);
+  assert.equal((tools.match(/kapsam: COMPANY_WIDE/g) ?? []).length, 1);
   assert.match(tools, /if \(lock !== null && scope !== lock\) throw new ToolInputError/);
 });

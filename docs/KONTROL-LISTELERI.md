@@ -76,6 +76,15 @@ sekmesinde şubeye ait listenin yanında şube rozeti görünür.
   der, fotoğrafı da görünmez (§ 4). Şubesiz liste herkese açık kalır; yöneticiye ve şubesiz personele kilit yok.
 - Sabah e-postası işletmenin tamamı içindir: bütün şubelerin eksik listeleri birlikte gelir.
 - Migration 0058 karaoke odası maddesi olan listeleri Tuzla'ya bağladı; diğer listeler bütün şubelerin kaldı.
+- **Kayıt şube başına** (şube ayrımı, 27 Kasım 2026; migration 0101; [SUBE.md](SUBE.md#şube-sütunu-gelen-tablolar-parça-3)):
+  günün kaydının şubesi var. Şubeli listenin kaydı listenin şubesindedir. **Bütün şubelerin listesini her şube kendi
+  kaydına doldurur**: tek şube seçiliyken liste o şubenin kaydını gösterir (öbür şubenin yanıtları görünmez); "Tümü"de her
+  açık fiziksel şubenin ayrı satırı vardır ("Marina · Kapanış", bağlantısı `/panel/kontrol/<id>?sube=marina`); online
+  kanal seçiliyken yoktur. Doldurma ekranı kaydın şubesini her yanıtla gönderir; "Tümü"de birden çok şube açıkken şube
+  seçilmeden açılırsa önce **"Hangi şubenin listesi?"** sorulur (sessizce Tuzla'ya yazılmaz). Kilitli personel kendi
+  şubesinin kaydına yazar. Fotoğrafı kim görür, kapalı gün kanıtı ve personel e-postasının alıcısı kaydın şubesinden.
+  Önceden ortak listenin günde tek kaydı vardı: Marina'da başlanan liste Tuzla'da da "başladı" görünüyordu. Eski
+  kayıtlar: listenin şubesi, yoksa tamamlayanın ya da ilk yanıtlayanın şubesi, o da yoksa Tuzla.
 
 Madde türleri:
 
@@ -160,7 +169,8 @@ Denetime hazır aylık kayıt (Yapılacaklar › Dalga 3): **Geçmiş** sekmesin
 
 - **İlk sayfa:** ay, şube; beklenen liste, tamamlanan, eksik, doldurulmadı, kapalı gün, sorun / aralık dışı, fotoğraf
   sayısı; **eksik ya da doldurulmamış listesi olan günler** (hangi liste, kaç madde eksik).
-- **Gün gün:** o gün beklenen her liste (Geçmiş'teki kural: o şubenin ve bütün şubelerin listeleri; günün o liste için
+- **Gün gün:** o gün beklenen her liste (Geçmiş'teki kural: o şubenin ve bütün şubelerin listeleri, kayıt o şubenin;
+  "Bütün şubeler"de bütün şubelerin listesi şube şube "Marina · Kapanış"; günün o liste için
   beklendiği haftanın günleri ve etkinlik tarihleriyle). Listenin başlığında saat aralığı ve durumu ("Tamamlandı · 09:20 ·
   Selin", "Eksik: 2 madde", "Doldurulmadı"). Doldurulan listede **madde madde**: yanıt (Tamam, değer ve izin verilen
   aralık, "aralık dışı", "Sorun var: not", kısa not), **işaretleyen**, **saat** (Türkiye) ve **fotoğraf** (Var / Yok;
@@ -173,7 +183,8 @@ Denetime hazır aylık kayıt (Yapılacaklar › Dalga 3): **Geçmiş** sekmesin
 
 ## 6. Bugün, zil ve sabah e-postası
 
-**Bugün** ([BUGUN.md](BUGUN.md)): her liste bir satırdır (`liste-{id}`, açılış saatine göre): aralıktan önce
+**Bugün** ([BUGUN.md](BUGUN.md)): her liste bir satırdır (`liste-{id}`; bütün şubelerin listesinin şube satırı
+`liste-{id}-{şube}`; açılış saatine göre): aralıktan önce
 "Sonra", aralıkta "Yapılacak" (başladıysa "3 / 13 madde · Ayşe · son saat 11:00"), son saatten sonra "Gecikti",
 bitince "Tamam" (kim, saat, fotoğraf sayısı; yöneticide açık sorun varsa "1 sorun"). Yöneticiye ayrıca dünün
 tamamlanmayan ya da sorunlu listeleri tek satır (`liste-dun`, Geçmiş'in o gününe götürür); o gün kasa raporu da
@@ -245,8 +256,9 @@ Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
   kimse vardiyada değilse vardiyası son 2 saatte biten ya da önümüzdeki 2 saatte başlayana (25 Kasım 2026: 14–22
   vardiyasında 22:00 kapanış hatırlatması az önce çıkana gider, o gün çalışmış sabahçıya değil); o da yoksa o gün o
   şubede çalışacak herkese. O gün için plan hiç yazılmadıysa eskisi gibi listeyi
-  doldurabilen etkin **personel**: şubeli listede o şubenin personeli ve şubesi boş personel, şubesiz listede bütün
-  personel (`alertRecipients`). Tuvalet çizelgesi yalnız Tuzla'nın.
+  doldurabilen etkin **personel**: şubeli listede o şubenin personeli ve şubesi boş personel (`alertRecipients`). Bütün
+  şubelerin listesi şube başına uyarıdır (şube ayrımı, 27 Kasım 2026): her şubenin kaydı kendi vardiyasına gider, anahtar
+  şubeyi taşır (`kontrol-eposta:{liste}@{şube}:…`). Tuvalet çizelgesi yalnız Tuzla'nın.
   Her kişiye kendi adresine tek e-posta (adresler birbirine görünmez); o çalışmadaki bütün uyarıları bir arada,
   gecikmeler önce. E-postada ödeme ya da maliyet yok.
 - Her uyarı bir kez: anahtar `kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late}` gönderimden önce
@@ -271,8 +283,8 @@ yaptığını tutar).
 
 ## 7. Veri
 
-- `checklist_templates` (liste), `checklist_items` (maddeleri), `checklist_runs` (günün kaydı ve maddelerin anlık
-  görüntüsü), `checklist_answers` (yanıt, önceki hâlleri, fotoğrafı). `integration_state` › `kontrol.seeded`: hazır
+- `checklist_templates` (liste), `checklist_items` (maddeleri), `checklist_runs` (günün şubedeki kaydı ve maddelerin anlık
+  görüntüsü; tekil anahtar liste, gün, şube, sıra; migration 0101), `checklist_answers` (yanıt, önceki hâlleri, fotoğrafı). `integration_state` › `kontrol.seeded`: hazır
   listeler eklendi.
 - Kayıtlar silinmez (yılda yaklaşık 11 bin yanıt). `db:reset` dokunmaz; tam yedeğe girer, fotoğrafların kendisi
   girmez ([YEDEK.md](YEDEK.md)).

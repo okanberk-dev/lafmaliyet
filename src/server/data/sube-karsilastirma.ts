@@ -3,13 +3,14 @@ import "server-only";
 import { and, gte, lte } from "drizzle-orm";
 
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
+import { compareBranchesIn } from "@/lib/branch-view";
 import type { MonthField } from "@/lib/calc/types";
 import { businessDate } from "@/lib/cash-report";
 import { cellReader } from "@/lib/kiyas";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { branchCompare, cashDiffByMonth, EMPTY_FIGURES, monthDays, receiptFigures, type BranchMonthFigures, type ComparePeriod } from "@/lib/sube-karsilastirma";
 import { requireAdmin } from "@/server/auth/dal";
-import { withBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhere, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
@@ -24,18 +25,25 @@ export interface BranchCompareData {
   current: string;
   branches: { id: string; name: string; openedOn: string | null }[];
   periods: ComparePeriod[];
+  /**
+   * "Yalnız seçili şube" kipinde (Şubeleri yan yana alanı, şube ayrımı parça 6) gösterilen tek şubenin adı; "Yan yana"
+   * kipinde ve "Tümü"de null
+   */
+  only: string | null;
 }
 
 /**
- * Şube karşılaştırma (Raporlar; docs/RAPORLAR.md, hesap src/lib/sube-karsilastirma.ts). Yalnız yönetici. Soldaki seçiciden
- * bağımsız: her açık fiziksel şube kendi görünümüyle okunur (Gelir-gider'de o şube seçiliyken görünen rakamlar), kasa
- * satırları ve raporlar "Tümü"yle. Her rakam başka bir ekranınkidir:
+ * Şube karşılaştırma (Raporlar; docs/RAPORLAR.md, hesap src/lib/sube-karsilastirma.ts). Yalnız yönetici. Şubeleri yan
+ * yana alanının kipiyle (şube ayrımı parça 6): "Tümü"de ve "Yan yana" kipinde her açık fiziksel şube, "Yalnız seçili şube"
+ * kipinde yalnız seçili şube; her şube kendi görünümüyle okunur (Gelir-gider'de o şube seçiliyken görünen rakamlar), kasa
+ * satırları ve raporlar alanın kapsamıyla. Her rakam başka bir ekranınkidir:
  * - ciro, açık gün, mal maliyeti, personel, giderler, kâr: Gelir-gider'in ay hesabı (`pnlMonth`, şubenin görünümü);
  * - ödenmez ve indirim: ayın bilgisi (Gelir-gider / Satışlar; girilmemişse bilinmiyor);
  * - zayi ve ikramın malzeme maliyeti: Zayi & ikram'ın ay özeti (`wasteSummary`);
  * - kasa farkı: kasa raporlarının farkı (eksik eksi);
  * - fiş ve ortalama sepet: Kıyas'ın şube-gün hücresi (rapor > AsilPOS gün sonu > ModPOS föyü).
- * Seçilen son ay bu aydan sonraysa bu aya çekilir. Açık fiziksel şube yoksa null.
+ * Seçilen son ay bu aydan sonraysa bu aya çekilir. Açık fiziksel şube yoksa (ya da "Yalnız seçili şube" kipinde online
+ * kanal seçiliyse) null.
  */
 export async function loadBranchCompare(lastMonth: string, span: number, now: Date = new Date()): Promise<BranchCompareData | null> {
   await requireAdmin();
@@ -47,19 +55,22 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
   const from = `${months[0]}-01`;
   const to = months[months.length - 1] === current ? today : addDays(`${shiftMonth(last, 1)}-01`, -1);
 
+  // Şubeleri yan yana alanı: "Yan yana" kipinde "Tümü", "Yalnız seçili şube" kipinde seçim (müdürde hep kendi şubesi)
+  // şube-ayrımı: alan.karsilastirma
+  const compareScope = await areaScope("karsilastirma");
   const all = await listBranches(db);
-  const branches = tillBranches(all);
+  const branches = compareBranchesIn(tillBranches(all), compareScope);
   if (!branches.length) return null;
 
   const [models, rows, switchDay, reports, closed] = await Promise.all([
-    // Her şube kendi görünümüyle (soldaki seçimden bağımsız): Gelir-gider'de o şube seçiliyken görünen ay hesabı
+    // Her şube kendi görünümüyle: Gelir-gider'de o şube seçiliyken görünen ay hesabı
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
-    withBranchScope(ALL_BRANCHES, () => tillRows(db)),
+    withBranchScope(compareScope, () => tillRows(db)),
     loadSwitchDays(db),
     db
       .select({ branchId: s.cashReports.branchId, date: s.cashReports.date, cashDiff: s.cashReports.cashDiff, receipts: s.cashReports.receipts })
       .from(s.cashReports)
-      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to))),
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), branchWhere(s.cashReports.branchId, compareScope))),
     Promise.all(branches.map(async (b) => [b.id, new Set(await closedDaysBetween(from, to, db, b.id))] as const)),
   ]);
 
@@ -111,5 +122,6 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
     current,
     branches: branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
     periods: branchCompare(input, months),
+    only: compareScope === ALL_BRANCHES ? null : (branches[0]?.name ?? null),
   };
 }

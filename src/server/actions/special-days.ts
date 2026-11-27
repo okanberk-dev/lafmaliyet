@@ -85,7 +85,7 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     const sentBranch = d.branchId;
     if (sentBranch && !tillBranches(await listBranches()).some((b) => b.id === sentBranch)) throw new UserError("Şube bulunamadı (sayfayı yenileyin)");
     // Personelin yazımlarıyla aynı danışma kilidi (src/server/closed-days.ts lockSpecialDays): çakışma ve sınırlar yarışmaz
-    const id = await getDb().transaction(async (tx) => {
+    const { id, branchId: dayBranch } = await getDb().transaction(async (tx) => {
       await lockSpecialDays(tx);
       // Aynı adla üst üste binen ikinci kayıt etkiyi iki kez çarpar (aynı maç yanlışlıkla iki kez girilmiş)
       const overlapping = await tx
@@ -110,16 +110,17 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
         // Onaylanmış kapalı gün bildiriminin satırı o günü artık kapatmıyor (tür, gün ya da şube değişti): istek silmedeki
         // gibi "geri alındı" olur, eksik rapor uyarıları geri gelir (denetim 13 Kasım SB-04). Bağlı istek yoksa bir şey yapmaz
         await recheckClosedRequests(tx, row.id, "Yönetici kapalı işaretini değiştirdi");
-        return row.id;
+        return { id: row.id, branchId };
       }
       const [row] = await tx
         .insert(s.specialDays)
         .values({ ...values, branchId, createdBy: me.id, createdByName: me.name })
         .returning({ id: s.specialDays.id });
-      return row.id;
+      return { id: row.id, branchId };
     });
     const summary = specialSummary(values);
-    await logActivity(me, d.id ? "Özel gün güncellendi" : "Özel gün", summary);
+    // İşlem geçmişinde günün şubesi (şube ayrımı; boş = bütün şubeler)
+    await logActivity(me, d.id ? "Özel gün güncellendi" : "Özel gün", summary, { branchId: dayBranch });
     refresh();
     return { id, summary };
   });
@@ -149,7 +150,7 @@ export async function deleteSpecialDay(id: number): Promise<ActionResult<Special
       // Şubeli kapalı gün "Geri al"la aynı şubeye döner (işletme geneline değil)
       branchId: row.branchId,
     };
-    await logActivity(me, "Özel gün silindi", specialSummary({ ...values, effect: row.effect }));
+    await logActivity(me, "Özel gün silindi", specialSummary({ ...values, effect: row.effect }), { branchId: row.branchId });
     refresh();
     return values;
   });

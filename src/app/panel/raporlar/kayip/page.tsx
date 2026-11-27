@@ -2,7 +2,6 @@ import { ShieldAlert } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -10,6 +9,7 @@ import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import { CHANNEL_NO_TILL, selectedChannel } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num, pct, tl } from "@/lib/format";
 import { LOSS_METRIC_LABEL, MIN_DAYS, type LossMetric, type MetricCompare } from "@/lib/kayip-onleme";
@@ -17,6 +17,8 @@ import { shiftMonth } from "@/lib/reminders";
 import { COMPARE_SPANS, spanParam } from "@/lib/sube-karsilastirma";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { monthParam } from "@/server/data/dataset";
 import { loadLossSummary, type LossData } from "@/server/data/kayip-onleme";
 
@@ -77,10 +79,17 @@ async function LossContent({ searchParams }: { searchParams: PageProps<"/panel/r
   );
   const header = <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />;
   if (!data) {
+    // Online kanal seçiliyken kanalın kasası yok (şube ayrımı): rapor şubelerin
+    const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+    const channel = selectedChannel(scope, branches);
     return (
       <>
         {header}
-        <EmptyState icon={<ShieldAlert />} title="Açık şube yok" description="Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." />
+        {channel ? (
+          <EmptyState icon={<ShieldAlert />} title={CHANNEL_NO_TILL} description="Kayıp önleme şubelerin kasa raporlarından ve AsilPOS'tan; soldan bir şube ya da Tümü'nü seçin." />
+        ) : (
+          <EmptyState icon={<ShieldAlert />} title="Açık şube yok" description="Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." />
+        )}
       </>
     );
   }
@@ -91,7 +100,6 @@ async function LossContent({ searchParams }: { searchParams: PageProps<"/panel/r
       <p className="-mt-2 mb-4 text-xs text-pretty text-ink-mute" role="note">
         {dateTR(data.from)} – {dateTR(data.to)} · {data.branches.map((b) => b.name).join(", ")}
       </p>
-      <CompanyWideNotice screen="raporlar" className="mb-4" />
       <Notice tone="neutral" size="sm" className="mb-6" title="AsilPOS'tan gelmeyenler: kişiye yazılamaz">
         AsilPOS şunları göndermiyor: {NOT_FROM_ASILPOS.join("; ")}. ModPOS (föy ve kasa raporu) iptal göndermez. Bu yüzden iptal, ikram ve indirim aşağıda kişinin
         çalıştığı günlerle karşılaştırılır; kasa farkı, kör sayımın değişmesi ve panelde girilen zayi / ikram doğrudan kişinindir.

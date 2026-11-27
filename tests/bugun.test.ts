@@ -1049,7 +1049,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "loadReviewQueue(",
     "pendingHoldSummary(",
     "loadUnpricedIngredients(",
-    "countPendingByKind(",
+    "pendingByKindInScope(",
     "loadJobsOverview(",
     "lastParasutSyncOkAt(",
     "previousCarryOver(",
@@ -1068,7 +1068,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   // Satış tahmini: personel yalnız tutarsız görünümü yükler
   assert.ok(!src.replace(staffBody, "").replace(/^import .*$/gm, "").includes("dayWaste("), "dayWaste staffFacts dışında");
   // Rol seçimi: personel yalnız staffFacts'i çağırır
-  assert.match(src, /admin \? adminFacts\(now, user\.id, cashP, viewP\) : staffFacts\(c\)/);
+  assert.match(src, /admin \? adminFacts\(now, user\.id, cashP, viewP\) : staffFacts\(c, channel !== null\)/);
   // Zam metni Genel bakış ve zil ile aynı (ayda TL etkisiyle)
   assert.match(admin, /priceAlert\(pa\.changes, pa\.actionable, pa\.loss\.totalLoss\)/);
   // Bugün parasut_sync_runs'ı kendisi sormaz (R4: günlük işlerin sağlığı ops'un modülünden)
@@ -1112,7 +1112,6 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "loadDueReminders(",
     "loadSessions(",
     "dayWaste(",
-    "loadUpcoming(",
     "countUnlinkedProducts(",
     "loadUnpricedIngredients(",
     "loadChecklistDays(",
@@ -1120,6 +1119,8 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
   ]) {
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }
+  // Ödemeler alanının kapsamı önce okunur (şube ayrımı parça 4), liste yine safe() içinde
+  assert.match(src, /safe\(areaScope\("odemeler"\)\.then\(\(branch\) => loadUpcoming\(undefined, \{ branch \}\)\)\)/);
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const call of [
     "pendingHoldSummary(",
@@ -1244,7 +1245,7 @@ test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar yerinde
   const logic = read("src/app/panel/bugun/logic.ts");
   const staffRows = logic.slice(logic.indexOf("const STAFF_ROWS"), logic.indexOf("];", logic.indexOf("const STAFF_ROWS")));
   const order = [...staffRows.matchAll(/\/\/ ([A-Za-z0-9{}-]+)/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["kasa-dun", "liste-dun", "sayim-gecen", "liste-{templateId}", "modpos", "zayi", "kasa", "sayim-son"]);
+  assert.deepEqual(order, ["kasa-dun", "liste-dun", "sayim-gecen", "liste-{templateId}", "modpos", "zayi", "kasa", "kanal", "sayim-son"]);
   // Yöneticinin sırasında da hızlı sayım ve mal siparişi yok (26 Eki 2026'da kaldırıldı)
   const adminRows = logic.slice(logic.indexOf("const ADMIN_ROWS"), logic.indexOf("];", logic.indexOf("const ADMIN_ROWS")));
   assert.doesNotMatch(adminRows, /hizli-sayim|mal-siparisi|quickCountRow|reorderRow/);

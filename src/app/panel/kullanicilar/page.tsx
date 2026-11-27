@@ -4,13 +4,15 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { Skeleton } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { adminTwoFactorRequired, TWO_FACTOR_RULE_TEXT } from "@/lib/admin-security";
-import { tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { dateTimeTR, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl, isPendingInvite, MAX_TOKEN_ATTEMPTS } from "@/server/auth/tokens";
+import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
+import { loadUserRows } from "@/server/data/users";
 import { getDb, schema as s } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
 
@@ -45,22 +47,10 @@ async function UsersContent() {
   const me = await requireAdmin();
   const db = getDb();
   const now = new Date();
-  const [rows, links, all, deviceLocks] = await Promise.all([
-    db
-      .select({
-        id: s.users.id,
-        name: s.users.name,
-        email: s.users.email,
-        role: s.users.role,
-        branchId: s.users.branchId,
-        active: s.users.active,
-        lastLoginAt: s.users.lastLoginAt,
-        totpEnabled: s.users.totpEnabled,
-        lockedUntil: s.users.lockedUntil,
-        passwordHash: s.users.passwordHash,
-      })
-      .from(s.users)
-      .orderBy(asc(s.users.id)),
+  // Şube seçiliyken o şubenin ve şubesiz hesaplar (şube ayrımı doğrulaması); öbür şubelerinki sayı olarak
+  const scope = await currentBranchScope();
+  const [{ rows, elsewhere }, links, all, deviceLocks] = await Promise.all([
+    loadUserRows(scope),
     // Kullanılmamış, süresi geçmemiş, deneme sınırına takılmamış bağlantılar (kişi başına en çok bir tane: yenisi
     // eskisinin süresini bitirir)
     db
@@ -86,8 +76,22 @@ async function UsersContent() {
   // Birden çok kasa açıkken şubesi seçilmemiş etkin personel (şube kapsamı C P2-10): bütün şubeleri görür, kasa ve sayım
   // formu "Tümü"de şubeyi sorar, akşam zili her kasa için ayrı satır verir
   const unbound = tillBranches(all).length > 1 ? rows.filter((u) => u.role === "staff" && u.active && !u.branchId) : [];
+  const scopeName = scope === ALL_BRANCHES ? null : (all.find((b) => b.id === scope)?.name ?? null);
   return (
     <div className="space-y-4">
+      {scopeName ? (
+        <Notice
+          tone="neutral"
+          size="sm"
+          title={`${scopeName} seçili: ${scopeName} şubesinin hesapları ve şubesiz hesaplar`}
+          text={
+            elsewhere
+              ? `Yönetici, muhasebeci ve şubesi seçilmemiş personel her şubede görünür. Öbür şubelerin ${num(elsewhere)} hesabı burada yok; Tümü'de hepsi.`
+              : "Yönetici, muhasebeci ve şubesi seçilmemiş personel her şubede görünür."
+          }
+          action={elsewhere ? <NoticeLink href="/panel/kullanicilar?sube=hepsi">Bütün hesaplar</NoticeLink> : undefined}
+        />
+      ) : null}
       {unbound.length ? (
         <Notice
           tone="neutral"

@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { activityChange, listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, staffSinceChange, weekdaysText, windowError } from "@/lib/checklists";
+import { zFormBranch } from "@/lib/branches";
 import { adminActor } from "@/lib/roles";
 import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { ChecklistError, logAnswerActivity, writeChecklistAnswer } from "@/server/data/checklists";
@@ -19,7 +20,8 @@ import { attempt, UserError, zDate, zOptText, zText } from "./util";
 // Kontrol listeleri (docs/KONTROL-LISTELERI.md): maddeyi işaretleme (iki rol; fotoğraflar POST /api/kontrol/foto'dan)
 // ve listelerin düzenlenmesi (yalnız yönetici). Yönetici hesabını etkileyen bir şey yok: parolayla onay istenmez.
 
-const base = { templateId: z.number().int().positive(), date: zDate, itemId: z.number().int().positive() };
+// `branch`: doldurma ekranının şubesi (bütün şubelerin listesinde kaydın şubesi; şube ayrımı). Şubeli listede yok sayılır
+const base = { templateId: z.number().int().positive(), date: zDate, itemId: z.number().int().positive(), branch: zFormBranch };
 const note = z
   .string()
   .trim()

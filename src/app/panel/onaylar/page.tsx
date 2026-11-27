@@ -17,7 +17,7 @@ import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModelOnce } from "@/server/data/model-once";
-import { approvedNewPairs, loadReviewQueue } from "@/server/data/recipe-requests";
+import { approvedNewPairs, countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { getDb } from "@/server/db";
 import { pendingOutOfScope } from "@/server/staff-requests/branch";
 
@@ -99,12 +99,18 @@ async function ApprovalSections() {
 
 /**
  * Tek şube seçiliyken Onaylar yalnız o şubenin isteklerini gösterir (şube kapsamı C P1-1); öbür şubelerde bekleyen
- * istek varsa sayısı ve "Tümü"nü açan bağlantı (seçici `?sube=`'yi benimser). Reçete önerileri işletme genelidir, sayılmaz
+ * istek varsa sayısı ve "Tümü"nü açan bağlantı (seçici `?sube=`'yi benimser). Reçete önerileri de önerenin şubesine
+ * göre (şube ayrımı, 27 Kasım 2026; `proposerScopeWhere`): öbür şubenin personelinin önerileri de sayıya girer
  */
 async function OtherBranchRequests() {
   await requireAdmin();
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
-  const n = await pendingOutOfScope(getDb(), scope);
+  const [requests, recipesAll, recipesHere] = await Promise.all([
+    pendingOutOfScope(getDb(), scope),
+    scope === ALL_BRANCHES ? 0 : countPendingRequests(),
+    scope === ALL_BRANCHES ? 0 : countPendingRequests(scope),
+  ]);
+  const n = requests + Math.max(0, recipesAll - recipesHere);
   if (!n) return null;
   return (
     <Notice
@@ -171,7 +177,8 @@ function economics(model: Model, productId: number, snap: RecipeSnapshot) {
 /** Reçete önerileri: değişiklikler ve yeni ürünler (bugünkü fiyatlarla maliyet etkisi), reçetenin son kararları */
 async function ApprovalsContent() {
   await requireAdmin();
-  const [model, queue] = await Promise.all([loadModelOnce(), loadReviewQueue()]);
+  // Reçete önerileri önerenin şubesine göre (şube ayrımı; "Tümü"de hepsi)
+  const [model, queue] = await Promise.all([loadModelOnce(), currentBranchScope().then((scope) => loadReviewQueue(30, scope))]);
   // Yeni ürün önerisinin daha önce eklenmiş öteki boyu: bu boy onun adını alır (denetim E-55)
   const pairs = await approvedNewPairs(
     getDb(),

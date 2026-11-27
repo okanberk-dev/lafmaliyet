@@ -8,7 +8,7 @@ import type { CategoryRow, EntryRow, InvoiceItem } from "./monthly-expenses";
  * girilmiş sayılır: kategori kartı da öyle gösterir, aynısını elle girmek gideri iki kez sayar.
  */
 export function missingCategories(categories: CategoryRow[]): CategoryRow[] {
-  return categories.filter((c) => c.active && c.expected && !c.monthEntries && !c.monthInvoices && !c.sharedTotal);
+  return categories.filter((c) => c.active && c.expected && !c.monthEntries && !c.monthInvoices && !c.sharedTotal && !c.sharedNote);
 }
 
 /**

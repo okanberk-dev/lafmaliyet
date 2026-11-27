@@ -47,7 +47,7 @@ export function SiteNewProductDialog({
   /** Panelin ürünleri (aynı ad + boy denetimi) */
   products: { name: string; size: string }[];
   /** Bekleyen yeni ürün önerileri: aynı ad + boyda öneri varken açılmaz (önce Onaylar'da onaylanır; sunucu da reddeder) */
-  pendingNew?: { name: string; size: PanelSize; by: string }[];
+  pendingNew?: { name: string; size: PanelSize; by: string | null }[];
   /** Bu kalemin boş fiyatlarına önerilen panel ürünleri ("Ice Latte · M") */
   covering: string[];
   onClose: () => void;

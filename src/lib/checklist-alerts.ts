@@ -71,8 +71,13 @@ export function alertSendInstant(now: Date): Date | null {
 export interface AlertList {
   templateId: number;
   name: string;
-  /** Şube; boş: bütün şubeler */
+  /**
+   * Kaydın şubesi (alıcılar o şubenin vardiyası): şubeli listede listenin şubesi, bütün şubelerin listesinde bu satırın
+   * şubesi (`shared`; şube ayrımı: her şube kendi kaydını doldurur). Boş: bütün şubeler (eski çağıran)
+   */
   branchId: string | null;
+  /** Bütün şubelerin listesinin `branchId` şubesindeki satırı: anahtar ve bağlantı şubeyi taşır */
+  shared?: boolean;
   opensAt: string;
   dueAt: string;
   items: ChecklistItemSnap[];
@@ -82,12 +87,17 @@ export interface AlertList {
 }
 
 export interface ChecklistAlert {
-  /** notification_log anahtarı: kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late} */
+  /**
+   * notification_log anahtarı: kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late}; bütün şubelerin listesinin şube
+   * satırında liste "{kimlik}@{şube}" (iki şubenin uyarısı ayrı gider)
+   */
   key: string;
   kind: "due" | "late";
   templateId: number;
   listName: string;
   branchId: string | null;
+  /** Bütün şubelerin listesinin şube satırı (bağlantı `?sube=`) */
+  shared?: boolean;
   /** Saatlik bölümün saati ("10:00"); bütün liste için null */
   slot: string | null;
   /** Bitiş: sıradaki saat ya da listenin son saati ("11:00") */
@@ -109,7 +119,18 @@ export function checklistAlerts(day: string, now: Date, lists: AlertList[]): Che
       if (!missing.length || t < opens) return;
       const kind = t >= end ? "late" : "due";
       if (kind === "late" && t >= end + LATE_ALERT_MIN * MIN_MS) return;
-      out.push({ key: `${ALERT_KEY_PREFIX}:${l.templateId}:${day}:${slot ?? "liste"}:${kind}`, kind, templateId: l.templateId, listName: l.name, branchId: l.branchId, slot, until, missing });
+      const list = l.shared && l.branchId ? `${l.templateId}@${l.branchId}` : String(l.templateId);
+      out.push({
+        key: `${ALERT_KEY_PREFIX}:${list}:${day}:${slot ?? "liste"}:${kind}`,
+        kind,
+        templateId: l.templateId,
+        listName: l.name,
+        branchId: l.branchId,
+        ...(l.shared ? { shared: true } : {}),
+        slot,
+        until,
+        missing,
+      });
     };
     const groups = groupBySection(l.items);
     const hourly = groups.filter((g) => sectionSlot(g.section) !== null);

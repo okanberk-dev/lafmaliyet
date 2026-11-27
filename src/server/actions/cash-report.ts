@@ -77,6 +77,7 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
       me,
       saved.revision > 1 ? "Kasa raporu güncellendi" : "Kasa raporu",
       `${longDateTR(data.date)}: ${diffText(cashDiff)}${changes.length ? ` · ${changesText(changes)}` : ""}`,
+      { branchId: saved.branchId },
     );
     refresh();
     const dto = toCashDTO(saved);
@@ -170,6 +171,7 @@ export async function deleteCashReport(id: number) {
       [longDateTR(row.date), till, `Z ${money(row.zTotal)}`, `sayılan ${money(row.countedCash)}`, diffText(row.cashDiff), row.countedByName ?? row.by, photos ? `${photos} fotoğraf` : null]
         .filter(Boolean)
         .join(" · "),
+      { branchId: row.branchId },
     );
     refresh();
     return null;
@@ -290,7 +292,7 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
         { tx, by: me.name },
       );
       const what = report ? valid.join(", ") || "e-posta kapalı" : `çalışanlar: ${staff.valid.join(", ") || "yok"}`;
-      await logSetting(tx, me, "Kasa raporu alıcıları", branchName ? `${branchName} · ${what}` : what);
+      await logSetting(tx, me, "Kasa raporu alıcıları", branchName ? `${branchName} · ${what}` : what, branchId ?? null);
     });
     refresh();
     // Şubesiz (eski sekme) kayıtta alıcılar varsayılan şubenin (çalışan listesi şubesiz yazılmaz)

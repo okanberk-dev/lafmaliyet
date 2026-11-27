@@ -11,6 +11,37 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
 
+- **Şube ayrımı** (bu PR, 27 Kasım; #167'nin üstünde; docs/SUBE.md › Şube ayrımı): soldan bir şube seçilince panelin
+  her ekranında yalnız o şubenin bilgisi görünür: kasa, satış, faturalar, ödemeler, onaylar, zil, Bugün, raporlar,
+  kişi seçicileri, Maaşlar, Kullanıcılar & roller, sabah e-postasının önizlemesi, panel asistanı, bağlantı (MCP), dışa
+  aktarım ve muhasebeci paketi. "Tümü"de her şey bugünkü gibi; işletme geneli fatura ve gider her şubede görünür ama
+  şubenin kârına girmez. Bugüne dek bilerek firma geneli olan ekranlar (Ödemeler, Nakit planı, Tutarlılık, Mutabakat,
+  Tedarikçi bakiyeleri, Stok değeri, Komisyon, Şubeleri yan yana, İşletme geneli giderler) kişinin kendi
+  ayarıyla: **Hesabım › Şube görünümü**'nde ekran ekran **Yalnız şube | Firma geneli** (düğmeler: Hepsi yalnız şube,
+  Hepsi firma geneli, Varsayılanlara dön; seçim hemen kaydedilir, yalnız o hesabındır). Ekranın üstündeki çip
+  (**Firma geneline geç** / **Yalnız Marina'yı göster**) aynı ayarı o ekran için yazar. Yöneticinin varsayılanı her
+  yerde "Yalnız şube", muhasebecininki ekranına göre (İşletme geneli giderler "Tutarla göster"); müdür ve şubesine
+  kilitli personel hep kendi şubesinde (ayar yok). **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım: "Vergi ile ilgili
+  olan kısımları tamamen çıkar"; açıklaması: "gelir vergisi matrah vs o kısımdan bahsettim, sidebar değil; ürün KDV'si
+  falan hesaplansın, nasıl doğruysa öyle olsun"): matrah, vergi kârı, geçici vergi, beyanlar (KDV, muhtasar), vergi
+  takvimi, devreden KDV ve KDV ödemesi tahmini firma geneli. Vergi'nin üç sekmesi her kipte firmanın (menüde yerinde;
+  ayarı yok, şubenin payı ve matraha katkı kartları kalktı), nakit planının şube kipinde vergi ve SGK hiç yok ("Vergi ve
+  SGK ödemeleri firma geneli: Tümü'de görünür"; İşletme geneli satırında da yok; KDV kartının yerinde "Firma geneline
+  geç" notu), dışa aktarımın şube dosyasında Vergi sekmesi firmanın. **Ürün ve fatura KDV'si şubede doğru kalır**:
+  ürünün KDV dahil ve hariç fiyatı, satışların, şubenin faturalarının ve yazarkasa Z'sinin KDV'si Tümü'deki gibi; dışa
+  aktarımın şube dosyasında Faturalar'ın KDV toplamları, şubenin muhasebeci paketinde KDV sütunları, Özet'in KDV
+  satırları ve Z KDV dökümü durur, altlarında "KDV beyanı firma geneli: beyan için Tümü dosyası / bütün şubelerin
+  paketi" notu. Hep firma geneli kalanlar (tam yedek, vergi ve SGK, banka
+  ekstresi ve açılış bakiyesi, Paraşüt eşitlemesi, menü, reçete, hammadde fiyatı, tedarikçi kütüğü, site siparişleri)
+  Hesabım'da gerekçesiyle listeli. Göç 0101 (şube görünümü; kontrol listesi kaydı, işlem geçmişi, gönderim
+  günlüğü ve yatırıma şube). Bağımsız doğrulama (iki şubenin işaretli kayıtlarıyla 259 sınama, Tuzla silinince
+  Marina'nın görünümü aynı mı) sekiz sızıntı buldu, hepsi kapandı: Faturalar'ın cari bağları, sabah e-postasının şube
+  grubunun Paraşüt bölümü, Mutabakat POS'un şube karoları ve ekstre yükleme penceresi, Maaşlar'ın hesap seçicisi,
+  Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri (müdürün kilidini aşıyordu).
+  Sahibin kararına kalan: İşletme geneli giderler için "Ciroya göre pay et" kipi. (Nakit planının İşletme geneli
+  satırındaki vergi ve Vergi'nin muhtasar dökümü soruları sahibin kararıyla kapandı: vergi hiçbir yerde şubeye bölünmez,
+  Vergi'yi açan hesap firmanın tamamını görür.)
+
 - **Anahtar değişimi uyumu** (bu PR, 27 Kasım; docs/ASILPOS.md › Şube kurulumu › Anahtar değişimi): 26 Kasım'da iki
   anahtar yalnız panelde değişti, kasa gece uyguladı, Uzaktan ve site eskisini tuttuğu için Uzaktan bir gün dondu. Panel
   artık kasanın bağlantı sorgusunu (uyguladığı ve güncel sürüm) şubeye göre saklar ve kendi dağıttığı anahtarın Uzaktan'da
@@ -118,8 +149,6 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Devam eden (26 Kasım akşamı)
 
-- [ ] [Ladmin] Şube seçiliyken her ekranda yalnız o şubenin bilgisi ("Tümü"de şube şube); firma geneli ekranlar için sahibin kararı.
-
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
 - P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
   bulgu düzeltilecek, ikinci inceleme, sonra PR.
@@ -130,7 +159,6 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 
 - AsilPOS: kasa programının adı her yerde AsilPOS (26 Kasım 2026'ya kadar adı LafPOS; panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
   (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
-- Şube ayrımı: şube seçiliyken her ekranda yalnız o şube; firma geneli ekranlar kullanıcının kendi ayarıyla.
 - P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).
 ## Sahibin tarafında (kod değil)
 

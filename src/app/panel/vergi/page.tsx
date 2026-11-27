@@ -54,7 +54,9 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   const viewer = await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
-  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; docs/SUBE.md › Şube ayrımı): KDV, muhtasar, kâr vergisi ve
+  // takvim şube seçiliyken de bütün şubelerle, firmanın tek vergi numarasıyla. Ayarı yok (Şube görünümü'nde alanı yok)
+  // şube-ayrımı: vergi.beyan
   const { model, view, inputs, reminders } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     return { model, ...(await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null })) };
@@ -127,7 +129,7 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
       <HashScroll key={`capa-${year}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
-        {/* Şube seçiliyken: vergi firmanın (şube kapsamı C P1-12) */}
+        {/* Şube seçiliyken: vergi firmanın, şubeye bölünmez (sahibin kararı 27 Kasım 2026) */}
         <CompanyWideNotice screen="vergi" />
         {/* İki rakam her genişlikte yan yana; Başlarken'in ilerlemesi kendi satırında (§7.1, §9 #1) */}
         <div className="grid grid-cols-2 gap-2">

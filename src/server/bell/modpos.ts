@@ -50,11 +50,13 @@ async function loadKeyAlerts(env: Record<string, string | undefined> = process.e
 /**
  * Zilin Sistem başlığında "ModPOS kasa föyü çekilemiyor" (yalnız yönetici: toplayıcı src/server/actions/notifications.ts
  * yönetici dalında çağırır). Gövde son hatanın metni (ne yapılacağıyla), Ayarlar › ModPOS (kasa föyü)'ne götürür.
- * Anahtar yokken satır yok (kart "Kurulmadı" der).
+ * Anahtar yokken satır yok (kart "Kurulmadı" der). Tek şube seçiliyken yalnız o şubenin anahtarı (şube ayrımı, 27 Kasım
+ * 2026; sabah e-postasının şubeye bağlı alıcısı gibi): Marina seçiliyken Tuzla'nın anahtarının uyarısı görünmüyor
  */
-export async function modposKeyBell(now = new Date()): Promise<PanelNotification[]> {
+export async function modposKeyBell(scope: BranchScope = ALL_BRANCHES, now = new Date()): Promise<PanelNotification[]> {
   const today = todayTR(now);
-  return (await loadKeyAlerts()).map((a) => {
+  const alerts = (await loadKeyAlerts()).filter((a) => scope === ALL_BRANCHES || a.branchId === scope);
+  return alerts.map((a) => {
     const day = a.at ? todayTR(new Date(a.at)) : null;
     return {
       id: a.id,

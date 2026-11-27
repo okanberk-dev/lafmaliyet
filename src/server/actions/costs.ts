@@ -64,6 +64,7 @@ async function dataMonths(tx: Tx, before?: string): Promise<string[]> {
   // seçicisinin ilk veri ayı. Seçili şubeye göre süzülürse Marina seçiliyken `past` boşalır, staffUsedMonths
   // hiçbir ay bulmaz ve Tuzla'da maaş hesabına girmiş kişi silinebilir hale gelir (docs/SUBE.md › Neyi süzer,
   // neyi süzmez). Aynısı sabit gider için geçerli. tillRows de bu kapsamın içinde: o da ay rakamını getiriyor.
+  // şube-ayrımı: costs.dataMonths
   return withBranchScope(ALL_BRANCHES, async () => {
     const [rows, till] = await Promise.all([
       tx
@@ -806,22 +807,33 @@ const investmentSchema = z.object({
   amount: z.number().finite().min(0),
   date: zOptText(10),
   note: zOptText(1000),
+  /**
+   * Yatırımın şubesi (şube ayrımı, migration 0101): etkin bir şube ya da null (işletme geneli). Verilmezse (tek şube
+   * açıkken form sormaz) düzenlemede kayıtlı şube kalır, yenisi işletme geneli
+   */
+  branchId: z.string().max(24).nullable().optional(),
 });
 
 export async function saveInvestment(input: z.input<typeof investmentSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, ...data } = investmentSchema.parse(input);
+    const { id, branchId: branchInput, ...data } = investmentSchema.parse(input);
+    const branchId = await checkedBranch(branchInput, false);
+    const branchSet = branchId !== undefined ? { branchId } : {};
     const db = getDb();
     let savedId: number;
+    let savedBranch: string | null;
     if (id) {
-      await db.update(s.investments).set(data).where(eq(s.investments.id, id));
+      const [row] = await db.update(s.investments).set({ ...data, ...branchSet }).where(eq(s.investments.id, id)).returning({ branchId: s.investments.branchId });
+      if (!row) throw new UserError("Yatırım bulunamadı (sayfayı yenileyin)");
       savedId = id;
+      savedBranch = row.branchId;
     } else {
-      const [row] = await db.insert(s.investments).values(data).returning({ id: s.investments.id });
+      const [row] = await db.insert(s.investments).values({ ...data, ...branchSet }).returning({ id: s.investments.id, branchId: s.investments.branchId });
       savedId = row.id;
+      savedBranch = row.branchId;
     }
-    await logActivity(me, "Yatırım kaydı", `${data.name}: ${tl(data.amount)}`);
+    await logActivity(me, "Yatırım kaydı", `${data.name}: ${tl(data.amount)}`, { branchId: savedBranch });
     refresh();
     return { id: savedId };
   });
@@ -831,7 +843,7 @@ export async function deleteInvestment(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const [d] = await getDb().delete(s.investments).where(eq(s.investments.id, id)).returning();
-    if (d) await logActivity(me, "Yatırım silindi", d.name);
+    if (d) await logActivity(me, "Yatırım silindi", d.name, { branchId: d.branchId });
     refresh();
     return null;
   });
