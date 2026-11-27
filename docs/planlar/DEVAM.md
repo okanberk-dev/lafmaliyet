@@ -1,5 +1,8 @@
 # Devam notu (26 Kasım 2026 akşamı)
 
+> **Güncel durum, sıra ve devam istemi:** [KALANLAR.md](../../KALANLAR.md) (28 Kasım 2026). Kullanıcı "kalanlardan devam et"
+> derse oradan başlanır; bu not tarihçe ve paketlerin ayrıntısı için kalır.
+
 Bu oturum (session_01Qdyb35Fked3nYaVSW3owcj) kullanım limitine yaklaştığı için kalan işleri, önerileri ve sırayı burada
 bırakıyor. Bütün dallar GitHub'da. Bugün main'e girenler: #151 (Z raporu e-postası, ucuz modelle okuma, faturanın şubesi,
 Tuzla kasa, bildirim/güvenlik, yedek/kota, mutabakat; #120 dahil), #153 (raporlar, stok/asistan, muhasebe, personel,
