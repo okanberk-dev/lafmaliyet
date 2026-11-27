@@ -13,7 +13,7 @@ This plan is self-contained: there is no CRITIQUE.md §3 entry; §6 "Decisions" 
 
 1. **Yenilebilir bardak** (ingredient unit `adet`). Paraşüt line "LİVİ YENİLEBİLİR BARDAK 150 AD." (ECOLİVİNG, 21.10.2026,
    ECE2026000000031): 1 Adet × 3.000,00 ₺. The owner linked it to the ingredient with factor 1 (the link form guessed
-   "1"). Current price 41,65 ₺/adet (Sinan Siner, 11.10.2026). Hold card: "↑ %7.103", "Fiyat şimdikinin yaklaşık 72
+   "1"). Current price 41,65 ₺/adet (Sibel Akyol, 11.10.2026). Hold card: "↑ %7.103", "Fiyat şimdikinin yaklaşık 72
    katı: çarpan yanlış olabilir (1 Adet = 72 adet mi?)", button "Çarpanı 72 yap". **Truth:** 1 Adet = 150 adet →
    20,00 ₺/adet, 52 % cheaper. Clicking the offered button would have written 41,67 ₺: the real price drop disappears.
 2. **Klips kapak**. Current 1,165 ₺/adet is the seed assumption of `0023_sayim_yeni_kalemler` ("VARSAYIM: Faturada yok,

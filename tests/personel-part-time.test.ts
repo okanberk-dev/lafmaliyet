@@ -242,9 +242,9 @@ test("Maaşlar ve eylem: tür, günlük ücret, Vardiya bağlantısı (hesap ya 
 });
 
 test("Excel 'Personel' sekmesi tutar: satırın sütunları (yemek kartı ve part-time ücreti dahil) toplam işveren maliyetini verir, TOPLAM herkesi kapsar", () => {
-  // İnceleme bulgusu 4: Alper (35.000 net + yemek kartı) 57.065; Ayşe part-time 10 gün × 1.500 + yemek kartı + 2.000 ek
-  const ALPER: Staff = { id: 301, name: "Alper", netSalary: 35_000, extras: 0, active: true, startMonth: null, endMonth: null, branchId: "marina", mealCard: true };
-  const model = createModel(ds([ALPER, AYSE]));
+  // İnceleme bulgusu 4: Arda (35.000 net + yemek kartı) 57.065; Ayşe part-time 10 gün × 1.500 + yemek kartı + 2.000 ek
+  const ARDA: Staff = { id: 301, name: "Arda", netSalary: 35_000, extras: 0, active: true, startMonth: null, endMonth: null, branchId: "marina", mealCard: true };
+  const model = createModel(ds([ARDA, AYSE]));
   const ws = buildWorkbook(model, "2026-12", { investments: [], findings: data.findings, now: new Date("2027-01-05T10:00:00Z") }).getWorksheet("Personel")!;
   const val = (c: ExcelJS.Cell) => (c.type === ExcelJS.ValueType.Formula ? c.result : c.value);
   const rowOf = (text: string) => {
@@ -273,10 +273,10 @@ test("Excel 'Personel' sekmesi tutar: satırın sütunları (yemek kartı ve par
     close(n(row, "net") + n(row, "ded"), n(row, "gross"), `${label}: brüt = net + kesintiler`);
     close(n(row, "gross") + n(row, "sgk") + n(row, "unemp") + n(row, "extras") + n(row, "meal") + n(row, "part"), n(row, "total"), `${label}: sütunlar toplamı verir`);
   };
-  const alper = rowOf("Alper");
-  close(n(alper, "total"), 57_065.29, "Alper toplam (§6)");
-  close(n(alper, "meal"), 330 * 26, "Alper yemek kartı");
-  reconciles(alper, "Alper");
+  const arda = rowOf("Arda");
+  close(n(arda, "total"), 57_065.29, "Arda toplam (§6)");
+  close(n(arda, "meal"), 330 * 26, "Arda yemek kartı");
+  reconciles(arda, "Arda");
   const ayse = rowOf("Ayşe");
   close(n(ayse, "part"), 10 * 1_500, "Ayşe part-time ücreti");
   close(n(ayse, "meal"), 10 * 330, "Ayşe yemek kartı");
@@ -284,7 +284,7 @@ test("Excel 'Personel' sekmesi tutar: satırın sütunları (yemek kartı ve par
   close(n(ayse, "total"), 15_000 + 3_300 + 2_000, "Ayşe toplam");
   reconciles(ayse, "Ayşe");
   const total = rowOf("TOPLAM");
-  for (const k of Object.keys(c) as (keyof typeof c)[]) close(n(total, k), n(alper, k) + n(ayse, k), `TOPLAM ${k}: herkes`);
+  for (const k of Object.keys(c) as (keyof typeof c)[]) close(n(total, k), n(arda, k) + n(ayse, k), `TOPLAM ${k}: herkes`);
   reconciles(total, "TOPLAM");
 });
 

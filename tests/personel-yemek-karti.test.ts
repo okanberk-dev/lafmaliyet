@@ -26,56 +26,56 @@ const excel: Dataset = datasetFromSeed(data);
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 
 const person = (p: Partial<Staff> & Pick<Staff, "id" | "name" | "netSalary">): Staff => ({ extras: 0, active: true, startMonth: null, endMonth: null, branchId: "marina", ...p });
-const ALPER = person({ id: 101, name: "Alper", netSalary: 35_000, mealCard: true });
-const CEM = person({ id: 102, name: "Cem", netSalary: 32_000, mealCard: true });
-const DAMLA = person({ id: 103, name: "Damla", netSalary: 30_000, extras: 7_500 });
-const BERKAN = person({ id: 104, name: "Berkan", netSalary: 32_000, startMonth: "2026-11" });
+const ARDA = person({ id: 101, name: "Arda", netSalary: 35_000, mealCard: true });
+const CENK = person({ id: 102, name: "Cenk", netSalary: 32_000, mealCard: true });
+const DERYA = person({ id: 103, name: "Derya", netSalary: 30_000, extras: 7_500 });
+const BURAK = person({ id: 104, name: "Burak", netSalary: 32_000, startMonth: "2026-11" });
 
 /** Kasım 2026 biten ay: 30 açık gün (elle), kira ve personel tam ay */
 const nov = { month: "2026-11", openDays: 30, posRevenue: 300_000, discounts: 0, offRevenue: 0, note: null };
 const ds = (staff: Staff[], patch: Partial<Dataset> = {}): Dataset => ({ ...excel, currentMonth: "2026-12", months: [...excel.months, nov], staff, ...patch });
 
-test("§6: işveren maliyeti varsayılan ayarlarla: Alper 57.065, Cem 52.909, Damla 49.059, Berkan 44.329 (Kasım'dan)", () => {
+test("§6: işveren maliyeti varsayılan ayarlarla: Arda 57.065, Cenk 52.909, Derya 49.059, Burak 44.329 (Kasım'dan)", () => {
   const st = DEFAULT_SETTINGS;
   assert.equal(st.mealCardDaily, 330);
   assert.equal(st.mealCardDays, 26);
-  const alper = staffCost(ALPER, st);
-  close(alper.mealCard, 8_580, "Alper yemek kartı 330 × 26");
-  assert.equal(Math.round(alper.total), 57_065);
-  assert.equal(Math.round(staffCost(CEM, st).total), 52_909);
+  const arda = staffCost(ARDA, st);
+  close(arda.mealCard, 8_580, "Arda yemek kartı 330 × 26");
+  assert.equal(Math.round(arda.total), 57_065);
+  assert.equal(Math.round(staffCost(CENK, st).total), 52_909);
   // Yemek kartı brütleştirilmez: brüt ve SGK yalnız net maaştan
-  close(alper.gross, 35_000 / 0.85, "brüt yalnız net maaştan");
-  close(alper.total - staffCost({ ...ALPER, mealCard: false }, st).total, 8_580, "fark tam yemek kartı");
+  close(arda.gross, 35_000 / 0.85, "brüt yalnız net maaştan");
+  close(arda.total - staffCost({ ...ARDA, mealCard: false }, st).total, 8_580, "fark tam yemek kartı");
   // Ek ödeme brütleştirilmez; işaretsiz kişide yemek kartı yok
-  const damla = staffCost(DAMLA, st);
-  assert.equal(damla.mealCard, 0);
-  assert.equal(Math.round(damla.total), 49_059);
-  assert.equal(Math.round(staffCost(BERKAN, st).total), 44_329);
-  // Berkan Kasım'dan: Ekim'de maaş hesabında yok
-  const m = createModel(ds([ALPER, CEM, DAMLA, BERKAN]));
-  assert.deepEqual(m.personnelFor("2026-10").rows.map((r) => r.staff.name).sort(), ["Alper", "Cem", "Damla"]);
-  assert.deepEqual(m.personnelFor("2026-11").rows.map((r) => r.staff.name).sort(), ["Alper", "Berkan", "Cem", "Damla"]);
+  const derya = staffCost(DERYA, st);
+  assert.equal(derya.mealCard, 0);
+  assert.equal(Math.round(derya.total), 49_059);
+  assert.equal(Math.round(staffCost(BURAK, st).total), 44_329);
+  // Burak Kasım'dan: Ekim'de maaş hesabında yok
+  const m = createModel(ds([ARDA, CENK, DERYA, BURAK]));
+  assert.deepEqual(m.personnelFor("2026-10").rows.map((r) => r.staff.name).sort(), ["Arda", "Cenk", "Derya"]);
+  assert.deepEqual(m.personnelFor("2026-11").rows.map((r) => r.staff.name).sort(), ["Arda", "Burak", "Cenk", "Derya"]);
   close(m.personnelFor("2026-11").total, 57_065.29 + 52_909.41 + 49_058.82 + 44_329.41, "Kasım toplamı", 0.05);
 });
 
 test("Ayarlar: günlük tutar ve gün değişince yemek kartı değişir; çalışılan gün kancası (LM-4b) günü geçersiz kılar", () => {
   const st: Settings = { ...DEFAULT_SETTINGS, mealCardDaily: 300, mealCardDays: 20 };
-  close(staffCost(ALPER, st).mealCard, 6_000, "300 × 20");
-  close(staffCost(ALPER, DEFAULT_SETTINGS, { mealDays: 22 }).mealCard, 330 * 22, "kanca: LafPOS'un çalışılan günü");
+  close(staffCost(ARDA, st).mealCard, 6_000, "300 × 20");
+  close(staffCost(ARDA, DEFAULT_SETTINGS, { mealDays: 22 }).mealCard, 330 * 22, "kanca: LafPOS'un çalışılan günü");
   // Kayıtta yoksa varsayılan; kayıt varsa o
   const rows = settingsFromRows([{ key: "mealCardDaily", value: 350 }]);
   assert.deepEqual([rows.mealCardDaily, rows.mealCardDays], [350, 26]);
 });
 
 test("Gelir-gider: yemek kartı kendi alt satırında (PERSONEL YEMEK KARTI); maliyet − net satırına girmez, bölüm toplamı tutar", () => {
-  const m = createModel(ds([ALPER, CEM, DAMLA]));
+  const m = createModel(ds([ARDA, CENK, DERYA]));
   const pm = m.pnlMonth("2026-11");
   close(pm.cells.get("personnel:meal")!.value!, 2 * 8_580, "iki kişinin yemek kartı, tam ay");
-  const alper = staffCost(ALPER, DEFAULT_SETTINGS);
-  const cem = staffCost(CEM, DEFAULT_SETTINGS);
-  const damla = staffCost(DAMLA, DEFAULT_SETTINGS);
+  const arda = staffCost(ARDA, DEFAULT_SETTINGS);
+  const cenk = staffCost(CENK, DEFAULT_SETTINGS);
+  const derya = staffCost(DERYA, DEFAULT_SETTINGS);
   close(pm.cells.get("personnel:net")!.value!, 35_000 + 32_000 + 30_000, "net");
-  close(pm.cells.get("personnel:employer")!.value!, alper.total + cem.total + damla.total - 97_000 - 17_160, "maliyet − net − yemek kartı");
+  close(pm.cells.get("personnel:employer")!.value!, arda.total + cenk.total + derya.total - 97_000 - 17_160, "maliyet − net − yemek kartı");
   assert.match(pm.cells.get("personnel:meal")!.info!, /2 kişi × 330\s₺ × 26 gün/);
   const personnelRows = pm.cells.get("personnel:net")!.value! + pm.cells.get("personnel:employer")!.value! + pm.cells.get("personnel:meal")!.value!;
   const fixedPersonel = [...pm.cells].filter(([k]) => k.startsWith("fixed:") && m.ds.fixedExpenses.find((f) => `fixed:${f.id}` === k)?.section === "personel");
@@ -84,42 +84,42 @@ test("Gelir-gider: yemek kartı kendi alt satırında (PERSONEL YEMEK KARTI); ma
   assert.deepEqual([row.label, row.section, row.kind], [MEAL_CARD_LABEL, "personel", "auto"]);
   assert.match(row.hint!, /brütleştirilmez/);
   // Kimsede yemek kartı yoksa satır yok (eski tablo değişmez)
-  assert.equal(createModel(ds([DAMLA])).pnlRowDefs(["2026-11"]).some((r) => r.key === "personnel:meal"), false);
+  assert.equal(createModel(ds([DERYA])).pnlRowDefs(["2026-11"]).some((r) => r.key === "personnel:meal"), false);
   // Süren ayda maaş gibi gün oranıyla
-  const run = createModel(ds([ALPER], { currentMonth: "2026-11", months: [...excel.months, { ...nov, openDays: 10 }] })).pnlMonth("2026-11");
+  const run = createModel(ds([ARDA], { currentMonth: "2026-11", months: [...excel.months, { ...nov, openDays: 10 }] })).pnlMonth("2026-11");
   close(run.cells.get("personnel:meal")!.value!, (8_580 * 10) / 30, "süren ay 10/30");
 });
 
 test("çift sayım uyarısı: işaretli kişi + aynı ayda etkin işletme geneli 'Personel yemeği'; ekte yemek kartı gibi duran tutar", () => {
   const yemek = excel.fixedExpenses.find((f) => f.name === "Personel yemeği")!;
   assert.equal(yemek.branchId ?? null, null, "seed: işletme geneli");
-  const m = createModel(ds([ALPER, DAMLA]));
+  const m = createModel(ds([ARDA, DERYA]));
   const w = staffWarnings(m, "2026-11");
   const dbl = w.find((x) => x.kind === "meal-double")!;
   assert.ok(dbl, "işaretli kişi + Personel yemeği: uyarı");
   assert.match(dbl.title, /yemek kartı/i);
   assert.match(dbl.detail, /Personel yemeği/);
-  assert.match(dbl.detail, /Alper/);
+  assert.match(dbl.detail, /Arda/);
   assert.ok(alerts(m, "2026-11").some((a) => a.title === dbl.title), "Genel bakış uyarısı");
   // Personel yemeği bitince (Ekim'de son) uyarı yok; işaretli kişi yoksa da yok
-  const ended = createModel(ds([ALPER], { fixedExpenses: excel.fixedExpenses.map((f) => (f.id === yemek.id ? { ...f, endMonth: "2026-10" } : f)) }));
+  const ended = createModel(ds([ARDA], { fixedExpenses: excel.fixedExpenses.map((f) => (f.id === yemek.id ? { ...f, endMonth: "2026-10" } : f)) }));
   assert.equal(staffWarnings(ended, "2026-11").some((x) => x.kind === "meal-double"), false);
-  assert.equal(staffWarnings(createModel(ds([DAMLA])), "2026-11").some((x) => x.kind === "meal-double"), false);
+  assert.equal(staffWarnings(createModel(ds([DERYA])), "2026-11").some((x) => x.kind === "meal-double"), false);
   // Başka şubenin Personel yemeği kalemi Marina'daki kişiyle çift sayılmaz
-  const tuzlaOnly = createModel(ds([ALPER], { fixedExpenses: excel.fixedExpenses.map((f) => (f.id === yemek.id ? { ...f, branchId: "tuzla" } : f)) }));
+  const tuzlaOnly = createModel(ds([ARDA], { fixedExpenses: excel.fixedExpenses.map((f) => (f.id === yemek.id ? { ...f, branchId: "tuzla" } : f)) }));
   assert.equal(staffWarnings(tuzlaOnly, "2026-11").some((x) => x.kind === "meal-double"), false);
   // Ekte 8.580 (330 × 26) yazılmış işaretli kişi: yalnız ipucu, veri değişmez
-  const extra = createModel(ds([{ ...ALPER, extras: 8_580 }], { fixedExpenses: excel.fixedExpenses.filter((f) => f.id !== yemek.id) }));
+  const extra = createModel(ds([{ ...ARDA, extras: 8_580 }], { fixedExpenses: excel.fixedExpenses.filter((f) => f.id !== yemek.id) }));
   const hint = staffWarnings(extra, "2026-11").find((x) => x.kind === "meal-extras")!;
   assert.ok(hint, "ek yemek kartı gibi: ipucu");
-  assert.deepEqual(hint.staffIds, [ALPER.id]);
+  assert.deepEqual(hint.staffIds, [ARDA.id]);
   close(extra.pnlMonth("2026-11").cells.get("personnel:meal")!.value!, 8_580, "tutar kendiliğinden değişmez");
-  assert.equal(staffWarnings(createModel(ds([{ ...ALPER, extras: 1_250 }], { fixedExpenses: excel.fixedExpenses.filter((f) => f.id !== yemek.id) })), "2026-11").length, 0);
+  assert.equal(staffWarnings(createModel(ds([{ ...ARDA, extras: 1_250 }], { fixedExpenses: excel.fixedExpenses.filter((f) => f.id !== yemek.id) })), "2026-11").length, 0);
 });
 
 test("vergi bordrosu ve nakit planı: yemek kartı ek ödeme gibi, brütleştirilmeden (yasal bordronun brütü değişmez)", () => {
-  const with_ = createModel(ds([ALPER]));
-  const without = createModel(ds([{ ...ALPER, mealCard: false }]));
+  const with_ = createModel(ds([ARDA]));
+  const without = createModel(ds([{ ...ARDA, mealCard: false }]));
   const p = taxPayrollFromModel(with_, 2026, DEFAULT_TAX_SETTINGS).get("2026-11")!;
   const q = taxPayrollFromModel(without, 2026, DEFAULT_TAX_SETTINGS).get("2026-11")!;
   close(p.totals.extras, 8_580, "ek ödeme olarak");

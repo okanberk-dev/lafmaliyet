@@ -147,11 +147,11 @@ test("sınıflandırma listesi (§4.2, K12): bölüme uygun belge seçenekleri, 
   assert.equal(kira.vat, 0.2);
   for (const it of c.items.filter((i) => i.source === "category")) assert.ok(!it.options.some((o) => o.value === "bordro"), it.name);
   for (const it of c.items.filter((i) => i.source !== "fixed")) assert.equal(it.withholdingFor, null, it.name);
-  // Demirbaş adayları: Aria Yazılım ve Beyza Karaman, "Gider (demirbaş değil)" seçeneğiyle
+  // Demirbaş adayları: Aria Yazılım ve Berna Kalaycı, "Gider (demirbaş değil)" seçeneğiyle
   const cand = c.items.filter((i) => i.source === "invoice");
   assert.deepEqual(
     cand.map((i) => i.name),
-    ["Aria Yazılım", "Beyza Karaman"],
+    ["Aria Yazılım", "Berna Kalaycı"],
   );
   for (const it of cand) assert.deepEqual(it.options.map((o) => o.label), ["Seçilmedi", "Gider (demirbaş değil)"]);
   // Kuruluş & Demirbaş faturaları varlık listesinde değil

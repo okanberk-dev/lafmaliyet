@@ -153,9 +153,9 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
 
   test("yemek kartı ve günlük ücret maaşla sürümlenir; maaş hesabına girmiş satırın türü değişmez", async () => {
     await db.insert(s.months).values({ month: "2026-10", branchId: "marina", openDays: 30 });
-    assert.ok((await costs.saveStaff([{ id: null, name: "Alper", netSalary: 35_000, extras: 0, mealCard: false, effectiveFrom: "2026-10", branchId: "marina" }])).ok);
-    const [alper] = await db.select().from(s.staff);
-    const on = await costs.saveStaff([{ id: alper.id, name: "Alper", netSalary: 35_000, extras: 0, mealCard: true, effectiveFrom: "2026-12" }]);
+    assert.ok((await costs.saveStaff([{ id: null, name: "Arda", netSalary: 35_000, extras: 0, mealCard: false, effectiveFrom: "2026-10", branchId: "marina" }])).ok);
+    const [arda] = await db.select().from(s.staff);
+    const on = await costs.saveStaff([{ id: arda.id, name: "Arda", netSalary: 35_000, extras: 0, mealCard: true, effectiveFrom: "2026-12" }]);
     assert.ok(on.ok, on.ok ? "" : on.error);
     const versions = await db.select().from(s.staffVersions);
     assert.deepEqual(
@@ -166,7 +166,7 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     const model = await dataset.loadModel({ scope: "marina" });
     assert.equal(model.personnelFor("2026-11").mealCard, 0);
     assert.equal(model.personnelFor("2026-12").mealCard, 330 * 26);
-    const kind = await costs.saveStaff([{ id: alper.id, name: "Alper", netSalary: 35_000, extras: 0, kind: "part_time", effectiveFrom: "2026-12" }]);
+    const kind = await costs.saveStaff([{ id: arda.id, name: "Arda", netSalary: 35_000, extras: 0, kind: "part_time", effectiveFrom: "2026-12" }]);
     assert.equal(kind.ok, false);
     assert.match(kind.ok ? "" : kind.error, /çalışma türü değişmez/);
   });
@@ -203,15 +203,15 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
   });
 
   test("yemek kartı bir aydan itibaren açılınca önceden girilmiş sonraki maaş sürümüne de işlenir (sessizce düşmez)", async () => {
-    // İnceleme bulgusu 8: Alper'in Ocak 2027 zammı önceden girilmiş (yemek kartı yok). Sahip Aralık 2026'dan yemek kartını
+    // İnceleme bulgusu 8: Arda'in Ocak 2027 zammı önceden girilmiş (yemek kartı yok). Sahip Aralık 2026'dan yemek kartını
     // açınca Ocak sürümü kartsız kalıyor, Ocak'ta 8.580 ₺ uyarısız düşüyordu
     await db.insert(s.months).values({ month: "2026-10", branchId: "marina", openDays: 30 });
-    const alper = (p: Record<string, unknown>) => ({ id: null as number | null, name: "Alper", netSalary: 35_000, extras: 0, mealCard: false, branchId: "marina", ...p });
-    assert.ok((await costs.saveStaff([alper({ effectiveFrom: "2026-10" })])).ok);
+    const arda = (p: Record<string, unknown>) => ({ id: null as number | null, name: "Arda", netSalary: 35_000, extras: 0, mealCard: false, branchId: "marina", ...p });
+    assert.ok((await costs.saveStaff([arda({ effectiveFrom: "2026-10" })])).ok);
     const [row] = await db.select().from(s.staff);
-    const raise = await costs.saveStaff([alper({ id: row.id, netSalary: 40_000, effectiveFrom: "2027-01" })]);
+    const raise = await costs.saveStaff([arda({ id: row.id, netSalary: 40_000, effectiveFrom: "2027-01" })]);
     assert.ok(raise.ok, raise.ok ? "" : raise.error);
-    const on = await costs.saveStaff([alper({ id: row.id, mealCard: true, effectiveFrom: "2026-12" })]);
+    const on = await costs.saveStaff([arda({ id: row.id, mealCard: true, effectiveFrom: "2026-12" })]);
     assert.ok(on.ok, on.ok ? "" : on.error);
     const versions = await db.select().from(s.staffVersions).orderBy(s.staffVersions.fromMonth);
     assert.deepEqual(
@@ -227,7 +227,7 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     assert.equal(model.personnelFor("2026-11").mealCard, 0, "Aralık'tan önce kart yok");
     assert.equal(model.personnelFor("2027-01").mealCard, 330 * 26, "Ocak'ta kart düşmez");
     // Maaşlar'ın sürüm etiketi ("Ocak 2027 itibarıyla 40.000 ₺ net + yemek kartı") sürümün işaretinden
-    const hist = model.staffList.find((x) => x.name === "Alper")!.history.find((h) => h.fromMonth === "2027-01")!;
+    const hist = model.staffList.find((x) => x.name === "Arda")!.history.find((h) => h.fromMonth === "2027-01")!;
     assert.deepEqual([hist.netSalary, hist.mealCard], [40_000, true]);
 
     // İnceleme bulgusu (LM-4, 2. tur, 3): Aralık değişikliğini "Geri al" taşımayı da geri alır; Ocak zammı kartsız kalır

@@ -2,9 +2,10 @@
 //
 // veri.json panelin ilk kurulumunda eski hesap tablosundan bir kez aktarıldı (Ekim 2026); kaynağı depoda yok, yeniden
 // üretilmez. Uygulama bu dosyayı kullanmaz: yerel ve test veritabanını dolduran tohum betiği (scripts/seed.ts,
-// `npm run db:seed`) ile hesap motorunun altın testleri (tests/golden.json'a karşı) kullanır. Değerleri DEĞİŞTİRMEYİN:
-// testlerin beklenen rakamları bu değerlerden gelir. Dosya kişisel veri taşır (maaşlar, kira, faturalar, satışlar):
-// depo bu yüzden gizli kalır (docs/DEPLOY.md § 1). Canlıda boş veritabanına kendiliğinden yüklenmez (§ 5).
+// `npm run db:seed`) ile hesap motorunun altın testleri (tests/golden.json'a karşı) kullanır. Rakamları DEĞİŞTİRMEYİN:
+// testlerin beklenen rakamları bu değerlerden gelir. Kişi adları (şahıs tedarikçiler dahil) 26 Kasım 2026'da uydurma
+// adlarla değiştirildi; testler adlara değil rakamlara bağlı. Dosya yine kişisel veri taşır (maaşlar, kira, faturalar,
+// satışlar): depo bu yüzden gizli kalır (docs/DEPLOY.md § 1). Canlıda boş veritabanına kendiliğinden yüklenmez (§ 5).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -116,14 +117,14 @@ export function cleanInvoiceDescription(d: string | null): string | null {
 
 /**
  * Tek seferlik yatırımların dönemi. Eski tablo yalnızca XND için tarih veriyordu (Temmuz 2026); diğerleri fatura tarihlerinden:
- * Aria 07.07.2026, reklam (Beyza Karaman) 17.09.2026. Tabela/baskı Temmuz–Eylül arasındaki üç faturanın toplamı,
+ * Aria 07.07.2026, reklam (Berna Kalaycı) 17.09.2026. Tabela/baskı Temmuz–Eylül arasındaki üç faturanın toplamı,
  * klişe bedelinin faturası yok: dönem boş bırakılır.
  */
 export function investmentSeed(x: { name: string; amount: number; note: string | null }): { name: string; amount: number; date: string | null; note: string | null } {
   if (x.name.startsWith("Dekorasyon & ekipman") || x.name.includes("(Aria)")) return { ...x, date: "2026-07" };
-  if (x.name.startsWith("Reklam (Beyza Karaman)")) return { ...x, date: "2026-09" };
+  if (x.name.startsWith("Reklam (Berna Kalaycı)")) return { ...x, date: "2026-09" };
   if (x.name.startsWith("Tabela, baskı")) {
-    return { ...x, date: null, note: x.note === "~15.300 ₺ + KDV" ? "~15.300 ₺ + KDV · Temmuz–Eylül 2026 faturaları (Murat Şeimen, Tuzla Baskı)" : x.note };
+    return { ...x, date: null, note: x.note === "~15.300 ₺ + KDV" ? "~15.300 ₺ + KDV · Temmuz–Eylül 2026 faturaları (Musa Şenkaya, Tuzla Baskı)" : x.note };
   }
   return { ...x, date: null };
 }

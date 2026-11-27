@@ -362,7 +362,7 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
     assert.ok(card.lines.some((l) => l.label === "Durum" && l.from === "Ödenmedi" && l.to === "Ödendi"));
     const [paid] = await db.select().from(s.invoices).where(eq(s.invoices.id, a.id));
     assert.equal(paid.unpaid, false);
-    assert.equal(paid.paidAt, todayTR());
+    assert.equal(paid.paidAt, businessDate()); // asistanın "bugün"ü iş günü (05:00 kuralı): gece yarısından sonra takvim günü değil
     assert.equal(paid.paidVia, "havale");
     assert.equal((await confirm.undoOp(users.ali, card.id)).status, "undone");
     assert.equal((await db.select().from(s.invoices).where(eq(s.invoices.id, a.id)))[0].unpaid, true);

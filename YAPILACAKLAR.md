@@ -9,8 +9,22 @@ Etiketler:
 
 LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
-## Bitenler (25–26 Kasım 2026)
+## Bitenler (25–27 Kasım 2026)
 
+- **Roller: Müdür ve salt okunur Muhasebeci; vardiyanın şube ayarları** (#163, 27 Kasım; docs/ROLLER.md): müdür şubesine
+  kilitli, maaş, kişisel ücret, maliyet, karaoke tutarı ve öteki şubeleri görmez; muhasebeci yalnız okur (Muhasebe,
+  Faturalar, Gelir-gider, Vergi, Aylık harcamalar, Kasa raporu). İlk incelemenin 12 bulgusu ve ikinci bağımsız yetki
+  incelemesinin doğruladığı 6 bulgu testleriyle düzeltildi. Göç 0097_roller (yalnız CHECK kısıtları; yeni roller kimseye
+  kendiliğinden verilmez). Sahibe söylenecek: (1) iki adımlı doğrulama `ADMIN_2FA_REQUIRED=1` ile yönetici, müdür ve
+  muhasebecide zorunlu, yoksa isteğe bağlı; (2) Hesabım'daki LafPOS kurulum bağlantısı şubeye kilitli personele de
+  görünüyordu: bekleyen bir kurulum kodu varken personel Hesabım'ı açmış olabilirse yayından sonra LafPOS anahtarını
+  döndürün; (3) bir şubenin e-postası müdür ya da muhasebeci hesabındaysa kurulum bağlantısı o adrese gitmez, başka adres
+  yazılır.
+
+- **Excel'den tam bağımsızlık** (P2; #164 ve bu PR, 26 Kasım): başlangıç verisi uygulamanın dışında
+  (`tests/fixtures/baslangic/`; tohum betiği ve testler okur), canlıda boş veritabanına kendiliğinden yüklenmiyor,
+  Excel çıkarma betiği kalktı; `npm audit` geliştirme araçları dahil 0 açık; başlangıç verisindeki kişi adları uydurma
+  adlarla değiştirildi (rakamlar ve altın testler aynı). docs/DEPLOY.md § 1, § 5.
 - **Belge tarayıcı** (#160, 26 Kasım): tarama ekranı (kenar yeşil, köşeler sürüklenir, Belge / Gri / Renkli / Orijinal),
   canlı kamera vizörü ve otomatik çekim, kalite uyarısı ve Yeniden çek, sayfa yönü, uzun fişte Devamını çek; algılama
   ölçümle 52/96 → 89/96. Sahibe söylenecek: gerçek iPhone ve Android'de bir kez denensin.
@@ -58,22 +72,23 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 ## Devam eden (26 Kasım akşamı)
 
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
-- P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
-  bulgu düzeltilecek, ikinci inceleme, sonra PR.
-- P2 Excel'den tam bağımsızlık (`wip/excel-bagimsiz`): kendiliğinden tohum kalktı, başlangıç verisi uygulama dışına
-  taşındı; bağımlılık açıkları ve kişi adlarının anonimleştirilmesi kaldı.
 - P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
   rol × ekran duman testi).
 - P5 Ayarlar ay bazlı + 2027 vergi kuralları (Ocak'tan önce); P6 Excel'den kalan sabit listeler (fatura / hammadde
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
 
+- AsilPOS: LafPOS'un adı her yerde AsilPOS (panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
+  (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
+- Şube ayrımı: şube seçiliyken her ekranda yalnız o şube; firma geneli ekranlar kullanıcının kendi ayarıyla.
+- P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).
 ## Sahibin tarafında (kod değil)
 
-- [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira, fatura ve kişi adları taşıyor. GitHub › Settings ›
+- [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira ve fatura rakamları taşıyor; kişi adları
+  güncel dosyada uydurma, git geçmişinde gerçekleri duruyor. GitHub › Settings ›
   Danger Zone › Change visibility › Private; açığa düşmüş anahtarlar yenilensin.
 - [ ] GitHub › Settings › Branches: main için "Tip · Lint · Test · Derleme" zorunlu olsun (kırmızı CI'yla birleştirme olmasın).
-- [ ] GitHub sırrı `ANTHROPIC_API_KEY`: PR incelemesi her PR'da kırmızı.
+- [ ] GitHub sırrı `ANTHROPIC_API_KEY`: sahip 27 Kasım'da anahtarı ekledi ama inceleme yine düşüyor; depo düzeyindeki sır 23 Ekim tarihli, yeni anahtarla güncellenmeli (kuruluş düzeyindeki sırrı gölgeler).
 - [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`; CSP bir
   hafta temizse `CSP_ENFORCE=1`.
 - [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›
@@ -102,7 +117,7 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 
 ## Dalga 3 (sonra)
 
-- [ ] [Ladmin] "Müdür" ve salt okunur "Muhasebeci" rolleri.
+- [x] [Ladmin] "Müdür" ve salt okunur "Muhasebeci" rolleri. (27 Kasım, #163; docs/ROLLER.md)
 - [x] [Ladmin] Marina ay sonu kaçak raporu: tahmini stokla sayım arasındaki fark TL olarak, en çok kaçan kalemlerle. (26 Kasım; Raporlar › Kaçak; ilk gerçek rapor Aralık sonu sayımıyla)
 - [ ] [İkisi] Kişi bazında kayıp önleme özeti: kasa farkı, iptal, ikram ve indirimin kişiye göre sapması. LafPOS iptali yapanı ve ikram edeni göndermiyorsa LafPOS'a da ekleme gerekir. (26 Kasım: panel tarafı bitti, Raporlar › Kayıp önleme; kasa farkı sayana, zayi / ikram girene göre. LafPOS'un iptal ve ikramı kişiyle göndermesi sahibin onayını bekliyor)
 - [x] [Ladmin] Banka ve tedarikçi ekstresiyle mutabakat. (26 Kasım; Kâr & ödemeler › Mutabakat, docs/MUTABAKAT.md)

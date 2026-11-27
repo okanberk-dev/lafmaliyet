@@ -13,13 +13,14 @@ GitHub'da **gizli (private)** bir depo açıp kodu oraya gönderin. Depo kökü 
 **Root Directory** olarak `laffogato` seçeceksiniz.
 
 **Depo gizli kalmalı: kişisel veri taşır.** `tests/fixtures/baslangic/veri.json` panelin ilk kurulumundaki başlangıç
-verisidir (Ekim 2026'da eski hesap tablosundan bir kez aktarıldı): personelin adı ve maaşı, kira, faturalar,
-tedarikçiler, satışlar. Uygulama bu dosyayı kullanmaz (`src/` onu içe aktarmaz; `tests/eski-veri-adlari.test.ts`
+verisidir (Ekim 2026'da eski hesap tablosundan bir kez aktarıldı): maaşlar, kira, faturalar, tedarikçiler, satışlar.
+Kişi adı taşımaz: personel "Personel 1", "Personel 2" diye geçer; şahıs tedarikçilerin ve açıklamalardaki kişilerin
+adları 26 Kasım 2026'da uydurma adlarla değiştirildi, rakamlar aynı kaldı. Uygulama bu dosyayı kullanmaz (`src/` onu içe aktarmaz; `tests/eski-veri-adlari.test.ts`
 tutar), canlıda boş veritabanına da kendiliğinden yüklenmez (§ 5). Yalnız yerel ve test veritabanını dolduran tohum
-betiği (`npm run db:seed`, `scripts/seed.ts`) ve hesap motorunun altın testleri okur; değerleri değiştirilmez (testlerin
-beklenen rakamları onlardan gelir). Depoyu herkese açık yapmayın. Dosya git geçmişinde de durur (26 Kasım 2026'ya kadar
-`src/server/db/seed/excel-data.json` adıyla): depo bir gün açılacaksa ya da dışarıyla paylaşılacaksa önce geçmişten de
-silinmeli (ör. `git filter-repo`) ve testler kişisel olmayan bir veriye taşınmalıdır.
+betiği (`npm run db:seed`, `scripts/seed.ts`) ve hesap motorunun altın testleri okur; rakamları değiştirilmez (testlerin
+beklenen rakamları onlardan gelir). Depoyu herkese açık yapmayın. Dosyanın eski sürümleri git geçmişinde durur (26 Kasım
+2026'ya kadar `src/server/db/seed/excel-data.json` adıyla): depo bir gün açılacaksa ya da dışarıyla paylaşılacaksa önce
+geçmişten de silinmeli (ör. `git filter-repo`) ve testler kişisel olmayan bir veriye taşınmalıdır.
 
 > Vercel CLI ile Git'siz de deploy edebilirsiniz: `laffogato` klasöründe `vercel` komutu.
 

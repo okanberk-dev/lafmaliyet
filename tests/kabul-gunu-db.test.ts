@@ -119,7 +119,7 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + LafPOS 22 Kasım)", { skip
         offRevenue,
         openingCash: 0,
         countedCash: date === "2026-11-21" ? 1_120 : cash,
-        submittedByName: "Alper",
+        submittedByName: "Arda",
       });
     }
     // 22 Kasım: LafPOS'un gün sonu imzalı uçtan, kasa raporu gün sonundan kendiliğinden

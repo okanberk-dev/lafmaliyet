@@ -62,8 +62,8 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
       { month: "2026-10", branchId: "marina", openDays: 18, posRevenue: 100_000 },
     ]);
     await db.insert(s.staff).values([
-      { name: "Alper", netSalary: 35_000, extras: 0, mealCard: true, branchId: "marina" },
-      { name: "Berkan", netSalary: 32_000, extras: 0, branchId: "tuzla" },
+      { name: "Arda", netSalary: 35_000, extras: 0, mealCard: true, branchId: "marina" },
+      { name: "Burak", netSalary: 32_000, extras: 0, branchId: "tuzla" },
     ]);
     const [k] = await db
       .insert(s.fixedExpenses)
@@ -114,7 +114,7 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
     close(t.shared.total, a.shared.total, "Tuzla'nın bilgi satırı");
     close(m.profit + t.profit - a.shared.total, a.profit, "Marina + Tuzla − işletme geneli = Tümü");
     // Şubenin kalemleri: Marina'nın güvenliği 18/31, yemek kartı Marina'da; Tuzla'nın kirası ve stopajı yalnız Tuzla'da
-    close(m.cells.get("personnel:meal")!.value!, (330 * 26 * 18) / 31, "Alper'in yemek kartı Marina'nın günüyle");
+    close(m.cells.get("personnel:meal")!.value!, (330 * 26 * 18) / 31, "Arda'in yemek kartı Marina'nın günüyle");
     close(t.cells.get(`fixed:${kiraId}`)!.value!, 160_000, "Tuzla kira");
     close(t.cells.get(stopajKey(kiraId))!.value!, 20_000, "Tuzla stopaj");
     assert.equal(m.cells.get(`fixed:${kiraId}`), undefined, "Marina'da Tuzla'nın kirası yok");

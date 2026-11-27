@@ -1283,13 +1283,13 @@
   {
    "name": "Yenilebilir bardak",
    "category": "Diğer",
-   "supplier": "Sinan Siner",
+   "supplier": "Sibel Akyol",
    "packageDesc": "Cupffee yenilebilir bardak, 240 adet",
    "packagePrice": 9996.0,
    "packageSize": 240.0,
    "unit": "adet",
    "vatRate": 0.1,
-   "note": "Sinan Siner faturaları: 41,65 TL/adet (KDV %10 hariç)",
+   "note": "Sibel Akyol faturaları: 41,65 TL/adet (KDV %10 hariç)",
    "isEstimate": false,
    "priceSource": "manual",
    "countUnit": "ADET",
@@ -8230,7 +8230,7 @@
   },
   {
    "date": "2026-07-07",
-   "supplier": "Murat Şeimen",
+   "supplier": "Musa Şenkaya",
    "description": "Işıklı tabela",
    "invoiceNo": "TRN2026000000150",
    "category": "Reklam & Tabela",
@@ -8362,7 +8362,7 @@
   },
   {
    "date": "2026-07-30",
-   "supplier": "Sinan Siner",
+   "supplier": "Sibel Akyol",
    "description": "Yenilebilir bardak",
    "invoiceNo": "ALC2026000000010",
    "category": "Ambalaj",
@@ -8686,7 +8686,7 @@
   },
   {
    "date": "2026-09-06",
-   "supplier": "Sinan Siner",
+   "supplier": "Sibel Akyol",
    "description": "Yenilebilir bardak",
    "invoiceNo": "ALC2026000000012",
    "category": "Ambalaj",
@@ -8818,9 +8818,9 @@
   },
   {
    "date": "2026-09-17",
-   "supplier": "Beyza Karaman",
+   "supplier": "Berna Kalaycı",
    "description": "Reklam",
-   "invoiceNo": "BYZ2026000000037",
+   "invoiceNo": "BRN2026000000037",
    "category": "Reklam & Tabela",
    "amount": 30000.0,
    "discount": 0.0,
@@ -9082,7 +9082,7 @@
   },
   {
    "date": "2026-10-11",
-   "supplier": "Sinan Siner",
+   "supplier": "Sibel Akyol",
    "description": "Yenilebilir bardak",
    "invoiceNo": "ALC2026000000015",
    "category": "Ambalaj",
@@ -9331,12 +9331,12 @@
    "note": "KDV hariç"
   },
   {
-   "name": "Tabela, baskı (Murat Şeimen, Tuzla Baskı)",
+   "name": "Tabela, baskı (Musa Şenkaya, Tuzla Baskı)",
    "amount": 15300.0,
    "note": "~15.300 ₺ + KDV"
   },
   {
-   "name": "Reklam (Beyza Karaman)",
+   "name": "Reklam (Berna Kalaycı)",
    "amount": 30000.0,
    "note": "30.000 ₺ + KDV"
   },
@@ -9525,7 +9525,7 @@
    "month": "2026-09",
    "ingredient": "Yenilebilir bardak",
    "qty": 240.0,
-   "note": "Sinan Siner 06.09: 240 adet. L'Affogato bu bardakla servis ediliyor (Eylülde 265 adet satıldı) – alım tutarlı."
+   "note": "Sibel Akyol 06.09: 240 adet. L'Affogato bu bardakla servis ediliyor (Eylülde 265 adet satıldı) – alım tutarlı."
   }
  ],
  "findings": [
@@ -9561,7 +9561,7 @@
   },
   {
    "section": "Reçetede olmayan / satışta görünmeyen alımlar",
-   "title": "Yenilebilir bardak (Sinan Siner)",
+   "title": "Yenilebilir bardak (Sibel Akyol)",
    "detail": "Ayda 240 adet (~10.000 TL) – L'Affogato bu bardakla servis ediliyor; Eylülde 265 adet satıldı, alınan 240 adet ile uyumlu. Not: bardak başı ~42 TL maliyet, L'Affogato kârının büyük kısmını yiyor.",
    "resolved": false
   },
