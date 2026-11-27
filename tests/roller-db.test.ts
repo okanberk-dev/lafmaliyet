@@ -632,6 +632,61 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
+    test("Vardiya: planına öteki şubenin personelini, muhasebeciyi ya da olmayan hesabı yazamaz (adları ona gitmez); şubesininkini ve planda olanı yazar", async () => {
+      const vardiya = await import("../src/server/actions/vardiya");
+      const store = await import("../src/server/vardiya/store");
+      const notify = await import("../src/server/vardiya/notify");
+      const { shiftAccountRefused, userRef } = await import("../src/lib/vardiya");
+      const monday = "2099-03-09";
+      const empty = Array<string>(7).fill("");
+      const first = (text: string) => [text, "", "", "", "", "", ""];
+      const save = (rows: { ref: string; name?: string; cells: string[] }[]) =>
+        vardiya.saveShiftWeekAction({ branchId: "tuzla", week: monday, rows: rows.map((r) => ({ ref: r.ref, name: r.name ?? "", cells: r.cells, seen: empty })) });
+      const planned = async () => (await db.select().from(s.shifts).where(eq(s.shifts.branchId, "tuzla"))).map((r) => `${r.personRef} ${r.personName}`).sort();
+      try {
+        await signIn("mehmet");
+        asAction();
+        // Kimlik kimlik denenir: öteki şubenin personeli (Ayşe, Marina), muhasebeci (Zeynep), olmayan hesap. Hücre okunamasa
+        // da hata hesabın adını taşımaz; metin her nedende aynı (hesabın varlığını da söylemez)
+        for (const id of [ids.ayse, ids.zeynep, 999_999]) {
+          for (const text of ["10-18", "99-99"]) {
+            assert.deepEqual(await save([{ ref: userRef(id), cells: first(text) }]), { ok: false, error: shiftAccountRefused("") }, `kimlik ${id}, ${text}`);
+          }
+        }
+        assert.deepEqual(await save([{ ref: userRef(ids.ayse), name: "Biri", cells: first("10-18") }]), { ok: false, error: shiftAccountRefused("Biri") }, "metindeki ad istemcinin yazdığı");
+        assert.deepEqual(await planned(), [], "hiçbir şey yazılmadı");
+        // Yazarak doldurma da aynı kuralla: model çağrılmadan reddedilir (hesabın adı modele gitmez)
+        const draft = await vardiya.draftShiftWeekAction({ branchId: "tuzla", week: monday, prompt: "Herkes Pazartesi sabahçı", rows: [{ ref: userRef(ids.zeynep), name: "", cells: first("10-18") }] });
+        assert.deepEqual(draft, { ok: false, error: shiftAccountRefused("") });
+
+        // Kendisi ve yönetici ("Kişi ekle" önerir) yazılır; öteki şubenin kişisinin boş satırı yok sayılır
+        const ok = await save([{ ref: userRef(ids.mehmet), cells: first("10-18") }, { ref: userRef(ids.ali), cells: first("12-20") }, { ref: userRef(ids.ayse), cells: empty }]);
+        assert.ok(ok.ok && ok.data.written === 2, JSON.stringify(ok));
+        assert.deepEqual(await planned(), [`${userRef(ids.ali)} Ali`, `${userRef(ids.mehmet)} Mehmet`]);
+        const week = await store.loadShiftWeek(db, { id: "tuzla", name: "Tuzla" }, monday, { roster: true });
+        const shown = [...week.rows.map((r) => r.name), ...week.others.map((o) => o.name)];
+        assert.ok(!shown.includes("Ayşe") && !shown.includes("Zeynep"), `Vardiya ekranı: ${shown.join(", ")}`);
+
+        // Şubenin planında zaten olan kişi (yöneticinin geçen hafta yazdığı, sonra Marina'ya geçen Ayşe): "Geçen haftayı
+        // kopyala" yazılır
+        await db.insert(s.shifts).values({ branchId: "tuzla", date: addDays(monday, -7), personRef: userRef(ids.ayse), userId: ids.ayse, personName: "Ayşe", kind: "work", startMin: 600, endMin: 1080, updatedByName: "Ali" });
+        const copied = await save([{ ref: userRef(ids.ayse), name: "Ayşe", cells: first("10-18") }]);
+        assert.ok(copied.ok && copied.data.written === 1, JSON.stringify(copied));
+
+        // Yönetici de aynı kuralla (ekranı da muhasebeciyi önermez)
+        await signIn("ali");
+        asAction();
+        assert.deepEqual(await save([{ ref: userRef(ids.zeynep), cells: first("10-18") }]), { ok: false, error: shiftAccountRefused("") });
+        // Değişiklik bildirimi muhasebeciye gitmez (vardiyada çalışmaz); müdüre gider (cihazı ve e-postası yok: atlanır)
+        const tuzla = { id: "tuzla", name: "Tuzla" };
+        const change = (userId: number) => ({ userId, date: monday, before: null, after: { kind: "off" as const, note: null } });
+        assert.deepEqual(await notify.sendShiftChangeNotices(db, [change(ids.zeynep)], tuzla), { pushed: 0, emailed: 0, skipped: 0, failed: 0 });
+        assert.deepEqual(await notify.sendShiftChangeNotices(db, [change(ids.mehmet)], tuzla), { pushed: 0, emailed: 0, skipped: 1, failed: 0 });
+      } finally {
+        await db.delete(s.shifts).where(eq(s.shifts.branchId, "tuzla"));
+      }
+    });
+
     test("şubesi pasife alınan müdürün oturumu yok (öteki şubelere açılmaz)", async () => {
       await signIn("mehmet");
       assert.ok(await dal.getCurrentUser());

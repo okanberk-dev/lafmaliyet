@@ -32,8 +32,17 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
   gönderir, çerezi değil: başka sekmede seçici değişse de plan ekranda görünen şubeye yazılır.
 - **Satırlar (yönetici):** şubenin etkin personel hesapları (şubesi bu şube olan ya da şubesi boş olan), planı boş
   olsa da; o hafta planı olan herkes (hesabı olmayan, pasife alınan, başka şubeden gelen kişi de). **Kişi ekle:**
-  yazılan ad bir hesabın adıysa (yönetici, başka şubenin personeli) o hesabın satırı açılır; değilse çalışan yalnız
-  adıyla yazılır ("hesabı yok"; part-time gibi). Bir haftada en çok 60 kişi.
+  yazılan ad önerilebilir bir hesabın adıysa (yönetici, şubesiz personel, bu şubenin personeli; başka şubeye kilitli
+  personel ve müdür, muhasebeci önerilmez: `shiftCandidate`, şube kapsamı C P2-11) o hesabın satırı açılır; değilse
+  çalışan yalnız adıyla yazılır ("hesabı yok"; part-time gibi). Bir haftada en çok 60 kişi.
+- **Sunucu da aynı kuralla (27 Kasım 2026; müdür planı yazdığından):** Kaydet ve Yazarak doldur, istemcinin gönderdiği
+  hesap satırını (`u:<kimlik>`) yalnız ekranın önerebileceği kişininkiyse alır: etkin ve önerilebilir hesap ya da bu
+  şubenin planında (herhangi bir haftada) zaten olan kişi (pasife alınan, başka şubeye geçen, hesabı silinen; "Geçen
+  haftayı kopyala"). Gerisi (öteki şubeye kilitli personel ve müdür, muhasebeci, planda olmayan pasif ya da olmayan
+  hesap) hücresi varsa kaydı bütünüyle reddeder ("… bu şubenin vardiyasına hesabıyla eklenemez; sayfayı yenileyin."),
+  boş satırı yok sayılır. Hesabın adı okunmaz, hata metni her nedende aynı (hesabın var olup olmadığını söylemez):
+  önceden müdür kimlik kimlik satır gönderip bütün hesapların adını kendi planında okur, sonra o kişilere "Vardiyanız
+  değişti" gönderebilirdi (`src/server/vardiya/store.ts` › `shiftAccounts`; test `tests/roller-db.test.ts`).
 - **Kutular yazılır:**
 
   | Yazılan | Anlamı |
@@ -269,7 +278,8 @@ planı o şubede açılır (`/panel/vardiya?hafta=…&sube=…`).
   kişinin o haftada zaten kayıtlı vardiyası varken yeni bir gün eklenince ("… (yeni)").
 - **Ne sayılmaz:** haftanın ilk yazımı (kişinin o haftada hiç kaydı yokken yazılan günler; plan parça parça
   yazılırken herkese ileti gitmesin), yalnız adın değişmesi, bugünden önceki günler, hesabı olmayan çalışan (adıyla
-  yazılan kişiye gidecek adres yok), kaydı yapan yöneticinin kendi satırı.
+  yazılan kişiye gidecek adres yok), kaydı yapan yöneticinin kendi satırı. Pasif hesaba ve muhasebeciye (vardiyada
+  çalışmaz) gitmez; plana yazılabilen kişiler zaten kaydın denetiminden geçer (Ekran › Sunucu da aynı kuralla).
 - **Nasıl:** önce kişinin bildirimi açık cihazlarına push (Bu cihazda uyarılar; cihaz başına ayrı bir anahtar yok).
   Hiçbir cihaza gidemezse (bildirim açık cihazı yoksa) hesabın e-posta adresine "Vardiyanız değişti" e-postası: gün gün
   eski → yeni ve **Vardiyayı aç** düğmesi. E-posta, Ödemeler › E-posta bildirimleri'ndeki **Hatırlatma e-postaları**

@@ -16,6 +16,7 @@ import {
   parseShiftCell,
   refUserId,
   saveWeekSchema,
+  shiftAccountRefused,
   SHIFT_NAME_MAX,
   staleText,
   userRef,
@@ -81,6 +82,30 @@ export function shiftCandidate(u: { role: string; branchId: string | null }, bra
 }
 
 /**
+ * İstemcinin gönderdiği hesap satırlarının ("u:<kimlik>") denetimi (kaydet ve yazarak doldur; docs/VARDIYA.md › Ekran,
+ * docs/ROLLER.md › Müdür). Hesap ancak ekranın önerebileceği biriyse yazılır: etkin ve şubenin vardiyasına önerilebilir
+ * (`shiftCandidate`, "Kişi ekle" ve taslakla aynı kural) ya da kişi bu şubenin planında zaten var (pasife alınan, başka
+ * şubeye geçen, hesabı silinen; "Geçen haftayı kopyala"). Gerisi (öteki şubeye kilitli personel ve müdür, muhasebeci,
+ * planda olmayan pasif ya da hiç olmayan hesap) reddedilir: yoksa müdür kimlik kimlik bütün hesapların adını kendi
+ * planında okur ve öteki şubenin kişisine "Vardiyanız değişti" gönderirdi. `names`: kabul edilen hesapların güncel adı.
+ */
+export async function shiftAccounts(db: Pick<DB, "select" | "selectDistinct">, branchId: string, refs: readonly string[]): Promise<{ allowed: Set<number>; names: Map<number, string> }> {
+  const ids = [...new Set(refs.flatMap((r) => refUserId(r) ?? []))];
+  if (!ids.length) return { allowed: new Set(), names: new Map() };
+  const users = await db
+    .select({ id: s.users.id, name: s.users.name, role: s.users.role, branchId: s.users.branchId, active: s.users.active })
+    .from(s.users)
+    .where(inArray(s.users.id, ids));
+  const planned = await db
+    .selectDistinct({ ref: s.shifts.personRef })
+    .from(s.shifts)
+    .where(and(eq(s.shifts.branchId, branchId), inArray(s.shifts.personRef, ids.map(userRef))));
+  const allowed = new Set(planned.flatMap((p) => refUserId(p.ref) ?? []));
+  for (const u of users) if (u.active && shiftCandidate(u, branchId)) allowed.add(u.id);
+  return { allowed, names: new Map(users.filter((u) => allowed.has(u.id)).map((u) => [u.id, u.name])) };
+}
+
+/**
  * Haftanın planı. `roster`: yöneticinin ızgarası için şubenin etkin personeli planı boş olsa da satır olur ve "Kişi
  * ekle"ye öteki hesaplar önerilir; personelin görünümünde ve PDF'te yalnız planı olanlar. Hesabı duran kişi güncel
  * adıyla görünür.
@@ -137,21 +162,21 @@ export interface SaveWeekResult {
 }
 
 /**
- * Haftayı kaydeder (yalnız yönetici çağırır; yetkiyi eylem denetler). Hücreler ekrandaki metinle gelir ve aynı okuyucudan
- * geçer; kişi kullanıcıysa adı hesabından alınır, hesabı olmayan çalışan adıyla yazılır. Tek işlemde: yalnız ekranda
- * değiştirilen hücre (`seen`'den farklı) yazılır (aynı gün ve kişide üstüne) ya da boşaltılınca silinir; dokunulmayan
- * hücreye ve girdide olmayan kişinin satırına dokunulmaz. Aynı haftayı iki sekme birden kaydederse sırayla yazar (danışma
- * kilidi); değiştirilen hücreyi ekran açıldıktan sonra başkası da değiştirdiyse kayıt bütünüyle reddedilir ("Plan siz
- * bakarken değişti"; bulgu 46). Özet kayıttan sonraki planındır.
+ * Haftayı kaydeder (yönetici ve müdür çağırır; yetkiyi ve şubeyi eylem denetler). Hücreler ekrandaki metinle gelir ve
+ * aynı okuyucudan geçer; kişi kullanıcıysa adı hesabından alınır (yalnız `shiftAccounts`'un kabul ettiği hesap), hesabı
+ * olmayan çalışan adıyla yazılır. Tek işlemde: yalnız ekranda değiştirilen hücre (`seen`'den farklı) yazılır (aynı gün
+ * ve kişide üstüne) ya da boşaltılınca silinir; dokunulmayan hücreye ve girdide olmayan kişinin satırına dokunulmaz.
+ * Aynı haftayı iki sekme birden kaydederse sırayla yazar (danışma kilidi); değiştirilen hücreyi ekran açıldıktan sonra
+ * başkası da değiştirdiyse kayıt bütünüyle reddedilir ("Plan siz bakarken değişti"; bulgu 46). Özet kayıttan sonraki
+ * planındır.
  */
 export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekInput): Promise<SaveWeekResult> {
   const data = saveWeekSchema.parse(raw);
   const monday = weekStart(data.week);
   const branch = shiftBranches(await listBranches(db)).find((b) => b.id === data.branchId);
   if (!branch) throw new UserError("Şube bulunamadı ya da kapalı; sayfayı yenileyin.");
-  const ids = data.rows.flatMap((r) => refUserId(r.ref) ?? []);
-  const users = ids.length ? await db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(inArray(s.users.id, ids)) : [];
-  const userName = new Map(users.map((u) => [u.id, u.name]));
+  // Hesap satırı yalnız ekranın önerebileceği kişininki (shiftAccounts); hesabın adı yalnız kabul edilende okunur
+  const { allowed, names: userName } = await shiftAccounts(db, branch.id, data.rows.map((r) => r.ref));
   const next: ShiftRow[] = [];
   const seen = new Set<string>();
   // Ekranın gördüğü (kayıtlı metin her zaman okunur; okunamazsa boş sayılır, o kutu değiştirilmiş görünür)
@@ -159,6 +184,12 @@ export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekI
   for (const r of data.rows) {
     const uid = refUserId(r.ref);
     const typed = cleanName(r.name);
+    if (uid !== null && !allowed.has(uid)) {
+      // Yazılacak bir şey yoksa satır yok sayılır (ekran açıkken hesabı kapanan ya da şubesi değişen kişinin boş satırı);
+      // hücre varsa kayıt bütünüyle reddedilir. Hata metni hesabın adını taşımaz
+      if (r.cells.every((t) => !t.trim())) continue;
+      throw new UserError(shiftAccountRefused(typed));
+    }
     // Hesabı silinmiş kullanıcının eski satırı anahtarıyla kalır (ad plandaki gibi); hesabı duran güncel adıyla
     const row: ShiftRow =
       uid !== null

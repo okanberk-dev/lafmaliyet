@@ -396,6 +396,12 @@ export function pdfHref(branchId: string, monday: string): string {
 export const SHIFT_STALE = "Plan siz bakarken değişti, sayfayı yenileyin.";
 
 /**
+ * Satırın hesabı bu şubenin planına yazılamaz (src/server/vardiya/store.ts › shiftAccounts). Ad, istemcinin yazdığıdır:
+ * hesabın adı okunmaz, metin her nedende aynı (hesabın var olup olmadığını söylemez)
+ */
+export const shiftAccountRefused = (typed: string) => `${typed || "Bir satırdaki kişi"} bu şubenin vardiyasına hesabıyla eklenemez; sayfayı yenileyin.`;
+
+/**
  * Sunucu eyleminin girdisi: ızgaradaki her satır, hücreler ekrandaki metniyle. Metin sunucuda aynı okuyucudan geçer
  * (tek kural); kişi kullanıcıysa adı sunucuda hesabından alınır. `seen`: ekran açıldığında (son yenilemede) kutuların
  * kayıtlı metni, bu oturumda eklenen satırda boş; yalnız bundan farklı kutular yazılır (weekSaveDiff, bulgu 46). Eski

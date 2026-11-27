@@ -75,6 +75,12 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   `src/server/data/waste-requests.ts` › `wasteCardsFor`).
 - Canlı uçta (`/api/canli`) karaoke, uygulama siparişi ve masa çağrısı yalnız şubesinde açıksa gelir (seçici çerezi yok
   sayılır); karaoke tutarı gitmez.
+- Vardiya planına yalnız ekranın önerebileceği hesabı yazar ("Kişi ekle" ve taslakla aynı kural: yönetici, şubesiz
+  personel, şubesinin personeli; ya da şubesinin planında zaten olan kişi): sunucu istemcinin gönderdiği öteki şubeye
+  kilitli personelin, müdürün, muhasebecinin ya da planda olmayan pasif hesabın satırını reddeder, hesabın adını okumaz
+  (Kaydet ve Yazarak doldur; `src/server/vardiya/store.ts` › `shiftAccounts`, [VARDIYA.md](VARDIYA.md) › Ekran). Yoksa
+  kimlik kimlik satır gönderip bütün hesapların adını planında okur, öteki şubenin kişisine "Vardiyanız değişti"
+  gönderirdi. Vardiya bildirimi muhasebeciye hiç gitmez.
 - Yönetici ekranlarına bağlantı ona çizilmez (`openableHref`): Vardiya'da planı yazar ama hazır vardiyaların saatleri
   (Şube ayarları) ve yazarak doldurmanın anahtarı (Ayarlar) yöneticinin; bağlantıların yerinde "Saatleri yönetici
   değiştirir.", "Yönetici Ayarlar'dan açınca kullanılır." yazar, anahtarın teknik notu yok (`src/lib/vardiya.ts` ›
@@ -211,7 +217,9 @@ oturumları kapanır (oturum sürümü).
   taşıyamaz, silemez (`tests/kasa-cikan-istek-db.test.ts`: o satırın isteğine de karar veremez), o satırın yeri,
   açıklaması ve fişi ona gitmez (Kasa'nın gün ve ay görünümü, WhatsApp metni, fiş fotoğrafı; Onaylar'ın kartı
   `tests/kasa-cikan-istek-db.test.ts`), fiş okumasının kopya denetimi ona öteki şubenin, işletme genelinin ve
-  yöneticinin kategorisinin kayıtlarını okumaz, şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu eylemleri
+  yöneticinin kategorisinin kayıtlarını okumaz, Vardiya planına öteki şubenin personelini, muhasebeciyi ya da olmayan
+  hesabı yazamaz (Kaydet ve Yazarak doldur; hata hesabın adını taşımaz, Vardiya ekranında o adlar yok; şubesinin
+  planındaki kişiyi yazar), şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu eylemleri
   "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube kurulumu e-postası müdür, muhasebeci, yönetici ya
   da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve kurulum bağlantısı yazılmaz).
 - `tests/iscilik-mudur-db.test.ts` (gerçek Postgres, `ISCILIK_TEST_DATABASE_URL`): müdürün İşçilik raporunda tutar ve
