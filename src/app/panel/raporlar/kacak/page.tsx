@@ -31,7 +31,7 @@ export default function LeakPage({ searchParams }: PageProps<"/panel/raporlar/ka
     <Suspense
       fallback={
         <>
-          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} />
+          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} role="admin" />
           <PageSkeleton rows={10} />
         </>
       }
@@ -46,7 +46,7 @@ async function LeakContent({ searchParams }: { searchParams: PageProps<"/panel/r
   const sp = await searchParams;
   const data = await loadLeakReport(monthParam(sp.ay));
   const picker = data.months.length ? <MonthPicker months={data.months} value={data.month} /> : null;
-  const header = <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={picker} />;
+  const header = <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={picker} role="admin" />;
   if (data.state !== "ok" || !data.report) {
     return (
       <>

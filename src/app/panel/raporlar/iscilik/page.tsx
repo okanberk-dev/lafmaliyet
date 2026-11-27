@@ -44,7 +44,9 @@ export default function LaborPage({ searchParams }: PageProps<"/panel/raporlar/i
     <Suspense
       fallback={
         <>
-          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} />
+          {/* Rol henüz bilinmiyor: ekranı müdür de açar. İskelet müdürün başlığıdır (sekme yok, kişisel ücretsiz
+              açıklama); yöneticinin sekmeleri ve açıklaması içerik gelince çizilir */}
+          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION_NO_WAGES} more={MORE_NO_WAGES} actions={<MonthPickerSkeleton />} role="manager" />
           <PageSkeleton rows={12} />
         </>
       }

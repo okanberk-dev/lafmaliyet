@@ -48,7 +48,7 @@ export default function LossPage({ searchParams }: PageProps<"/panel/raporlar/ka
     <Suspense
       fallback={
         <>
-          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} />
+          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} role="admin" />
           <PageSkeleton rows={12} />
         </>
       }
@@ -77,7 +77,7 @@ async function LossContent({ searchParams }: { searchParams: PageProps<"/panel/r
       <MonthPicker months={months} value={last} />
     </>
   );
-  const header = <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />;
+  const header = <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role="admin" />;
   if (!data) {
     // Online kanal seçiliyken kanalın kasası yok (şube ayrımı): rapor şubelerin
     const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);

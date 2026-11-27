@@ -48,7 +48,10 @@ import { DELETED_BILLS_KEY, ignoredBills, UNPAID_VS_PAYMENTS, type InvoiceRow } 
 export const metadata: Metadata = { title: "Faturalar" };
 
 const DESCRIPTION = "Alış faturaları Paraşüt'ten her sabah gelir; elle de ekleyebilirsiniz.";
-/** Salt okunur hesabın (muhasebeci; docs/ROLLER.md) açıklaması: fatura eklemeyi önermez */
+/**
+ * Salt okunur hesabın (muhasebeci; docs/ROLLER.md) ve yükleme iskeletinin açıklaması: fatura eklemeyi önermez. Rol
+ * okunana kadar iki rolün ortak cümlesi çizilir (Kasa raporu'ndaki gibi en dar olan)
+ */
 const READ_ONLY_DESCRIPTION = "Alış faturaları Paraşüt'ten her sabah gelir.";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE =
@@ -81,7 +84,8 @@ export default function InvoicesPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
+          {/* Rol okunana kadar en dar başlık (iki rolün açtığı ekran): ekleme önermeyen açıklama, muhasebecinin bağlam satırı */}
+          <PageHeader path="/panel/faturalar" role="accountant" title="Faturalar" description={READ_ONLY_DESCRIPTION} />
           <PageSkeleton rows={10} />
         </>
       }

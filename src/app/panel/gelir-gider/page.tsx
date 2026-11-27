@@ -39,7 +39,10 @@ import { SiteSalesCard, type SiteSalesCardData } from "./site-sales-card";
 export const metadata: Metadata = { title: "Gelir-gider" };
 
 const DESCRIPTION = "Ay ay gelir, gider ve kâr / zarar (KDV hariç); su faturası gibi tutarları yazın.";
-/** Salt okunur hesabın (muhasebeci; docs/ROLLER.md) açıklaması: tutar yazmayı önermez */
+/**
+ * Salt okunur hesabın (muhasebeci; docs/ROLLER.md) ve yükleme iskeletinin açıklaması: tutar yazmayı önermez. Rol okunana
+ * kadar iki rolün ortak cümlesi çizilir (Kasa raporu'ndaki gibi en dar olan)
+ */
 const READ_ONLY_DESCRIPTION = "Ay ay gelir, gider ve kâr / zarar (KDV hariç).";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE = "Aylık gelir-gider tablosu (KDV hariç). Mal alışları faturalardan, sabit giderler ayın gün oranıyla otomatik gelir.";
@@ -68,7 +71,8 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/gelir-gider" title="Gelir-gider" description={DESCRIPTION} more={MORE} />
+          {/* Rol okunana kadar en dar başlık (iki rolün açtığı ekran): yazmayı önermeyen açıklama, muhasebecinin bağlamı */}
+          <PageHeader path="/panel/gelir-gider" role="accountant" title="Gelir-gider" description={READ_ONLY_DESCRIPTION} />
           <PageSkeleton rows={14} />
         </>
       }

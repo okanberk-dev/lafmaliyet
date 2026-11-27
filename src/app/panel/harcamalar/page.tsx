@@ -29,7 +29,12 @@ const DESCRIPTION = "Her ay değişen ve faturasız giderler: reklam, influencer
 const MORE =
   "Her ay farklı olan (reklam, influencer) ve fatura dışı (nakit alım, bakım) giderler. Girdiğiniz tutar o ayın gelir-giderine ve Genel bakış'taki “Para nereye gitti”ye kendiliğinden yansır.";
 
-function Header({ actions, role = "admin" }: { actions?: React.ReactNode; role?: Role }) {
+/**
+ * `role` zorunlu (varsayılanı yok): yükleme iskeleti ekranı açan rollerin en darını (muhasebeci) verir, içerik kişinin
+ * rolünü. Varsayılan "yönetici" iken iskelet Giderler'in yönetici sekmelerini (Sabit giderler, Maaşlar, Avanslar,
+ * Belgeler) muhasebeciye de çiziyordu
+ */
+function Header({ actions, role }: { actions?: React.ReactNode; role: Role }) {
   return (
     <PageHeader
       path="/panel/harcamalar"
@@ -50,7 +55,8 @@ export default function ExpensesMonthPage({ searchParams }: PageProps<"/panel/ha
     <Suspense
       fallback={
         <>
-          <Header />
+          {/* Rol henüz bilinmiyor: iki rolün de gördüğü başlık; yöneticinin sekmeleri içerik gelince eklenir */}
+          <Header role="accountant" />
           <PageSkeleton rows={8} />
         </>
       }
