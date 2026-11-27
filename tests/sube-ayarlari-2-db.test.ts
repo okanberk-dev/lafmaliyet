@@ -133,7 +133,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     const { forgetPosBranches } = await import("../src/server/asilpos/branch");
     const { switchDayOf } = await import("../src/server/pos/tills");
     const change = await writeAsilposSwitchDay(db, users.ali, "marina", "2026-11-22", "2026-11-25");
-    assert.match(change ?? "", /^Marina: .*21\sKasım\s2026 → 22\sKasım\s2026/);
+    assert.match(change ?? "", /^AsilPOS.a geçiş günü: 21\sKasım\s2026 → 22\sKasım\s2026/, "tek kasada şube adı yazılmaz");
     assert.deepEqual((await rowOf(ASILPOS_GROUP.id, "marina"))?.value, { switchDay: "2026-11-22" });
     assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, GECIS_GUNU_AYARI)))[0]?.value, "2026-11-21", "eski kayıt bırakılır");
     assert.equal(await switchDayOf("marina", db), "2026-11-22");
