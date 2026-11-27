@@ -1,8 +1,10 @@
 // Hata kaydı gerçek Postgres'te (docs/HATA-KAYDI.md; src/server/errors/store.ts, alert.ts, src/app/api/hata/route.ts,
 // src/app/api/csp-rapor/route.ts, src/server/actions/util.ts attempt, src/server/actions/error-log.ts): aynı hata tek
-// satır (sayı, ilk / son görülüş), "Çözüldü" ve yeniden açılma, kaynak başına günlük yeni satır sınırı, saklama süresi
-// ve satır tavanı, günde bir kritik e-posta (başka örnekte de), tarayıcı ucunun kapıları (köken, oturum, boyut, sıklık),
-// CSP raporunun kaydı, attempt()'in yalnız beklenmeyen hatayı yazması, yönetici eylemleri.
+// satır (sayı, ilk / son görülüş, son beş hata kodu), "Çözüldü" ve yeniden açılma, kaynak başına günlük yeni satır
+// sınırı, saklama süresi ve satır tavanı, denetim karakterli satır, günde bir kritik e-posta (başka örnekte de; takılan
+// gönderimin anahtarı yeniden alınır), tarayıcı ucunun kapıları (köken, oturum, boyut, sıklık), CSP raporunun kaydı (IP
+// başına sınır, eklenti yazılmaz, CSP yağmuru sunucu hatasını düşürmez), attempt()'in yalnız beklenmeyen hatayı
+// yazması (sorgu parametresi yazılmaz), yönetici eylemleri.
 //
 // HATA_TEST_DATABASE_URL verilmezse atlanır: bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı); test
 // kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -12,7 +14,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq, sql } from "drizzle-orm";
+import { DrizzleQueryError, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { NextRequest } from "next/server";
 import postgres from "postgres";
@@ -115,7 +117,7 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal(r.lastSeen.toISOString(), later.toISOString());
     assert.equal(r.message, "Fatura 13 bulunamadı: [e-posta]");
     assert.equal(r.path, "/panel/faturalar/13");
-    assert.equal(r.digest, "222");
+    assert.equal(r.digest, "222 111", "son kodlar, yeni önce");
     assert.ok(!JSON.stringify(await rows()).includes("ornek.com"), "e-posta yazılmadı");
     assert.equal(await store.resolveErrors(db, [r.id], later), 1);
     assert.equal((await store.loadErrorLog(db)).openCount, 0);
@@ -124,6 +126,24 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     [r] = await rows();
     assert.equal(r.resolvedAt, null);
     assert.equal(r.count, 3);
+    // Hata kodları: aynısı bir kez (öne gelir), en çok beş, ekranda dizi
+    for (const [i, digest] of ["333", "444", "555", "666", "222"].entries()) {
+      await store.recordError({ ...e, digest }, { db, now: new Date(later.getTime() + 2000 + i), gate: open(), alert: noAlert });
+    }
+    [r] = await rows();
+    assert.equal(r.digest, "222 666 555 444 333");
+    await store.recordError({ ...e, digest: null }, { db, now: new Date(later.getTime() + 3000), gate: open(), alert: noAlert });
+    assert.deepEqual((await store.loadErrorLog(db)).open[0].digests, ["222", "666", "555", "444", "333"], "kodsuz görülüş kodları silmez");
+  });
+
+  test("denetim karakterli hata (NUL) yazılır: Postgres reddetmez, satır temizlenmiş", async () => {
+    const e = { source: "client" as const, name: "Syntax\u0000Error", message: "Unexpected token '\u0000', \"\u0000\u0001abc\" is not valid JSON", stack: "f@https://panel.test/a.js:1:2\u0000", path: "/panel\u0000/kasa", detail: "x\u0000" };
+    assert.equal(await store.recordError(e, { db, now: NOW, gate: open() }), "inserted");
+    const [r] = await rows();
+    assert.equal(r.message, "Unexpected token '', \"abc\" is not valid JSON");
+    assert.equal(r.name, "SyntaxError");
+    assert.equal(r.path, "/panel/kasa");
+    assert.equal(r.stack, "f@/a.js:1:2");
   });
 
   test("döngü veritabanını boğmaz: aynı hata örnek başına 10 sn'de bir yazılır, aradakiler sonraki yazıma eklenir", async () => {
@@ -153,7 +173,7 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal(overflow.length, 1);
     assert.equal(overflow[0].count, 2);
     assert.equal(overflow[0].level, "warning");
-    assert.match(overflow[0].message, /^Günlük sınır doldu: bugün 30 farklı csp hatasından sonrakiler/);
+    assert.equal(overflow[0].message, "Günlük sınır doldu (27 Kas): o gün 30 farklı CSP ihlalinden sonrakiler ayrı satır açmadı, yalnız sayıldı");
     assert.equal(all.length, cap + 2);
     assert.equal(await store.recordError({ source: "csp", message: "img-src https://ertesi.example", path: "/panel" }, { db, now: new Date(NOW.getTime() + DAY), gate: open() }), "inserted");
     const view = await store.loadErrorLog(db);
@@ -193,6 +213,8 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal((await db.select().from(s.notificationLog)).length, 0);
     assert.equal(await alert.sendCriticalAlert(e, NOW, { db, production: true, send }), "sent");
     assert.deepEqual(sent, ["hata-kaydi:2026-11-27 Panelde hata: Bağlantı koptu"]);
+    const claim = async (day: string) => (await db.select().from(s.notificationLog).where(eq(s.notificationLog.key, `hata-kaydi:${day}`)))[0];
+    assert.deepEqual([(await claim("2026-11-27")).ok, (await claim("2026-11-27")).error], [true, null], "gidince anahtar 'gönderildi'");
     assert.equal(await alert.sendCriticalAlert(e, NOW, { db, production: true, send }), "skip", "aynı örnek veritabanına sormaz");
     alert.resetAlertMemo();
     assert.equal(await alert.sendCriticalAlert(e, NOW, { db, production: true, send }), "done", "başka örnek: anahtar alınmış");
@@ -204,6 +226,19 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal(await alert.sendCriticalAlert(e, new Date(tomorrow.getTime() + 60_000), { db, production: true, send }), "skip");
     assert.equal(await alert.sendCriticalAlert(e, new Date(tomorrow.getTime() + 11 * 60_000), { db, production: true, send }), "sent");
     assert.equal(sent.length, 2);
+    // Başka örnek gönderirken durduruldu (anahtar "gönderiliyor" kaldı): 5 dakika içinde dokunulmaz, sonra yeniden alınır
+    const day3 = new Date(NOW.getTime() + 2 * DAY);
+    alert.resetAlertMemo();
+    await db.insert(s.notificationLog).values({ key: "hata-kaydi:2026-11-29", subject: "x", ok: false, error: alert.PENDING, sentAt: new Date(day3.getTime() - 60_000) });
+    assert.equal(await alert.sendCriticalAlert(e, day3, { db, production: true, send }), "done", "öteki örnek hâlâ gönderiyor olabilir");
+    assert.equal(await alert.sendCriticalAlert(e, new Date(day3.getTime() + 60_000), { db, production: true, send }), "skip");
+    assert.equal(sent.length, 2);
+    assert.equal(await alert.sendCriticalAlert(e, new Date(day3.getTime() + alert.PENDING_MS), { db, production: true, send }), "sent", "takılan anahtar yeniden alındı");
+    assert.equal(sent.length, 3);
+    assert.equal((await claim("2026-11-29")).ok, true);
+    alert.resetAlertMemo();
+    assert.equal(await alert.sendCriticalAlert(e, new Date(day3.getTime() + 2 * alert.PENDING_MS), { db, production: true, send }), "done");
+    assert.equal(sent.length, 3, "gittikten sonra yeniden alınmaz");
   });
 
   test("kayıt kritik hatada e-postayı dener; tarayıcı ve CSP'de denemez; sınır satırında denemez", async () => {
@@ -251,13 +286,40 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal((await waitRows(2)).length, 2);
   });
 
-  test("CSP raporu: oturumsuz, hep 204; ihlal satırı yazılır (sorgu ve kişisel veri yok)", async () => {
+  test("CSP raporu: oturumsuz, hep 204; ihlal satırı yazılır (sorgu ve kişisel veri yok); IP başına sınır; eklenti yazılmaz; yağmur sunucu hatasını düşürmez", async () => {
+    store.resetErrorGates();
+    const post = (body: string, ip = "203.0.113.1", type = "application/csp-report") =>
+      cspRoute.POST(new Request(`${ORIGIN}/api/csp-rapor`, { method: "POST", body, headers: { "content-type": type, "x-forwarded-for": ip } }));
     const report = JSON.stringify({ "csp-report": { "document-uri": "https://panel.test/panel/kasa?gun=1", "effective-directive": "img-src", "blocked-uri": "https://iz.example.com/p.gif?e=ayse@ornek.com", disposition: "report" } });
-    const res = await cspRoute.POST(new Request(`${ORIGIN}/api/csp-rapor`, { method: "POST", body: report, headers: { "content-type": "application/csp-report" } }));
-    assert.equal(res.status, 204);
-    assert.equal((await cspRoute.POST(new Request(`${ORIGIN}/api/csp-rapor`, { method: "POST", body: "bozuk" }))).status, 204);
+    assert.equal((await post(report)).status, 204);
+    assert.equal((await post("bozuk")).status, 204);
     const [r] = await waitRows(1);
     assert.deepEqual([r.source, r.level, r.message, r.path, r.detail], ["csp", "warning", "img-src https://iz.example.com/p.gif", "/panel/kasa", "Report-Only"]);
+    const lines: string[] = [];
+    const warn = console.warn;
+    console.warn = (line: string) => void lines.push(line);
+    try {
+      // Eklentinin ihlali yalnız günlüğe
+      const ext = JSON.stringify([{ type: "csp-violation", body: { documentURL: "https://panel.test/panel", effectiveDirective: "script-src-elem", blockedURL: "inline", sourceFile: "chrome-extension://abc/content.js", disposition: "report" } }]);
+      assert.equal((await post(ext, "203.0.113.1", "application/reports+json")).status, 204);
+      // Tek IP iki gövdeyle 40 farklı ihlal: yalnız 20'si işlenir
+      const many = (from: number) =>
+        JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ type: "csp-violation", body: { documentURL: "https://panel.test/panel", effectiveDirective: "img-src", blockedURL: `https://h${String.fromCharCode(97 + ((from + i) % 26))}${from + i >= 26 ? "z" : ""}.example/p.gif`, disposition: "report" } })));
+      await post(many(0), "203.0.113.2", "application/reports+json");
+      await post(many(20), "203.0.113.2", "application/reports+json");
+      const one = JSON.stringify([{ type: "csp-violation", body: { documentURL: "https://panel.test/panel", effectiveDirective: "img-src", blockedURL: "https://hbaska.example/p.gif", disposition: "report" } }]);
+      await post(one, "203.0.113.3", "application/reports+json");
+    } finally {
+      console.warn = warn;
+    }
+    assert.ok(lines[0].includes("eklenti"), lines[0]);
+    assert.equal(lines.filter((l) => /\/\/h[a-z]+\.example/.test(l)).length, 20 + 1, "IP başına 20; başka IP yine işlenir");
+    // CSP'nin kendi kapısı: örnek başına dakikada 10 yazım; sunucu hatası yine yazılır
+    const written = await waitRows(10);
+    await new Promise((ok) => setTimeout(ok, 200));
+    assert.equal((await rows()).length, 10);
+    assert.ok(!written.some((x) => (x.detail ?? "").includes("eklenti") || x.message.includes("inline")), "eklenti yazılmadı");
+    assert.equal(await store.recordError({ source: "server", message: "gerçek hata" }, { db, alert: noAlert }), "inserted");
   });
 
   test("attempt(): yalnız beklenmeyen hata kayda girer (doğrulama, UserError, bilinen kısıt girmez); yanıt beklemez", async () => {
@@ -269,7 +331,7 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
       assert.equal((await util.attempt(async () => { throw Object.assign(new Error("dup"), { code: "23505" }); })).ok, false);
       const cause = Object.assign(new Error('relation "yok" does not exist'), { code: "42P01", name: "PostgresError" });
       const res = await util.attempt(async () => {
-        throw Object.assign(new Error("Failed query: select * from yok\nparams: ayse@ornek.com"), { cause, name: "DrizzleQueryError" });
+        throw new DrizzleQueryError("select * from yok where note = $1", ["Kapıda ödeme\nAdres: Moda Cad. 12 D:4\nKart son 4: 4421", "ayse@ornek.com"], cause);
       });
       assert.deepEqual(res, { ok: false, error: "İşlem tamamlanamadı. Lütfen tekrar deneyin." });
     } finally {
@@ -279,9 +341,9 @@ describe("hata kaydı: veritabanında", { skip: !SERVER_URL && "HATA_TEST_DATABA
     assert.equal(all.length, 1, "yalnız beklenmeyen hata");
     const [r] = all;
     assert.equal(r.source, "action");
-    assert.equal(r.name, "DrizzleQueryError (42P01)");
-    assert.match(r.message, /^Failed query: select \* from yok\nparams: \[gizli\]/);
-    assert.match(r.message, /relation "yok" does not exist$/);
+    assert.equal(r.name, "Error (42P01)");
+    assert.equal(r.message, 'relation "yok" does not exist\nFailed query: select * from yok where note = $1');
+    for (const leak of ["Moda", "4421", "ornek.com", "Kapıda"]) assert.ok(!JSON.stringify(r).includes(leak), `kayıtta yok: ${leak}`);
     assert.equal(r.path, "/panel/kasa");
     assert.equal(r.detail, "Sunucu eylemi");
   });

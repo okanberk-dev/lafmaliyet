@@ -2,6 +2,7 @@ import { connection } from "next/server";
 
 import { cspLogLine, parseCspReports } from "@/lib/csp";
 import { cspEntry } from "@/lib/error-log";
+import { clientIp, createLimiter } from "@/server/auth/rate-limit";
 import { reportError } from "@/server/errors/store";
 
 /*
@@ -9,13 +10,17 @@ import { reportError } from "@/server/errors/store";
  * politikasının engellediği (ya da Report-Only'de engelleyeceği) her kaynağı buraya bildirir; rapor Vercel'in çalışma
  * günlüğüne `[csp]` satırı olarak düşer ve panelin hata kaydına yazılır (Ayarlar › Hata kaydı: aynı ihlal tek satır,
  * sayısıyla; `CSP_ENFORCE` kararı oradan; docs/HATA-KAYDI.md). Oturum istemez (tarayıcı raporu çerezsiz gönderebilir),
- * her zaman 204, kayıt beklenmez. Kötüye kullanıma karşı: gövde en çok 16 KB, sunucu örneği başına dakikada en çok 30
- * satır; adresler köken + yola indirilir (sorgu dizgesi, kişisel veri günlüğe girmez); kayıtta aynı ihlal örnek başına
- * 10 saniyede bir yazılır, günde en çok 30 yeni CSP satırı açılır (src/lib/error-log.ts DAILY_NEW_CAP).
+ * her zaman 204, kayıt beklenmez. Kötüye kullanıma karşı: gövde en çok 16 KB, sunucu örneği başına dakikada en çok 30,
+ * IP başına en çok 20 satır; adresler köken + yola indirilir (sorgu dizgesi, kişisel veri günlüğe girmez); tarayıcı
+ * eklentisinin ihlali yalnız günlüğe düşer, kayda girmez; kayıtta aynı ihlal örnek başına 10 saniyede bir, CSP satırları
+ * örnek başına dakikada en çok 10 yazılır (kendi kapısı: sunucu hatalarının payını tüketemez), günde en çok 30 yeni CSP
+ * satırı açılır (src/lib/error-log.ts GATE_PER_MINUTE, DAILY_NEW_CAP).
  */
 
 const MAX_BYTES = 16 * 1024;
 const PER_MINUTE = 30;
+/** Tek bir göndericinin (IP) payı: örneğin dakikalık bütün payını tek başına tüketemesin */
+const perIp = createLimiter({ limit: 20, windowMs: 60_000 });
 
 let windowStart = 0;
 let logged = 0;
@@ -37,11 +42,13 @@ export async function POST(request: Request) {
     windowStart = now;
     logged = 0;
   }
+  const ip = clientIp(request.headers);
   for (const v of parseCspReports(body)) {
-    if (logged >= PER_MINUTE) break;
+    if (logged >= PER_MINUTE || !perIp.hit(ip, now)) break;
     logged++;
     console.warn(cspLogLine(v));
-    void reportError(cspEntry(v));
+    const entry = cspEntry(v);
+    if (entry) void reportError(entry);
   }
   return done();
 }

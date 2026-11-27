@@ -18,10 +18,11 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   `0097_hata_kaydi` (main ilerlediyse birleştirmede yeniden üretilir). docs/HATA-KAYDI.md. Sahibe söylenecek:
   - Sunucuda hata olunca sabah e-postasının alıcılarına günde en çok bir "Panelde hata: …" e-postası gelir (yalnız
     canlıda, e-posta açıkken); ayrıntı Ayarlar › Hata kaydı'nda. Kullanıcı "Bir şeyler ters gitti" ekranındaki hata
-    kodunu söylerse satır o kodla bulunur.
+    kodunu söylerse satır o kodla bulunur (satır son beş görülüşün kodunu tutar; kod her yayında değişir).
   - **CSP_ENFORCE kararı artık kartta:** "uygulanabilir" (son 7 günde panelin kendi kodundan ihlal yok, kayıt en az 7
     gündür tutuluyor) deyince Vercel'de `CSP_ENFORCE=1` eklenip yeniden yayınlanır; "henüz uygulanmasın" diyorsa önce
-    satırlar düzeltilir. Vercel günlüğüne bakmak gerekmez.
+    satırlar düzeltilir. Çözüldü işaretlemek 7 günlük bekleyişi kısaltmaz: son ihlalden 7 gün sonra karar yeşile döner.
+    Vercel günlüğüne bakmak gerekmez.
   - Acil durumda kayıt `ERROR_LOG_DISABLED=1` ile kapatılır. Sentry eklenmedi (isteğe bağlı; hesap açılırsa ayrı iş,
     docs/HATA-KAYDI.md § 7).
 - **Excel'den tam bağımsızlık** (P2; #164 ve bu PR, 26 Kasım): başlangıç verisi uygulamanın dışında

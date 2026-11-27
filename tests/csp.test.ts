@@ -95,8 +95,13 @@ test("kaynak: başlıklar derlemede next.config'te, yalnız sayfalara; rapor ucu
   assert.match(route, /export async function POST\(request: Request\)/);
   assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin|getDb/, "oturum yok; veritabanına yalnız hata kaydı (beklemeden) yazar");
   assert.match(route, /const MAX_BYTES = 16 \* 1024;/);
-  // Sınırlı satırlar hem günlüğe hem hata kaydına (docs/HATA-KAYDI.md; davranışı tests/hata-kaydi-db.test.ts)
-  assert.match(route, /if \(logged >= PER_MINUTE\) break;\s*logged\+\+;\s*console\.warn\(cspLogLine\(v\)\);\s*void reportError\(cspEntry\(v\)\);/);
+  // Sınırlı satırlar (örnek ve IP başına) hem günlüğe hem hata kaydına; eklentininki yalnız günlüğe (docs/HATA-KAYDI.md;
+  // davranışı tests/hata-kaydi-db.test.ts)
+  assert.match(route, /const perIp = createLimiter\(\{ limit: 20, windowMs: 60_000 \}\);/);
+  assert.match(
+    route,
+    /if \(logged >= PER_MINUTE \|\| !perIp\.hit\(ip, now\)\) break;\s*logged\+\+;\s*console\.warn\(cspLogLine\(v\)\);\s*const entry = cspEntry\(v\);\s*if \(entry\) void reportError\(entry\);/,
+  );
   assert.doesNotMatch(read("src/proxy.ts"), /csp-rapor/, "oturum ara katmanı rapor ucuna dokunmaz");
   // Fotoğraf ucu kendi kısıtlı politikasını taşır
   assert.match(read("src/app/api/foto/[id]/route.ts"), /"Content-Security-Policy": "default-src 'none'; sandbox"/);

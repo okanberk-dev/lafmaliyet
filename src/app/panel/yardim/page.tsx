@@ -818,7 +818,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Panelde oluşan hatalar Ayarlar › Hata kaydı&apos;nda 30 gün durur: aynı hata tek satırda, kaç kez ve en son ne zaman görüldüğüyle. Hata
-            ekranındaki <strong className="font-semibold text-ink">Hata kodu</strong> satırın Ayrıntı&apos;sında da yazar; sürüyorsa kodu ve ekranı
+            ekranındaki <strong className="font-semibold text-ink">Hata kodu</strong> satırda da yazar (son beş görülüşün kodu); sürüyorsa kodu ve ekranı
             geliştiriciye iletin. Sunucuda hata olunca yöneticilere günde en çok bir e-posta gelir. Düzelen satırı Çözüldü işaretleyin; hata yeniden görülürse
             satır geri gelir. Kartın üstü güvenlik politikasının (CSP) uygulanıp uygulanamayacağını da söyler.
           </>

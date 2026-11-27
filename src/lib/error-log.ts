@@ -62,14 +62,30 @@ export const LIMITS = {
   stack: 1500,
 } as const;
 
+/** Ham girdinin temizlikten önce kısaltıldığı uzunluk (alanın sınırının katı): temizlik düzenli ifadelerle yapılır,
+ * çok uzun girdide (64 KB'lık ileti) saniyelerce işlemci tutardı */
+const RAW_FACTOR = 4;
+/** Yığının ham hâli en çok bu kadar karakter, satırı en çok bu kadar okunur */
+const RAW_STACK = 16_000;
+const RAW_STACK_LINE = 500;
+
 /** Kaynak başına günde (İstanbul) en çok bu kadar YENİ satır; aşılınca tek bir "sınır doldu" satırı sayılır */
 export const DAILY_NEW_CAP: Record<ErrorSource, number> = { server: 50, action: 50, client: 30, csp: 30 };
+/**
+ * Sunucu örneği başına dakikada en çok yazım, KAYNAK BAŞINA ayrı kapı: oturumsuz CSP raporları ve tarayıcı hataları
+ * sunucu ve işlem hatalarının payını tüketemez (bir CSP yağmurunda gerçek sunucu hatası yine yazılır, e-postası gider)
+ */
+export const GATE_PER_MINUTE: Record<ErrorSource, number> = { server: 30, action: 30, client: 10, csp: 10 };
+/** Satır son bu kadar hata kodunu tutar (Next'in kodu iletiye ve yığına göre değişir: her yayında, her farklı sayıda) */
+export const DIGEST_KEEP = 5;
 /** Bu kadar gündür görülmeyen satır sabah işinde silinir */
 export const RETENTION_DAYS = 30;
 /** Tablo en çok bu kadar satır tutar (fazlası en eski son görülüşten silinir) */
 export const MAX_ROWS = 2000;
 /** Yazma en çok bu kadar beklenir (istek beklemez; işlevin açık kalma süresi) */
 export const WRITE_TIMEOUT_MS = 3_000;
+/** Kritik hatanın e-postası en çok bu kadar beklenir; işlev yazımdan ayrı olarak bu süre açık kalır */
+export const ALERT_TIMEOUT_MS = 10_000;
 /** Tarayıcının gönderdiği gövde en çok (bayt) */
 export const CLIENT_BODY_MAX = 8 * 1024;
 /** Ekranda listelenen satır */
@@ -78,6 +94,17 @@ export const LIST_LIMIT = 50;
 /** "Sınır doldu" satırının özeti: kaynak ve gün başına bir tane */
 export const overflowFingerprint = (source: ErrorSource, day: string) => `sinir:${source}:${day}`;
 export const isOverflowFingerprint = (fp: string) => fp.startsWith("sinir:");
+
+const SOURCE_ABLATIVE: Record<ErrorSource, string> = { server: "sunucu hatasından", action: "işlem hatasından", client: "tarayıcı hatasından", csp: "CSP ihlalinden" };
+
+/** "Sınır doldu" satırının iletisi: satır 30 gün durur, "bugün" yazılmaz, gün yazılır */
+export function overflowMessage(source: ErrorSource, day: string): string {
+  const date = new Date(`${day}T12:00:00Z`).toLocaleDateString("tr-TR", { day: "numeric", month: "short", timeZone: "Europe/Istanbul" });
+  return `Günlük sınır doldu (${date}): o gün ${DAILY_NEW_CAP[source]} farklı ${SOURCE_ABLATIVE[source]} sonrakiler ayrı satır açmadı, yalnız sayıldı`;
+}
+
+/** Satırın hata kodları (sütunda boşlukla ayrılmış, yeni önce) */
+export const splitDigests = (v: string | null | undefined): string[] => (v ? v.split(" ").filter(Boolean) : []);
 
 const TR_OFFSET_MS = 3 * 3600_000;
 /** İstanbul'a göre gün (YYYY-MM-DD; UTC+3, yaz saati yok) */
@@ -89,10 +116,16 @@ export const trDayStart = (at: Date) => new Date(Date.parse(`${trDay(at)}T00:00:
 
 const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` : v);
 
+/** Denetim karakterleri (NUL…): Postgres metinde NUL'u reddeder, satır hiç yazılamazdı. Satır sonu ve sekme kalır */
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
+/** Ham metin: önce kısaltılır (temizlik uzun girdide yavaş), denetim karakterleri atılır */
+const prep = (raw: string, max: number) => raw.slice(0, max).replace(CONTROL, "");
+
 /** Adresin yolu: köken, sorgu dizgesi ve parça atılır; anahtar gibi görünen kesim `:anahtar` olur */
 export function cleanPath(raw: string | null | undefined): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
-  let v = raw.trim();
+  let v = prep(raw, LIMITS.path * RAW_FACTOR * 2).trim();
   try {
     if (/^[a-z][\w+.-]*:\/\//i.test(v)) v = new URL(v).pathname;
   } catch {
@@ -115,14 +148,15 @@ const groupPath = (p: string | null) => (p ? p.replace(/\/\d+(?=\/|$)/g, "/:n") 
 const SECRET_KEYS = "password|passwd|parola|şifre|sifre|secret|token|api[_-]?key|apikey|authorization|cookie|session|signature|imza|otp";
 
 /**
- * Metindeki kişisel veri ve anahtarlar: veritabanı hatasının parametreleri (drizzle'ın "params:" satırı: kayda giden
- * ad, tutar, e-posta), bağlantı adresindeki parola, Bearer / JWT / API anahtarı, `parola=…` gibi çiftler, adreslerin
- * sorgu dizgesi, e-posta, IBAN, telefon / kimlik / kart gibi uzun sayılar.
+ * Metindeki kişisel veri ve anahtarlar: veritabanı hatasının parametreleri (drizzle'ın "params:" kısmı: kayda giden
+ * ad, adres, tutar, e-posta), bağlantı adresindeki parola, Bearer / JWT / API anahtarı, `parola=…` gibi çiftler,
+ * adreslerin sorgu dizgesi, e-posta, IBAN, telefon / kimlik / kart gibi uzun sayılar.
  */
 export function redactText(raw: string): string {
   let v = raw;
-  // Drizzle: "Failed query: <sql>\nparams: a,b,c" (sorgu parametreli, değerler yalnız params'ta)
-  v = v.replace(/(^|\n)\s*params:[^\n]*(\n|$)/gi, "$1params: [gizli]$2");
+  // Drizzle: "Failed query: <sql>\nparams: a,b,c". Değer çok satırlı olabilir (not, adres): params'tan SONUNA kadar
+  // atılır. describeError sorgu hatasının iletisine params'ı hiç koymaz ve sorguyu sona alır; bu yalnız yedek.
+  v = v.replace(/(^|\n)[ \t]*params:[\s\S]*$/i, "$1params: [gizli]");
   v = v.replace(/\b(postgres(?:ql)?|mysql|redis|rediss|mongodb(?:\+srv)?|amqp):\/\/[^\s@/]+@/gi, "$1://[gizli]@");
   // Adresler: köken + yol (sorgu ve parça atılır); anahtar çiftlerinden önce, adres bütün kalsın
   v = v.replace(/\bhttps?:\/\/[^\s"'<>()]+/gi, (url) => {
@@ -151,28 +185,33 @@ export function redactText(raw: string): string {
 /** Tek satırlık kısa metin: temizlenir, boşluklar sadeleşir, kısaltılır */
 function cleanLine(raw: unknown, max: number): string | null {
   if (typeof raw !== "string") return null;
-  const v = redactText(raw).replace(/\s+/g, " ").trim();
+  const v = redactText(prep(raw, max * RAW_FACTOR)).replace(/\s+/g, " ").trim();
   return v ? cut(v, max) : null;
 }
 
 /** İleti: temizlenir, satır sonları korunur (en çok 500 karakter) */
 function cleanMessage(raw: unknown): string {
-  const v = typeof raw === "string" ? redactText(raw).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim() : "";
+  const v = typeof raw === "string" ? redactText(prep(raw, LIMITS.message * RAW_FACTOR)).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim() : "";
   return v ? cut(v, LIMITS.message) : "(iletisiz hata)";
 }
 
 /** Yığın satırı mı (V8: "    at f (file:1:2)"; Safari / Firefox: "f@https://…:1:2") */
-const FRAME = /^\s*at\s|@\S*:\d+:\d+\s*$|^\s*\S*@\S+$/;
+const V8_FRAME = /^\s*at\s/;
+const FRAME = /@\S*:\d+:\d+\s*$|^\s*\S*@\S+$/;
 
 /**
- * Yığının ilk satırları: yalnız çerçeve satırları (ileti yinelenmez), sunucudaki mutlak yollar `src/`, `.next/`,
- * `node_modules/`'tan başlar, tarayıcıdaki adresler yola iner (sorgu dizgesi yok), her satır kısaltılır.
+ * Yığının ilk satırları: yalnız çerçeve satırları (ileti yinelenmez; V8 yığınında yalnız "at" satırları, iletinin
+ * "x@y" gibi satırı çerçeve sanılmasın), sunucudaki mutlak yollar `src/`, `.next/`, `node_modules/`'tan başlar,
+ * tarayıcıdaki adresler yola iner (sorgu dizgesi yok), her satır kısaltılır.
  */
 export function cleanStack(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
-  const lines = raw
+  const all = prep(raw, RAW_STACK)
     .split("\n")
-    .filter((l) => FRAME.test(l))
+    .map((l) => l.slice(0, RAW_STACK_LINE));
+  const frame = all.some((l) => V8_FRAME.test(l)) ? V8_FRAME : FRAME;
+  const lines = all
+    .filter((l) => frame.test(l))
     .slice(0, LIMITS.stackLines)
     .map((l) => {
       let v = l.trim();
@@ -203,14 +242,16 @@ export function sanitizeEntry(e: ErrorEntry): CleanEntry {
 /**
  * Aynı hatanın özeti (src/server/errors/store.ts bunun sha256'sını alır): kaynak, ad, iletinin sayıları atılmış hâli ve
  * yol kalıbı (yoksa sayısal kesimleri atılmış adres). Yığın girmez: her yayında satır numarası değişir, aynı hata yeni
- * satır açmasın.
+ * satır açmasın. CSP'de yol da girmez: aynı ihlal (yönerge + engellenen kaynak) hangi ekranda olursa olsun tek satır
+ * (yoksa bir ihlal her ekranda, /panel/kasa/2026-11-01 gibi her günde ayrı satır açıp günlük sınırı doldururdu).
  */
 export function fingerprintBasis(e: CleanEntry): string {
   const message = e.message
     .replace(/[0-9a-f]{8,}/gi, "#")
     .replace(/\d+/g, "#")
     .slice(0, 300);
-  return [e.source, e.name ?? "", message, e.route ?? groupPath(e.path)].join("|");
+  const where = e.source === "csp" ? "" : (e.route ?? groupPath(e.path));
+  return [e.source, e.name ?? "", message, where].join("|");
 }
 
 /** Yöneticiye e-postayla bildirilecek hata: sunucuda (sayfa, API yolu, eylem) olan hata */
@@ -226,18 +267,40 @@ const FRAMEWORK_DIGEST = /^(NEXT_REDIRECT|NEXT_HTTP_ERROR_FALLBACK|NEXT_NOT_FOUN
 const asObject = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" ? (v as Record<string, unknown>) : null);
 const str = (v: unknown) => (typeof v === "string" ? v : null);
 
-/** Hatanın adı, iletisi (sarmalanmış hatanın nedeni dahil: drizzle → postgres), yığını ve kodu */
+/** Drizzle'ın sorgu hatası (DrizzleQueryError): iletisi "Failed query: <sql>\nparams: <değerler>" */
+const isQueryError = (o: Record<string, unknown>) => typeof o.query === "string" && "params" in o;
+const QUERY_PREFIX = "Failed query: ";
+
+/**
+ * Hatanın kendi iletisi. Sorgu hatasında yalnız SQL: parametreler (kayda gidecek ad, adres, tutar, kart hanesi) hiç
+ * alınmaz; değer çok satırlı olabildiği için "params:" satırını sonradan temizlemek yetmez.
+ */
+const ownMessage = (o: Record<string, unknown>) => (isQueryError(o) ? `${QUERY_PREFIX}${o.query as string}` : (str(o.message) ?? ""));
+
+/**
+ * Hatanın adı, iletisi (sarmalanmış hatanın nedenleri dahil: drizzle → postgres), yığını ve kodu. Sorgu (uzun SQL)
+ * iletinin sonuna gider: önce asıl neden ("canceling statement due to statement timeout", "relation … does not
+ * exist"); ekranın ilk satırları, e-postanın konusu ve gruplama onu görür, 500 karakterlik kısaltma SQL'i keser.
+ */
 export function describeError(err: unknown): { name: string | null; message: string; stack: string | null; digest: string | null } {
   const o = asObject(err);
   if (!o) return { name: null, message: typeof err === "string" ? err : String(err), stack: null, digest: null };
-  const cause = asObject(o.cause);
-  const own = str(o.message) ?? "";
-  const causeMsg = cause ? str(cause.message) : null;
-  // Neden ayrı satırda: drizzle'ın "params:" satırı temizlenirken neden silinmesin
-  const message = causeMsg && !own.includes(causeMsg) ? (own ? `${own}\n${causeMsg}` : causeMsg) : own;
-  const code = str(o.code) ?? (cause ? str(cause.code) : null);
+  // Zincir: hata, nedeni, nedeninin nedeni (sarmalayıcı → drizzle → postgres); döngüye karşı en çok üç halka
+  const chain: Record<string, unknown>[] = [];
+  for (let c: Record<string, unknown> | null = o; c && chain.length < 3 && !chain.includes(c); c = asObject(c.cause)) chain.push(c);
+  const parts: string[] = [];
+  for (const c of chain) {
+    const m = ownMessage(c).trim();
+    if (m && !parts.some((p) => p.includes(m))) parts.push(m);
+  }
+  const query = (p: string) => p.startsWith(QUERY_PREFIX);
+  const message = [...parts.filter((p) => !query(p)), ...parts.filter(query)].join("\n");
+  const code = chain.map((c) => str(c.code)).find(Boolean) ?? null;
   const name = str(o.name) ?? (err instanceof Error ? err.constructor.name : null);
-  return { name: code && name ? `${name} (${code})` : name, message, stack: str(o.stack), digest: str(o.digest) };
+  // Yığının başı iletiyi yineler (sorgu hatasında parametreler dahil): yalnız çerçeveler kalsın
+  const raw = str(o.message);
+  const stack = str(o.stack);
+  return { name: code && name ? `${name} (${code})` : name, message, stack: stack && raw ? stack.replace(raw, "") : stack, digest: str(o.digest) };
 }
 
 /** Bağlantı kesildi (kullanıcı sayfadan çıktı): hata sayılmaz */
@@ -313,12 +376,19 @@ export function clientErrorEntry(b: ClientErrorBody, userAgent: string | null): 
 
 // ---------------------------------------------------------------- CSP ihlalleri
 
-/** Tarayıcı eklentisinin ürettiği ihlal (panelin kodu değil; karara girmez) */
+/** Tarayıcı eklentisinin ürettiği ihlal (src/lib/csp.ts safeUrl "eklenti" yazar) */
 export const EXTENSION_MARK = "eklenti";
 
-/** CSP raporundan kayıt (src/lib/csp.ts parseCspReports'un çıktısı) */
-export function cspEntry(v: { directive: string; blocked: string; page: string; disposition: string; source: string | null }): ErrorEntry {
-  const extension = v.blocked === EXTENSION_MARK || (v.source ?? "").startsWith(EXTENSION_MARK);
+/** İhlal bir tarayıcı eklentisinden mi (engellenen kaynak ya da betik dosyası `chrome-extension://` …) */
+export const isExtensionViolation = (v: { blocked: string; source: string | null }) => v.blocked === EXTENSION_MARK || (v.source ?? "").startsWith(`${EXTENSION_MARK}:`);
+
+/**
+ * CSP raporundan kayıt (src/lib/csp.ts parseCspReports'un çıktısı). Eklentinin ihlali kayda girmez (null; yalnız
+ * günlüğe): panelin kodu değildir, karara girmemeli; satır paylaşsaydı panelin gerçek ihlalini karardan silebilirdi,
+ * her ekranda ayrı ihlal üreterek günlük sınırı da doldururdu.
+ */
+export function cspEntry(v: { directive: string; blocked: string; page: string; disposition: string; source: string | null }): ErrorEntry | null {
+  if (isExtensionViolation(v)) return null;
   const enforce = v.disposition === "enforce";
   return {
     source: "csp",
@@ -326,16 +396,16 @@ export function cspEntry(v: { directive: string; blocked: string; page: string; 
     name: v.directive,
     message: `${v.directive} ${v.blocked}`,
     path: v.page,
-    detail: [enforce ? "Engellendi" : "Report-Only", v.source ? `kaynak ${v.source}` : null, extension ? EXTENSION_MARK : null].filter(Boolean).join(" · "),
+    detail: [enforce ? "Engellendi" : "Report-Only", v.source ? `kaynak ${v.source}` : null].filter(Boolean).join(" · "),
   };
 }
 
 export interface CspRow {
-  message: string;
-  detail: string | null;
   count: number;
   lastSeen: Date;
   resolvedAt: Date | null;
+  /** Günün "sınır doldu" satırı: ihlal sayılmaz ama içinde ne olduğu bilinmez */
+  overflow: boolean;
 }
 
 /** CSP kararının penceresi: bu kadar gün temiz kalırsa `CSP_ENFORCE=1` önerilir */
@@ -348,51 +418,66 @@ export interface CspVerdict {
   text: string;
   /** Geliştiricinin yapacağı (değişken adı) */
   tech: string;
-  /** Pencerede sayılan ihlaller (eklenti ve çözülmüşler hariç) */
+  /** Pencerede sayılan açık ihlaller (çözülmüşler ve sınır satırı hariç) */
   violations: number;
 }
 
 const ENFORCE_HOW = "Vercel › Settings › Environment Variables › CSP_ENFORCE = 1 (Production), sonra yeniden yayın. Geri almak: değişkeni silip yeniden yayın (docs/DEPLOY.md › Güvenlik başlıkları).";
+const OVERFLOW_NOTE = "Bir gün 30'dan fazla farklı ihlal geldi; sonrakilerin ayrıntısı yalnız Vercel günlüğündeydi (bir saat).";
 
 /**
- * `CSP_ENFORCE` kararı kanıtla (docs/DEPLOY.md › Güvenlik başlıkları): kayıt en az 7 gündür tutuluyorsa ve son 7 günde
- * panelin kendi kodundan (eklenti değil) çözülmemiş ihlal yoksa açılabilir. `since`: kaydın başladığı an
- * (integration_state › errors.since).
+ * `CSP_ENFORCE` kararı kanıtla (docs/HATA-KAYDI.md § 6): panelin kendi kodundan son ihlalden (ya da kaydın
+ * başlangıcından) bu yana 7 gün geçtiyse ve açık ihlal yoksa açılabilir. Çözüldü işaretlemek bekleme süresini
+ * atlatmaz: çözülmüş satır da son görülüşünden 7 gün pencerede kalır (temiz günler oradan sayılır). Günün "sınır
+ * doldu" satırı ihlal sayısına girmez ama içinde ne olduğu bilinmediği için o da temiz günleri yeniden başlatır.
+ * `since`: kaydın başladığı an (integration_state › errors.since).
  */
 export function cspVerdict(rows: readonly CspRow[], i: { enforced: boolean; since: string | null; now: Date }): CspVerdict {
-  const from = i.now.getTime() - CSP_CLEAN_DAYS * 86_400_000;
-  const live = rows.filter((r) => !r.resolvedAt && r.lastSeen.getTime() >= from && !(r.detail ?? "").includes(EXTENSION_MARK));
+  const now = i.now.getTime();
+  const from = now - CSP_CLEAN_DAYS * 86_400_000;
+  const recent = rows.filter((r) => r.lastSeen.getTime() >= from);
+  const live = recent.filter((r) => !r.overflow && !r.resolvedAt);
   const violations = live.reduce((a, r) => a + r.count, 0);
   const kinds = live.length;
+  const overflowed = recent.some((r) => r.overflow);
   const days = `son ${CSP_CLEAN_DAYS} günde`;
   if (i.enforced) {
-    return violations
-      ? {
-          tone: "warn",
-          violations,
-          title: `Güvenlik politikası uygulanıyor: ${days} ${violations} engelleme (${kinds} farklı)`,
-          text: "Bir ekranın bir parçası yüklenmemiş olabilir; aşağıdaki CSP satırlarına bakın.",
-          tech: "CSP_ENFORCE=1. Geri almak: Vercel'de değişkeni silip yeniden yayın.",
-        }
-      : { tone: "good", violations, title: `Güvenlik politikası uygulanıyor; ${days} engelleme yok`, text: "Başka kökenden betik, istek ve görsel yüklenemez.", tech: "CSP_ENFORCE=1." };
+    if (violations || overflowed) {
+      return {
+        tone: "warn",
+        violations,
+        title: violations ? `Güvenlik politikası uygulanıyor: ${days} ${violations} engelleme (${kinds} farklı)` : "Güvenlik politikası uygulanıyor: günlük CSP sınırı doldu",
+        text: `Bir ekranın bir parçası yüklenmemiş olabilir; aşağıdaki CSP satırlarına bakın.${overflowed ? ` ${OVERFLOW_NOTE}` : ""}`,
+        tech: "CSP_ENFORCE=1. Geri almak: Vercel'de değişkeni silip yeniden yayın.",
+      };
+    }
+    return { tone: "good", violations, title: "Güvenlik politikası uygulanıyor; açık engelleme yok", text: "Başka kökenden betik, istek ve görsel yüklenemez.", tech: "CSP_ENFORCE=1." };
   }
   if (violations) {
     return {
       tone: "warn",
       violations,
       title: `Güvenlik politikası henüz uygulanmasın: ${days} ${violations} ihlal (${kinds} farklı)`,
-      text: "Uygulansaydı bu kaynaklar engellenirdi. Önce düzeltilsin, satırlar Çözüldü işaretlensin; 7 gün temiz kalınca uygulanabilir.",
+      text: `Uygulansaydı bu kaynaklar engellenirdi. Önce düzeltilsin, satırlar Çözüldü işaretlensin; son ihlalden sonra 7 gün temiz kalınca uygulanabilir.${overflowed ? ` ${OVERFLOW_NOTE}` : ""}`,
       tech: "CSP_ENFORCE açılmaz; politika Report-Only kalır.",
     };
   }
+  // Temiz günlerin başı: kaydın başlangıcı, penceredeki çözülmüş ihlalin ya da sınır satırının son görülüşü
   const sinceMs = i.since ? Date.parse(i.since) : NaN;
-  if (!Number.isFinite(sinceMs) || sinceMs > from) {
-    const elapsed = Number.isFinite(sinceMs) ? Math.max(0, Math.floor((i.now.getTime() - sinceMs) / 86_400_000)) : 0;
+  const lastSeen = Math.max(-Infinity, ...recent.map((r) => r.lastSeen.getTime()));
+  const cleanFrom = Number.isFinite(sinceMs) ? Math.max(sinceMs, lastSeen) : NaN;
+  if (!Number.isFinite(cleanFrom) || cleanFrom > from) {
+    const elapsed = Number.isFinite(cleanFrom) ? Math.max(0, Math.floor((now - cleanFrom) / 86_400_000)) : 0;
+    const why = overflowed
+      ? `${OVERFLOW_NOTE} Temiz günler o günden sayılır.`
+      : recent.length
+        ? "Son ihlal düzeltildi (Çözüldü); temiz günler son görülüşünden sayılır."
+        : `Tarayıcılar politikanın engelleyeceği her kaynağı bildirir; ${CSP_CLEAN_DAYS} gün boyunca panelin kendi kodundan bildirim gelmezse uygulanabilir.`;
     return {
       tone: "neutral",
       violations,
       title: `Güvenlik politikası: kanıt toplanıyor (${elapsed}/${CSP_CLEAN_DAYS} gün)`,
-      text: `Tarayıcılar politikanın engelleyeceği her kaynağı bildirir; ${CSP_CLEAN_DAYS} gün boyunca panelin kendi kodundan bildirim gelmezse uygulanabilir.`,
+      text: why,
       tech: "CSP_ENFORCE kapalı (Report-Only); kayıt başlangıcı integration_state › errors.since.",
     };
   }
@@ -480,7 +565,8 @@ export interface ErrorRow {
   message: string;
   path: string | null;
   detail: string | null;
-  digest: string | null;
+  /** Son görülüşlerin hata kodları (yeni önce, en çok DIGEST_KEEP) */
+  digests: string[];
   stack: string | null;
   count: number;
   firstSeen: Date;
@@ -489,13 +575,13 @@ export interface ErrorRow {
   overflow: boolean;
 }
 
-/** Ayarlar › Hata kaydı'nın telefondaki kapalı satırı ve tonu: son 24 saatte açık sunucu hatası varsa kırmızı */
+/** Ayarlar › Hata kaydı'nın telefondaki kapalı satırı ve tonu: son 24 saatte açık sunucu / işlem hatası varsa kırmızı (satır sayısı) */
 export function errorSummary(rows: readonly Pick<ErrorRow, "source" | "level" | "lastSeen" | "resolvedAt" | "count">[], now: Date): { text: string; tone?: "warn" | "bad" } {
   const open = rows.filter((r) => !r.resolvedAt);
   if (!open.length) return { text: "Açık hata yok" };
   const day = now.getTime() - 86_400_000;
   const recentCritical = open.filter((r) => isCritical(r) && r.lastSeen.getTime() >= day).length;
-  if (recentCritical) return { text: `Son 24 saatte ${recentCritical} sunucu hatası`, tone: "bad" };
+  if (recentCritical) return { text: recentCritical === 1 ? "Son 24 saatte bir sunucu / işlem hatası" : `Son 24 saatte ${recentCritical} farklı sunucu / işlem hatası`, tone: "bad" };
   const errors = open.filter((r) => r.level === "error").length;
   return errors ? { text: `${errors} açık hata`, tone: "warn" } : { text: `${open.length} açık uyarı (CSP)` };
 }

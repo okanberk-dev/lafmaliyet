@@ -229,7 +229,7 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
   'unsafe-inline'`, `img-src 'self' blob: data:`, `connect-src 'self'`, `frame-src 'self' blob:` (fatura belgesinin
   PDF önizlemesi), `worker-src 'self' blob:` (servis çalışanı `/sw.js`), `object-src 'none'`. `CSP_ENFORCE=1`
   değilken **Report-Only** gider: tarayıcı hiçbir şeyi engellemez, engelleyeceği her kaynağı `/api/csp-rapor`'a
-  bildirir (oturumsuz, hep 204, dakikada en çok 30 satır; adresler köken + yola indirilir). Vercel › Logs'ta `[csp]`
+  bildirir (oturumsuz, hep 204, örnek başına dakikada en çok 30, IP başına 20 satır; adresler köken + yola indirilir). Vercel › Logs'ta `[csp]`
   ile aranır: `[csp] report img-src https://… · /panel/kasa`. Chrome raporu Reporting API ile (`report-to`,
   `Reporting-Endpoints`; yalnız HTTPS'te, birkaç saniye içinde) gönderir, Firefox ve Safari `report-uri` ile; uç iki
   biçimi de okur. Yerelde `http://localhost`'ta Chrome `Reporting-Endpoints`'i yok sayar, `report-to` varken
@@ -265,8 +265,9 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
 - **Uygulamaya geçiş (karar kanıtla, 27 Kasım 2026):** raporlar Vercel'in bir saatlik günlüğünün yanında panelin hata
   kaydına da yazılır (aynı ihlal tek satır, sayısıyla; [HATA-KAYDI.md](HATA-KAYDI.md)). **Ayarlar › Hata kaydı** kartının
   üstü kararı söyler (`src/lib/error-log.ts` › `cspVerdict`): kayıt en az 7 gündür tutuluyorsa ve son 7 günde panelin
-  kendi kodundan çözülmemiş ihlal yoksa "uygulanabilir"; ihlal varsa "henüz uygulanmasın"; 7 gün dolmadıysa "kanıt
-  toplanıyor". Tarayıcı eklentilerinin ihlali (`chrome-extension://` …) "eklenti" diye işaretlenir, sayılmaz. Karar
+  kendi kodundan hiç ihlal görülmediyse "uygulanabilir"; açık ihlal varsa "henüz uygulanmasın"; 7 gün dolmadıysa ya da
+  son ihlal Çözüldü işaretlenmiş ama 7 gün geçmemişse "kanıt toplanıyor" (Çözüldü bekleme süresini atlatmaz). Tarayıcı
+  eklentilerinin ihlali (`chrome-extension://` …) yalnız günlüğe düşer, kayda ve karara girmez. Karar
   "uygulanabilir" deyince Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir. Bir şey bozulursa değişkeni silip
   yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita) eklenecekse önce `src/lib/csp.ts`'e yazılır.
 

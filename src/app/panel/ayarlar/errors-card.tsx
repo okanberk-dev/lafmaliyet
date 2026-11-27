@@ -13,9 +13,13 @@ import { SectionCard } from "./section-card";
 
 const SOURCE_TONE: Record<ErrorRow["source"], Tone> = { server: "red", action: "red", client: "amber", csp: "gray" };
 
+/** Listede üç satıra kısalan ileti (sorgu hatası: neden + SQL); tamamı Ayrıntı'da */
+const isLong = (message: string) => message.length > 120 || message.split("\n").length > 3;
+
 function ErrorItem({ r, now }: { r: ErrorRow; now: Date }) {
   const tone = r.overflow ? "gray" : r.source === "csp" && r.level === "error" ? "amber" : SOURCE_TONE[r.source];
-  const hasDetails = Boolean(r.stack || r.digest || r.detail || r.name);
+  const long = isLong(r.message);
+  const hasDetails = Boolean(r.stack || r.detail || r.name || long);
   return (
     <li className="px-4 py-3 text-sm">
       <div className="flex items-start gap-2">
@@ -31,10 +35,17 @@ function ErrorItem({ r, now }: { r: ErrorRow; now: Date }) {
           <p className="mt-0.5 text-[13px] break-words text-ink-mute">
             {r.path ? <span className="font-mono text-[12px]">{r.path}</span> : null}
             {r.path ? " · " : null}ilk {seenText(r.firstSeen, now)}
+            {/* Hata ekranındaki kod: son görülüşlerin kodları, açıkta (sayfada aranınca bulunsun) */}
+            {r.digests.length ? (
+              <>
+                {" · "}hata kodu <span className="font-mono text-[12px] text-ink-soft">{r.digests.join(", ")}</span>
+              </>
+            ) : null}
           </p>
           {hasDetails ? (
             <details className="group mt-1">
               <summary className="cursor-pointer text-[13px] font-medium text-ink-mute select-none hover:text-ink">Ayrıntı</summary>
+              {long ? <p className="mt-1 text-[13px] break-words whitespace-pre-line text-ink">{r.message}</p> : null}
               <dl className="mt-1 space-y-0.5 text-[13px] text-ink-mute">
                 {r.name ? (
                   <div>
@@ -46,12 +57,6 @@ function ErrorItem({ r, now }: { r: ErrorRow; now: Date }) {
                   <div>
                     <dt className="inline">Yer: </dt>
                     <dd className="inline break-words text-ink">{r.detail}</dd>
-                  </div>
-                ) : null}
-                {r.digest ? (
-                  <div>
-                    <dt className="inline">Hata kodu: </dt>
-                    <dd className="inline font-mono text-ink">{r.digest}</dd>
                   </div>
                 ) : null}
               </dl>
@@ -92,7 +97,7 @@ export async function ErrorLogCard() {
           Panelde oluşan hatalar {RETENTION_DAYS} gün burada durur: aynı hata tek satırda, kaç kez ve en son ne zaman görüldüğüyle. Sunucuda hata olunca yöneticilere
           günde en çok bir e-posta gider. Düzelen satırı Çözüldü işaretleyin; hata yeniden görülürse satır geri gelir.{" "}
           <InfoTip
-            text={`Sunucu: sayfa ve bağlantı hataları. İşlem: kaydet gibi bir düğmenin "İşlem tamamlanamadı" dediği hata. Tarayıcı: telefonda ya da bilgisayarda ekranın kendi hatası. CSP: güvenlik politikasının engellediği (ya da engelleyeceği) kaynak. Kişisel veri ve parola yazılmaz; metinler kısaltılır. Bir kaynaktan günde en çok ${DAILY_NEW_CAP.server} farklı hata ayrı satır açar, sonrakiler yalnız sayılır.`}
+            text={`Sunucu: sayfa ve bağlantı hataları. İşlem: kaydet gibi bir düğmenin "İşlem tamamlanamadı" dediği hata. Tarayıcı: telefonda ya da bilgisayarda ekranın kendi hatası. CSP: güvenlik politikasının engellediği (ya da engelleyeceği) kaynak. Aynı CSP ihlali hangi ekranda olursa olsun tek satırdır; tarayıcı eklentisinin ihlali yazılmaz. Kişisel veri ve parola yazılmaz; metinler kısaltılır. Bir günde sunucu ve işlemde ${DAILY_NEW_CAP.server}, tarayıcı ve CSP'de ${DAILY_NEW_CAP.csp} farklı hata ayrı satır açar, sonrakiler yalnız sayılır.`}
           />
         </>
       }

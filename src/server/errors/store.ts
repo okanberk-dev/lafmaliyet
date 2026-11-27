@@ -3,24 +3,31 @@
 // (src/server/jobs/watch.ts gibi).
 //
 // Kayıt hiçbir zaman isteği bozmaz ya da bekletmez: `reportError` beklenmez (işlev açık kalsın diye Next'in isteğe bağlı
-// waitUntil'ine verilir), en çok WRITE_TIMEOUT_MS sürer, kendi hatasını yutar (yalnız günlüğe bir satır). Kayıt
-// kendini kaydetmez: yazma hatası yalnız console.error'a gider (hata kancası çağrılmaz), kapı bir dakika kapanır.
+// waitUntil'ine verilir), en çok WRITE_TIMEOUT_MS sürer, kendi hatasını yutar (yalnız günlüğe bir satır). Kritik
+// hatanın e-postası ayrıca en çok ALERT_TIMEOUT_MS açık tutulur. Kayıt kendini kaydetmez: yazma hatası yalnız
+// console.error'a gider (hata kancası çağrılmaz). Bağlantı düşünce o kaynağın kapısı bir dakika kapanır; satırın
+// kendisi yazılamıyorsa (veri hatası) kapı açık kalır, öteki hatalar yazılmaya devam eder.
 
 import { createHash } from "node:crypto";
 
 import { and, count, desc, eq, gte, inArray, isNull, lt, notLike, sql } from "drizzle-orm";
 
 import {
+  ALERT_TIMEOUT_MS,
   DAILY_NEW_CAP,
+  DIGEST_KEEP,
+  ERROR_SOURCES,
   fingerprintBasis,
+  GATE_PER_MINUTE,
   isCritical,
   isOverflowFingerprint,
   LIST_LIMIT,
   MAX_ROWS,
   overflowFingerprint,
+  overflowMessage,
   RETENTION_DAYS,
   sanitizeEntry,
-  SOURCE_LABELS,
+  splitDigests,
   trDay,
   trDayStart,
   WRITE_TIMEOUT_MS,
@@ -28,6 +35,7 @@ import {
   type CleanEntry,
   type ErrorEntry,
   type ErrorRow,
+  type ErrorSource,
   type WriteGate,
 } from "@/lib/error-log";
 import { capped } from "@/server/jobs/capped";
@@ -39,9 +47,34 @@ export const ERRORS_SINCE_KEY = "errors.since";
 
 export type RecordOutcome = "inserted" | "updated" | "capped" | "throttled" | "skipped" | "error" | "timeout";
 
-/** Sunucu örneğinin kapısı (src/lib/error-log.ts createWriteGate) */
-const globalGate = globalThis as unknown as { __lafErrorGate?: WriteGate };
-const sharedGate = () => (globalGate.__lafErrorGate ??= createWriteGate());
+/** Sunucu örneğinin kapıları, kaynak başına (src/lib/error-log.ts createWriteGate, GATE_PER_MINUTE) */
+const globalGates = globalThis as unknown as { __lafErrorGates?: Record<ErrorSource, WriteGate> };
+const makeGates = () => Object.fromEntries(ERROR_SOURCES.map((source) => [source, createWriteGate({ perMinute: GATE_PER_MINUTE[source] })])) as Record<ErrorSource, WriteGate>;
+const sharedGate = (source: ErrorSource) => (globalGates.__lafErrorGates ??= makeGates())[source];
+
+/** Testler için: sunucu örneğinin kapılarını siler */
+export function resetErrorGates() {
+  delete globalGates.__lafErrorGates;
+}
+
+/**
+ * Satırın kendisi yazılamıyor mu (Postgres veri hatası 22xxx, kısıt 23xxx; drizzle'ın sarmaladığı nedende de): bu
+ * durumda kapı kapanmaz. Kapanırsa tek bir bozuk girdi (oturumsuz bir CSP raporu) o kaynağın bütün hatalarını bir
+ * dakika kayıttan düşürürdü.
+ */
+function isRowError(err: unknown): boolean {
+  let c: unknown = err;
+  for (let i = 0; i < 3 && c && typeof c === "object"; i++) {
+    const code = (c as { code?: unknown }).code;
+    if (typeof code === "string" && /^2[23][0-9A-Z]{3}$/.test(code)) return true;
+    c = (c as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** Hata kodları sütunu: yeni kod öne, aynısı bir kez, en çok DIGEST_KEEP (boşlukla ayrılmış; kod boşluk içermez) */
+const digestsSql = (column: typeof s.errorLog.digest, digest: string) =>
+  sql`array_to_string((array_prepend(${digest}::text, array_remove(string_to_array(coalesce(${column}, ''), ' '), ${digest}::text)))[1:${sql.raw(String(DIGEST_KEEP))}], ' ')`;
 
 /** Satırın özeti: kaynak, ad, sayıları atılmış ileti ve yol kalıbının sha256'sı */
 export function fingerprint(e: CleanEntry): string {
@@ -49,8 +82,9 @@ export function fingerprint(e: CleanEntry): string {
 }
 
 /**
- * Hatayı yazar: aynı özet varsa sayısı artar, son görülüşü ve son iletisi yazılır, "Çözüldü" kalkar; yoksa kaynağın
- * bugünkü yeni satır sınırına bakılır (DAILY_NEW_CAP), aşıldıysa yalnız günün "sınır doldu" satırı sayılır.
+ * Hatayı yazar: aynı özet varsa sayısı artar, son görülüşü, son iletisi ve yolu yazılır, hata kodu son kodlara eklenir,
+ * "Çözüldü" kalkar; yoksa kaynağın bugünkü yeni satır sınırına bakılır (DAILY_NEW_CAP), aşıldıysa yalnız günün "sınır
+ * doldu" satırı sayılır.
  */
 export async function writeError(db: DB, e: CleanEntry, fp: string, increment: number, now: Date): Promise<"inserted" | "updated" | "capped"> {
   const t = s.errorLog;
@@ -61,7 +95,7 @@ export async function writeError(db: DB, e: CleanEntry, fp: string, increment: n
     message: e.message,
     path: e.path,
     detail: e.detail,
-    ...(e.digest ? { digest: e.digest } : {}),
+    ...(e.digest ? { digest: digestsSql(t.digest, e.digest) } : {}),
     ...(e.stack ? { stack: e.stack } : {}),
   };
   const updated = await db.update(t).set(set).where(eq(t.fingerprint, fp)).returning({ id: t.id });
@@ -71,7 +105,6 @@ export async function writeError(db: DB, e: CleanEntry, fp: string, increment: n
     .from(t)
     .where(and(eq(t.source, e.source), gte(t.firstSeen, trDayStart(now)), notLike(t.fingerprint, "sinir:%")));
   if (n >= DAILY_NEW_CAP[e.source]) {
-    const label = SOURCE_LABELS[e.source].toLocaleLowerCase("tr-TR");
     await db
       .insert(t)
       .values({
@@ -79,7 +112,7 @@ export async function writeError(db: DB, e: CleanEntry, fp: string, increment: n
         source: e.source,
         level: "warning",
         name: "Sınır",
-        message: `Günlük sınır doldu: bugün ${DAILY_NEW_CAP[e.source]} farklı ${label} hatasından sonrakiler ayrı satır açmadı, yalnız sayıldı`,
+        message: overflowMessage(e.source, trDay(now)),
         count: increment,
         firstSeen: now,
         lastSeen: now,
@@ -102,6 +135,8 @@ export interface RecordOptions {
   alert?: (e: CleanEntry, now: Date) => Promise<unknown>;
   /** reportError'ın bekleme sınırı (testte kısaltılır); yoksa WRITE_TIMEOUT_MS */
   timeoutMs?: number;
+  /** E-postanın bekleme sınırı (testte kısaltılır); yoksa ALERT_TIMEOUT_MS */
+  alertTimeoutMs?: number;
 }
 
 /** Derleme sırasında (önceden oluşturma) ya da kapatılmışsa kayıt yok */
@@ -117,7 +152,9 @@ async function defaultAlert(e: CleanEntry, now: Date): Promise<unknown> {
 
 /**
  * Hatayı temizleyip yazar (beklenebilir; testler ve kayıt yolları). Fırlatmaz: sonucu döner. Kritik hata (sunucu ve
- * eylem) yazılınca günde bir e-posta denenir.
+ * eylem) yazılınca günde bir e-posta denenir: en çok ALERT_TIMEOUT_MS, işlev o süre ayrıca açık tutulur (reportError'ın
+ * 3 sn'lik sınırı yazımı keser, e-postayı değil; yoksa Vercel işlevi anahtar alınmış ama e-posta gitmemişken
+ * dondurabilirdi).
  */
 export async function recordError(raw: ErrorEntry, opts: RecordOptions = {}): Promise<RecordOutcome> {
   if (disabled() && !opts.db) return "skipped";
@@ -131,24 +168,31 @@ export async function recordError(raw: ErrorEntry, opts: RecordOptions = {}): Pr
     return "error";
   }
   const now = opts.now ?? new Date();
-  const gate = opts.gate ?? sharedGate();
+  const gate = opts.gate ?? sharedGate(e.source);
   const increment = gate.take(fp, now.getTime());
   if (increment === null) return "throttled";
   let outcome: "inserted" | "updated" | "capped";
   try {
     outcome = await writeError(opts.db ?? getDb(), e, fp, increment, now);
   } catch (err) {
-    gate.failed(fp, increment, now.getTime());
+    if (!isRowError(err)) gate.failed(fp, increment, now.getTime());
     // Yalnız iletinin başı: drizzle'ın iletisi parametreleri (kişisel veri) taşıyabilir
     console.error("[hata kaydı] yazılamadı", (err as Error)?.message?.split("\n")[0]?.slice(0, 160));
     return "error";
   }
   if (outcome !== "capped" && isCritical(e)) {
-    try {
-      await (opts.alert ?? defaultAlert)(e, now);
-    } catch (err) {
-      console.error("[hata kaydı] e-posta denenemedi", (err as Error)?.message?.slice(0, 160));
-    }
+    const alerting = capped(
+      Promise.resolve()
+        .then(() => (opts.alert ?? defaultAlert)(e, now))
+        .then(
+          () => undefined,
+          (err) => void console.error("[hata kaydı] e-posta denenemedi", (err as Error)?.message?.slice(0, 160)),
+        ),
+      opts.alertTimeoutMs ?? ALERT_TIMEOUT_MS,
+      undefined,
+    );
+    keepAlive(alerting);
+    await alerting;
   }
   return outcome;
 }
@@ -196,7 +240,7 @@ const toRow = (r: typeof s.errorLog.$inferSelect): ErrorRow => ({
   message: r.message,
   path: r.path,
   detail: r.detail,
-  digest: r.digest,
+  digests: splitDigests(r.digest),
   stack: r.stack,
   count: r.count,
   firstSeen: r.firstSeen,

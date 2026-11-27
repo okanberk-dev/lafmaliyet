@@ -78,7 +78,9 @@ canlıdaki admin/staff verisiyle uyumlu.
 `src/instrumentation.ts` › `onRequestError`, `attempt()`, tarayıcı (`/api/hata`) ve CSP raporları `error_log`'a (30 gün,
 aynı hata tek satır); ekran Ayarlar › Hata kaydı ("Sistem" yerine adı bu); kritik hatada günde bir sistem uyarısı
 e-postası; CSP_ENFORCE kararı kartta (7 gün kanıt). Göç `0097_hata_kaydi`: main ilerlediyse birleştirmede yeniden
-üretilir. Sentry eklenmedi (docs/HATA-KAYDI.md § 7). Ayrıntı docs/HATA-KAYDI.md.
+üretilir. Sentry eklenmedi (docs/HATA-KAYDI.md § 7). İnceleme düzeltmeleri (aynı PR): sorgu parametresi hiç alınmaz,
+kapı kaynak başına (CSP yağmuru sunucu hatasını düşürmez), NUL ve uzun girdi, eklentinin CSP ihlali kayda girmez,
+Çözüldü 7 günü atlatmaz, son beş hata kodu, takılan e-postanın anahtarı yeniden alınır. Ayrıntı docs/HATA-KAYDI.md.
 
 ### P4. CI ve kod sağlığı (yüksek)
 - CI'da şema–göç tutarlılığı: `drizzle-kit generate` değişiklik üretirse CI düşsün.

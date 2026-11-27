@@ -127,12 +127,15 @@ export interface CspViolation {
 
 const MAX_FIELD = 160;
 
+/** Oturumsuz gövdenin metni: kısaltılır, denetim karakterleri (NUL, satır sonu…) boşluk olur (günlüğe sahte satır yazılamaz) */
+const plain = (v: string) => v.slice(0, MAX_FIELD * 4).replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+
 /** Adres: yalnız köken + yol (sorgu ve parça atılır); anahtar sözcükler olduğu gibi; eklenti "eklenti"; boşsa "?" */
 function safeUrl(raw: unknown, pathOnly = false): string {
-  if (typeof raw !== "string" || !raw.trim()) return "?";
-  const v = raw.trim();
+  if (typeof raw !== "string" || !plain(raw)) return "?";
+  const v = plain(raw);
   if (/^(inline|eval|wasm-eval|trusted-types-[\w-]+|self|data|blob)$/i.test(v)) return v.toLowerCase();
-  // Tarayıcı eklentisinin kaynağı: panelin kodu değil (hata kaydında CSP kararına girmez; src/lib/error-log.ts)
+  // Tarayıcı eklentisinin kaynağı: panelin kodu değil (hata kaydına girmez, yalnız günlüğe; src/lib/error-log.ts)
   if (/^(chrome|moz|safari(-web)?|ms-browser)-extension:/i.test(v)) return "eklenti";
   try {
     const u = new URL(v);
@@ -143,7 +146,7 @@ function safeUrl(raw: unknown, pathOnly = false): string {
   }
 }
 
-const text = (v: unknown, fallback = "?") => (typeof v === "string" && v.trim() ? v.trim().slice(0, MAX_FIELD) : fallback);
+const text = (v: unknown, fallback = "?") => (typeof v === "string" && plain(v) ? plain(v).slice(0, MAX_FIELD) : fallback);
 
 /**
  * Tarayıcının gönderdiği ihlal raporları: `report-uri` (application/csp-report: `{ "csp-report": {…} }`) ya da
