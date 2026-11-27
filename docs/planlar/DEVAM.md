@@ -74,12 +74,11 @@ canlıdaki admin/staff verisiyle uyumlu.
 
 ### P2. Excel'den tam bağımsızlık — BİTTİ (#164 ve bu PR)
 
-### P3. Hata izleme ve kayıt (yüksek)
-Canlıda hata yalnız Vercel günlüğüne (Hobby'de 1 saat) düşüyor. `src/instrumentation.ts`'e `onRequestError` kancası;
-sunucu hataları, `attempt()` hataları ve istemci hataları veritabanında kısa ömürlü bir tabloya yazılsın; panelde
-(Ayarlar › Sistem) görünsün; kritik hatada yöneticiye e-posta (mevcut sistem uyarısı altyapısıyla, günde bir kez).
-CSP ihlal raporları da aynı kayda (bugün yalnız 1 saatlik günlükte; CSP_ENFORCE kararı kanıtla verilsin).
-İsteğe bağlı: Sentry (sahip hesap açarsa DSN ortam değişkeniyle).
+### P3. Hata izleme ve kayıt — BİTTİ (bu PR)
+`src/instrumentation.ts` › `onRequestError`, `attempt()`, tarayıcı (`/api/hata`) ve CSP raporları `error_log`'a (30 gün,
+aynı hata tek satır); ekran Ayarlar › Hata kaydı ("Sistem" yerine adı bu); kritik hatada günde bir sistem uyarısı
+e-postası; CSP_ENFORCE kararı kartta (7 gün kanıt). Göç `0097_hata_kaydi`: main ilerlediyse birleştirmede yeniden
+üretilir. Sentry eklenmedi (docs/HATA-KAYDI.md § 7). Ayrıntı docs/HATA-KAYDI.md.
 
 ### P4. CI ve kod sağlığı (yüksek)
 - CI'da şema–göç tutarlılığı: `drizzle-kit generate` değişiklik üretirse CI düşsün.
@@ -136,7 +135,8 @@ LafPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı
 3. GitHub sırrı `ANTHROPIC_API_KEY` (ve Anthropic Console bakiyesi): PR incelemesi bir kez bile çalışmadı.
 4. Vercel planı: Hobby ticari kullanıma izin vermiyor ve günlükler 1 saat; Pro kararı (docs/DEPLOY.md § 8). Neon:
    laffogato.net veritabanının kotası dolu (online sipariş / karaoke / menü eşitlemesi duruyor), panelinki ücretsiz planda.
-5. Vercel: iki adımlı doğrulama zorunlu olsun → `ADMIN_2FA_REQUIRED=1`; CSP bir hafta temizse `CSP_ENFORCE=1`;
+5. Vercel: iki adımlı doğrulama zorunlu olsun → `ADMIN_2FA_REQUIRED=1`; Ayarlar › Hata kaydı CSP'yi "uygulanabilir"
+   deyince `CSP_ENFORCE=1`;
    kullanılmayan `PARASUT_USERNAME` / `PARASUT_PASSWORD` silinsin.
 6. Yayından sonra el kontrolü (10 dk): kasa raporu, fatura, Z e-postası, raporlar; belge tarayıcı gerçek iPhone ve
    Android'de (vizör, otomatik çekim, tarama ekranı).

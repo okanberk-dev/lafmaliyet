@@ -130,7 +130,8 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `BACKUP_DIR` | (yalnız yerel, isteğe bağlı) Otomatik haftalık yedeklerin yerel klasörü; yoksa `.data/backups`. Canlıda yedekler fotoğraflarla aynı özel Blob deposunda (`yedek/haftalik/`); depo bağlı değilse otomatik yedek kapalı ([YEDEK.md](YEDEK.md) § 13) |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
-| `CSP_ENFORCE` | (isteğe bağlı) `1`: Content-Security-Policy'nin kaynak politikası **uygulanır**; yoksa Report-Only (yalnız raporlar). Derlemede okunur: değiştirince yeniden deploy. Ne zaman açılacağı § 6 › Güvenlik başlıkları |
+| `CSP_ENFORCE` | (isteğe bağlı) `1`: Content-Security-Policy'nin kaynak politikası **uygulanır**; yoksa Report-Only (yalnız raporlar). Derlemede okunur: değiştirince yeniden deploy. Ne zaman açılacağını **Ayarlar › Hata kaydı** söyler (7 gün temiz kayıt; § 6 › Güvenlik başlıkları) |
+| `ERROR_LOG_DISABLED` | (isteğe bağlı, yalnız acil durumda) `1`: hata kaydı veritabanına yazılmaz, kritik hata e-postası gitmez; hatalar yalnız Vercel günlüğüne düşer. Yoksa açık ([HATA-KAYDI.md](HATA-KAYDI.md)) |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`; istemci
@@ -261,10 +262,13 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
   `/api/csp-rapor`'a ulaşıp `[csp] report img-src https://iz.example.com/p.gif · /giris` olarak günlüğe düştü
   (sorgu dizgesi atıldı). `CSP_ENFORCE=1` derlemesiyle de giriş, 12 ekran (grafik, şube ayarları, Paraşüt dahil),
   koyu tema, servis çalışanı, fotoğraf ve Paraşüt formu çalıştı; kasıtlı görsel engellendi.
-- **Uygulamaya geçiş:** yayından sonra bir hafta Vercel › Logs'ta `[csp]` aranır. Beklenmeyen satır yoksa (tarayıcı
-  eklentilerinin `chrome-extension://` satırları sayılmaz) Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir.
-  Bir şey bozulursa değişkeni silip yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita)
-  eklenecekse önce `src/lib/csp.ts`'e yazılır.
+- **Uygulamaya geçiş (karar kanıtla, 27 Kasım 2026):** raporlar Vercel'in bir saatlik günlüğünün yanında panelin hata
+  kaydına da yazılır (aynı ihlal tek satır, sayısıyla; [HATA-KAYDI.md](HATA-KAYDI.md)). **Ayarlar › Hata kaydı** kartının
+  üstü kararı söyler (`src/lib/error-log.ts` › `cspVerdict`): kayıt en az 7 gündür tutuluyorsa ve son 7 günde panelin
+  kendi kodundan çözülmemiş ihlal yoksa "uygulanabilir"; ihlal varsa "henüz uygulanmasın"; 7 gün dolmadıysa "kanıt
+  toplanıyor". Tarayıcı eklentilerinin ihlali (`chrome-extension://` …) "eklenti" diye işaretlenir, sayılmaz. Karar
+  "uygulanabilir" deyince Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir. Bir şey bozulursa değişkeni silip
+  yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita) eklenecekse önce `src/lib/csp.ts`'e yazılır.
 
 
 **Kamera izni** (26 Kasım 2026, güvenlik notu): `Permissions-Policy` her yanıtta `camera=(), microphone=()` ile
@@ -618,12 +622,15 @@ Panel Vercel'in ücretsiz **Hobby** planında çalışıyor (26 Eki 2026 denetim
   yalnız son bir saati tutar; daha eskisi istenince Vercel "Hobby retains 1 hour" der. "Dün akşam kasa raporu
   kaydedilmedi" gibi bir sorunun satırı ertesi gün yoktur: sorun bildirilince günlüğe hemen bakın. Uzun ömürlü olanlar:
   - Vercel › Observability'deki hata kümeleri (son 7 gün; aynı hatanın sayısı, ilk ve son görülüşü, yolu);
-  - panelin kendi kayıtları: Ayarlar › Günlük işler (her cron çalışması ve adımları), işlem geçmişi, Paraşüt eşitleme
-    geçmişi, LafPOS ve site bağlantılarının durumu.
+  - panelin kendi kayıtları: **Ayarlar › Hata kaydı** (sunucu, işlem, tarayıcı hataları ve CSP raporları, 30 gün;
+    [HATA-KAYDI.md](HATA-KAYDI.md)), Ayarlar › Günlük işler (her cron çalışması ve adımları), işlem geçmişi, Paraşüt
+    eşitleme geçmişi, LafPOS ve site bağlantılarının durumu.
 - **Log drain yok.** Günlükleri dışarıya (bir günlük servisine) akıtmak Hobby'de yok; Pro'da açılır.
-- **Hata kancası yok.** `src/instrumentation.ts` (Next'in `onRequestError` kancası) yazılmadı; hatalar yalnız günlüğe
-  gider. Sonraki iş: kişisel veri taşımayan (yol, hata adı ve kodu; istek gövdesi, çerez ve e-posta yok) bir hata
-  satırını panelin veritabanına yazan kanca. Pro'ya geçilmezse günlüklerin tek kalıcı kaydı o olur.
+- **Hata kancası var (27 Kasım 2026).** `src/instrumentation.ts` (Next'in `onRequestError` kancası), `attempt()`'in
+  beklenmeyen hataları, tarayıcı hataları (`/api/hata`) ve CSP raporları panelin veritabanına (`error_log`) yazılır:
+  kişisel veri taşımayan satır (hatanın adı, temizlenmiş iletisi, yığının ilk satırları, Next'in hata kodu, yol; istek
+  gövdesi, çerez, başlık ve sorgu dizgesi yok), aynı hata tek satırda sayısıyla, 30 gün. Sunucudaki hata yöneticilere
+  günde en çok bir e-posta gönderir. Pro'ya geçilmezse günlüklerin tek kalıcı kaydı budur ([HATA-KAYDI.md](HATA-KAYDI.md)).
 - **Cron günde bir ve saat esnek.** Hobby'de her cron günde en çok bir kez ve planlanan saatin içinde herhangi bir
   dakikada çalışır: `/api/cron/parasut` 07:00–08:00, `/api/cron/gunluk` 08:00–09:00 (Türkiye; § 4). Panel buna göre
   yazıldı: "çalışmadı" uyarısı pencerenin sonundan 30 dakika sonra (`src/lib/job-health.ts` › `GRACE_MIN`), sabah işi

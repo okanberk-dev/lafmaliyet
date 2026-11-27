@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Bell,
   Bot,
+  Bug,
   CalendarCheck,
   CalendarClock,
   ChartNoAxesColumn,
@@ -810,6 +811,20 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ),
         icon: Timer,
         links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
+      },
+      {
+        id: "hata-kaydi",
+        q: "Ekranda “Bir şeyler ters gitti” çıktı ya da hata e-postası geldi",
+        a: (
+          <>
+            Panelde oluşan hatalar Ayarlar › Hata kaydı&apos;nda 30 gün durur: aynı hata tek satırda, kaç kez ve en son ne zaman görüldüğüyle. Hata
+            ekranındaki <strong className="font-semibold text-ink">Hata kodu</strong> satırın Ayrıntı&apos;sında da yazar; sürüyorsa kodu ve ekranı
+            geliştiriciye iletin. Sunucuda hata olunca yöneticilere günde en çok bir e-posta gelir. Düzelen satırı Çözüldü işaretleyin; hata yeniden görülürse
+            satır geri gelir. Kartın üstü güvenlik politikasının (CSP) uygulanıp uygulanamayacağını da söyler.
+          </>
+        ),
+        icon: Bug,
+        links: [{ href: "/panel/ayarlar#hatalar", label: "Hata kaydı" }],
       },
       {
         id: "haftalik-ozet",
