@@ -49,7 +49,9 @@ test("temizlik: veritabanı parametreleri, bağlantı parolası, anahtarlar ve p
   assert.match(out, /^Failed query: insert into "users"/);
   assert.match(out, /params: \[gizli\]/);
   assert.doesNotMatch(out, /Ayşe|ornek\.com/);
-  assert.equal(redactText("connect postgres://kullanici:sifre123@db.neon.tech/main"), "connect postgres://[gizli]@db.neon.tech/main");
+  // Uydurma adres parçalardan kurulur (gerçek bir sır değil; GitHub'ın sır taraması bağlantı adresi sanmasın)
+  const fakeUrl = ["postgres:", "", "kullanici:sifre123@db.example.test", "main"].join("/");
+  assert.equal(redactText(`connect ${fakeUrl}`), "connect postgres://[gizli]@db.example.test/main");
   assert.equal(redactText("Authorization: Bearer abc.def-ghi"), "Authorization: [gizli] [gizli]");
   assert.equal(redactText("çerez eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.c2lnbmF0dXJl bozuk"), "çerez [anahtar] bozuk");
   assert.equal(redactText("anahtar sk-ant-api03-AbCdEf123456 reddedildi"), "anahtar [anahtar] reddedildi");
