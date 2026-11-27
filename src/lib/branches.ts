@@ -545,13 +545,14 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
 
 /**
  * Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir. Şube ayrımı
- * (27 Kasım 2026) bu ekranların hepsini kişinin şube görünümüne bağladı (çip, src/components/panel/branch-view-chip.tsx);
- * not bugün hiçbir ekranda çizilmez, hep firma geneli kalacak bir ekran için durur (tests/sube-ayrimi.test.ts › (c))
+ * (27 Kasım 2026) Vergi dışındakileri kişinin şube görünümüne bağladı (çip, src/components/panel/branch-view-chip.tsx);
+ * not bugün yalnız Vergi'nin üç sekmesinde çizilir: vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026;
+ * tests/sube-ayrimi.test.ts › (c))
  */
 export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
-  vergi: "Vergi ve KDV firmanın: bütün şubelerin satışı, faturaları ve giderleri birlikte hesaplanır (tek vergi numarası).",
+  vergi: "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez: bütün şubelerin satışı, faturaları, personeli ve giderleri birlikte hesaplanır.",
   nakit: "Nakit planı firmanın: bütün şubelerin kasası, ödemeleri ve faturaları birlikte.",
   tedarikciler:
     "Tedarikçilerin cari hesabı firmanındır; borç ve ödemeler şubeye bölünmez. Faturanın şubesi tedarikçi sayfasında rozetinde; kasadan yapılan ödemeler kasanın şubesiyle ayrılır.",

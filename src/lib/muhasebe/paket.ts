@@ -122,8 +122,13 @@ export interface PackageFixed {
 
 export interface PackageData {
   month: string;
-  /** Dosyanın kapsamı: muhasebe şirketindir, bütün şubeler */
+  /** Dosyanın kapsamı: muhasebe şirketindir, bütün şubeler; elle indirmede şube seçiliyken şubenin adı */
   scope: string;
+  /**
+   * Şubenin paketi (şube ayrımı parça 6): vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026), dosyada KDV sütunu, KDV
+   * özeti ve Z KDV dökümü yok; beyan için bütün şubelerin paketi. Verilmezse bütün şubelerin paketi
+   */
+  branchFile?: boolean;
   createdAt: Date;
   /** Dönem kapanışı: ay kapalıysa kim ve ne zaman */
   closed: { at: string; by: string } | null;
@@ -241,7 +246,8 @@ function finish(ws: ExcelJS.Worksheet, cols: Col[], rows: number, total: Record<
 
 /**
  * Muhasebeci paketi: Özet, Faturalar, Harcamalar, Kasa raporları, Z KDV dökümü, Sabit giderler. Tarihler Excel tarihi,
- * tutarlar ₺ biçimli sayı; her tablonun başlığı donuk ve süzgeçli, sonunda TOPLAM.
+ * tutarlar ₺ biçimli sayı; her tablonun başlığı donuk ve süzgeçli, sonunda TOPLAM. Şubenin paketinde (`branchFile`) KDV
+ * yok: KDV sütunları, Özet'in KDV satırları ve Z KDV dökümü yalnız bütün şubelerin paketinde (vergi şubeye bölünmez)
  */
 export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
@@ -249,6 +255,10 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
   wb.created = d.createdAt;
   const title = monthTitle(d.month);
   const s = packageSummary(d);
+  // Şubenin paketi: KDV sütunları ve toplamları yok (vergi şubeye bölünmez; sahibin kararı 27 Kasım 2026)
+  const noVat = d.branchFile === true;
+  const vatFree = (cols: Col[], keys: readonly string[]) => (noVat ? cols.filter((c) => !keys.includes(c.key)) : cols);
+  const withoutVat = (total: Record<string, number>, keys: readonly string[]) => (noVat ? Object.fromEntries(Object.entries(total).filter(([k]) => !keys.includes(k))) : total);
 
   // ---------------------------------------------------------------- Özet
   const ov = wb.addWorksheet("Özet", { pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
@@ -270,19 +280,23 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
   };
   line("Faturalar (adet)", s.invoices, s.heldInvoices ? `${s.heldInvoices} fatura kapalı döneme düştü, karar bekliyor (toplama girmedi)` : "Faturalar sekmesi");
   line("Faturalar ödenecek toplamı", s.invoicePayable, "KDV dahil", MONEY);
-  line("Faturaların KDV'si", s.invoiceVat, "Paraşüt'ün KDV toplamı (elle girilende tutarlardan)", MONEY);
+  if (!noVat) line("Faturaların KDV'si", s.invoiceVat, "Paraşüt'ün KDV toplamı (elle girilende tutarlardan)", MONEY);
   line("Harcamalar (adet)", s.expenses, "Harcamalar sekmesi");
   line("Harcamalar toplamı", s.expenseTotal, "", MONEY);
   line("Kasa raporu olan gün", s.cashDays, "Kasa raporları sekmesi (şube şube)");
   line("ModPOS Z toplamı", s.zTotal, "", MONEY);
   line("Yazarkasa (banka POS) Z toplamı", s.okcTotal, "Girilen yazarkasa Z'lerinin toplamı", MONEY);
-  for (const v of s.vatByRate) line(`Yazarkasa KDV %${v.rate}`, v.vat, `Satış (KDV dahil) ${tl(v.total, 2)}`, MONEY);
+  if (!noVat) for (const v of s.vatByRate) line(`Yazarkasa KDV %${v.rate}`, v.vat, `Satış (KDV dahil) ${tl(v.total, 2)}`, MONEY);
   line("Sabit giderlerin aylık karşılığı", s.fixedMonthly, "Sabit giderler sekmesi", MONEY);
   ov.addRow([]);
-  ov.addRow(["Panelin kayıtlarıdır; resmi defter ve beyan muhasebecinindir. Yazarkasa KDV dökümü kasa raporlarına girilen (ya da fotoğraftan okunan) Z'lerdendir."]).font = MUTED;
+  ov.addRow([
+    noVat
+      ? "Şubenin paketi: KDV sütunları, KDV toplamları ve Z KDV dökümü yok; vergi şubeye bölünmez. Beyan için bütün şubelerin paketini kullanın. Panelin kayıtlarıdır; resmi defter ve beyan muhasebecinindir."
+      : "Panelin kayıtlarıdır; resmi defter ve beyan muhasebecinindir. Yazarkasa KDV dökümü kasa raporlarına girilen (ya da fotoğraftan okunan) Z'lerdendir.",
+  ]).font = MUTED;
 
   // ---------------------------------------------------------------- Faturalar
-  const invCols: Col[] = [
+  const invCols: Col[] = vatFree([
     { key: "date", header: "Belge tarihi", width: 12, fmt: DATE },
     { key: "supplier", header: "Tedarikçi", width: 30 },
     { key: "tax", header: "Vergi no", width: 13 },
@@ -296,7 +310,7 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
     { key: "branch", header: "Şube", width: 16 },
     { key: "source", header: "Kaynak", width: 12 },
     { key: "status", header: "Dönem notu", width: 34 },
-  ];
+  ], ["vat"]);
   const inv = sheet(wb, "Faturalar", invCols, `${title} faturaları`);
   for (const i of d.invoices)
     inv.addRow({
@@ -315,10 +329,10 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
       status: i.status ?? "",
     });
   const countedInv = d.invoices.filter((i) => !i.held && i.accountDate.slice(0, 7) === d.month);
-  finish(inv, invCols, d.invoices.length, { amount: sum(countedInv.map((i) => i.amount)), discount: sum(countedInv.map((i) => i.discount)), vat: s.invoiceVat, payable: s.invoicePayable }, "Bu ay fatura yok");
+  finish(inv, invCols, d.invoices.length, withoutVat({ amount: sum(countedInv.map((i) => i.amount)), discount: sum(countedInv.map((i) => i.discount)), vat: s.invoiceVat, payable: s.invoicePayable }, ["vat"]), "Bu ay fatura yok");
 
   // ---------------------------------------------------------------- Harcamalar
-  const expCols: Col[] = [
+  const expCols: Col[] = vatFree([
     { key: "date", header: "Tarih", width: 12, fmt: DATE },
     { key: "category", header: "Kategori", width: 24 },
     { key: "description", header: "Açıklama", width: 36 },
@@ -328,7 +342,7 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
     { key: "document", header: "Belge", width: 10 },
     { key: "branch", header: "Şube", width: 16 },
     { key: "status", header: "Dönem notu", width: 34 },
-  ];
+  ], ["vat"]);
   const exp = sheet(wb, "Harcamalar", expCols, `${title} harcamaları (fatura dışı giderler)`);
   for (const e of d.expenses)
     exp.addRow({
@@ -345,7 +359,7 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
   finish(exp, expCols, d.expenses.length, { amount: s.expenseTotal }, "Bu ay harcama yok");
 
   // ---------------------------------------------------------------- Kasa raporları
-  const cashCols: Col[] = [
+  const cashCols: Col[] = vatFree([
     { key: "date", header: "Gün", width: 12, fmt: DATE },
     { key: "branch", header: "Şube", width: 14 },
     { key: "zNo", header: "ModPOS Z no", width: 10 },
@@ -360,7 +374,7 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
     { key: "okcZNo", header: "Yazarkasa Z no", width: 10 },
     { key: "okcTotal", header: "Yazarkasa Z toplamı", fmt: MONEY },
     { key: "okcVat", header: "Yazarkasa KDV", fmt: MONEY },
-  ];
+  ], ["okcVat"]);
   const cash = sheet(wb, "Kasa raporları", cashCols, `${title} kasa raporları (gün ve şube başına)`);
   for (const c of d.cash)
     cash.addRow({
@@ -376,27 +390,29 @@ export function buildPackageWorkbook(d: PackageData): ExcelJS.Workbook {
     cash,
     cashCols,
     d.cash.length,
-    Object.fromEntries((["zTotal", "cash", "card", "mealCard", "online", "other", "cashOut", "cashDiff", "okcTotal", "okcVat"] as const).map((k) => [k, cashSum(k)])),
+    withoutVat(Object.fromEntries((["zTotal", "cash", "card", "mealCard", "online", "other", "cashOut", "cashDiff", "okcTotal", "okcVat"] as const).map((k) => [k, cashSum(k)])), ["okcVat"]),
     "Bu ay kasa raporu yok",
   );
 
-  // ---------------------------------------------------------------- Z KDV dökümü
-  const vatCols: Col[] = [
-    { key: "date", header: "Gün", width: 12, fmt: DATE },
-    { key: "branch", header: "Şube", width: 14 },
-    { key: "zNo", header: "Yazarkasa Z no", width: 12 },
-    { key: "rate", header: "KDV oranı", width: 10, fmt: PCT_INT },
-    { key: "total", header: "Satış (KDV dahil)", fmt: MONEY },
-    { key: "vat", header: "KDV", fmt: MONEY },
-  ];
-  const vat = sheet(wb, "Z KDV dökümü", vatCols, `${title} yazarkasa (banka POS) Z raporlarının KDV dökümü`);
-  for (const v of d.vat) vat.addRow({ ...v, date: excelDate(v.date), zNo: v.zNo ?? "" });
-  finish(vat, vatCols, d.vat.length, { total: sum(d.vat.map((v) => v.total)), vat: sum(d.vat.map((v) => v.vat)) }, "Bu ay KDV dökümü girilmiş yazarkasa Z'si yok");
-  if (d.vat.length) {
-    vat.addRow([]);
-    const head = vat.addRow({ date: "Oran oran toplam" });
-    head.font = { bold: true };
-    for (const r of s.vatByRate) vat.addRow({ date: `%${r.rate}`, total: r.total, vat: r.vat });
+  // ---------------------------------------------------------------- Z KDV dökümü (yalnız bütün şubelerin paketinde)
+  if (!noVat) {
+    const vatCols: Col[] = [
+      { key: "date", header: "Gün", width: 12, fmt: DATE },
+      { key: "branch", header: "Şube", width: 14 },
+      { key: "zNo", header: "Yazarkasa Z no", width: 12 },
+      { key: "rate", header: "KDV oranı", width: 10, fmt: PCT_INT },
+      { key: "total", header: "Satış (KDV dahil)", fmt: MONEY },
+      { key: "vat", header: "KDV", fmt: MONEY },
+    ];
+    const vat = sheet(wb, "Z KDV dökümü", vatCols, `${title} yazarkasa (banka POS) Z raporlarının KDV dökümü`);
+    for (const v of d.vat) vat.addRow({ ...v, date: excelDate(v.date), zNo: v.zNo ?? "" });
+    finish(vat, vatCols, d.vat.length, { total: sum(d.vat.map((v) => v.total)), vat: sum(d.vat.map((v) => v.vat)) }, "Bu ay KDV dökümü girilmiş yazarkasa Z'si yok");
+    if (d.vat.length) {
+      vat.addRow([]);
+      const head = vat.addRow({ date: "Oran oran toplam" });
+      head.font = { bold: true };
+      for (const r of s.vatByRate) vat.addRow({ date: `%${r.rate}`, total: r.total, vat: r.vat });
+    }
   }
 
   // ---------------------------------------------------------------- Sabit giderler

@@ -55,9 +55,10 @@ const DOCUMENT: Record<string, string> = { fis: "Fiş", e_arsiv: "e-Arşiv", fat
 
 /**
  * Ayın paketi: `scope` verilmezse bütün şubeler (muhasebe şirketindir; aylık e-posta hep böyle). Elle indirmede şube
- * seçiliyken o şubenin paketi (şube ayrımı parça 6; `?sube=`): şubenin kasa raporları ve yazarkasa KDV dökümü, şubeye
- * seçilmiş faturalar, şubenin harcamaları ve sabit giderleri; işletme geneli fatura, harcama ve sabit gider İşletme
- * geneli giderler alanının kipiyle ("Tutarla göster"de "İşletme geneli" şube sütunuyla, "Yalnız not"ta yok). Faturalar
+ * seçiliyken o şubenin paketi (şube ayrımı parça 6; `?sube=`): şubenin kasa raporları, şubeye seçilmiş faturalar,
+ * şubenin harcamaları ve sabit giderleri; işletme geneli fatura, harcama ve sabit gider İşletme geneli giderler alanının
+ * kipiyle ("Tutarla göster"de "İşletme geneli" şube sütunuyla, "Yalnız not"ta yok). Şubenin paketinde KDV yok (KDV
+ * sütunları, KDV özeti, Z KDV dökümü): vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; `branchFile`). Faturalar
  * ve harcamalar dönem kapanışının hesap gününe göre: belgesi bu aydaki ve bu ayda sayılanlar; kapalı döneme düşüp karar
  * bekleyen ve başka aya alınan kayıt notuyla listelenir, toplama girmez (packageSummary). Kasa raporları ve yazarkasa KDV
  * dökümü ayın günleri, sabit giderler modelin ayı.
@@ -118,6 +119,7 @@ export async function loadPackageData(month: string, now = new Date(), scope: Br
   return {
     month,
     scope: scope === ALL_BRANCHES ? "Bütün şubeler" : branchScopeLabel(scope, branches),
+    ...(scope === ALL_BRANCHES ? {} : { branchFile: true }),
     createdAt: now,
     closed: closed ? { at: closed.at, by: closed.by } : null,
     invoices: invoices.map((i) => {
@@ -172,7 +174,8 @@ export async function loadPackageData(month: string, now = new Date(), scope: Br
       okcTotal: r.okcTotal,
       okcVat: r.okcVatTotal,
     })),
-    vat: reports.flatMap((r) =>
+    // Z KDV dökümü yalnız bütün şubelerin paketinde (vergi şubeye bölünmez)
+    vat: (scope === ALL_BRANCHES ? reports : []).flatMap((r) =>
       (r.okcVat ?? []).map((v) => ({ date: r.date, branch: branchName(r.branchId) ?? "", zNo: r.okcZNo, rate: v.rate, total: v.total, vat: v.vat })),
     ),
     fixed: fixedInMonth.map((f) => ({

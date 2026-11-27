@@ -392,10 +392,19 @@ Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
 `src/lib/cash-plan-branch.ts`): gelen şubenin satış tahmini ve kasa devri; giden şubenin hatırlatıcıları, şubeye seçilmiş
 faturaları, personelinin maaşı, şubenin kendi sabit giderleri ve mal tahmini. Açılış bakiyesi firmanındır: şubenin akışı
 bakiyesiz kurulur, hafta satırı ve karo **Net akış** yazar, "Elinizdeki para · Firma geneli" karosu firmanın bakiyesini
-bilgi olarak gösterir. KDV, vergi, damga, SGK, işletme geneli hatırlatıcı ve fatura ve faturasız borçlar firmanın
-planından hafta hafta tek **İşletme geneli** satırında toplanır (en büyük üç kalemiyle), şubenin akışına girmez.
-Şubesi seçilmemiş fatura hiçbir şubenin akışında yoktur ("Tümü"de vardır). Genel bakış'ın kartı şube kipinde "6 haftada
-net akış" ve işletme geneli toplamını yazar.
+bilgi olarak gösterir. İşletme geneli hatırlatıcı ve fatura ve faturasız borçlar firmanın planından hafta hafta tek
+**İşletme geneli** satırında toplanır (en büyük üç kalemiyle), şubenin akışına girmez. Şubesi seçilmemiş fatura hiçbir
+şubenin akışında yoktur ("Tümü"de vardır). Genel bakış'ın kartı şube kipinde "6 haftada net akış" ve işletme geneli
+toplamını yazar ("· vergi ve SGK Tümü'de").
+
+**Vergi ve SGK şubeye bölünmez** (sahibin kararı 27 Kasım 2026; [SUBE.md › Vergi şubeye
+bölünmez](SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)): şube kipinde KDV, KDV-2, muhtasar, geçici ve
+kurumlar vergisi, damga ve SGK ne şubenin akışında ne İşletme geneli satırında. Ödemeler'deki vergi ve SGK hatırlatıcıları
+(türü "Vergi / SGK" ya da başlığı KDV, muhtasar, stopaj, geçici vergi, damga, ÇTV, SGK, Bağkur; `isTaxPlanReminder`)
+şubenin de olsa şubesiz de olsa girmez. KDV tahmini kartı yok; "Tahmine katılanlar"da KDV, vergi ve SGK satırı yok;
+"Nasıl hesaplandı" bunların yerine tek not yazar: **"Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür."**
+(`branchPlanWithoutTax`, `FIRM_TAX_NOTE`). Stopajlı sabit gider şubenin akışında net ödenir (stopaj muhtasarla
+firmanın). Bağlantının `odemeler` aracının nakit planı da aynı notu taşır. Tümü ve Firma geneli kipi değişmedi.
 
 ## Kod
 

@@ -169,6 +169,6 @@ export function sharedPaymentsAnswer(
     subesiSecilmemisFatura: { adet: unassigned.count, toplam: r2(unassigned.total) },
     nakitPlaniIsletmeGeneli: flow ? r2(flow.sharedTotal) : null,
     aciklama:
-      "Şube görünümünde liste yalnız bu şubenin ve işletme genelinin ödemeleri ve faturaları; faturasız borçlar firmanın, şubesi seçilmemiş faturalar hiçbir şubenin listesinde değil (Tümü'de var). Nakit planında vergi, SGK ve işletme geneli ödemeler ayrı satırda, şubenin akışına girmez.",
+      "Şube görünümünde liste yalnız bu şubenin ve işletme genelinin ödemeleri ve faturaları; faturasız borçlar firmanın, şubesi seçilmemiş faturalar hiçbir şubenin listesinde değil (Tümü'de var). Nakit planında işletme geneli ödemeler ayrı satırda, şubenin akışına girmez. Vergi ve SGK ödemeleri firma geneli: şubeye bölünmez, nakit planının şube görünümünde yok (Tümü'de görünür).",
   };
 }

@@ -2,21 +2,19 @@ import { Boxes, FileWarning, PackageSearch } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { BranchViewChip } from "@/components/panel/branch-view-chip";
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { ALL_BRANCHES } from "@/lib/branches";
-import { dateTR, money, num } from "@/lib/format";
-import { invoiceInScope } from "@/lib/invoice-branch";
+import { dateTR, money } from "@/lib/format";
 import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, lineAssetCandidates, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
-import { scopeAssets } from "@/lib/tax/branch-share";
 import { quarterLabel } from "@/lib/tax/calendar";
 import { rulesFor } from "@/lib/tax/rules";
 import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { areaScope, withBranchScope } from "@/server/branch-scope";
+import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
 
 import { DirectExpenseButton, NotAssetButton } from "../asset-actions";
@@ -61,28 +59,16 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
   await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
-  // Beyan firmanındır: amortisman ve demirbaş adayları bütün şubelerin faturalarıyla hesaplanır (docs/SUBE.md › Şube ayrımı)
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; docs/SUBE.md › Şube ayrımı): demirbaşlar, amortisman ve
+  // demirbaş adayları şube seçiliyken de bütün şubelerin faturalarıyla (tek vergi numarası)
   // şube-ayrımı: vergi.beyan
   const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     return { model, ...(await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null, cashPlan: null })) };
   });
-  const { settings } = inputs;
+  const { settings, assets } = inputs;
   const year = view.year;
   const today = view.today;
-  // Vergi alanı "Yalnız şube" kipinde (şube ayrımı parça 5): şubenin ve işletme genelinin faturalarına bağlı demirbaşlar
-  // ve faturalar; faturasız, öbür şubenin ve şubesi seçilmemiş faturanınki Tümü'de (sayısı listenin altında)
-  // şube-ayrımı: alan.vergi
-  const area = await areaScope("vergi");
-  const branchMode = area !== ALL_BRANCHES;
-  const invoiceOk = (id: number) => {
-    const inv = model.ds.invoices.find((i) => i.id === id);
-    return !branchMode || (inv !== undefined && invoiceInScope(inv, area));
-  };
-  const scoped = branchMode ? scopeAssets(inputs.assets, model.ds.invoices, area) : { shown: inputs.assets, hidden: 0 };
-  const assets = scoped.shown;
-  const unlisted = view.classify.unlisted.filter((u) => invoiceOk(u.invoiceId));
-  const candidates = view.classify.candidates.filter((c) => invoiceOk(c.invoice.id));
   const banner: BannerData = {
     compiled: view.rulesInfo.compiled,
     stale: view.rulesInfo.stale,
@@ -90,10 +76,9 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
     checks: { chip: view.checks.chip, allDone: view.checks.allDone },
   };
   const rows = assetRows(assets, year, settings);
-  // Fatura seçenekleri ve kalan tutar bütün demirbaşlarla (bir fatura iki şubenin demirbaşına bölünmez)
-  const choices = invoiceChoices(model.ds.invoices, inputs.assets, today).filter((c) => invoiceOk(c.id));
+  const choices = invoiceChoices(model.ds.invoices, assets, today);
   // "Hammadde değil · Demirbaş" denmiş kalemler (öneri; sahip ekler)
-  const lineCandidates = lineAssetCandidates(model.ds.invoices, inputs.assets).filter((c) => invoiceOk(c.invoice.id));
+  const lineCandidates = lineAssetCandidates(model.ds.invoices, assets);
   const directLimit = rulesFor(year).rules.vuk.dogrudanGider.value;
   const lifeless = assets.filter((a) => a.method === "amortisman" && !a.lifeYears);
   const missingLife = lifeless.length;
@@ -125,8 +110,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
       <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
-        {/* Şube seçiliyken: Vergi alanının kipi (şube ayrımı D) */}
-        <BranchViewChip area="vergi" />
+        {/* Şube seçiliyken: vergi firmanın, şubeye bölünmez (sahibin kararı 27 Kasım 2026) */}
+        <CompanyWideNotice screen="vergi" />
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
           <Stat compact label="Demirbaşlar (maliyet)" value={money(totals.cost)} sub={`${assets.length} demirbaş`} />
           <Stat
@@ -234,11 +219,6 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
             ) : (
               <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Demirbaş listesi boş. Kuruluş &amp; Demirbaş faturalarını aşağıdan ekleyin.</p>
             )}
-            {scoped.hidden ? (
-              <p className="mt-3 text-xs leading-5 text-ink-mute">
-                {num(scoped.hidden)} demirbaş faturasız, öbür şubelerde ya da şubesi seçilmemiş faturada: Tümü&apos;de ya da firma geneli görünümde.
-              </p>
-            ) : null}
           </CardContent>
         </Card>
 
@@ -247,12 +227,12 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
             icon={<FileWarning />}
             title="Listeye eklenmemiş demirbaş faturaları"
             description="Kuruluş & Demirbaş kategorisindeki faturalar: listeye eklenene kadar ne gider ne amortisman sayılır."
-            meta={unlisted.length ? `${unlisted.length} fatura` : undefined}
+            meta={view.classify.unlisted.length ? `${view.classify.unlisted.length} fatura` : undefined}
           />
           <CardContent>
-            {unlisted.length ? (
+            {view.classify.unlisted.length ? (
               <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-                {unlisted.map((u) => (
+                {view.classify.unlisted.map((u) => (
                   <li key={u.invoiceId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                     <div className="min-w-0">
                       <p className="text-sm leading-5 font-medium break-words text-ink">{u.supplier}</p>
@@ -278,12 +258,12 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
             icon={<PackageSearch />}
             title="Demirbaş olabilir"
             description={`KDV hariç ${money(directLimit)}'yi aşan ve aynı tedarikçiden 90 günde ilk fatura: karar verilene kadar gider sayılmaz.`}
-            meta={candidates.length ? `${candidates.length} fatura` : undefined}
+            meta={view.classify.candidates.length ? `${view.classify.candidates.length} fatura` : undefined}
           />
           <CardContent>
-            {candidates.length ? (
+            {view.classify.candidates.length ? (
               <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-                {candidates.map((c) => (
+                {view.classify.candidates.map((c) => (
                   <li key={c.invoice.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                     <div className="min-w-0">
                       <p className="text-sm leading-5 font-medium break-words text-ink">{c.invoice.supplier}</p>

@@ -91,7 +91,7 @@ export const users = pgTable(
     sessionVersion: integer("session_version").notNull().default(1),
     /**
      * Şube görünümü (docs/SUBE.md › Şube ayrımı; src/lib/branch-view.ts): şube seçiliyken ekran ekran "yalnız şube" ya da
-     * "firma geneli" tercihi, `{"vergi":"firma"}`. Eksik anahtar rolün varsayılanı; okurken bilinmeyen anahtar ve değer
+     * "firma geneli" tercihi, `{"nakit":"firma"}`. Eksik anahtar rolün varsayılanı; okurken bilinmeyen anahtar ve değer
      * düşer (`parseBranchView`). Yalnız kişinin kendisi yazar (Hesabım ve ekranın çipi, `saveBranchView`)
      */
     branchView: jsonb("branch_view").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),

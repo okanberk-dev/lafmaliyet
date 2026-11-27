@@ -41,13 +41,18 @@ test("Türkçe belirtme hâli: şube adlarının eki (çipin “Yalnız Marina'y
   );
 });
 
-test("alanlar: tasarımdaki on alan, sırası ve iki alanın kendi seçenek adları", () => {
-  assert.deepEqual([...VIEW_AREA_KEYS], ["odemeler", "nakit", "vergi", "tutarlilik", "mutabakat", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"]);
+test("alanlar: dokuz alan (Vergi'nin alanı yok: vergi şubeye bölünmez), sırası ve iki alanın kendi seçenek adları", () => {
+  assert.deepEqual([...VIEW_AREA_KEYS], ["odemeler", "nakit", "tutarlilik", "mutabakat", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"]);
   assert.deepEqual(
     VIEW_AREA_KEYS.map((a) => VIEW_AREAS[a].label),
-    ["Ödemeler ve faturalar", "Nakit planı", "Vergi", "Tutarlılık", "Mutabakat", "Tedarikçi bakiyeleri", "Stok değeri (FIFO)", "Komisyon ve hakediş", "Şubeleri yan yana", "İşletme geneli giderler"],
+    ["Ödemeler ve faturalar", "Nakit planı", "Tutarlılık", "Mutabakat", "Tedarikçi bakiyeleri", "Stok değeri (FIFO)", "Komisyon ve hakediş", "Şubeleri yan yana", "İşletme geneli giderler"],
   );
-  assert.deepEqual(VIEW_AREAS.vergi.modes, { sube: "Yalnız şube", firma: "Firma geneli" });
+  // Sahibin kararı (27 Kasım 2026): Vergi şubeye bölünmez; hiçbir alanın ekranı Vergi değil
+  assert.equal((VIEW_AREA_KEYS as readonly string[]).includes("vergi"), false);
+  for (const a of VIEW_AREA_KEYS) for (const p of VIEW_AREAS[a].screens) assert.doesNotMatch(p, /^\/panel\/vergi/, `${a}: ${p}`);
+  assert.deepEqual(VIEW_AREAS.nakit.modes, { sube: "Yalnız şube", firma: "Firma geneli" });
+  assert.match(VIEW_AREAS.nakit.help, /Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür\./);
+  assert.match(VIEW_AREAS.nakit.firmOnly ?? "", /vergi ve SGK ödemeleri/);
   assert.deepEqual(VIEW_AREAS.karsilastirma.modes, { sube: "Yalnız seçili şube", firma: "Yan yana" });
   assert.deepEqual(VIEW_AREAS.ortak_gider.modes, { sube: "Yalnız not", firma: "Tutarla göster" });
   // Her alanın ekranı gerçekten var (çip ve kartın satırı oraya bağlı)
@@ -62,7 +67,6 @@ test("varsayılanlar: yönetici her alanda yalnız şube; muhasebeci tasarımdak
   assert.deepEqual(Object.fromEntries(VIEW_AREA_KEYS.map((a) => [a, defaultView(a, "accountant")])), {
     odemeler: "sube",
     nakit: "firma",
-    vergi: "firma",
     tutarlilik: "firma",
     mutabakat: "firma",
     tedarikciler: "firma",
@@ -86,9 +90,9 @@ test("geçerli kip: kilitli hesap hep şube; tercih varsayılanı ezer; şubesiz
     // Şubesiz personel bütün şubeleri görmez: tercih yazamaz, yazılmış olsa da okunmaz
     assert.equal(effectiveView(a, "staff", false, firma), "sube", `şubesiz personel ${a}`);
   }
-  assert.equal(effectiveView("vergi", "admin", false, {}), "sube");
-  assert.equal(effectiveView("vergi", "accountant", false, {}), "firma");
-  assert.equal(effectiveView("vergi", "accountant", false, { nakit: "sube" }), "firma", "başka alanın tercihi bu alanı değiştirmez");
+  assert.equal(effectiveView("ortak_gider", "admin", false, {}), "sube");
+  assert.equal(effectiveView("ortak_gider", "accountant", false, {}), "firma");
+  assert.equal(effectiveView("ortak_gider", "accountant", false, { nakit: "sube" }), "firma", "başka alanın tercihi bu alanı değiştirmez");
 });
 
 test("okuma kapsamı: firma kipinde Tümü, şube kipinde seçim", () => {
@@ -98,7 +102,10 @@ test("okuma kapsamı: firma kipinde Tümü, şube kipinde seçim", () => {
 });
 
 test("tercihin okunması: bilinmeyen anahtar ve değer düşer, nesne olmayan boş", () => {
-  assert.deepEqual(parseBranchView({ vergi: "firma", ortak_gider: "sube" }), { vergi: "firma", ortak_gider: "sube" });
+  assert.deepEqual(parseBranchView({ nakit: "firma", ortak_gider: "sube" }), { nakit: "firma", ortak_gider: "sube" });
+  // Eski sürümün yazdığı Vergi tercihi (alanı kalktı, 27 Kasım 2026) sessizce düşer
+  assert.deepEqual(parseBranchView({ vergi: "firma", ortak_gider: "sube" }), { ortak_gider: "sube" });
+  assert.deepEqual(parseBranchView({ vergi: "sube" }), {});
   assert.deepEqual(parseBranchView({ vergi: "FIRMA", nakit: 1, x: "firma", komisyon: null, ortak_gider: "bilgi" }), {});
   for (const bad of [null, undefined, "firma", 3, [], ["vergi"], true]) assert.deepEqual(parseBranchView(bad), {}, String(bad));
   // Kalıtılan anahtar sayılmaz
@@ -106,9 +113,9 @@ test("tercihin okunması: bilinmeyen anahtar ve değer düşer, nesne olmayan bo
   assert.deepEqual(parseBranchView(JSON.parse('{"__proto__":{"vergi":"firma"},"nakit":"firma"}')), { nakit: "firma" });
 });
 
-test("kartın satırları: yönetici on alan, muhasebeci açabildiği ekranların alanları (Vergi, işletme geneli giderler)", () => {
+test("kartın satırları: yönetici dokuz alan, muhasebeci açabildiği ekranların alanları (işletme geneli giderler; Vergi hep firma geneli)", () => {
   assert.deepEqual(viewAreasFor("admin"), [...VIEW_AREA_KEYS]);
-  assert.deepEqual(viewAreasFor("accountant"), ["vergi", "ortak_gider"]);
+  assert.deepEqual(viewAreasFor("accountant"), ["ortak_gider"]);
   for (const a of viewAreasFor("accountant")) assert.ok(VIEW_AREAS[a].screens.some((p) => canOpen("accountant", p)), a);
   assert.deepEqual(viewAreasFor("manager"), [], "müdür kilitli");
   assert.deepEqual(viewAreasFor("staff"), [], "personelin para ekranı yok");
@@ -138,13 +145,13 @@ test("çip: yalnız tek şube seçiliyken, birden çok şube açıkken, bütün 
 });
 
 test("çipin metni: şube kipinde firmanın kalanı, firma kipinde geri dönüş; iki alanın kendi dili", () => {
-  assert.deepEqual(viewChipText("vergi", "sube", "Marina"), {
+  assert.deepEqual(viewChipText("nakit", "sube", "Marina"), {
     title: "Marina görünümü",
     switchLabel: "Firma geneline geç",
     switchTo: "firma",
-    firmOnly: "Beyan tutarları (KDV, muhtasar, geçici ve kurumlar vergisi) ve takvim her görünümde firmanın",
+    firmOnly: "Açılış bakiyesi, vergi ve SGK ödemeleri her görünümde firmanın",
   });
-  assert.deepEqual(viewChipText("vergi", "firma", "Marina"), { title: "Firma geneli · Marina seçili", switchLabel: "Yalnız Marina'yı göster", switchTo: "sube", firmOnly: null });
+  assert.deepEqual(viewChipText("nakit", "firma", "Marina"), { title: "Firma geneli · Marina seçili", switchLabel: "Yalnız Marina'yı göster", switchTo: "sube", firmOnly: null });
   assert.equal(viewChipText("tedarikciler", "firma", "Kadıköy").switchLabel, "Yalnız Kadıköy'ü göster");
   assert.equal(viewChipText("tedarikciler", "sube", "Marina").firmOnly, null);
   assert.deepEqual(viewChipText("karsilastirma", "sube", "Tuzla"), { title: "Tuzla görünümü", switchLabel: "Şubeleri yan yana göster", switchTo: "firma", firmOnly: null });
@@ -163,7 +170,7 @@ test("çipin metni: şube kipinde firmanın kalanı, firma kipinde geri dönüş
 });
 
 test("toplu düğmeler: rolün kartındaki alanlar; Varsayılanlara dön tercihi boşaltır", () => {
-  assert.deepEqual(bulkViewPatch("firma", "accountant"), { vergi: "firma", ortak_gider: "firma" });
+  assert.deepEqual(bulkViewPatch("firma", "accountant"), { ortak_gider: "firma" });
   assert.deepEqual(Object.keys(bulkViewPatch("sube", "admin") ?? {}), [...VIEW_AREA_KEYS]);
   assert.equal(bulkViewPatch("varsayilan", "admin"), null);
   assert.deepEqual(bulkViewPatch("firma", "manager"), {});
@@ -179,6 +186,10 @@ test("Hesabım: kartın başlığı, açıklaması, çapası ve hep firma geneli
   assert.ok(ALWAYS_COMPANY_WIDE.length >= 10);
   for (const a of ALWAYS_COMPANY_WIDE) assert.ok(a.title && a.reason.endsWith("."), a.title);
   assert.ok(ALWAYS_COMPANY_WIDE.some((a) => a.title === "Tam yedek"));
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): listede gerekçesiyle
+  const tax = ALWAYS_COMPANY_WIDE.find((a) => a.title.startsWith("Vergi ve SGK"));
+  assert.equal(tax?.reason, "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez.");
+  assert.match(tax?.title ?? "", /Vergi'nin bütün sekmeleri/);
 
   const page = read("src/app/panel/hesap/page.tsx");
   assert.match(page, /<Card id="sube-gorunumu"/);

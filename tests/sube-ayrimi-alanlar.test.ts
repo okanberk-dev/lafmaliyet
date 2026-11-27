@@ -13,8 +13,8 @@ import { sharedCariLine, sharedTotals } from "../src/app/panel/tedarikciler/shar
 import { areaKapsam, modeOfScope, VIEW_AREAS } from "../src/lib/branch-view";
 import { ALL_BRANCHES } from "../src/lib/branches";
 import { branchAccountOf, branchCariNote, branchPayments, sharedCariOf, sharedCariParts } from "../src/lib/cari/branch-account";
-import { branchCashFlow, branchFlowNote, isSharedPlanLine, ownPlanInvoice, sharedPlanIdsOf } from "../src/lib/cash-plan-branch";
-import type { PlanLine } from "../src/lib/cash-plan";
+import { branchCashFlow, branchFlowNote, branchPlanWithoutTax, isSharedPlanLine, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf } from "../src/lib/cash-plan-branch";
+import { FIRM_TAX_NOTE, type PlanLine } from "../src/lib/cash-plan";
 import { hasBranchSales, scopeCommissionReport, type ChannelMonth, type CommissionReport } from "../src/lib/commission/report";
 import { sharedPaymentsAnswer } from "../src/lib/mcp/answers/payments";
 import { sharedCariAnswer } from "../src/lib/mcp/answers/suppliers";
@@ -112,20 +112,28 @@ test("Son ödenenler şube kipinde: kapsamdaki fatura ve hatırlatıcı; faturas
 const line = (key: string, kind: PlanLine["kind"], amount: number, direction: PlanLine["direction"] = "out"): PlanLine =>
   ({ key, kind, amount, direction, title: key, date: "2026-12-01", estimated: false }) as unknown as PlanLine;
 
-test("nakit planı şube kipi: İşletme geneli satırı vergi, SGK, şubesiz hatırlatıcı, işletme geneli fatura ve cariden; şubenin kalemi değil", () => {
+test("nakit planı şube kipi: İşletme geneli satırı şubesiz hatırlatıcı, işletme geneli fatura ve cariden; vergi ve SGK yok, şubenin kalemi değil", () => {
+  const rem = (id: number, branchId: string | null, title: string, kind: import("../src/lib/reminders").ReminderKind = "odeme") => ({ id, branchId, title, kind });
   const ids = sharedPlanIdsOf({
     reminders: [
-      { id: 10, branchId: null },
-      { id: 11, branchId: "marina" },
+      rem(10, null, "Muhasebe ücreti"),
+      rem(11, "marina", "Marina kira", "kira"),
+      // Vergi ve SGK hatırlatıcıları şubesiz de olsa İşletme geneli satırına girmez (sahibin kararı 27 Kasım 2026)
+      rem(12, null, "KDV beyannamesi ve ödemesi", "vergi"),
+      rem(13, null, "SGK prim ödemesi", "vergi"),
+      rem(14, null, "Kira stopajı", "kira"),
+      rem(15, null, "Çevre temizlik vergisi (1. taksit)"),
     ],
     invoiceBranches: INVOICES,
   });
   assert.deepEqual([...ids.reminders], [10]);
   assert.deepEqual([...ids.invoices], [3], "şubesi seçilmemiş fatura işletme geneli değil");
-  assert.equal(isSharedPlanLine(line("kdv@2026-11-28", "kdv", 1), ids), true);
-  assert.equal(isSharedPlanLine(line("sgk@2026-11-30", "sgk", 1), ids), true);
+  assert.equal(isSharedPlanLine(line("kdv@2026-11-28", "kdv", 1), ids), false, "KDV firmanın, şubeye bölünmez");
+  assert.equal(isSharedPlanLine(line("sgk@2026-11-30", "sgk", 1), ids), false, "SGK firmanın");
+  assert.equal(isSharedPlanLine(line("vergi:muhtasar@2026-12-26", "vergi", 1), ids), false, "muhtasar firmanın");
   assert.equal(isSharedPlanLine(line("reminder:10@2026-12-01", "reminder", 1), ids), true);
   assert.equal(isSharedPlanLine(line("reminder:11@2026-12-01", "reminder", 1), ids), false);
+  assert.equal(isSharedPlanLine(line("reminder:12@2026-12-28", "reminder", 1), ids), false, "tutarlı KDV hatırlatıcısı da");
   assert.equal(isSharedPlanLine(line("invoice:3", "invoice", 1), ids), true);
   assert.equal(isSharedPlanLine(line("invoice:1", "invoice", 1), ids), false);
   assert.equal(isSharedPlanLine(line("cari:7", "invoice", 1), ids), true);
@@ -139,7 +147,7 @@ test("nakit planı şube kipi: İşletme geneli satırı vergi, SGK, şubesiz ha
   const flow = branchCashFlow(
     {
       weeks: [
-        week(0, [line("kdv@2026-11-28", "kdv", 42000), line("invoice:1", "invoice", 500), line("reminder:10@2026-12-01", "reminder", 1000), line("cari:7", "invoice", 300), line("sgk@2026-11-30", "sgk", 9000)]),
+        week(0, [line("kdv@2026-11-28", "kdv", 42000), line("invoice:1", "invoice", 500), line("reminder:10@2026-12-01", "reminder", 1000), line("cari:7", "invoice", 300), line("sgk@2026-11-30", "sgk", 9000), line("reminder:12@2026-11-28", "reminder", 7000)]),
         week(1, []),
       ],
       opening: { amount: 250000, date: "2026-11-26" } as import("../src/lib/cash-plan").CashPlan["opening"],
@@ -147,16 +155,57 @@ test("nakit planı şube kipi: İşletme geneli satırı vergi, SGK, şubesiz ha
     ids,
     "Marina",
   );
-  assert.equal(flow.shared[0].amount, 52300);
-  assert.equal(flow.shared[0].count, 4);
+  assert.equal(flow.shared[0].amount, 1300, "yalnız muhasebe ücreti ve cari: KDV, SGK ve KDV hatırlatıcısı yok");
+  assert.equal(flow.shared[0].count, 2);
   assert.deepEqual(
     flow.shared[0].top.map((t) => t.amount),
-    [42000, 9000, 1000],
+    [1000, 300],
   );
   assert.equal(flow.shared[1].amount, 0);
-  assert.equal(flow.sharedTotal, 52300);
+  assert.equal(flow.sharedTotal, 1300);
   assert.deepEqual(flow.firmOpening, { amount: 250000, date: "2026-11-26" });
-  assert.match(branchFlowNote("Marina").title, /Şubenin nakit akışı · Marina/);
+  const note = branchFlowNote("Marina");
+  assert.match(note.title, /Şubenin nakit akışı · Marina/);
+  assert.match(note.text, /Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür\./);
+  assert.doesNotMatch(note.text, /Vergi, KDV, SGK, işletme geneli ödemeler/);
+});
+
+test("nakit planı şube kipi: vergi ve SGK hatırlatıcısı tanınır; şubenin planında KDV kartı, vergi ve SGK tahmini yok, tek not", () => {
+  const tax = (title: string, kind: import("../src/lib/reminders").ReminderKind = "odeme") => isTaxPlanReminder({ title, kind });
+  for (const [title, kind] of [
+    ["KDV beyannamesi ve ödemesi", "vergi"],
+    ["SGK prim ödemesi", "vergi"],
+    ["SGK", "odeme"],
+    ["Muhtasar ve prim hizmet beyannamesi", "vergi"],
+    ["Kira stopajı", "kira"],
+    ["Geçici vergi", "odeme"],
+    ["Kurumlar vergisi beyannamesi ve ödemesi", "vergi"],
+    ["KDV damga vergisi", "odeme"],
+    ["2 No.lu KDV", "odeme"],
+    ["ÇTV", "odeme"],
+    ["Bağkur", "odeme"],
+  ] as const)
+    assert.equal(tax(title, kind), true, title);
+  for (const [title, kind] of [
+    ["Kira", "kira"],
+    ["Maaşlar", "maas"],
+    ["Elektrik faturası", "fatura"],
+    ["Muhasebe ücreti", "odeme"],
+    ["Sütaş", "odeme"],
+  ] as const)
+    assert.equal(tax(title, kind), false, title);
+
+  const est = (key: string) => ({ key, title: key, monthly: 1, status: "on", note: "", direction: "out" }) as import("../src/lib/cash-plan").EstimateRow;
+  const plan = {
+    vat: { mode: "excluded" },
+    estimates: [est("sales"), est("salary"), est("sgk"), est("goods"), est("kdv"), est("vergi"), est("fixed:4")],
+    excluded: [],
+  } as unknown as import("../src/lib/cash-plan").CashPlan;
+  const own = branchPlanWithoutTax(plan);
+  assert.equal(own.vat, null, "şubenin KDV tahmini yok");
+  assert.deepEqual(own.estimates.map((e) => e.key), ["sales", "salary", "goods", "fixed:4"]);
+  assert.equal(own.taxFirmWide, true);
+  assert.equal(FIRM_TAX_NOTE, "Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür");
 });
 
 // ---------------------------------------------------------------- Tedarikçi bakiyeleri

@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -176,7 +176,7 @@ describe("şube ayrımı parça 4: alanlar veritabanında", { skip: !SERVER_URL 
     assert.equal(await scope.areaScope("odemeler"), "marina", "yöneticinin varsayılanı şube");
     await signIn(ids.ali, "marina", FIRMA);
     assert.equal(await scope.areaScope("odemeler"), ALL_BRANCHES);
-    assert.equal(await scope.areaScope("vergi"), "marina", "yazılmayan alan varsayılanda");
+    assert.equal(await scope.areaScope("mutabakat"), "marina", "yazılmayan alan varsayılanda");
     // Müdür: tercih yazılı olsa da her alan şubesi
     await signIn(ids.mert, "marina", FIRMA);
     for (const a of ["odemeler", "nakit", "tedarikciler", "komisyon"] as const) assert.equal(await scope.areaScope(a), "marina", a);
@@ -221,8 +221,18 @@ describe("şube ayrımı parça 4: alanlar veritabanında", { skip: !SERVER_URL 
     assert.equal((await loadRecipientsInScope(db, ALL_BRANCHES)).length, 3);
   });
 
-  test("Nakit planı: şubenin akışında Tuzla yok, vergi ve işletme geneli ayrı satırda, bakiye firmanın", async () => {
+  test("Nakit planı: şubenin akışında Tuzla yok, işletme geneli ayrı satırda, vergi ve SGK hiç yok (Tümü'de), bakiye firmanın", async () => {
     const { loadAreaCashPlan } = await import("../src/server/data/cash-plan");
+    const { planNotes } = await import("../src/lib/cash-plan");
+    // Vergi ve SGK hatırlatıcıları (biri şubesiz, biri Marina'nın): şubenin akışına da İşletme geneli satırına da girmez
+    // (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez)
+    const taxRems = await db
+      .insert(s.reminders)
+      .values([
+        { title: "KDV beyannamesi ve ödemesi", amount: 5555.55, dueDate: soon, anchorDate: soon, branchId: null, kind: "vergi" },
+        { title: "SGK prim ödemesi", amount: 4444.44, dueDate: soon, anchorDate: soon, branchId: "marina", kind: "vergi" },
+      ])
+      .returning({ id: s.reminders.id });
     await signIn(ids.ali, "marina");
     const branch = await loadAreaCashPlan("marina");
     assert.ok(branch.flow, "şube kipinde akış");
@@ -234,10 +244,25 @@ describe("şube ayrımı parça 4: alanlar veritabanında", { skip: !SERVER_URL 
     assert.ok(lines.some((l) => l.key.startsWith("invoice:")), "Marina'nın faturası akışta");
     assert.equal(lines.some((l) => l.key.startsWith("cari:")), false, "faturasız borç akışta değil");
     assert.equal(lines.some((l) => l.kind === "kdv" || l.kind === "vergi" || l.kind === "sgk"), false);
+    const taxKeys = new Set(taxRems.map((r) => r.id));
+    const isTaxLine = (l: { key: string }) => taxKeys.has(Number(/^reminder:(\d+)@/.exec(l.key)?.[1]));
+    assert.equal(lines.some(isTaxLine), false, "Marina'nın SGK hatırlatıcısı şubenin akışında değil");
+    assert.equal(JSON.stringify(branch.flow).includes("5.555") || JSON.stringify(branch.flow).includes("5555"), false, "şubesiz KDV hatırlatıcısı İşletme geneli satırında değil");
+    assert.equal(branch.flow.shared.some((w) => w.top.some((t) => /KDV|SGK/.test(t.title))), false);
+    assert.equal(branch.view.plan.vat, null, "şubenin KDV tahmini yok");
+    assert.deepEqual(branch.view.plan.estimates.filter((e) => ["kdv", "vergi", "sgk"].includes(e.key)), [], "Tahmine katılanlar'da vergi ve SGK yok");
+    assert.equal(branch.view.plan.taxFirmWide, true);
+    const notes = planNotes(branch.view.plan, { komisyon: 0.02, acikGun: 30, invoiceTermDays: 30 });
+    assert.deepEqual(notes.filter((n) => ["kdv", "sgk", "vergi"].includes(n.key)).map((n) => n.text), ["Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür."]);
     assert.ok(branch.flow.sharedTotal > 0, "İşletme geneli satırı: muhasebe, ortak fatura, cari");
     const firm = await loadAreaCashPlan(ALL_BRANCHES);
     assert.equal(firm.flow, null);
     assert.equal(leaks(firm.view.plan), true, "firmanın planında Tuzla'nın kirası");
+    // Tümü / firma kipi değişmedi: vergi ve SGK hatırlatıcıları firmanın planında
+    const firmLines = firm.view.plan.weeks.flatMap((w) => w.lines);
+    assert.equal(taxRems.every((r) => firmLines.some((l) => l.key.startsWith(`reminder:${r.id}@`))), true, "firmanın planında KDV ve SGK hatırlatıcısı");
+    assert.equal(firm.view.plan.taxFirmWide, undefined);
+    await db.delete(s.reminders).where(inArray(s.reminders.id, [...taxKeys]));
   });
 
   test("Tedarikçiler: şube kipinde Tuzla'nın faturası ve tedarikçisi yok; faturasız borç İşletme geneli; firma kipinde hepsi", async () => {

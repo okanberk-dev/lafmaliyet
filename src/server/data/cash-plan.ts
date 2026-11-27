@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import type { Model } from "@/lib/calc/engine";
 import { buildCashPlan, goodsRows, parseCashPlanState, planCashReports, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanInput, type CashPlanState } from "@/lib/cash-plan";
-import { BRANCH_PLAN_EXCLUDED, branchCashFlow, ownPlanInvoice, sharedPlanIdsOf, type BranchCashFlow } from "@/lib/cash-plan-branch";
+import { BRANCH_PLAN_EXCLUDED, branchCashFlow, branchPlanWithoutTax, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf, type BranchCashFlow } from "@/lib/cash-plan-branch";
 import { addDays, type UpcomingItem } from "@/lib/reminders";
 import type { TaxInputs } from "@/lib/tax/inputs";
 import type { TaxPlanFeed } from "@/lib/tax/view";
@@ -123,7 +123,9 @@ export async function loadCashPlan(
 ): Promise<CashPlanView> {
   // Şubenin akışı (`opts.branch`; şube ayrımı parça 4): model, kasa raporları ve `upcoming` o şubenin kapsamıyla okunmuş
   // olmalı (loadAreaCashPlan). Plan yalnız şubeye ait kalemlerle kurulur: işletme geneli hatırlatıcı, işletme geneli
-  // fatura, faturasız borç, vergi, KDV ve SGK firmanın planındadır (src/lib/cash-plan-branch.ts); açılış bakiyesi yok
+  // fatura ve faturasız borç firmanın planındadır (src/lib/cash-plan-branch.ts); açılış bakiyesi yok. Vergi ve SGK
+  // şubeye bölünmez (sahibin kararı 27 Kasım 2026): şubenin vergi ve SGK hatırlatıcısı, KDV, vergi ve SGK tahmini, vergi
+  // beslemesi yok; stopajlı sabit gider net (stopaj muhtasarla firmanın), KDV tahmini kartı yok (branchPlanWithoutTax)
   const branch = opts.branch ?? null;
   // Verilmezse bütün ödemeler (Vergi › Özet'in KDV tahmini: beyan firmanın, her kipte firmanın planı)
   // şube-ayrımı: vergi.beyan
@@ -155,8 +157,9 @@ export async function loadCashPlan(
   }
   const termOf = (supplier: string) => (paidOnDelivery(supplier) ? 0 : (termDays(supplier) ?? up.settings.invoiceTermDays));
   const goods = goodsRows(model.ds.invoices, today, termOf);
-  const fromModel = planInputFromModel(model, today, taxInputs?.settings, { feed: tax !== null });
-  const plan = buildCashPlan({
+  // Şubenin akışında stopaj ve KDV-2 firmanın vergisidir (muhtasar, 2 No.lu KDV): kalem beslemedeki gibi net
+  const fromModel = planInputFromModel(model, today, taxInputs?.settings, { feed: branch ? true : tax !== null });
+  const built = buildCashPlan({
     // Besleme yoksa stopajlı sabit gider brüt ödenir: muhtasar ve KDV-2 satırı da yok, stopaj kaybolmasın (§13)
     ...fromModel,
     ...(branch ? { months: ownFixedMonths(model, fromModel.months, branch) } : {}),
@@ -169,7 +172,8 @@ export async function loadCashPlan(
     cashReports: planCashReports(reports, branches),
     // Şubenin akışında yalnız şubeye seçilmiş faturalar (işletme geneli fatura ve faturasız borç firmanın planında)
     invoices: up.items.filter(isPayable).filter((i) => !branch || ownBranchPayable(i, up.invoiceBranches, branch)),
-    reminders: branch ? up.reminders.filter((r) => r.branchId === branch) : up.reminders,
+    // Şubenin akışında şubenin hatırlatıcıları; vergi ve SGK hatırlatıcısı değil (Tümü'de)
+    reminders: branch ? up.reminders.filter((r) => r.branchId === branch && !isTaxPlanReminder(r)) : up.reminders,
     paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),
     vatPaid,
     goods: goods.rows,
@@ -177,6 +181,7 @@ export async function loadCashPlan(
     expectedDebts,
     vatAnchor: state.vatCarry ? { month: state.vatCarry.month, amount: state.vatCarry.amount } : null,
   });
+  const plan = branch ? branchPlanWithoutTax(built) : built;
   return { plan, state, carry, invoiceTermDays: up.settings.invoiceTermDays };
 }
 

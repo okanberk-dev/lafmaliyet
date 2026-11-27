@@ -175,10 +175,17 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
   assert.match(note!.text, /cari hesabı firmanındır/);
   // Faturalar firma geneli değil (25 Kasım 2026, docs/SUBE.md › Faturanın şubesi): seçili şubenin faturaları
   assert.doesNotMatch(read("src/app/panel/faturalar/page.tsx"), /<CompanyWideNotice/);
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): üç sekmesi notu çizer, çipi yok
+  const vergi = companyWideNote("vergi", "marina", known);
+  assert.equal(vergi?.title, "Marina seçili: bu ekran firma geneli");
+  assert.match(vergi!.text, /^Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez/);
+  for (const file of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx"]) {
+    assert.match(read(file), /<CompanyWideNotice screen="vergi" \/>/, file);
+    assert.doesNotMatch(read(file), /<BranchViewChip/, file);
+  }
   // Alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube ayrımı parça 4: Tedarikçiler, Nakit planı; parça 5:
-  // Vergi, Tutarlılık, Mutabakat)
+  // Tutarlılık, Mutabakat)
   for (const [file, area] of [
-    ["src/app/panel/vergi/page.tsx", "vergi"],
     ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
     ["src/app/panel/mutabakat/page.tsx", "mutabakat"],
   ] as const) {

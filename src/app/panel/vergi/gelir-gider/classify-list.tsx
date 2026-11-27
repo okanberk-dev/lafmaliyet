@@ -64,11 +64,6 @@ export interface ClassifyData {
   /** Ödemeden kesilen stopajlı profilin tutar ipucu, kendi oranıyla (kira ÷ 0,80, şahsa internet reklamı ÷ 0,85) */
   grossHints: Partial<Record<Withholding, string>>;
   today: string;
-  /**
-   * Vergi alanının şube kipi (şube ayrımı parça 5): öbür şubenin ve şubesi seçilmemiş kalemler listede değil, bu satır
-   * sayısını söyler ("3 kalem öbür şubelerde ya da şubesi seçilmemiş: Tümü'de"); firma kipinde ve "Tümü"de null
-   */
-  scopeNote?: string | null;
 }
 
 type Change = { doc?: string; withholding?: string; vatToZero?: boolean };
@@ -175,7 +170,6 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
       <div className="space-y-5 px-2 pb-5 sm:px-5">
         <p className="px-2 text-sm text-ink-soft sm:px-0">Aynı gider iki kez sayılmasın diye soruyoruz: bu giderin belgesi nerede?</p>
         {data.noDocText ? <NoDocNotice text={data.noDocText} /> : null}
-        {data.scopeNote ? <p className="px-2 text-xs leading-5 text-ink-mute sm:px-0">{data.scopeNote}</p> : null}
 
         {GROUPS.map((g) => {
           const items = data.items.filter((it) => it.source === g.source);

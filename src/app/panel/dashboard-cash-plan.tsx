@@ -22,7 +22,8 @@ const signed = (v: number) => `${v < 0 ? "−" : "+"}${tl(Math.abs(v))}`;
 export function DashboardCashPlan({ plan, flow = null, className }: { plan: CashPlan; flow?: BranchCashFlow | null; className?: string }) {
   const { opening, totals, lowest, firstNegative } = plan;
   const out = totals.outKnown + totals.outEstimated;
-  // Şube kipi (şube ayrımı parça 4): şubenin net akışı; bakiye ve işletme geneli kalemler firmanın (bilgi satırı)
+  // Şube kipi (şube ayrımı parça 4): şubenin net akışı; bakiye ve işletme geneli kalemler firmanın (bilgi satırı). Vergi
+  // ve SGK şubeye bölünmez (sahibin kararı 27 Kasım 2026): şubenin akışında da İşletme geneli satırında da yok
   if (flow) {
     return (
       <Card className={className}>
@@ -42,7 +43,7 @@ export function DashboardCashPlan({ plan, flow = null, className }: { plan: Cash
             <span className={cn("text-2xl font-semibold tracking-tight tabular", totals.net < 0 ? "text-bad" : "text-good")}>{signed(totals.net)}</span>
           </p>
           <p className="text-xs text-ink-mute tabular">
-            Gelecek {tl(totals.in)} · Ödenecek {tl(out)} · İşletme geneli {tl(flow.sharedTotal)} ayrıca
+            Gelecek {tl(totals.in)} · Ödenecek {tl(out)} · İşletme geneli {tl(flow.sharedTotal)} ayrıca · vergi ve SGK Tümü&apos;de
           </p>
         </CardContent>
       </Card>

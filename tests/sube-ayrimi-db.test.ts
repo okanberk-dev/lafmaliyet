@@ -15,6 +15,10 @@
 //    verisinden etkileniyordur (tutar toplamı, sayı, liste); tasarımın bilerek firmanın bıraktığı yerler (ortak veri,
 //    "öbür şubelerde N" sayıları) `ORTAK` listesinde gerekçesiyle.
 //
+// 5. Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): Vergi'nin okuması ve dışa aktarımın Vergi sekmesi Marina
+//    seçiliyken de Tümü'nünkiyle aynı; nakit planının şube kipinde vergi ve SGK hiç yok (İşletme geneli satırında da),
+//    bu yüzden Marina'nın nakit akışı Tuzla'nın satışından ve personelinden etkilenmez (fark bakışında istisnası yok).
+//
 // Bilinen sızıntılar `todo` ile işaretlenir (düzelince işaret kalkar): koşu düşmez, TODO olarak listelenir. İlk koşunun
 // sekiz sızıntısı (Faturalar'ın cari bağları, sabah e-postasının fatura bölümü, Mutabakat POS'un şube karoları, Maaşlar'ın
 // hesap seçicisi, Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri, ekstre yükleme
@@ -28,14 +32,14 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import postgres from "postgres";
 
 import type { BranchViewPrefs, ViewArea } from "../src/lib/branch-view";
 import { VIEW_AREA_KEYS } from "../src/lib/branch-view";
 import { ALL_BRANCHES, BRANCH_COOKIE } from "../src/lib/branches";
-import { todayTR } from "../src/lib/reminders";
+import { addDays, todayTR } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
 
 import { deleteBranchRows, seedSubeAyrimi, type SubeTohum, tzLeaks, tzTextLeak } from "./helpers/sube-ayrimi-tohum";
@@ -140,8 +144,6 @@ const ORTAK = {
   elsewhere: /\.elsewhere$/,
   /** loadUpcoming'in iç eşlemesi (fatura → şube); ekrana çıkmaz, nakit planının işletme geneli kimlikleri için */
   invoiceBranches: /\.invoiceBranches$/,
-  /** Nakit planının İşletme geneli satırı: firmanın KDV'si, vergisi, SGK'sı (parça 4, "bilgi") */
-  cashShared: /\.flow\.(shared|sharedTotal)$/,
   /** Mutabakat: eşleşme firmanın bütün kayıtlarıyla, öbür şubenin kaydı adsız (parça 5) */
   recon: /\.(summary|branch\.shared|branch\.otherMissing)$|\.rows\[\d+\]\.(status|candidate|basis)$/,
   /** Dışa aktarımın Vergi sekmesi: beyan firmanın (vergi.beyan) */
@@ -287,7 +289,9 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         const { loadAreaCashPlan } = await import("../src/server/data/cash-plan");
         return loadAreaCashPlan(await area("nakit"));
       },
-      shared: [/\.model\.ds\.companyMonths$/, /\.model\.ds\.pendingPriceHolds$/, ORTAK.cashShared],
+      // İşletme geneli satırında vergi ve SGK yok (vergi şubeye bölünmez): satır Tuzla'nın satışından ve personelinden
+      // etkilenmez, istisnası yok
+      shared: [/\.model\.ds\.companyMonths$/, /\.model\.ds\.pendingPriceHolds$/],
     },
     {
       name: "Genel bakış › günlük ciro (tillRows)",
@@ -487,15 +491,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       },
     },
     { name: "Tutarlılık / Zayi › bekleyen zayi istekleri (pendingWasteSummary)", run: async () => (await import("../src/server/data/waste-requests")).pendingWasteSummary({ month: month(), scope: await area("tutarlilik") }) },
-    // Vergi
-    {
-      name: "Vergi › Şubenin payı (loadBranchTaxView, alan.vergi)",
-      run: async () => {
-        const a = await area("vergi");
-        if (a === ALL_BRANCHES) return null;
-        return (await import("../src/server/data/tax")).loadBranchTaxView(a, { year: Number(today.slice(0, 4)), today });
-      },
-    },
+    // Vergi: şubeye bölünmez (sahibin kararı 27 Kasım 2026); her kipte firmanın, ayrı bakışta (5)
     // Maaşlar (Personel)
     { name: "Maaşlar › Vardiya / hesap seçicisi (loadStaffLinkOptions)", run: async () => (await import("../src/server/data/staff-links")).loadStaffLinkOptions() },
     // Kullanıcılar & roller (src/app/panel/kullanicilar/page.tsx): parola özeti karşılaştırmadan düşer (her okumada aynı)
@@ -562,6 +558,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     { name: "Bağlantı › ara", run: () => mcp("ara", { metin: "Latte" }) },
     { name: "Bağlantı › ay_ozeti (sube=marina)", run: () => mcp("ay_ozeti", { ay: month(), sube: "marina" }) },
     { name: "Bağlantı › odemeler (sube=marina)", run: () => mcp("odemeler", { sube: "marina" }) },
+    { name: "Bağlantı › odemeler, nakit planı (sube=marina)", run: () => mcp("odemeler", { sube: "marina", nakitPlani: true }) },
     { name: "Bağlantı › tedarikci_ozeti (sube=marina)", run: () => mcp("tedarikci_ozeti", { sube: "marina" }) },
     { name: "Bağlantı › kasa_raporlari (sube=marina)", run: () => mcp("kasa_raporlari", { baslangic: `${month()}-01`, bitis: today, sube: "marina" }) },
     { name: "Bağlantı › urun_karliligi (sube=marina)", run: () => mcp("urun_karliligi", { ay: month(), sube: "marina" }) },
@@ -692,10 +689,6 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       const shown = (await loadModel()).pnlMonth(month());
       assert.ok(shown.shared.total > 0, "Tutarla göster: işletme geneli payı");
     });
-    test("Vergi (beyan her kipte firmanın; firma kipinde şube kartı yok)", async () => {
-      await signIn(seed.users.admin, "marina", FIRMA);
-      assert.equal(await area("vergi"), ALL_BRANCHES);
-    });
     test("Stok değeri (FIFO havuzu, alan.stok_degeri)", () =>
       same(
         "stok_degeri",
@@ -722,6 +715,88 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       // Şube dosyasının firma kipinde başta tek açıklama satırı var ("Firma geneli: …"); hareketler aynı
       assert.equal(firm.replace(/^Firma geneli:[^\n]*\n/m, ""), all);
       assert.ok(tzLeaks(firm), "firma kipinde Tuzla'nın ödemesi de");
+    });
+  });
+
+  describe("5. vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026)", () => {
+    test("Vergi alanı yok: eski sürümün yazdığı tercih okunmaz", async () => {
+      assert.equal((VIEW_AREA_KEYS as readonly string[]).includes("vergi"), false);
+      await signIn(seed.users.admin, "marina", { vergi: "sube", nakit: "firma" } as unknown as BranchViewPrefs);
+      assert.deepEqual(await scope.userBranchView(), { nakit: "firma" });
+    });
+
+    test("Vergi'nin okuması Marina seçiliyken de Tümü'yle aynı (Tuzla'nın satışı, faturası, personeli dahil)", async () => {
+      const { loadModel } = await import("../src/server/data/dataset");
+      const { loadTaxView } = await import("../src/server/data/tax");
+      // Vergi sayfalarının okuması (src/app/panel/vergi/page.tsx › TaxContent): seçimden ve şube görünümünden bağımsız
+      const taxRead = async () =>
+        norm(
+          await scope.withBranchScope(ALL_BRANCHES, async () => {
+            const model = await loadModel();
+            const { view, inputs } = await loadTaxView(model, { today });
+            return { view, assets: inputs.assets };
+          }),
+        );
+      await signIn(seed.users.admin, ALL_BRANCHES);
+      const all = await taxRead();
+      assert.ok(tzLeaks(all), "Tümü'de Tuzla'nın verisi");
+      for (const prefs of [{}, FIRMA, { vergi: "sube" } as unknown as BranchViewPrefs]) {
+        await signIn(seed.users.admin, "marina", prefs);
+        assert.deepEqual(await taxRead(), all, `Marina seçili, tercih ${JSON.stringify(prefs)}`);
+      }
+      assert.equal("loadBranchTaxView" in (await import("../src/server/data/tax")), false, "şubenin payı kalktı");
+    });
+
+    test("dışa aktarım: Marina dosyasının Vergi sekmesi Tümü dosyasınınkiyle aynı, yalnız \"Firma geneli · beyan\" satırı", async () => {
+      await signIn(seed.users.admin, ALL_BRANCHES);
+      const all = (await exportBook(""))["Vergi"];
+      assert.ok(all, "Vergi sekmesi var");
+      await signIn(seed.users.admin, "marina");
+      const marina = (await exportBook("&sube=marina"))["Vergi"];
+      assert.match(marina, /Firma geneli · beyan: bütün şubelerin satışı, faturaları ve giderleri \(tek vergi numarası; vergi şubeye bölünmez\)\./);
+      assert.doesNotMatch(marina, /ŞUBENİN PAYI|Şubeye seçilmiş faturaların KDV'si/);
+      assert.equal(marina.replace(/\nFirma geneli · beyan:[^\n]*/, ""), all);
+    });
+
+    test("nakit planı şube kipinde: vergi ve SGK yok (hatırlatıcıları da), KDV kartı yok, tek not; Tümü'de hepsi", async () => {
+      const { loadAreaCashPlan } = await import("../src/server/data/cash-plan");
+      const { planNotes, FIRM_TAX_NOTE } = await import("../src/lib/cash-plan");
+      const soon = addDays(today, 3);
+      // Şubesiz KDV ve Marina'nın SGK hatırlatıcısı (tutarlı): ikisi de şubenin akışına ve İşletme geneli satırına girmez
+      const rems = await db
+        .insert(s.reminders)
+        .values([
+          { title: "KDV beyannamesi ve ödemesi", amount: 91_931.31, dueDate: soon, anchorDate: soon, branchId: null, kind: "vergi" },
+          { title: "SGK prim ödemesi", amount: 91_932.32, dueDate: soon, anchorDate: soon, branchId: "marina", kind: "vergi" },
+        ])
+        .returning({ id: s.reminders.id });
+      try {
+        await signIn(seed.users.admin, "marina");
+        const branch = await loadAreaCashPlan(await area("nakit"));
+        assert.ok(branch.flow, "şube kipi");
+        const lines = branch.view.plan.weeks.flatMap((w) => w.lines);
+        assert.deepEqual(lines.filter((l) => ["kdv", "vergi", "sgk"].includes(l.kind) || rems.some((r) => l.key.startsWith(`reminder:${r.id}@`))), []);
+        assert.equal(tzLeaks(branch.flow), null, "İşletme geneli satırında KDV ve SGK hatırlatıcısı yok (tutarları 919xx)");
+        assert.equal(branch.view.plan.vat, null);
+        assert.deepEqual(branch.view.plan.estimates.filter((e) => ["kdv", "vergi", "sgk"].includes(e.key)), []);
+        const notes = planNotes(branch.view.plan, { komisyon: 0.02, acikGun: 30, invoiceTermDays: 30 });
+        assert.ok(notes.some((n) => n.text === `${FIRM_TAX_NOTE}.`));
+        assert.equal(notes.some((n) => n.key === "sgk" || n.key === "kdv"), false);
+        // Bağlantının nakit planı da aynı notu taşır, vergi ve SGK tutarı yok (hatırlatıcılar Ödemeler listesinde kalır:
+        // şubenin ve işletme genelinin hatırlatıcısı, tutarı bölünmeden)
+        const answer = (await mcp("odemeler", { sube: "marina", nakitPlani: true })) as { nakitPlani?: unknown; isletmeGeneli?: unknown };
+        const plan = JSON.stringify(answer.nakitPlani);
+        assert.ok(plan.includes(FIRM_TAX_NOTE), "bağlantı: vergi ve SGK firma geneli");
+        assert.equal(/9193[12]|91\.93[12]/.test(plan + JSON.stringify(answer.isletmeGeneli)), false, "nakit planında ve İşletme geneli toplamında vergi ve SGK yok");
+        // Tümü: firmanın planında vergi ve SGK hatırlatıcıları
+        await signIn(seed.users.admin, ALL_BRANCHES);
+        const firm = await loadAreaCashPlan(await area("nakit"));
+        const firmLines = firm.view.plan.weeks.flatMap((w) => w.lines);
+        assert.ok(rems.every((r) => firmLines.some((l) => l.key.startsWith(`reminder:${r.id}@`))), "Tümü'de KDV ve SGK");
+        assert.equal(firm.view.plan.taxFirmWide, undefined);
+      } finally {
+        await db.delete(s.reminders).where(inArray(s.reminders.id, rems.map((r) => r.id)));
+      }
     });
   });
 

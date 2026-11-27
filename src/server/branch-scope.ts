@@ -204,7 +204,7 @@ export async function currentBranchView(area: ViewArea): Promise<ViewMode> {
 
 /**
  * Alanın okuma kapsamı: firma kipinde "Tümü", şube kipinde seçim (`currentBranchScope`). Alanın yükleyicisi bugünkü
- * `withBranchScope(ALL_BRANCHES, …)` yerine `withBranchScope(await areaScope("vergi"), …)` ile okur; çağrının üstünde
+ * `withBranchScope(ALL_BRANCHES, …)` yerine `withBranchScope(await areaScope("tutarlilik"), …)` ile okur; çağrının üstünde
  * kaydın işareti durur (`// şube-ayrımı: …`, tests/sube-ayrimi.test.ts). Müdürün kilidi okumanın kendisinde kalır:
  * "Tümü" dönse de `currentBranchScope` onu şubesine daraltır
  */

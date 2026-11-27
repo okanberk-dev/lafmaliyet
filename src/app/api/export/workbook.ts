@@ -21,7 +21,6 @@ import { invoiceSourceLabel } from "../../../lib/import-labels";
 import { SHARED_LABEL, UNASSIGNED_LABEL } from "../../../lib/invoice-branch";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/asilpos/kasa";
 import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
-import { BRANCH_SHARE_NOTE, BRANCH_SHARE_TITLE, type BranchTaxShare } from "../../../lib/tax/branch-share";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
 import { ACCOUNTANT_CHECKS } from "../../../lib/tax/checks";
 import type { QuarterCalc } from "../../../lib/tax/corporate";
@@ -113,8 +112,6 @@ export interface ExportExtras {
    * modeli, şube kipinde şubenin modeli ve şubeye seçilmiş faturaların alımı. Verilmezse dosyanın modeli
    */
   consistency?: { model: Model; label: string; note: string | null };
-  /** Vergi alanı "Yalnız şube" kipinde: Vergi sekmesinin altında şubenin payı (bilgi; beyana girmez) */
-  taxShare?: { name: string; share: BranchTaxShare } | null;
   /** Şubelerin adları (kimlik → ad): Faturalar sekmesinin Şube sütunu; verilmezse kimlik yazılır */
   branchNames?: ReadonlyMap<string, string>;
 }
@@ -123,7 +120,6 @@ export interface ExportExtras {
 export interface ExportAreas {
   tutarlilik: "sube" | "firma";
   tedarikciler: "sube" | "firma";
-  vergi: "sube" | "firma";
   /** İşletme geneli giderler "Yalnız not" kipinde: tutarları dosyada yok */
   sharedHidden: boolean;
 }
@@ -144,7 +140,7 @@ export function exportScopeText(scope: ExportExtras["scope"]): string {
     "Faturalar bu şubenin ve işletme geneli olanlar (şubesi seçilmemişler Tümü'de).",
     a?.tutarlilik === "sube" ? `Tutarlılık ${n} şubesinin; alınan yalnız şubeye seçilmiş faturalardan.` : "Tutarlılık firma geneli.",
     a?.tedarikciler === "sube" ? `Cari hareketleri: ${n} şubesinin ödemeleri; faturasız borç İşletme geneli.` : "Cari hareketleri firma geneli.",
-    a?.vergi === "sube" ? "Vergi: beyan firmanın (tek vergi numarası), altında şubenin payı (bilgi)." : "Vergi firma geneli (beyan).",
+    "Vergi firma geneli: vergi beyanı firmanın tek vergi numarasıyla, şubeye bölünmez.",
     "Tutarlılık bulguları ve Alım Miktarları firma geneli (şubesi yok).",
     "Sayfaların kipi Hesabım › Şube görünümü'nden; bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.",
   ].join(" ");
@@ -617,7 +613,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   if (extras.cari?.length) addCari(wb, extras.cari, extras.scope?.branch ? (extras.scope.areas?.tedarikciler === "sube" ? `${extras.scope.label} şubesi` : "Firma geneli") : null);
   addPeople(wb, model, month, extras.investments, extras.scope?.branch === true);
   // Vergi (dalga 12): tahmin, beyanname değil; Personel ve Sabit Giderler'den sonra
-  if (extras.tax) addTax(wb, extras.tax, { branchFile: extras.scope?.branch === true, share: extras.taxShare ?? null });
+  if (extras.tax) addTax(wb, extras.tax, { branchFile: extras.scope?.branch === true });
 
   // ---------------------------------------------------------------- Ayarlar
   const ay = addSheet(
@@ -1390,7 +1386,7 @@ export function taxQuarterFiscal(months: readonly TaxMonth[], calc: Pick<Quarter
  * hesabı (yalnız mali belgeli çeyrekler), takvim, kullanılan kurallar ve sahibin notları. ModPOS ile mali belge farkı,
  * belgesi yok işaretli kalemler ve sınıflandırılmamış kalemlerin adları yazılmaz (K11, K12, K31)
  */
-function addTax(wb: ExcelJS.Workbook, tax: TaxExport, opts: { branchFile?: boolean; share?: { name: string; share: BranchTaxShare } | null } = {}) {
+function addTax(wb: ExcelJS.Workbook, tax: TaxExport, opts: { branchFile?: boolean } = {}) {
   const { view, settings } = tax;
   const { rules, fromYear } = rulesFor(view.year, settings.overrides);
   const ws = addSheet(
@@ -1410,8 +1406,8 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport, opts: { branchFile?: boole
   const first = ws.addRow({ a: TAX_SHEET_FIRST_LINE });
   first.font = { ...TITLE_FONT, size: 13 };
   ws.addRow({ a: `${view.year} hesap dönemi · tutarlar KDV hariç, Türk lirası · ${rulesCompiledText(fromYear)}` }).font = grey;
-  // Şube dosyasında da beyan firmanın (tek vergi numarası; şube ayrımı parça 6)
-  if (opts.branchFile) ws.addRow({ a: "Firma geneli · beyan: bütün şubelerin satışı, faturaları ve giderleri (tek vergi numarası)." }).font = grey;
+  // Şube dosyasında da firmanın: vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; tek vergi numarası)
+  if (opts.branchFile) ws.addRow({ a: "Firma geneli · beyan: bütün şubelerin satışı, faturaları ve giderleri (tek vergi numarası; vergi şubeye bölünmez)." }).font = grey;
   const money = (r: ExcelJS.Row, keys: string[]) => setFmt(r, keys, MONEY);
   const wrap = (r: ExcelJS.Row) => (r.getCell("f").alignment = { wrapText: true, vertical: "top" });
 
@@ -1610,24 +1606,6 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport, opts: { branchFile?: boole
   for (const c of marked) {
     const m = settings.checks[c.key]!;
     wrap(ws.addRow({ a: c.title, f: ["Sahibin notu: muhasebecimle konuştum", dotted(m.date), m.note].filter(Boolean).join(" · ") }));
-  }
-
-  // ---- 6. Şubenin payı (bilgi): Vergi alanı "Yalnız şube" kipinde (şube ayrımı parça 6; Vergi sayfasının kartı)
-  if (opts.share) {
-    const { name, share } = opts.share;
-    ws.addRow({});
-    sectionRow(ws, "a", `6. ${name.toLocaleUpperCase("tr-TR")} · ${BRANCH_SHARE_TITLE.toLocaleUpperCase("tr-TR")}`);
-    ws.addRow({ a: `${share.year} başından bugüne, yalnız ${name} şubesinin kayıtlarıyla. Beyana girmez.` }).font = grey;
-    const lines: [string, number][] = [
-      ["Satış KDV'si (kasa)", share.salesVat],
-      [`Şubeye seçilmiş faturaların KDV'si (${num(share.invoices)} fatura)`, -share.purchaseVat],
-      ["KDV farkı (bilgi)", share.vatDiff],
-      [`Personelin SGK'sı${share.people ? ` (${num(share.people)} kişi)` : ""}`, share.sgk],
-      ["Maaş vergileri (gelir ve damga vergisi stopajı)", share.stopaj],
-      [`Amortisman (${num(share.assets)} demirbaş)`, share.depreciation],
-    ];
-    for (const [a, b] of lines) money(ws.addRow({ a, b }), ["b"]);
-    wrap(ws.addRow({ a: "Not", f: BRANCH_SHARE_NOTE }));
   }
 }
 

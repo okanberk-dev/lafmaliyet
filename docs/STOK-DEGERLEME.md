@@ -103,7 +103,7 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   genelidir ("Tümü"nün sayımları ve Gelir-giderde elle girilmiş devirleri): ayar "Tümü"nün kâr-zararını değiştirir, şube
   görünümünün mal maliyeti sayıma bağlı değildir (denetim 21 Kasım #32). Şube seçili ve alan **Yalnız şube** kipindeyken
   (şube ayrımı parça 5) önizleme şubenin sayımları ve havuzuyla; kart bunu yazar, ayar yine firmanın.
-- **Şube görünümü** (şube ayrımı parça 5, [SUBE.md › Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-vergi-tutarlılık-mutabakat-stok-değeri-parça-5)):
+- **Şube görünümü** (şube ayrımı parça 5, [SUBE.md › Alanlar: Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-tutarlılık-mutabakat-stok-değeri-parça-5)):
   Stok değeri alanı **Yalnız şube** kipindeyken FIFO havuzu şubenin ve işletme genelinin faturalarıdır
   (`queryPurchaseLots(db, kapsam)`, `invoiceScopeWhere`); öbür şubenin ve şubesi seçilmemiş faturanın partisi yoktur,
   karşılanmayan miktar ay sonu fiyatıyla. Sayım kartı kapsamı yazar, faturalardan karşılanan pay %50'nin altındaysa

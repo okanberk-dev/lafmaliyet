@@ -143,7 +143,7 @@ Ekstre işletme genelidir ([SUBE.md](SUBE.md) › Neyi süzer): banka hesabı ve
 zaman bütün şubelerin kayıtlarıyla yapılır. POS hakedişinde kart satışı şube şube kendi oranıyla hesaplanır, "Tümü"de
 valör satırı birden çok şubenin satışını gösterir.
 
-27 Kasım 2026'dan beri (şube ayrımı parça 5, [SUBE.md › Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-vergi-tutarlılık-mutabakat-stok-değeri-parça-5))
+27 Kasım 2026'dan beri (şube ayrımı parça 5, [SUBE.md › Alanlar: Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-tutarlılık-mutabakat-stok-değeri-parça-5))
 şube seçiliyken ekran kişinin şube görünümüyle (Mutabakat alanı; "firma geneli" notunun yerinde görünüm çipi). Firma
 geneli kipinde bugünkü gibi. **Yalnız şube** kipinde eşleşme aynıdır, gösterim ayrılır (`src/lib/mutabakat/branch.ts`):
 

@@ -1,9 +1,10 @@
-// Şube ayrımı parça 5, gerçek Postgres'te (docs/SUBE.md › Şube ayrımı › Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri):
-// dört alan kişinin şube görünümüyle okur; beyan, ekstre ve bankaya gelen POS parası her kipte firmanın. Tuzla'nın
-// kayıtları "IZ-TUZLA" işaretini ya da 77.777,77 tutarını taşır: Marina seçili ve "Yalnız şube" kipindeyken şubenin
-// payında, alınan miktarda, FIFO havuzunda, mutabakatın şube ayrımında, POS'un şube kipinde, fiyat önerilerinde,
-// tedarikçi fiyatlarında ve tahmini stoğun faturalarında görünmemeli; firma kipinde ve "Tümü"de görünmeli; müdürde firma
-// tercihi yazılı olsa da görünmemeli. Oturum gerçek src/server/auth/dal.ts'le, çerezler taklit edilerek.
+// Şube ayrımı parça 5, gerçek Postgres'te (docs/SUBE.md › Şube ayrımı › Alanlar: Tutarlılık, Mutabakat, Stok değeri): üç
+// alan kişinin şube görünümüyle okur; ekstre ve bankaya gelen POS parası her kipte firmanın. Vergi şubeye bölünmez
+// (sahibin kararı 27 Kasım 2026): Vergi her kipte firmanın, Marina seçiliyken de Tümü'yle aynı. Tuzla'nın kayıtları
+// "IZ-TUZLA" işaretini ya da 77.777,77 tutarını taşır: Marina seçili ve "Yalnız şube" kipindeyken alınan miktarda, FIFO
+// havuzunda, mutabakatın şube ayrımında, POS'un şube kipinde, fiyat önerilerinde, tedarikçi fiyatlarında ve tahmini
+// stoğun faturalarında görünmemeli; firma kipinde ve "Tümü"de görünmeli; müdürde firma tercihi yazılı olsa da
+// görünmemeli. Oturum gerçek src/server/auth/dal.ts'le, çerezler taklit edilerek.
 //
 // SUBE_ALANLAR5_TEST_DATABASE_URL verilmezse atlanır (npm run test:db onu TEST_DATABASE_URL'e bağlar). Bir Postgres
 // sunucusunun adresi: test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -183,35 +184,36 @@ describe("şube ayrımı parça 5: alanlar veritabanında", { skip: !SERVER_URL 
     await dal.startSession(u);
     jar.set(BRANCH_COOKIE, secim);
   };
-  const FIRMA: BranchViewPrefs = { vergi: "firma", tutarlilik: "firma", mutabakat: "firma", stok_degeri: "firma" };
+  const FIRMA: BranchViewPrefs = { tutarlilik: "firma", mutabakat: "firma", stok_degeri: "firma" };
 
   test("alanın kapsamı: Marina'da yöneticinin varsayılanı şube, firma tercihinde Tümü, müdürde hep şube", async () => {
     await signIn(ids.ali, "marina");
-    for (const a of ["vergi", "tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", a);
+    for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", a);
     await signIn(ids.ali, "marina", FIRMA);
-    for (const a of ["vergi", "tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), ALL_BRANCHES, a);
+    for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), ALL_BRANCHES, a);
     await signIn(ids.mert, "marina", FIRMA);
-    for (const a of ["vergi", "tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", `müdür ${a}`);
+    for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", `müdür ${a}`);
   });
 
-  test("Vergi: şubenin payı ve matraha katkısı Tuzla'nın faturasını, personelini ve demirbaşını içermez", async () => {
-    const { loadBranchTaxView } = await import("../src/server/data/tax");
-    await signIn(ids.ali, "marina");
-    const year = Number(today.slice(0, 4));
-    const q = `${year}-Q${Math.floor((Number(today.slice(5, 7)) - 1) / 3) + 1}`;
-    const v = await loadBranchTaxView("marina", { year, today, quarter: q });
-    assert.ok(v, "şubenin payı hesaplandı");
-    assert.equal(v.name, "Marina");
-    assert.equal(leaks(v), false);
-    assert.equal(v.share.invoices, day.startsWith(`${year}-`) ? 1 : 0, "yalnız Marina'ya seçilmiş fatura");
-    assert.equal(v.share.assets, 1, "yalnız Marina'nın faturasına bağlı demirbaş");
-    assert.ok(v.share.sgk > 0, "Arda'nın SGK'sı");
-    // Tuzla'nın görünümünde Tuzla'nın faturası, personeli ve demirbaşı (karşılaştırma)
-    const t = await loadBranchTaxView("tuzla", { year, today });
-    assert.ok(t, "Tuzla'nın payı");
-    assert.equal(t.share.assets, 1);
-    assert.ok(t.share.depreciation > v.share.depreciation, "Tuzla'nın makinesinin amortismanı");
-    assert.ok(t.share.purchaseVat > v.share.purchaseVat, "Tuzla'nın faturasının KDV'si");
+  test("Vergi şubeye bölünmez: Marina seçiliyken de Vergi'nin okuması Tümü'yle aynı (Tuzla'nın faturası, personeli, demirbaşı dahil)", async () => {
+    const { loadTaxView } = await import("../src/server/data/tax");
+    const { loadModel } = await import("../src/server/data/dataset");
+    // Vergi sayfalarının okuması (src/app/panel/vergi/page.tsx › TaxContent): seçimden ve şube görünümünden bağımsız
+    const taxRead = () =>
+      scope.withBranchScope(ALL_BRANCHES, async () => {
+        const model = await loadModel();
+        const { view, inputs } = await loadTaxView(model, { today });
+        return JSON.stringify({ view, assets: inputs.assets }, (_k, x) => (x instanceof Map ? [...x] : x));
+      });
+    await signIn(ids.ali, ALL_BRANCHES);
+    const all = await taxRead();
+    assert.equal(leaks(all), true, "Tümü'de Tuzla'nın demirbaşı ve faturası");
+    // Yönetici Marina'da (varsayılan: her alan "Yalnız şube"), eski sürümün yazdığı Vergi tercihi de okunmaz
+    for (const prefs of [{}, FIRMA, { vergi: "sube" } as unknown as BranchViewPrefs]) {
+      await signIn(ids.ali, "marina", prefs);
+      assert.equal(await taxRead(), all, `Marina seçili ${JSON.stringify(prefs)}: vergi firmanın`);
+    }
+    assert.equal(await import("../src/server/data/tax").then((m) => "loadBranchTaxView" in m), false, "şubenin payı kalktı");
   });
 
   test("Tutarlılık: şube kipinde alınan yalnız şubeye seçilmiş faturalardan; şubesiz fatura ve elle alım sayı olarak", async () => {

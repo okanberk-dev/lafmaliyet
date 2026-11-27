@@ -136,13 +136,16 @@ test("(a) parça 6'dan sonra kayıt son hâlinde: bekleyen yok, her ayarlı alan
     [],
     "bekleyen kayıt kalmadı",
   );
-  // İşletme geneli giderler okumayı değiştirmez (kip veri kümesinin bayrağı); öteki dokuz alanın her birinin areaScope kaydı var
+  // İşletme geneli giderler okumayı değiştirmez (kip veri kümesinin bayrağı); öteki sekiz alanın her birinin areaScope
+  // kaydı var. Vergi'nin alanı yok (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez), okumaları vergi.beyan
   const areas = new Set(COMPANY_WIDE_READS.filter((r) => r.kind === "alan").map((r) => r.area));
   assert.deepEqual(
     VIEW_AREA_KEYS.filter((a) => a !== "ortak_gider" && !areas.has(a)),
     [],
   );
   assert.equal(areas.has("ortak_gider"), false);
+  assert.equal(COMPANY_WIDE_READS.some((r) => r.id === "alan.vergi" || (r.area as string | undefined) === "vergi"), false);
+  assert.equal(COMPANY_WIDE_READS.find((r) => r.id === "vergi.beyan")?.kind, "yalniz-firma");
 });
 
 // ---------------------------------------------------------------- (b) şubesi olan tablolar
@@ -266,12 +269,15 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
 // ---------------------------------------------------------------- (c) çip ve firma geneli notu
 
 /**
- * Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon), parça 5 dördünü
- * (vergi, tutarlilik, mutabakat, stok_degeri), parça 6 son ikisini (karsilastirma, ortak_gider) bağladı: boş
+ * Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon), parça 5 üçünü
+ * (tutarlilik, mutabakat, stok_degeri), parça 6 son ikisini (karsilastirma, ortak_gider) bağladı: boş
  */
 const BEKLEYEN_ALANLAR: readonly ViewArea[] = [];
-/** Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır */
-const YALNIZ_FIRMA_SAYFALARI: readonly string[] = [];
+/**
+ * Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır. Vergi'nin üç
+ * sekmesi: vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026)
+ */
+const YALNIZ_FIRMA_SAYFALARI: readonly string[] = ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx"];
 /** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme parça 2'de kapsamla okumaya geçti; boş) */
 const BEKLEYEN_NOT: string[] = [];
 
@@ -310,6 +316,11 @@ test("(c) “bu ekran firma geneli” notu yalnız hep firma geneli ve henüz ç
     .filter((f) => !allowed.has(f));
   assert.deepEqual(wrong, []);
   for (const f of BEKLEYEN_NOT) assert.match(read(f), /<CompanyWideNotice\b/, `${f}: not kalktıysa BEKLEYEN_NOT'tan düşürün`);
+  // Hep firma geneli ekranlar notu çizer, çipi çizmez
+  for (const f of YALNIZ_FIRMA_SAYFALARI) {
+    assert.match(read(f), /<CompanyWideNotice screen="vergi" \/>/, f);
+    assert.doesNotMatch(read(f), /<BranchViewChip\b/, f);
+  }
 });
 
 // ---------------------------------------------------------------- (d) saf kurallar
@@ -319,5 +330,7 @@ test("(d) yöneticinin varsayılanı her alanda şube; kilitli hesap her alanda 
     assert.equal(effectiveView(a, "admin", false, {}), "sube", a);
     for (const role of ["admin", "manager", "staff", "accountant"] as const) assert.equal(effectiveView(a, role, true, { [a]: "firma" }), "sube", `${role} ${a}`);
   }
-  assert.deepEqual(parseBranchView({ vergi: "firma", bilinmeyen: "firma", nakit: "tumu" }), { vergi: "firma" });
+  assert.deepEqual(parseBranchView({ mutabakat: "firma", bilinmeyen: "firma", nakit: "tumu" }), { mutabakat: "firma" });
+  // Kalkan Vergi alanının eski tercihi de düşer (sahibin kararı 27 Kasım 2026)
+  assert.deepEqual(parseBranchView({ vergi: "firma", nakit: "firma" }), { nakit: "firma" });
 });

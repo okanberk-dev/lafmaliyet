@@ -7,9 +7,13 @@ Son güncelleme: 27 Kasım 2026. Yapılacaklar › Dalga 3: "Muhasebeciye aylık
 Ayın muhasebeye giden kayıtları **tek çalışma kitabında** (.xlsx; `laffogato-muhasebe-YYYY-MM.xlsx`), **bütün şubeler** (muhasebe
 şirketindir). Aylık e-posta ve "Şimdi gönder" her zaman bütün şubelerdir. **Elle indirme** soldan bir şube seçiliyken o
 şubenin paketidir (şube ayrımı parça 6, 27 Kasım 2026; `?sube=`, dosya `laffogato-muhasebe-YYYY-MM-marina.xlsx`, kapsamı
-"Marina"): şubenin kasa raporları ve yazarkasa KDV dökümü, şubeye seçilmiş faturalar, şubenin harcamaları ve sabit
-giderleri; işletme geneli fatura, harcama ve sabit gider kişinin **İşletme geneli giderler** kipiyle ("Tutarla göster"de
-şube sütunu "İşletme geneli", "Yalnız not"ta yok). Yanında **Bütün şubeler (.xlsx)** bağlantısı. Sekmeler:
+"Marina"): şubenin kasa raporları, şubeye seçilmiş faturalar, şubenin harcamaları ve sabit giderleri; işletme geneli
+fatura, harcama ve sabit gider kişinin **İşletme geneli giderler** kipiyle ("Tutarla göster"de şube sütunu "İşletme
+geneli", "Yalnız not"ta yok). Yanında **Bütün şubeler (.xlsx)** bağlantısı. **Şubenin paketinde KDV yok** (vergi şubeye
+bölünmez, sahibin kararı 27 Kasım 2026; [SUBE.md › Vergi şubeye bölünmez](SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)):
+KDV sütunları, Özet'in KDV satırları (faturaların KDV'si, yazarkasa KDV'si oran oran) ve **Z KDV dökümü** sekmesi yalnız
+bütün şubelerin paketinde; Özet'in altı "Şubenin paketi: … Beyan için bütün şubelerin paketini kullanın." yazar
+(`PackageData.branchFile`). Sekmeler:
 
 | Sekme | İçerik |
 |-------|--------|

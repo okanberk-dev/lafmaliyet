@@ -75,7 +75,7 @@ async function AccountingContent() {
           <CardHeader
             icon={<FileArchive />}
             title="Muhasebeci paketi"
-            description={`Ayın faturaları, harcamaları, kasa raporları, yazarkasa Z'lerinin KDV dökümü ve sabit giderleri tek çalışma kitabında (.xlsx)${branch ? `: ${branch.name} seçiliyken ${branch.name} şubesinin paketi, yanında bütün şubeler.` : ", bütün şubeler."}`}
+            description={`Ayın faturaları, harcamaları, kasa raporları, yazarkasa Z'lerinin KDV dökümü ve sabit giderleri tek çalışma kitabında (.xlsx)${branch ? `: ${branch.name} seçiliyken ${branch.name} şubesinin paketi (KDV'siz: vergi şubeye bölünmez), yanında bütün şubeler.` : ", bütün şubeler."}`}
           />
           <CardContent>
             <PackageDownload months={months} branch={branch ? { id: branch.id, name: branch.name } : null} />

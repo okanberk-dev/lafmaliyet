@@ -1,15 +1,13 @@
 import { shiftMonth } from "@/lib/calc/engine";
-import type { ExpenseEntry, FixedExpense, Invoice } from "@/lib/calc/types";
+import type { Invoice } from "@/lib/calc/types";
 import { FIXED_SECTIONS, fixedVatRate, SEPARATE_CATEGORIES } from "@/lib/constants";
-import { dateTR, money, monthLabel, num, tl } from "@/lib/format";
-import { invoiceInScope } from "@/lib/invoice-branch";
+import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { periodQuarters, quarterLabel, yearOptions } from "@/lib/tax/calendar";
 import type { TaxFiling } from "@/lib/tax/corporate";
 import { ALP_KOC_NOTE, type TaxAdjustment } from "@/lib/tax/pnl";
 import { PART_TIME_NOTE, rulesFor, taxDocOptions, withholdingGrossHint, WITHHOLDINGS } from "@/lib/tax/rules";
 import type { TaxSettings } from "@/lib/tax/settings";
 import type { TaxView } from "@/lib/tax/view";
-import { unreachable } from "@/lib/unreachable";
 
 import type { AdjustmentChoices, AdjustmentRow } from "../adjustment-dialog";
 import type { InvoiceChoice } from "../asset-dialog";
@@ -98,60 +96,6 @@ export function classifyData(view: TaxView, ctx: { invoices: readonly Invoice[];
       }),
     ),
     today: ctx.today,
-  };
-}
-
-/**
- * Eksik belgelerin şube kipi (şube ayrımı parça 5, docs/SUBE.md › Şube ayrımı › Alanlar): faturalar (demirbaş adayı,
- * listede olmayan demirbaş, kafe dışı, bağlanacak fatura seçenekleri) şubenin ve işletme genelinin; sabit gider ve
- * harcama şubenin ve işletme genelinin (şubesi boş). Kategori ve Gelir-gider'in elle satırları işletmenin, kalır. Öbür
- * şubenin ve şubesi seçilmemiş faturanın kalemi listeden çıkar, sayısı `scopeNote`'ta. Kapsam "Tümü" ise olduğu gibi
- */
-export function scopeClassify(
-  data: ClassifyData,
-  branch: string,
-  refs: { invoices: readonly Pick<Invoice, "id" | "branchId" | "companyWide">[]; fixed: readonly Pick<FixedExpense, "id" | "branchId">[]; entries: readonly Pick<ExpenseEntry, "id" | "branchId">[] },
-): ClassifyData {
-  const inv = new Map(refs.invoices.map((i) => [i.id, i]));
-  const fixed = new Map(refs.fixed.map((f) => [f.id, f.branchId ?? null]));
-  const entry = new Map(refs.entries.map((e) => [e.id, e.branchId ?? null]));
-  const invoiceOk = (id: number | null) => {
-    const i = id === null ? undefined : inv.get(id);
-    return i !== undefined && invoiceInScope(i, branch);
-  };
-  const ownerOk = (owner: string | null | undefined) => owner === undefined || owner === null || owner === branch;
-  let hidden = 0;
-  const keep = <T>(xs: readonly T[], ok: (x: T) => boolean): T[] =>
-    xs.filter((x) => {
-      const y = ok(x);
-      if (!y) hidden++;
-      return y;
-    });
-  const itemOk = (it: ClassifyItem): boolean => {
-    switch (it.source) {
-      case "invoice":
-        return invoiceOk(it.id);
-      case "fixed":
-        return ownerOk(it.id === null ? null : fixed.get(it.id));
-      case "category":
-      case "manual":
-        return true;
-      default:
-        return unreachable(it.source);
-    }
-  };
-  const items = keep(data.items, itemOk);
-  const entries = keep(data.entries, (e) => ownerOk(entry.get(Number(e.key.split(":")[1]))));
-  const unlisted = keep(data.unlisted, (u) => invoiceOk(u.id));
-  const separate = keep(data.separate, (x) => invoiceOk(x.id));
-  return {
-    ...data,
-    items,
-    entries,
-    unlisted,
-    separate,
-    invoices: data.invoices.filter((c) => invoiceOk(c.id)),
-    scopeNote: hidden ? `${num(hidden)} kalem öbür şubelerde ya da şubesi seçilmemiş: Tümü'de ya da firma geneli görünümde.` : null,
   };
 }
 

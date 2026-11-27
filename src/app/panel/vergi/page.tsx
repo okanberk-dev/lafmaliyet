@@ -2,7 +2,7 @@ import { CalendarClock, Hourglass } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { BranchViewChip } from "@/components/panel/branch-view-chip";
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,10 +14,9 @@ import { taxPayrollFromModel } from "@/lib/tax/payroll";
 import { can } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { areaScope, withBranchScope } from "@/server/branch-scope";
-import { loadBranchTaxView, loadTaxView } from "@/server/data/tax";
+import { withBranchScope } from "@/server/branch-scope";
+import { loadTaxView } from "@/server/data/tax";
 
-import { BranchShareCard } from "./branch-share";
 import { filingKindData, payrollSheetMonths } from "./dialog-data";
 import { PeriodPicker } from "./period-picker";
 import { CALENDAR_RULES, GECICI_RULES, KV_RULES, ruleRefs } from "./refs";
@@ -55,7 +54,8 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   const viewer = await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
-  // Beyan firmanındır: KDV, muhtasar, kâr vergisi ve takvim her görünümde bütün şubelerle (docs/SUBE.md › Şube ayrımı)
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026; docs/SUBE.md › Şube ayrımı): KDV, muhtasar, kâr vergisi ve
+  // takvim şube seçiliyken de bütün şubelerle, firmanın tek vergi numarasıyla. Ayarı yok (Şube görünümü'nde alanı yok)
   // şube-ayrımı: vergi.beyan
   const { model, view, inputs, reminders } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
@@ -63,10 +63,6 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   });
   const { settings } = inputs;
   const year = view.year;
-  // Vergi alanı "Yalnız şube" kipinde (şube ayrımı parça 5): beyanın üstünde şubenin payı (bilgi)
-  // şube-ayrımı: alan.vergi
-  const area = await areaScope("vergi");
-  const branchShare = area !== ALL_BRANCHES && view.hasData ? await loadBranchTaxView(area, { year, today: view.today }) : null;
   // Ödemeler'de günü geçmiş vergi / SGK hatırlatıcısı (K12, §7.2): kırmızı ve "Ödedim" Ödemeler'de kalır
   const overdue = view.hasData ? overdueTaxNotice(reminders, view.today, view.calendar) : null;
   const notices: NoticeItem[] = overdue
@@ -133,9 +129,8 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
       <HashScroll key={`capa-${year}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
-        {/* Şube seçiliyken: Vergi alanının kipi (şube ayrımı D); beyan her kipte firmanın */}
-        <BranchViewChip area="vergi" />
-        {branchShare ? <BranchShareCard name={branchShare.name} share={branchShare.share} /> : null}
+        {/* Şube seçiliyken: vergi firmanın, şubeye bölünmez (sahibin kararı 27 Kasım 2026) */}
+        <CompanyWideNotice screen="vergi" />
         {/* İki rakam her genişlikte yan yana; Başlarken'in ilerlemesi kendi satırında (§7.1, §9 #1) */}
         <div className="grid grid-cols-2 gap-2">
           <Stat compact icon={<CalendarClock />} label={s.next.label} value={s.next.value} sub={s.next.sub} />

@@ -173,7 +173,7 @@ describe("şube ayrımı parça 6: veritabanında", { skip: !SERVER_URL && "SUBE
     await dal.startSession(u);
     jar.set(BRANCH_COOKIE, secim);
   };
-  const FIRMA: BranchViewPrefs = { karsilastirma: "firma", ortak_gider: "firma", tutarlilik: "firma", tedarikciler: "firma", vergi: "firma" };
+  const FIRMA: BranchViewPrefs = { karsilastirma: "firma", ortak_gider: "firma", tutarlilik: "firma", tedarikciler: "firma" };
 
   test("Şubeleri yan yana: Yalnız seçili şube kipinde yalnız Marina; Yan yana ve Tümü'de iki şube; müdürde hep Marina", async () => {
     const { loadBranchCompare } = await import("../src/server/data/sube-karsilastirma");
@@ -276,6 +276,9 @@ describe("şube ayrımı parça 6: veritabanında", { skip: !SERVER_URL && "SUBE
     const marina = await loadPackageData(month, new Date(), "marina");
     assert.equal(marina.scope, "Marina");
     assert.equal(leaks(marina), false);
+    // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): şubenin paketinde Z KDV dökümü yok, çalışma kitabı KDV'siz
+    assert.equal(marina.branchFile, true);
+    assert.deepEqual(marina.vat, []);
     assert.deepEqual(
       marina.invoices.map((i) => i.supplier),
       ["Sütaş"],
@@ -296,6 +299,7 @@ describe("şube ayrımı parça 6: veritabanında", { skip: !SERVER_URL && "SUBE
     assert.ok(shown.fixed.some((f) => f.name.includes(SHARED)));
     const all = await loadPackageData(month, new Date());
     assert.equal(all.scope, "Bütün şubeler");
+    assert.equal(all.branchFile, undefined);
     assert.equal(leaks(all), true);
   });
 

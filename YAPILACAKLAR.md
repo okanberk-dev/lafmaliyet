@@ -15,22 +15,26 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   her ekranında yalnız o şubenin bilgisi görünür: kasa, satış, faturalar, ödemeler, onaylar, zil, Bugün, raporlar,
   kişi seçicileri, Maaşlar, Kullanıcılar & roller, sabah e-postasının önizlemesi, panel asistanı, bağlantı (MCP), dışa
   aktarım ve muhasebeci paketi. "Tümü"de her şey bugünkü gibi; işletme geneli fatura ve gider her şubede görünür ama
-  şubenin kârına girmez. Bugüne dek bilerek firma geneli olan ekranlar (Ödemeler, Nakit planı, Vergi, Tutarlılık,
-  Mutabakat, Tedarikçi bakiyeleri, Stok değeri, Komisyon, Şubeleri yan yana, İşletme geneli giderler) kişinin kendi
+  şubenin kârına girmez. Bugüne dek bilerek firma geneli olan ekranlar (Ödemeler, Nakit planı, Tutarlılık, Mutabakat,
+  Tedarikçi bakiyeleri, Stok değeri, Komisyon, Şubeleri yan yana, İşletme geneli giderler) kişinin kendi
   ayarıyla: **Hesabım › Şube görünümü**'nde ekran ekran **Yalnız şube | Firma geneli** (düğmeler: Hepsi yalnız şube,
   Hepsi firma geneli, Varsayılanlara dön; seçim hemen kaydedilir, yalnız o hesabındır). Ekranın üstündeki çip
   (**Firma geneline geç** / **Yalnız Marina'yı göster**) aynı ayarı o ekran için yazar. Yöneticinin varsayılanı her
-  yerde "Yalnız şube", muhasebecininki ekranına göre (Vergi ve İşletme geneli giderler firma geneli); müdür ve şubesine
-  kilitli personel hep kendi şubesinde (ayar yok). Hep firma geneli kalanlar (tam yedek, vergi beyanı ve takvimi, banka
+  yerde "Yalnız şube", muhasebecininki ekranına göre (İşletme geneli giderler "Tutarla göster"); müdür ve şubesine
+  kilitli personel hep kendi şubesinde (ayar yok). **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım: "Vergi ile ilgili
+  olan kısımları tamamen çıkar"): Vergi'nin üç sekmesi her kipte firmanın (ayarı yok, şubenin payı ve matraha katkı
+  kartları kalktı), nakit planının şube kipinde vergi ve SGK hiç yok ("Vergi ve SGK ödemeleri firma geneli: Tümü'de
+  görünür"; İşletme geneli satırında da yok), dışa aktarımın şube dosyasında Vergi sekmesi firmanın, muhasebeci paketinin
+  şube dosyasında KDV yok. Hep firma geneli kalanlar (tam yedek, vergi ve SGK, banka
   ekstresi ve açılış bakiyesi, Paraşüt eşitlemesi, menü, reçete, hammadde fiyatı, tedarikçi kütüğü, site siparişleri)
   Hesabım'da gerekçesiyle listeli. Göç 0101 (şube görünümü; kontrol listesi kaydı, işlem geçmişi, gönderim
   günlüğü ve yatırıma şube). Bağımsız doğrulama (iki şubenin işaretli kayıtlarıyla 259 sınama, Tuzla silinince
   Marina'nın görünümü aynı mı) sekiz sızıntı buldu, hepsi kapandı: Faturalar'ın cari bağları, sabah e-postasının şube
   grubunun Paraşüt bölümü, Mutabakat POS'un şube karoları ve ekstre yükleme penceresi, Maaşlar'ın hesap seçicisi,
   Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri (müdürün kilidini aşıyordu).
-  Sahibin kararına kalan: nakit planının şube kipindeki "İşletme geneli" satırı firmanın vergisini ve SGK'sını taşır
-  (şubenin altı haftalık toplamına girer); Vergi beyanının muhtasar dökümü öbür şubelerin personelini adıyla ve ücretiyle
-  yazar (tek vergi numarası); İşletme geneli giderler için "Ciroya göre pay et" kipi.
+  Sahibin kararına kalan: İşletme geneli giderler için "Ciroya göre pay et" kipi. (Nakit planının İşletme geneli
+  satırındaki vergi ve Vergi'nin muhtasar dökümü soruları sahibin kararıyla kapandı: vergi hiçbir yerde şubeye bölünmez,
+  Vergi'yi açan hesap firmanın tamamını görür.)
 
 - **Anahtar değişimi uyumu** (bu PR, 27 Kasım; docs/ASILPOS.md › Şube kurulumu › Anahtar değişimi): 26 Kasım'da iki
   anahtar yalnız panelde değişti, kasa gece uyguladı, Uzaktan ve site eskisini tuttuğu için Uzaktan bir gün dondu. Panel

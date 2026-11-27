@@ -99,6 +99,32 @@ test("çalışma kitabı: altı sekme, toplamlar, tarih ve dosya adı; yazılıp
   assert.equal(packageFileName("2026-10"), "laffogato-muhasebe-2026-10.xlsx", "dosya adı");
 });
 
+test("şubenin paketi: KDV yok (vergi şubeye bölünmez); KDV sütunları, Özet'in KDV satırları ve Z KDV dökümü yalnız bütün şubelerde", async () => {
+  const wb = buildPackageWorkbook({ ...DATA, scope: "Marina", branchFile: true, vat: [] });
+  assert.deepEqual(wb.worksheets.map((w) => w.name), ["Özet", "Faturalar", "Harcamalar", "Kasa raporları", "Sabit giderler"], "Z KDV dökümü yok");
+  const buf = await wb.xlsx.writeBuffer();
+  const back = new ExcelJS.Workbook();
+  await back.xlsx.load(buf as ArrayBuffer);
+  const text = (name: string) => {
+    const out: string[] = [];
+    back.getWorksheet(name)!.eachRow((r) => r.eachCell((c) => out.push(String(c.value ?? ""))));
+    return out;
+  };
+  const ov = text("Özet");
+  assert.equal(ov.some((c) => /KDV'si|Yazarkasa KDV/.test(c)), false, "Özet'te KDV satırı yok");
+  assert.ok(ov.some((c) => /Şubenin paketi: KDV sütunları, KDV toplamları ve Z KDV dökümü yok; vergi şubeye bölünmez/.test(c)), "neden yazılı");
+  for (const name of ["Faturalar", "Harcamalar", "Kasa raporları"]) assert.equal(text(name).some((c) => /^(KDV|Yazarkasa KDV)$/.test(c)), false, `${name}: KDV sütunu yok`);
+  // Sütunlar kaymadan: faturanın ödeneceği ve toplamı yerinde
+  const inv = back.getWorksheet("Faturalar")!;
+  assert.equal(inv.getCell("H3").value, "Ödenecek");
+  assert.equal(inv.getRow(7).getCell(8).value, 1100, "toplam yalnız sayılan faturanın ödeneceği");
+  assert.equal(back.getWorksheet("Kasa raporları")!.getCell("M4").value, 4800, "yazarkasa Z toplamı kalır");
+  // Bütün şubelerin paketi bugünkü gibi
+  const all = buildPackageWorkbook(DATA);
+  assert.ok(all.getWorksheet("Z KDV dökümü"));
+  assert.equal(all.getWorksheet("Faturalar")!.getCell("H3").value, "KDV");
+});
+
 test("e-posta: konu, özet satırları, kaçış ve ek adı", () => {
   const m = renderPackageMail(DATA, packageSummary(DATA), { auto: true });
   assert.equal(m.subject, "Muhasebe paketi · Ekim 2026", "konu");

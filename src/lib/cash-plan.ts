@@ -465,7 +465,16 @@ export interface CashPlan {
   vat: CashPlanVat | null;
   excluded: string[];
   hasData: boolean;
+  /**
+   * Şubenin nakit akışı (Nakit planı alanının şube kipi; src/lib/cash-plan-branch.ts › branchPlanWithoutTax): vergi ve
+   * SGK ödemeleri firmanın, bu planda yok (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez). "Nasıl hesaplandı"
+   * vergi, KDV ve SGK notlarının yerine tek not yazar (`FIRM_TAX_NOTE`). Firmanın planında yok
+   */
+  taxFirmWide?: true;
 }
+
+/** Şubenin nakit akışının vergi notu: vergi ve SGK şubeye bölünmez (sahibin kararı 27 Kasım 2026) */
+export const FIRM_TAX_NOTE = "Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür";
 
 /** components/ui/filters.tsx `fold` ile aynı: Ödemeler'deki "Listede var" eşleşmesiyle aynı sonucu verir (lib istemci dosyası içe aktarmaz) */
 export function foldName(text: string): string {
@@ -2007,22 +2016,29 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
           ? "Maaş hatırlatıcısına yazdığınız tutar, onun gününde; ayrıca tahmin yapılmadı."
           : `${num(b.payroll.people)} kişinin net maaşı ve ek ödemeleri (ayda ${tl(b.payroll.net)}), ${b.salaryMode === "carrier" ? "Maaş hatırlatıcısının gününde" : "her ayın 1'inde"}. Ödemeler'e tutarlı bir Maaş hatırlatıcısı eklerseniz onun günü ve tutarı geçerli olur.`,
     });
-    out.push({
-      key: "sgk",
-      title: "SGK",
-      text: off("sgk")
-        ? "SGK primleri tahmine katılmıyor (Tahmine katılanlar'dan açın)."
-        : b.sgkMode === "reminder"
-          ? "SGK hatırlatıcısına yazdığınız tutar, onun gününde; ayrıca tahmin yapılmadı."
-          : `İşçi ve işveren SGK + işsizlik payları (ayda ${tl(b.payroll.sgk)}), ${b.sgkMode === "carrier" ? "SGK hatırlatıcısının gününde" : "takip eden ayın son günü"}. ${sgkBasis(b)}`,
-    });
+    // Şubenin akışında SGK yok (vergi ve SGK şubeye bölünmez): notu aşağıdaki tek "Vergi ve SGK" notu
+    if (!plan.taxFirmWide) {
+      out.push({
+        key: "sgk",
+        title: "SGK",
+        text: off("sgk")
+          ? "SGK primleri tahmine katılmıyor (Tahmine katılanlar'dan açın)."
+          : b.sgkMode === "reminder"
+            ? "SGK hatırlatıcısına yazdığınız tutar, onun gününde; ayrıca tahmin yapılmadı."
+            : `İşçi ve işveren SGK + işsizlik payları (ayda ${tl(b.payroll.sgk)}), ${b.sgkMode === "carrier" ? "SGK hatırlatıcısının gününde" : "takip eden ayın son günü"}. ${sgkBasis(b)}`,
+      });
+    }
   }
   if (b.fixedSpread.count) {
     out.push({
       key: "fixed",
       title: "Sabit giderler",
       text: `Hatırlatıcısı olmayan ${num(b.fixedSpread.count)} sabit gider (ayda ${tl(b.fixedSpread.monthly)}${b.fixedSpread.vat ? ", faturadaki KDV dahil" : ""}) ay içine eşit yayıldı. Giderler'de KDV hariç girilen tutara kalemin KDV'si eklenir (kira, faturalar ve genel giderler varsayılan %20, personel KDV'siz; kalemde değiştirilir).${
-        b.fixedSpread.withheld ? " Stopajlı kalemde (Vergi'de seçilen; şahsa kira, serbest meslek) ödemeden kesilen stopaj düşüldü, muhtasar satırındadır." : ""
+        b.fixedSpread.withheld
+          ? plan.taxFirmWide
+            ? " Stopajlı kalemde (Vergi'de seçilen; şahsa kira, serbest meslek) ödemeden kesilen stopaj düşüldü: muhtasarla firma geneli ödenir."
+            : " Stopajlı kalemde (Vergi'de seçilen; şahsa kira, serbest meslek) ödemeden kesilen stopaj düşüldü, muhtasar satırındadır."
+          : ""
       } Gününü bilmek için Ödemeler'e ekleyin.`,
     });
   }
@@ -2052,6 +2068,8 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
       text: off("vergi") ? TAX_NOTE_OFF : TAX_NOTE,
     });
   }
+  // Şubenin akışı: vergi, KDV ve SGK notlarının yerine tek not (vergi şubeye bölünmez)
+  if (plan.taxFirmWide) out.push({ key: "vergi", title: "Vergi ve SGK", text: `${FIRM_TAX_NOTE}.` });
   out.push({
     key: "double",
     title: "Çift sayım",
@@ -2063,7 +2081,7 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
   out.push({
     key: "excluded",
     title: "Dahil değil",
-    text: `${b.tax ? "Tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi" : "Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.)"}, Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler${yearly.length ? ` (${yearly.join(", ")})` : ""}, yatırım ve kredi.`,
+    text: `${plan.taxFirmWide ? "Vergi ve SGK ödemeleri (firma geneli)" : b.tax ? "Tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi" : "Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.)"}, Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler${yearly.length ? ` (${yearly.join(", ")})` : ""}, yatırım ve kredi.`,
   });
   return out;
 }

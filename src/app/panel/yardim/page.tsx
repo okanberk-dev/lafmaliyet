@@ -743,10 +743,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Şube seçiliyken ekranlar, zil, Bugün ve panel asistanı yalnız o şubenin kayıtlarını gösterir; işletme geneli kayıtlar (kira, muhasebe)
             şubenin toplamına girmez. Online kanalın kasası ve stoğu yoktur. Tümü seçiliyken şubeye ait kayıtta ekran önce şubeyi sorar; şubeye
-            kilitli personel yalnız kendi şubesini görür. Ödemeler, Vergi, Tutarlılık, Raporlar gibi ekranlarda üstteki düğme ya da{" "}
+            kilitli personel yalnız kendi şubesini görür. Ödemeler, Nakit planı, Tutarlılık, Raporlar gibi ekranlarda üstteki düğme ya da{" "}
             <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong> yalnız şubeyi ya da firmanın tamamını seçer; işletme geneli
-            giderler varsayılan olarak yalnız notla yazılır. Dışa aktar ve muhasebeci paketi seçili şubenin dosyasını indirir. Vergi beyanı, banka
-            ekstresi ve tam yedek hep firmanındır; siparişler ve Tükendi &quot;Bütün şubeler&quot; yazar.
+            giderler varsayılan olarak yalnız notla yazılır. Dışa aktar ve muhasebeci paketi seçili şubenin dosyasını indirir. Vergi ve SGK şubeye
+            bölünmez, hep firmanındır; banka ekstresi ve tam yedek de. Siparişler ve Tükendi &quot;Bütün şubeler&quot; yazar.
           </>
         ),
         icon: Globe,
