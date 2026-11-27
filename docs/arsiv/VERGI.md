@@ -1,8 +1,12 @@
 # Vergi (tahmin, beyanname değil)
 
+> **Arşiv: Vergi bölümü 27 Kasım 2026'da kaldırıldı; muhasebeci yürütüyor.** Ekranlar, eylemler ve vergi modülü silindi;
+> tablolar (`tax_assets`, `tax_filings`, `tax_adjustments`) ve saklı ayarlar yerinde (veriler silinmedi). Nakit planının
+> bordrosu ve stopaj oranı `src/lib/bordro/`'da. Aşağısı kaldırılan bölümün o günkü belgesidir.
+
 Sahibin isteği (24 Ekim 2026): "Köşeye bir de vergi gibi bir kısım açar mısın; oradan gelir-gider, kurumlar vergisi,
 damga, hepsini Türkiye'ye göre hesaplasın ama dikkatli yap." Ekran **Vergi, KDV, SGK** (`/panel/vergi`, kenar
-çubuğunda kendi grubu; yalnız yönetici). Plan ve kararların gerekçesi: [planlar/vergi.md](planlar/vergi.md) (K1–K34, §14 muhasebeciye sorulacaklar).
+çubuğunda kendi grubu; yalnız yönetici). Plan ve kararların gerekçesi: [planlar/vergi.md](../planlar/vergi.md) (K1–K34, §14 muhasebeciye sorulacaklar).
 
 ## 1. Amaç ve sınırlar
 
@@ -16,7 +20,7 @@ damga, hepsini Türkiye'ye göre hesaplasın ama dikkatli yap." Ekran **Vergi, K
 - Her rakam dayanağını gösterir: formül, girdiler, oran, kanun maddesi, kaynak bağlantısı ve kural tablosunun
   derlendiği gün ("Nasıl hesaplandı").
 - **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım 2026; [SUBE.md › Vergi şubeye
-  bölünmez](SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)): Vergi beyanı firmanın tek vergi numarasıyla.
+  bölünmez](../SUBE.md#vergi-şubeye-bölünmez-sahibin-kararı-27-kasım-2026)): Vergi beyanı firmanın tek vergi numarasıyla.
   Özet, Vergi kârı ve Demirbaş (KDV, muhtasar, geçici ve kurumlar vergisi, devreden KDV, takvim, eksik belgeler,
   demirbaşlar) şube seçiliyken de bütün şubelerle hesaplanır; başlığın altında "Marina seçili: bu ekran firma geneli"
   notu. Şubenin payı, matraha katkısı ya da şubeye süzülen liste yok; Hesabım › Şube görünümü'nde Vergi'nin ayarı yok
@@ -49,7 +53,7 @@ yerde "vergi esasında gelir" denmez.
 
 ## 3. Ekranlar
 
-Kenar çubuğunda kendi grubu **Vergi, KDV, SGK** (29 Eki 2026, [planlar/ux-sade.md](planlar/ux-sade.md) §3, §7): dört
+Kenar çubuğunda kendi grubu **Vergi, KDV, SGK** (29 Eki 2026, [planlar/ux-sade.md](../planlar/ux-sade.md) §3, §7): dört
 alt öğe ve aynı dört sekme (`SECTION_TABS.vergi`, ağaçtan türer). Özet'in H1'i grubun adıdır; telefonun üst çubuğu
 "Vergi, KDV, SGK", "Vergi kârı", "Demirbaş", "Muhasebeci" yazar. ⌘K'da ayrıca "KDV" (`#kdv`), "SGK primi" (`#sgk`),
 "Maaş vergileri (muhtasar)" (`#muhtasar`), "Kâr vergisi (geçici, kurumlar)" (`#kar-vergisi`), "Eksik belgeler"
@@ -229,7 +233,7 @@ Diğer ekranlara dokunuşlar:
 - **Demirbaş denen kalemler** (25 Kasım 2026): Paraşüt'te "Hammadde değil · Demirbaş" denmiş kalemi olan fatura (ör.
   hammadde faturasındaki 10.000 ₺'lik tüplü ısıtıcı; `lineAssetCandidates`) Vergi › Demirbaş'ta öneri olarak çıkar,
   sınırın altında da: sahip **Listeye ekle** der ya da "Gider (demirbaş değil)". Listeye eklenene kadar kalemin payı gider
-  sayılır (kalem kalem sınıflandırma, [PARASUT.md › 5f](PARASUT.md)).
+  sayılır (kalem kalem sınıflandırma, [PARASUT.md › 5f](../PARASUT.md)).
 - **POS komisyonu (K12a):** Gelir-gider'deki `commission:pos` hücresi (elle girildiyse banka dekontu, değilse banka
   kartı payıyla tahmin; denetim B16'nın kuralı). Yemek kartı komisyonu Faturalar › Komisyon'da.
 - **Amortisman (K14):** yalnız normal yöntem, yıllık = maliyet ÷ ömür, edinilen yıl tam yıl; geçici vergi dönemine
@@ -289,7 +293,7 @@ Diğer ekranlara dokunuşlar:
 - **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Muhasebeci › Vergi ayarları'nda şirket "ilk defa faaliyete
   başladı" seçilince; varsayılan uygulanmaz (vergi yüksek görünür).
 - **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur (kasa KDV'si gün gün yazarkasa
-  Z'sinden, AsilPOS'un dökümünden ya da oranla: [NAKIT-PLANI.md](NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı). Yurt dışı hizmet profilli
+  Z'sinden, AsilPOS'un dökümünden ya da oranla: [NAKIT-PLANI.md](../NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı). Yurt dışı hizmet profilli
   sabit giderin KDV-2'si ayrı satırdır; aynı ay nakit planının KDV tahmininde indirilecek KDV'ye eklenir (VG-04).
 - **Yerel vergiler (K23):** ÇTV ve ilan-reklam hesaplanmaz; hatırlatıcı yoksa takvimde tutarsız satır ("tutar
   belediyeden").
@@ -346,14 +350,14 @@ Muhasebecinin rakamları, düzeltmeler, aylık harcama kategorilerinin belgesi v
 
 ## 8. Nakit planıyla ilişki ve nakit planını okuyan yüzeyler (K25, K29)
 
-Vergi nakit planına bir besleme verir (`taxPlanFeed`; ayrıntı [NAKIT-PLANI.md](NAKIT-PLANI.md) › Muhtasar, geçici
+Vergi nakit planına bir besleme verir (`taxPlanFeed`; ayrıntı [NAKIT-PLANI.md](../NAKIT-PLANI.md) › Muhtasar, geçici
 vergi ve damga): muhtasar tahmini (ayın 26'sı, bilinmeyen stopaj varsa "en az"), geçici vergi (yalnız tutarı
 Ödemeler'e ya da Vergi'ye yazıldıysa ya da çeyrek **Hazır**sa; değilse "Tutarı girilmemiş ödemeler"de), yurt dışı
 hizmetin KDV-2'si, KDV beyannamelerinin damgası. SGK yasal oranlı bordrodan; stopajlı sabit gider net ödenir. Hepsi
 Tahmine katılanlar'daki tek **Muhtasar, geçici vergi ve damga** anahtarıyla kapatılır.
 
 Nakit planını okuyan her yüzey bu satırları görür: Genel bakış'ın nakit kartı, haftalık özetin "ilk eksi gün"
-maddesi ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)), Claude'un nakit planı aracı. Zil, sabah e-postası ve Bugün
+maddesi ([HAFTALIK-OZET.md](../HAFTALIK-OZET.md)), Claude'un nakit planı aracı. Zil, sabah e-postası ve Bugün
 değişmedi. Besleme hesaplanamazsa plan vergisiz, bugünkü gibi çalışır (`console.error`): stopajlı ve yurt dışı sabit
 gider de bugünkü gibi brüt, faturasının KDV'siyle ödenir (muhtasar ve KDV-2 satırı olmadığı için stopaj kaybolmaz).
 

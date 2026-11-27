@@ -227,7 +227,7 @@ gelir. Komisyon ve kafe dışı (Karaoke box, Alp Koç) faturaya bağlanmaz: kaf
 düşerdi. Aynı kural sonradan da geçerli (denetim E-45): faturasız alımı bağlı faturanın kategorisi Faturalar'da (satır
 içi, toplu, Geri al ya da fatura penceresi) kafe dışına ya da komisyona alınamaz, elle faturanın Ödenecek'i 0'a ya da
 eksiye inemez; "faturasız alım bağlı ... önce bağı kaldırın" der, hiçbir şey yazılmaz (toplu seçimde hiçbiri). Kural
-kilitli satırda okunur: aynı anda yapılan bağlama ile kategori değişikliğinden biri ötekini bekler. Önizleme gider ve KDV tahmininin saydığı KDV'yi (tevkifat ayrıca) söyler; kategorisi Gelir-gider'de hiçbir
+kilitli satırda okunur: aynı anda yapılan bağlama ile kategori değişikliğinden biri ötekini bekler. Önizleme giderin ay ay nasıl değişeceğini söyler (KDV tahmini satırı 27 Kasım 2026'da Vergi bölümüyle kalktı); kategorisi Gelir-gider'de hiçbir
 kaleme bağlı olmayan faturada giderin düşeceğini uyarır. Alımın tutarına yakın fatura (tek alım ya da penceredeki
 alımların toplamı, en çok max(1 ₺, %2) fark) gelince "Faturası gelmiş olabilir" şeridi çıkar; Ödemeler'de o fatura
 sessizdir, e-postaya ve nakit planına girmez. Bir alımın tek faturası olur: aynı tutarda birkaç fatura varsa yalnız

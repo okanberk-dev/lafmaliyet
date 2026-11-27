@@ -68,7 +68,7 @@ yerine geçer).
 İnternet yoksa gönderim AsilPOS'un giden kutusunda bekler, sonra gider.
 
 - Günün ürün satışı geçiş gününden itibaren aylık maliyet modeline girer ve ModPOS'un elle yüklenen aylık listesinin
-  yerini alır: Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, KDV tahmini, satış tahmini (aşağıda, "Günlük satış").
+  yerini alır: Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, satış tahmini (aşağıda, "Günlük satış").
 - Geçiş gününden itibaren günün Z özeti Kasa raporunda form açılırken kendiliğinden yazılır; personel yine bakıp
   gönderir, ModPOS'un Z'sini elle yazmaz. Gönderilmiş rapor AsilPOS'tan farklıysa kayıtlı rapor, e-posta, WhatsApp ve zil
   söyler; satışlı AsilPOS günü "Kafe kapalıydı"nın kanıtıdır.
@@ -203,7 +203,7 @@ bugünkü gibi davranır.
 |------|-------------------|
 | `lines[].listPrices` | `pos_daily_sales.list_prices` (`[{price, qty}]`; hizmet satırında ve eski AsilPOS'ta null). Bozuk alan yok sayılır, gün reddedilmez. Fiyatlar › Eski fiyattan satılanlar ve şube fiyatı değişikliğinin durumu (Bekliyor / Uygulandı · gün / Uygulanmadı / Bilinmiyor) yalnız buradan okunur; `revenue / qty` liste fiyatı değildir ([FIYATLAR.md](FIYATLAR.md) › Şube fiyatı) |
 | `lines[].gross`, `isAddon` | `pos_daily_sales.gross`, `is_addon`. Satışlar'da **Brüt** (indirimden önce) ve **İndirimli** (indirimden sonra) ayrı sütun (`src/app/panel/satislar/sales-logic.ts` › `discountColumns`; "net" orada KDV hariç demek, bu değil): ModPOS listesinin satırı indirimden öncedir (İndirimli "–"), AsilPOS satırı ikisini de taşır. Ek parçası olan AsilPOS satırı "· ek" der |
-| `z.vat[]` | AsilPOS gününün KDV'si buradan, yeniden hesaplanmaz: Gelir-gider'in AYLIK CİRO (KDV hariç)'i ve KDV tahmini (`engine.ts` › `posNet`). AsilPOS'un şubesinin ayında KDV gün gün: dökümü günün cirosunu tutan AsilPOS günü dökümüyle, öteki günler (ModPOS günleri, dökümsüz eski AsilPOS günü, raporu elle değişmiş gün) günün oranıyla (satış KDV'si, %10) ayrı ayrı yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu). Öteki şubelerin günleri ve elle yazılan ciro bugünkü gibi ay toplamından (`src/lib/cash-month.ts` › `dayVatOf`, `TillMonth.dayVat`). Açıklamalar da gün gün hesabı yazar: Genel bakış dökümü, Gelir-gider satırının ipucu ve MCP'nin ay cevabı (`src/lib/mcp/answers/month.ts`) |
+| `z.vat[]` | AsilPOS gününün KDV'si buradan, yeniden hesaplanmaz: Gelir-gider'in AYLIK CİRO (KDV hariç)'i (`engine.ts` › `posNet`). AsilPOS'un şubesinin ayında KDV gün gün: dökümü günün cirosunu tutan AsilPOS günü dökümüyle, öteki günler (ModPOS günleri, dökümsüz eski AsilPOS günü, raporu elle değişmiş gün) günün oranıyla (satış KDV'si, %10) ayrı ayrı yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu). Öteki şubelerin günleri ve elle yazılan ciro bugünkü gibi ay toplamından (`src/lib/cash-month.ts` › `dayVatOf`, `TillMonth.dayVat`). Açıklamalar da gün gün hesabı yazar: Genel bakış dökümü, Gelir-gider satırının ipucu ve MCP'nin ay cevabı (`src/lib/mcp/answers/month.ts`) |
 | `z.listValue`, `ikramTotal`, `odenmezTotal`, `zayiTotal` | Kasa e-postasının ikram denetimi (`asilposIkramCheck`, girdisi `asilposZKinds`): tür tür (AsilPOS'un Z'sindeki toplam ikram listesindekiyle; ikram, ödenmez, zayi ayrı), AsilPOS'un kendi toplamları ödenmez tutarıyla, `listValue` geldiyse Z'nin kendi eşitliği (toplam satış = liste − indirim − ikram − ödenmez; tutmuyorsa "AsilPOS'un Z'si kendi içinde tutmuyor: liste 7.425 ₺ − … = 6.270 ₺, toplam satış 6.285 ₺ (15 ₺ fazla)."). Türe göre toplamları yollamayan AsilPOS'ta tek karşılaştırma |
 | `z.okcZNo` | Kasa raporunun **Yazarkasa Z no**'suna otomatik yazılır (`AUTO_FIELDS`; AsilPOS'un Z no'sundan ayrı alan, `okc_z_no`). Elle ya da fotoğrafla girilen Z no ezilmez; gelmezse (`null`: Pavo satış sonucunda Z yok) kayıtlı değer kalır. Değişince yazarkasa kümülatifi yeniden hesaplanır |
 | `z.openedAt`, `closedAt` | Saklanır (`z` jsonb); bugün okuyan yok |
@@ -1226,7 +1226,7 @@ listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü bo�
   "AsilPOS kart"), günün online satış satırı, kapalı gün kartı ve Bugün'ün kapalı gün satırı ("o günün AsilPOS / banka
   POS'una bakın"). AsilPOS gününde yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez.
 - **Ayın kasası:** Genel bakış (net satış, POS cirosu, döküm), Gelir-gider (online kartı, yıl dökümü, telefon görünümü,
-  tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, dışa aktarım ve Claude'un yanıtları.
+  tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, dışa aktarım ve Claude'un yanıtları.
 - **Ayın satış kaynağı** (`salesSourceOf`, `src/lib/sales-source.ts`; 29 Eki 2026, [planlar/ux-sade.md](planlar/ux-sade.md)
   §10): `salesMonthKasa`'nın üstünde tek kaynak. Dört tür: **ModPOS raporu** (geçiş günü yok ya da ay geçişten önce;
   "Satışlar: ModPOS raporu (ay sonunda elle yüklenir)"), **AsilPOS** ("Satışlar: AsilPOS (her gece kendiliğinden)"),

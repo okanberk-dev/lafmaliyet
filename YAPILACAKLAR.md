@@ -11,6 +11,21 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
 
+- **Vergi bölümü kaldırıldı** (bu PR, 27 Kasım; sahibin kararı: vergiyi muhasebeci yürütüyor, "veriler silinmesin"):
+  kenar çubuğundaki **Vergi, KDV, SGK** grubu ve dört ekranı (Özet, Vergi kârı, Demirbaş, Muhasebeci / Kurallar), vergi
+  modülü (`src/lib/tax`), eylemleri, matrah, vergi kârı, geçici ve kurumlar vergisi, beyanlar (KDV, muhtasar), vergi
+  takvimi, devreden KDV, KDV ödemesi tahmini, muhasebeciye sorulacaklar, dışa aktarımın Vergi sekmesi ve asistanın vergi
+  rehberleri gitti. **Nakit planında vergi tahmini yok**: KDV kartı, KDV / KDV-2 / muhtasar / geçici vergi / damga
+  satırları ve "Tahmine katılanlar"daki iki anahtarı kalktı; vergi ödemeleri Ödemeler'e tutarıyla yazılınca düz
+  hatırlatıcı olarak girer. Kalanlar: ürün ve fatura KDV'si, yazarkasa Z'sinin KDV dökümü, muhasebeci paketi, maaşların
+  SGK'lı işveren maliyeti (Giderler, Maaşlar, Gelir-gider), Gelir-gider'in "Kira stopajı" maliyeti, dönem kapanışı
+  (zaten Ayarlar'da). Nakit planının maaş ve SGK'sı yasal bordroyla (`src/lib/bordro`; rakam değişmedi, Eylül SGK
+  25.956,18 ₺); stopajlı sabit gider eskisi gibi net ödenir (stopajı muhasebeci öder, planda satırı yok). Eski adresler
+  (`/panel/vergi` ve alt sayfaları) Genel bakış'a "Vergi bölümü kaldırıldı" notuyla yönlenir (muhasebeci Muhasebe'ye).
+  Muhasebecinin ekranlarından Vergi çıktı, alt menüsünde yerine Harcamalar. Tablolar (`tax_assets`, `tax_filings`,
+  `tax_adjustments`), sütunlar ve saklı ayarlar (`tax.settings`, `payments.vat-paid`, nakit planının eski devreden KDV'si)
+  silinmedi; göç yok. Belge arşivde: [docs/arsiv/VERGI.md](docs/arsiv/VERGI.md).
+
 - **Şube ayrımı** (bu PR, 27 Kasım; #167'nin üstünde; docs/SUBE.md › Şube ayrımı): soldan bir şube seçilince panelin
   her ekranında yalnız o şubenin bilgisi görünür: kasa, satış, faturalar, ödemeler, onaylar, zil, Bugün, raporlar,
   kişi seçicileri, Maaşlar, Kullanıcılar & roller, sabah e-postasının önizlemesi, panel asistanı, bağlantı (MCP), dışa
@@ -24,10 +39,10 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   kilitli personel hep kendi şubesinde (ayar yok). **Vergi şubeye bölünmez** (sahibin kararı, 27 Kasım: "Vergi ile ilgili
   olan kısımları tamamen çıkar"; açıklaması: "gelir vergisi matrah vs o kısımdan bahsettim, sidebar değil; ürün KDV'si
   falan hesaplansın, nasıl doğruysa öyle olsun"): matrah, vergi kârı, geçici vergi, beyanlar (KDV, muhtasar), vergi
-  takvimi, devreden KDV ve KDV ödemesi tahmini firma geneli. Vergi'nin üç sekmesi her kipte firmanın (menüde yerinde;
-  ayarı yok, şubenin payı ve matraha katkı kartları kalktı), nakit planının şube kipinde vergi ve SGK hiç yok ("Vergi ve
-  SGK ödemeleri firma geneli: Tümü'de görünür"; İşletme geneli satırında da yok; KDV kartının yerinde "Firma geneline
-  geç" notu), dışa aktarımın şube dosyasında Vergi sekmesi firmanın. **Ürün ve fatura KDV'si şubede doğru kalır**:
+  takvimi, devreden KDV ve KDV ödemesi tahmini firma geneli. Vergi'nin üç sekmesi her kipte firmanındı (ayarı yok,
+  şubenin payı ve matraha katkı kartları kalktı); aynı gün sahip bölümün tümden kaldırılmasına karar verdi (yukarıdaki
+  madde: "menüde yerinde" notu geçersiz). Nakit planının şube kipinde vergi ve SGK hiç yok ("Vergi ve SGK ödemeleri
+  firma geneli: Tümü'de görünür"; İşletme geneli satırında da yok). **Ürün ve fatura KDV'si şubede doğru kalır**:
   ürünün KDV dahil ve hariç fiyatı, satışların, şubenin faturalarının ve yazarkasa Z'sinin KDV'si Tümü'deki gibi; dışa
   aktarımın şube dosyasında Faturalar'ın KDV toplamları, şubenin muhasebeci paketinde KDV sütunları, Özet'in KDV
   satırları ve Z KDV dökümü durur, altlarında "KDV beyanı firma geneli: beyan için Tümü dosyası / bütün şubelerin
@@ -39,8 +54,8 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   grubunun Paraşüt bölümü, Mutabakat POS'un şube karoları ve ekstre yükleme penceresi, Maaşlar'ın hesap seçicisi,
   Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri (müdürün kilidini aşıyordu).
   Sahibin kararına kalan: İşletme geneli giderler için "Ciroya göre pay et" kipi. (Nakit planının İşletme geneli
-  satırındaki vergi ve Vergi'nin muhtasar dökümü soruları sahibin kararıyla kapandı: vergi hiçbir yerde şubeye bölünmez,
-  Vergi'yi açan hesap firmanın tamamını görür.)
+  satırındaki vergi ve Vergi'nin muhtasar dökümü soruları sahibin kararıyla kapandı: vergi hiçbir yerde şubeye bölünmez;
+  Vergi bölümü de kaldırıldı.)
 
 - **Anahtar değişimi uyumu** (bu PR, 27 Kasım; docs/ASILPOS.md › Şube kurulumu › Anahtar değişimi): 26 Kasım'da iki
   anahtar yalnız panelde değişti, kasa gece uyguladı, Uzaktan ve site eskisini tuttuğu için Uzaktan bir gün dondu. Panel
@@ -77,7 +92,7 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 - **Roller: Müdür ve salt okunur Muhasebeci; vardiyanın şube ayarları** (#163, 27 Kasım; docs/ROLLER.md): müdür şubesine
   kilitli, maaş, kişisel ücret, maliyet, karaoke tutarı ve öteki şubeleri görmez; muhasebeci yalnız okur (Muhasebe,
-  Faturalar, Gelir-gider, Vergi, Aylık harcamalar, Kasa raporu). İlk incelemenin 12 bulgusu ve ikinci bağımsız yetki
+  Faturalar, Gelir-gider, Aylık harcamalar, Kasa raporu; Vergi 27 Kasım'da bölümle birlikte çıktı). İlk incelemenin 12 bulgusu ve ikinci bağımsız yetki
   incelemesinin doğruladığı 6 bulgu testleriyle düzeltildi. Göç 0097_roller (yalnız CHECK kısıtları; yeni roller kimseye
   kendiliğinden verilmez). Sahibe söylenecek: (1) iki adımlı doğrulama `ADMIN_2FA_REQUIRED=1` ile yönetici, müdür ve
   muhasebecide zorunlu, yoksa isteğe bağlı; (2) Hesabım'daki AsilPOS kurulum bağlantısı şubeye kilitli personele de
@@ -153,7 +168,9 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
   bulgu düzeltilecek, ikinci inceleme, sonra PR.
 - P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi, rol × ekran duman testi).
-- P5 Ayarlar ay bazlı + 2027 vergi kuralları (Ocak'tan önce); P6 Excel'den kalan sabit listeler (fatura / hammadde
+- P5 Ayarlar ay bazlı + 2027 bordro ve stopaj değerleri (`src/lib/bordro/rules-2026.ts`'in 2027'si: asgari ücret, gelir
+  vergisi tarifesi, SGK oranları ve PEK sınırları, kira stopajı; Ocak'tan önce, yoksa 2027 2026 değerleriyle hesaplanır;
+  vergi kuralları Vergi bölümüyle kalktı); P6 Excel'den kalan sabit listeler (fatura / hammadde
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
 
@@ -170,7 +187,9 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`;
   Ayarlar › Hata kaydı "Güvenlik politikası uygulanabilir" deyince `CSP_ENFORCE=1`.
 - [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›
-  Muhasebeci paketi); SGK işveren oranı kararı (%15,75 / %19,75); yedekten geri yükleme provası; dış sağlık izleyicisi.
+  Muhasebeci paketi); SGK işveren oranı kararı (%15,75 / %19,75: Gelir-gider ve Maaşlar Ayarlar'ın oranını, nakit
+  planının bordrosu yasal %19,75'i kullanır; Vergi'deki "oranı eşitle" uyarısı bölümle kalktı, oran Maaşlar › SGK
+  oranları'ndan değişir); yedekten geri yükleme provası; dış sağlık izleyicisi.
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.
 - [ ] Marina gün sonu e-postasının alıcılarına bakın: 25 Kasım'dan (#141) beri yalnız Kasa › Rapor alıcıları alır (sabah
   e-postasının adresleri artık almaz). Gün sonu e-postasını almak isteyen adres Rapor alıcıları'nda olmalı.
@@ -216,6 +235,9 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 
 ## Bekleyen başka iş
 
+- [ ] [Ladmin] Nakit planının bordrosu eski Vergi ayarlarından üç değeri okur (hesap döneminin başı, asgari ücret desteği,
+  SGK işveren payının elle değeri; `integration_state` › `tax.settings`); Vergi bölümü kalkınca ekranları da gitti, değerler
+  son girildiği gibi. Değiştirmek gerekirse Ayarlar › Personel'e taşınsın (`src/lib/bordro/settings.ts`).
 - [x] Vardiyayla ilgili şube maddeleri (26 Kasım; `wip/vardiya-sube`): hazır vardiya saatleri şube ayarı (Şubeler ›
   şube › Hazır vardiyalar; ayarı olmayan şubede bugünkü saatler); "Tümü"de Vardiya önce şubeyi sorar (önceden sessizce
   Tuzla'ya yazıyordu). Sahibe söylenecek: "Tümü"deyken Vardiya'yı açan önce şube seçer.

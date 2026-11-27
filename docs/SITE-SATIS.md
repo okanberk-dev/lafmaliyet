@@ -7,8 +7,8 @@ laffogato.net** (bağlantının durumu).
 
 **Kullananlar** (sözleşmeye dokunan bir değişiklik bunların hepsine bakar): kâr-zarar, Genel bakış ve tüketim (hesap
 motoru, `src/lib/calc/engine.ts`), kasa raporunun günlük bilgi satırı (`src/server/site-sales/sync.ts`),
-**Nakit planı › KDV tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sales/calc.ts`, okuyan
-`src/lib/kdv.ts`; [NAKIT-PLANI.md](NAKIT-PLANI.md)), **Marina'nın tahmini stoğu** (şubenin ayrı ay kaydı; aşağıda
+Gelir-gider'in KDV hariç online geliri (`siteRevenue` ve içindeki KDV `siteVat`, `src/lib/site-sales/calc.ts`; nakit
+planının KDV tahmini de okuyordu, 27 Kasım 2026'da Vergi bölümüyle kalktı), **Marina'nın tahmini stoğu** (şubenin ayrı ay kaydı; aşağıda
 Saklama, [STOK-TAHMINI.md](STOK-TAHMINI.md) § 2). Sözleşmenin sitedeki kopyası: laffogato deposunda
 `docs/PANEL-SALES.md` (uç, alanlar, KDV kuralı, hata kodları; sitenin kuralı `src/lib/panel/sales-export-core.ts`).
 

@@ -977,8 +977,8 @@ panelde yapılır." Kurallar `src/lib/teslim.ts` (`tests/teslim-defteri.test.ts`
 - **Ay özeti:** Z toplamı, net kasa farkı, eksik ve fazlaların toplamı, rapor girilen gün sayısı; altında ayın açık
   gün ve cirosunun nereden geldiği ve Satışlar'a bağlantı. Yazarkasa Z'si girilen ayda iki bilgi satırı: "Yazarkasa
   (mali) toplamı: 381.809 ₺ · 28 / 30 gün · ModPOS toplamından %11 az" ve "KDV: %10 34.710 ₺ · %20 0 ₺" (KDV dökümü
-  eksik günler "Yazarkasa KDV dökümü eksik: 2 gün"). Yalnız bilgidir; ay bilgisine, KDV tahminine ve hiçbir hesaba
-  girmez (`okcMonth`; KDV tahmininin yazarkasa tabanına geçişi ayrı bir iş, plan §9 "13b").
+  eksik günler "Yazarkasa KDV dökümü eksik: 2 gün"). Yalnız bilgidir; ay bilgisine ve hiçbir hesaba girmez (`okcMonth`;
+  muhasebeci paketinin Z KDV dökümü de buradan). Nakit planının KDV tahmini 27 Kasım 2026'da Vergi bölümüyle kalktı.
 - **ModPOS kasa föyü** ([MODPOS-API.md](MODPOS-API.md) › Nerede görünür): ModPOS günlerinde gün görünümünde (`?gun=`),
   kasa raporu formunun altında üç bölüm: **ModPOS** (föyün ayrıntısı: ciro, adisyon ve ortalaması, kişi başı, ödeme
   dağılımı, nakit kasa, ödeme yöntemleri ve banka kırılımı, giderler, cari tahsilatlar, ara kasalar, ModPOS'un

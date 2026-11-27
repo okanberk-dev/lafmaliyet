@@ -132,8 +132,8 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
 - Dokunulan her şey (sekme, Gönder, Durdur, Kapat, Yeni sohbet, çipler, kartın Onayla / Vazgeç'i) en az 44 px; yazı
   kutusu 16 px (iPhone odakta yakınlaştırmaz).
 
-Yanıtlar panelin verisinden gelir ama yanlış olabilir: önemli bir rakamı (ödeme, vergi) ekranda kontrol edin. Vergi
-rakamları paneldeki gibi tahmindir.
+Yanıtlar panelin verisinden gelir ama yanlış olabilir: önemli bir rakamı (ödeme) ekranda kontrol edin. Panel vergi
+hesaplamaz (Vergi bölümü 27 Kasım 2026'da kaldırıldı): vergi tutarı ve beyan soruları için muhasebeciye.
 
 ## İşlemler (onay kartı)
 
@@ -188,7 +188,7 @@ hazırlayabilir). Rehberin her girdisinde konu, asistanın neden yapmadığı, e
 
 | Tür | Örnekler |
 |---|---|
-| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, bir şubenin kendi fiyatı (şube fiyatı), faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, vergi, karaoke rezervasyonu, ayarlar, AsilPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
+| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, bir şubenin kendi fiyatı (şube fiyatı), faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, karaoke rezervasyonu, ayarlar, AsilPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
 | Hariç (hiç önermez; sorulursa yalnız ekran) | Giriş, çıkış ve parola sıfırlama, iki adımlı doğrulama kurulumu ve sıfırlama, davet bağlantısı, yedek, uygulama bağlama onayı, Paraşüt bağlantı ayarları, kasa e-posta alıcıları, bildirim alıcıları ve testleri, sistem geneli oranlar, cihaz bildirimleri, vardiya taslağı, personelin kendi istekleri |
 
 Şifre isteyen işlerde (AsilPOS gününü silme, kullanıcılar, Hesabım, yedek, davet) parola yalnız ekrandaki alana girilir;

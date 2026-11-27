@@ -3,13 +3,13 @@ AsilPOS (26 Kasım 2026'ya kadar adı LafPOS)
 # L'Affogato — Maliyet & Kârlılık Paneli
 
 L'Affogato'nun maliyet, kârlılık ve işletme yönetim paneli: reçete maliyeti, satış ve kârlılık, gelir-gider, stok
-sayımı, faturalar ve tedarikçiler, kasa raporu, vergi ve nakit planı tek veritabanında. Panel ilk kurulumda eski bir hesap
+sayımı, faturalar ve tedarikçiler, kasa raporu ve nakit planı tek veritabanında. Panel ilk kurulumda eski bir hesap
 tablosunun verisiyle başladı (tohum verisi); hesaplama motorunun her rakamı o verinin değerleriyle otomatik testlerde
 doğrulanır. Ayrıca: ay bazlı çalışma, POS eşleştirme hafızası, fiyat geçmişi, uyarılar, menü mühendisliği,
 senaryo simülatörü, biçimli dışa aktarım (.xlsx çalışma kitabı ve CSV, [docs/YEDEK.md](docs/YEDEK.md) § 12), QR menü, aylık harcamalar, Paraşüt'ten her sabah otomatik fatura eşitlemesi
 ([docs/PARASUT.md](docs/PARASUT.md)), tedarikçilerin bilgileri (unvan, IBAN, iletişim), borç ve ödeme takibi, Paraşüt'ten geçmiş faturaları, ödeme talebi
 ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)), ödemeler ve hatırlatıcılar ile sabah e-postası
-([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), yöneticilere pazartesi haftalık özet ([docs/HAFTALIK-OZET.md](docs/HAFTALIK-OZET.md)), 6 haftalık nakit planı ve KDV tahmini ([docs/NAKIT-PLANI.md](docs/NAKIT-PLANI.md)),
+([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), yöneticilere pazartesi haftalık özet ([docs/HAFTALIK-OZET.md](docs/HAFTALIK-OZET.md)), 6 haftalık nakit planı ([docs/NAKIT-PLANI.md](docs/NAKIT-PLANI.md)),
 hammadde zamlarının ayda kaç lira kâr götürdüğü, laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), laffogato.net menüsüne bağlı ürünlerde iki yönlü fiyat ve Satışta / Tükendi
 eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md); siteyle bütün bağlantıların kısa haritası ve çakışma kuralları
@@ -71,10 +71,10 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Tedarikçiler: bilgiler (unvan, vergi no, IBAN, iletişim, vade), kalan borç, ödendi / talep edildi işareti, ödeme talebi, düzenle / sil (faturalıysa listeden kaldır), Paraşüt'ten geçmiş faturalar, vergi noyla eşleşme (farklı adla gelen aynı firma tek tedarikçi) ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)) | `/panel/tedarikciler`, `/panel/tedarikciler/[cari]` |
 | Komisyon & hakediş (yönetici): yemek kartı ve platformların ay ay gerçek oranı, faturadaki ücretler kalem kalem (%6 sınırı, komisyon dışı ücret, erken ödeme; platformda sipariş / ödeme altyapısı ücreti, reklam), satış Z'den (ayda tek kanal) ya da kanalın ekstresinden (elle), hakediş beklenen / son gün / geldi işareti (banka bağlı değil); zil, Bugün ve sabah e-postası ([docs/KOMISYON.md](docs/KOMISYON.md)) | `/panel/komisyonlar` |
 | Gelir-gider (laffogato.net online satışları: ayrı, KDV hariç gelir satırları ve toplam ciro; her gün bu ay ve önceki iki ay çekilir (geç iadeler), Siteden yenile; kasada ödenen uygulama siparişi ve iadesi bekleyen karaoke bilgi olarak, [docs/SITE-SATIS.md](docs/SITE-SATIS.md)) | `/panel/gelir-gider` |
-| Vergi: tahmini vergi takvimi, vergiye göre gelir-gider, muhtasar, SGK, damga ve kafenin geçici ve kurumlar vergisine katkısı; dört sekme (Özet, Vergiye göre, Demirbaş, Kurallar), yalnız yönetici, tahmin, beyanname değil ([docs/VERGI.md](docs/VERGI.md)) | `/panel/vergi`, `/panel/vergi/gelir-gider`, `/panel/vergi/demirbas`, `/panel/vergi/kurallar` |
+| Vergi bölümü 27 Kasım 2026'da kaldırıldı (vergiyi muhasebeci yürütüyor; veriler silinmedi): eski adresler Genel bakış'a kısa notla yönlenir ([docs/arsiv/VERGI.md](docs/arsiv/VERGI.md)) | `/panel/vergi` → `/panel?kaldirildi=vergi` |
 | Giderler & maaşlar (beş sekme: Sabit giderler, Aylık harcamalar, Maaşlar, Belgeler, Avanslar); kasadan çıkan fişler Aylık harcamalar'a fotoğrafıyla yazılır. Personel belgeleri: hijyen eğitimi, sağlık raporu, SGK ve öteki belgeler geçerlilik bitişi ve dosyasıyla (özel depo), bitişe 30 gün kala ve bitince zilde ve sabah e-postasında; Personel avansları: verilen, maaştan düşülen, kişi başı kalan ve bu ay ele geçecek (avans gider değildir) ([docs/PERSONEL-BELGE.md](docs/PERSONEL-BELGE.md)) | `/panel/giderler`, `/panel/harcamalar`, `/panel/personel`, `/panel/personel/belgeler`, `/panel/personel/avans`, `/api/personel/belge/[id]` |
 | Ödemeler & hatırlatıcılar (Son ödenenler: 30 gün içinde geri alma; e-posta bildirimleri ve pazartesi haftalık özet) | `/panel/hatirlaticilar` |
-| Nakit planı: önümüzdeki 6 hafta gelen, ödenecek, kalan; en sıkışık gün · KDV tahmini (önceki ayın satış KDV'si − alış KDV'si, ayın 28'inde) ([docs/NAKIT-PLANI.md](docs/NAKIT-PLANI.md)) | `/panel/hatirlaticilar/nakit` |
+| Nakit planı: önümüzdeki 6 hafta gelen, ödenecek, kalan; en sıkışık gün (vergi tahmini yok; vergi ödemeleri Ödemeler'e tutarıyla yazılınca girer) ([docs/NAKIT-PLANI.md](docs/NAKIT-PLANI.md)) | `/panel/hatirlaticilar/nakit` |
 | Mutabakat (yönetici): banka ve tedarikçi ekstresi (.xlsx / CSV, esnek sütun eşlemesi) panel kayıtlarıyla eşleşir (harcama, tedarikçi ödemesi, ödendi işaretli fatura, kasadan teslim; tedarikçide fatura ve ödeme), eşleşen / tutarı farklı / eşleşmeyen / panelde var ekstrede yok, elle eşleştirme ve yok say; POS hakediş: kasa raporunun kart satışı × (1 − şubenin POS oranı), bloke günüyle valör, gelen, fark, geciken. Dosya saklanmaz, hareketler 90 gün sonra silinir; panel kaydı değişmez ([docs/MUTABAKAT.md](docs/MUTABAKAT.md)) | `/panel/mutabakat` |
 | Stok sayımı, tutarlılık (iki sekme; beklenen kullanım ModPOS + online kafe siparişleri). Sayım Ayarlar › Stok değerleme'deki başlangıç ayından (Ekim 2026) itibaren ilk giren ilk çıkar (FIFO) ile değerlenir: sayılan miktar en yeni Paraşüt faturalarından geriye, her parça kendi faturasının fiyatıyla, faturası bulunamayan kısım ay sonu fiyatıyla; önceki aylar ay sonunda geçerli hammadde fiyatıyla (fiyat geçmişinden), sonraki zam kapanmış ayın devreden malını ve kârını değiştirmez. Reçete maliyeti son alış fiyatıyla kalır ([docs/STOK-DEGERLEME.md](docs/STOK-DEGERLEME.md)). "Listeye ekle": yönetici ve personel sayım listesine kalem ekler (paket fiyatı isteğe bağlı: yazılırsa o fiyatla, yazılmazsa 0 ile Tahmini açılır, yönetici Hammaddeler'den doğrular; fiyatsızlar zilde "Fiyatı girilmemiş N hammadde") | `/panel/sayim`, `/panel/tutarlilik` |
 | Tahmini stok (yalnız Marina, AsilPOS'a geçildiyse): son sayım + Marina'ya gelen faturalı mal − AsilPOS satışının reçeteye göre tüketimi − zayi ve ikram; malzeme başına kritik eşik, Genel bakış ve Bugün'de kritik stok kartı; sayım, FIFO ve mal maliyeti değişmez ([docs/STOK-TAHMINI.md](docs/STOK-TAHMINI.md)) | `/panel/sayim/tahmini` |
@@ -100,7 +100,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 Kenar çubuğunda en sık açılan dört ekran tek tıkla üst düzeyde, gerisi konu başlıkları altında (yöneticide; [docs/TASARIM.md](docs/TASARIM.md) "Menü ağacı"):
 Genel bakış · Bugün · Onaylar · Kasa raporu · Kafe (Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım) · Menü (Ürünler, Hammaddeler, Reçete defteri)
 · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Satış (Satışlar, Komisyon & hakediş, Analiz & senaryo) · Alış & gider (Faturalar,
-Tedarikçiler, Giderler & personel) · Finans (Gelir-gider, Vergi, Ödemeler & hatırlatıcılar, Mutabakat) · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu)
+Tedarikçiler, Giderler & personel) · Finans (Gelir-gider, Ödemeler & hatırlatıcılar, Mutabakat) · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu)
 · Yardım. Başlığa dokununca altı açılır; açık olan sayfanın başlığı kendiliğinden açık durur. Telefonda altta Genel bakış · Bugün · Kasa · Ödemeler · Menü çubuğu var (Satışlar ve
 Faturalar Menü'de). ⌘K
 (Ctrl+K) ile ekran, ürün, hammadde ve tedarikçi aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
@@ -179,7 +179,8 @@ src/
   lib/error-log.ts     hata kaydı: kişisel veri ve anahtar temizliği, aynı hatanın özeti, sınırlar, CSP kararı (saf, testli; docs/HATA-KAYDI.md)
   lib/cash-plan.ts     nakit planı: 6 haftanın gelen, ödenecek ve kalan parası, hatırlatıcı eşleşmesi (saf, testli; docs/NAKIT-PLANI.md)
   lib/cash-month.ts    kasa raporlarından ay bilgisi: açık gün, POS cirosu, indirim, ödenmez, kartlı oran, eksik günler (saf, testli)
-  lib/kdv.ts           KDV tahmini: satışların ve alışların KDV'si, devreden zinciri (saf, testli)
+  lib/kdv.ts           alış faturasının KDV'si ve tevkifatı (dışa aktarım; saf, testli)
+  lib/bordro/          yasal bordro (nakit planının maaş ve SGK'sı), kural tablosu, saklı bordro ayarı, stopaj oranı (saf, testli)
   lib/photo-read/      fotoğraftan okunanın kontrolü: şemalar, istemler, Z / POS / fiş okumasının forma gidecek hâli (saf, testli)
   lib/photo-rules.ts   fotoğraf türleri, boyut ve ölçü sınırları, saklama süreleri, kim görür (saf, testli)
   lib/photo-compress.ts  fotoğrafı telefonda JPEG'e küçültme (en çok 2576 px / ~3,7 MP, 1,8 MB)

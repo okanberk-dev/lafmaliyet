@@ -193,7 +193,6 @@ doğrulanacak üç gerçek. Cevap gelene kadar panel varsayılanla çalışır.
 | Dosya | İçerik |
 |---|---|
 | `src/lib/okc-z.ts` | kimlikler (`okcChecks`), formun canlı denetimi (`okcFormChecks`), zorunluluk (`okcFormError`), kümülatifin saklanması (`okcCumulativeToStore`), geç raporun iki yanlı zinciri (`okcLateChain`), ModPOS ↔ yazarkasa ↔ banka satırları (`okcReconcile`), ayın kapsamı (`okcMonth`), doldurma kapısı `OKC_PREFILL_ENABLED` |
-| `src/server/data/tax.ts` (`loadTaxInputs`) | Vergi (dalga 12): ayın her açık günü için yazarkasa Z'si KDV dökümüyle girilmişse (`okcMonth(…).complete`) ayın vergi geliri oran oran KDV hariç matrahın toplamıdır, rozeti "mali belge · Z" ([VERGI.md](VERGI.md) § 2); eksik ayda kullanılmaz, tahmini döküm (`byRateEstimated`) hiç kullanılmaz |
 | `src/lib/photo-read/okc.ts` | okumanın forma hâli (`normalizeOkc`), personelin okuması (`toStaffReading`), eski sayfaya yanıt (`okcToLegacyPos`) |
 | `src/lib/photo-read/schemas.ts`, `prompts.ts` | `KasaOkcRaw`, `OKC_TASK` (taslak: gerçek fişlerle yeniden denetlenecek) |
 | `src/app/panel/kasa/okc-card.tsx`, `okc-form.ts` | formdaki kart ve saf form mantığı |

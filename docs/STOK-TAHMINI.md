@@ -78,7 +78,7 @@ tahmini stok = son sayım
     uyarısı ve **Siteden al** düğmesi (o ayları çeker, en çok 6; `refreshStockOnline`, işlem geçmişine düşer). Kayıt
     yokken o ayın online siparişi düşülmez: stok olduğundan fazla görünür.
   - Site bağlantısı kurulu değilse (`KARAOKE_SYNC_SECRET` yok) online hiç düşülmez, uyarı da çıkmaz.
-  - Şubenin kaydı işletmeninkinden ayrıdır (`site_sales_sube:marina:YYYY-MM`): kâr-zarar, KDV tahmini ve Tutarlılık
+  - Şubenin kaydı işletmeninkinden ayrıdır (`site_sales_sube:marina:YYYY-MM`): kâr-zarar ve Tutarlılık
     işletmenin şubesiz kaydını okumaya devam eder, Marina'nınki onlara girmez.
 - **Alış:** Paraşüt faturalarının hammaddeye bağlı kalemleri (stok değerlemenin partileriyle aynı süzgeç: kafe dışı
   fatura ve çarpanı şüpheli kalem girmez), yalnız şubesi **Marina** olan faturalar, fatura tarihi dönemin içinde.

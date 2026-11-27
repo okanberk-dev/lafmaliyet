@@ -9,7 +9,7 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 | **Yönetici** (`admin`) | Her şey. |
 | **Müdür** (`manager`) | Şubesinin günlük işletmesi; şubesine kilitli (şube zorunlu). |
 | **Personel** (`staff`) | Günün işleri (değişmedi; [planlar/personel-yetki.md](planlar/personel-yetki.md)). |
-| **Muhasebeci** (`accountant`) | Salt okunur: faturalar, gelir-gider, vergi, harcamalar, kasa raporları, muhasebeci paketi. |
+| **Muhasebeci** (`accountant`) | Salt okunur: faturalar, gelir-gider, harcamalar, kasa raporları, muhasebeci paketi. |
 
 ## Tek kaynak: `src/lib/roles.ts`
 
@@ -31,8 +31,8 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 | `onay` | Personelin isteklerine karar (Onaylar) | yönetici, müdür |
 | `vardiya.yaz` | Vardiya planını yazmak | yönetici, müdür |
 | `rapor.sube` | Bugün'ün şube günü, İşçilik / ciro | yönetici, müdür |
-| `muhasebe.oku` | Faturalar, gelir-gider, vergi, aylık harcamalar, muhasebeci paketi | yönetici, muhasebeci |
-| `maas` | Maaşlar, kişisel ücretler, avanslar, bordro dökümü (kişi kişi), personel belgeleri | yönetici |
+| `muhasebe.oku` | Faturalar, gelir-gider, aylık harcamalar, muhasebeci paketi | yönetici, muhasebeci |
+| `maas` | Maaşlar, kişisel ücretler, avanslar, personel belgeleri | yönetici |
 | `yonetim` | Ayarlar, kullanıcılar, Paraşüt, yedek, anahtarlar, şube ayarları, Claude bağlantısı, tam dışa aktarım | yönetici |
 | `sube.tumu` | Bütün şubeleri görmek ve seçmek | yönetici, muhasebeci |
 
@@ -101,7 +101,7 @@ kasa farkı, geçen hafta); İşçilik / ciro (haftalık ve aylık oran, yalnız
 
 **Görmez / yapamaz:** maaşlar ve kişisel ücretler (Maaşlar, avanslar, bordro, personel belgeleri, İşçilik'in günlük
 görünümü, işçilik tutarı ve part-time'ın günlük ücreti, kasadan çıkanın maaş / kira kategorileri: seçmek, adını ve o
-kategorideki satırın yerini, açıklamasını, fişini görmek, o satırı düzeltmek, silmek ve isteğine karar vermek), vergi,
+kategorideki satırın yerini, açıklamasını, fişini görmek, o satırı düzeltmek, silmek ve isteğine karar vermek),
 Paraşüt, ayarlar, kullanıcı yönetimi, yedek, anahtarlar, şube ayarları, Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp
 önleme raporları, maliyet / kâr / hammadde fiyatı ekranları, reçeteyi doğrudan düzenleme ve reçete önerisine karar,
 karaoke doluluğu (tutar) ve Kasa raporunun site satırındaki karaoke ön ödemesi (online toplamı görür; `karaoke.tutar`),
@@ -110,9 +110,10 @@ kontrol listelerini düzenleme, panel asistanı (yalnız yönetici), öteki şub
 ## Muhasebeci
 
 **Salt okunur.** Ekranları: **Muhasebe** (ana ekranı: ekranların listesi ve muhasebeci paketi), **Faturalar** (belge
-ve kalemleriyle), **Gelir-gider**, **Vergi** (alt sayfaları, kişi kişi bordro dökümü olmadan), **Aylık harcamalar**,
-**Kasa raporu** (rakamlarıyla, bütün şubeler) ve **Hesabım**. Her ekranın başında "Salt okunur hesap" şeridi; yazma
-düğmeleri gizli.
+ve kalemleriyle), **Gelir-gider**, **Aylık harcamalar**, **Kasa raporu** (rakamlarıyla, bütün şubeler) ve **Hesabım**.
+Her ekranın başında "Salt okunur hesap" şeridi; yazma düğmeleri gizli. Alt menüsü: Muhasebe, Faturalar, Gelir-gider,
+Harcamalar, Kasa. **Vergi** 27 Kasım 2026'da ekranlarından çıktı (sahibin kararı: Vergi bölümü kaldırıldı, vergiyi
+muhasebeci yürütüyor); eski adresler Muhasebe'ye kısa notla döner (`?kaldirildi=vergi`).
 
 - Hiçbir kayıt değiştiremez: her sunucu eylemi reddeder. Geçenler yalnız kendi hesabının eylemleri (parola, iki
   adımlı, oturumlar, bu cihazın bildirim aboneliği, şube görünümü tercihi) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
@@ -122,8 +123,8 @@ düğmeleri gizli.
 - Ayar görmez; zilinde yalnız kendi hesabının güvenlik uyarısı (yeni cihazdan giriş) durur; canlı uç (`/api/canli`)
   ona karaoke oturumu, silme isteği, uygulama siparişi ve masa çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir
   şube seçiminde); panel asistanı yok.
-- Kişi verisi: kişi başı maaş (Maaşlar, bordro dökümü), avanslar ve personel belgeleri yok; gelir-gider ve vergide
-  personel giderleri toplam olarak durur. Gelir-gider'in personel hücrelerinin ipucu ve uyarısı da (tablonun hücresi ve ay
+- Kişi verisi: kişi başı maaş (Maaşlar), avanslar ve personel belgeleri yok; gelir-gider'de personel giderleri toplam
+  olarak durur. Gelir-gider'in personel hücrelerinin ipucu ve uyarısı da (tablonun hücresi ve ay
   görünümü; istemciye giden veri) kişisiz: part-time satırında "1 part-time kişi: günlük ücret × Vardiya'daki çalışma günü
   + ek ödeme" (yöneticide "Ayşe: 10 gün × 1.500 ₺ + ek 2.000 ₺"), bağlantısız part-time uyarısı adsız kişi sayısıyla, yemek
   kartını AsilPOS gününe göre alanlar adsız ve günsüz ("2 kişi = 12.540 ₺"); tutarlar aynı. Metin motorda kurulur:
@@ -131,7 +132,7 @@ düğmeleri gizli.
   `personal: can(rol, "maas")` ile açar. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı);
   e-postanın neden gitmediğini görmez, sabit metni görür (ham hata yalnız yöneticinin; `emailErrorFor`).
 - **Şube görünümü** (Hesabım; [SUBE.md › Şube ayrımı](SUBE.md#şube-ayrımı-27-kasım-2026)): yönetici ve muhasebeci şube
-  seçiliyken ekran ekran "yalnız şube" ya da "firma geneli" seçer (muhasebecinin varsayılanı Vergi'de firma geneli);
+  seçiliyken ekran ekran "yalnız şube" ya da "firma geneli" seçer;
   müdür ve şubesine kilitli personelde ayar yok, her ekran yalnız kendi şubesi (`saveBranchView` reddeder).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**
   (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)). Şube seçiliyken paketin elle indirmesi o şubenin
@@ -191,8 +192,8 @@ oturumları kapanır (oturum sürümü).
   `src/server/data/iscilik.ts` › `loadLaborReport` (`wages`), `src/lib/iscilik.ts` › `withoutDayWages`.
 - **Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme müdüre açılmadı:** işletme geneli kâr, kira ve maaşı ve
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
-- **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel
-  belgeleri ona kapalı.
+- **Muhasebeci kişi başı maaş görmez**; personel giderleri Gelir-gider'de toplam olarak durur. Personel belgeleri ona
+  kapalı.
 - **İki adımlı doğrulama** isteğe bağlıdır (Hesabım'dan açılır; sahibin kararı, PR #154). `ADMIN_2FA_REQUIRED=1`
   iken rakam gören her rolde (yönetici, müdür, muhasebeci; `TWO_FACTOR_ROLES`) zorunlu: kurmamış kişi girişten sonra
   kurulum ekranına gider, kurana kadar paneli kullanamaz; `ADMIN_2FA_OPTIONAL=1` acil durumda zorunluluğu kapatır

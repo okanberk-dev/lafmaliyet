@@ -83,10 +83,10 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   tahmini, Hatırlatıcılarım) · **Menü** (Ürünler & kârlılık, Fiyatlar, Hammaddeler, Reçete defteri) · **Stok** (Stok
   sayımı, Zayi & ikram, Tutarlılık) · **Satış** (Satışlar, Komisyon & hakediş, Analiz & senaryo) · **Alış & gider**
   (Faturalar, Tedarikçiler, Giderler & maaşlar) · **Kâr & ödemeler** (Gelir-gider, Ödemeler, Nakit planı, Mutabakat) ·
-  **Raporlar** (Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme; 26 Kas 2026, [RAPORLAR.md](RAPORLAR.md)) · **Vergi,
-  KDV, SGK** (Özet, Vergi kârı, Demirbaş, Muhasebeci) · **Ayarlar** (Genel ayarlar, Kullanıcılar & roller, Paraşüt
-  entegrasyonu) · Yardım. Kapalıyken "KDV" sözcüğü görünür; "Vergi, KDV, SGK" ve "Kâr & ödemeler" kesilmeden sığar.
-  Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, kâr, devlete). Başlık satırı yalnız grubu açıp kapatır,
+  **Raporlar** (Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme; 26 Kas 2026, [RAPORLAR.md](RAPORLAR.md)) ·
+  **Ayarlar** (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım. "Kâr & ödemeler" kapalıyken de
+  kesilmeden sığar. Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, kâr). **Vergi, KDV, SGK** grubu 27 Kas
+  2026'da kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor; eski adresler Genel bakış'a notla yönlenir). Başlık satırı yalnız grubu açıp kapatır,
   kendisi bir ekran açmaz; etkin sayfanın grubu kendiliğinden açık (`activeGroupOf`; alt ekran ve sekme de: Aylık
   harcamalar ve Maaşlar Alış & gider'i açar), başka bölüme gidince önceki grup açık kalır (`keepGroupOpen`). Grup
   içinde aynı anda **tek alt öğe** yanar: adresle eşleşenlerden en uzun `href` (`activeChildOf`; Nakit planı'nda
@@ -95,11 +95,11 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   açılmaz. Personelin ağacı: Bugün · Karaoke · Kasa raporu · Kontrol listeleri · Özel günler · Reçete defteri · Stok
   (Stok sayımı, Zayi & ikram) · Hatırlatıcılarım · Yardım; tek alt sayfası kalan grup o sayfanın bağlantısına döner
   (`navTreeFor`: personelde Menü → Reçete defteri), alt sayfası kalmayan başlık hiç çizilmez. Komut paleti
-  (`NAV_GROUPS` + `NAV_FOOTER`) aynı başlıklarla aynı sırada; kare adresli kayıtlar ("KDV" → `/panel/vergi#kdv`, "SGK
-  primi", "Kâr / zarar", "SGK oranı", "İşlem geçmişi", "Yedek" …) var olan bir çapaya iner, eski adlar `keywords`'te
+  (`NAV_GROUPS` + `NAV_FOOTER`) aynı başlıklarla aynı sırada; kare adresli kayıtlar ("Kâr / zarar", "SGK oranı", "KDV ve
+  komisyon oranları", "İşlem geçmişi", "Yedek" …) var olan bir çapaya iner, eski adlar `keywords`'te
   (kas hafızası aramayla bulur); aksanlı sorgu ("kâr") aksanlı başlığı öne alır.
 - **Bir ekran bir ad:** kenar çubuğu = H1 = ⌘K; sekme ve telefon üst çubuğu yalnız kısaltabilir ("Ürünler & kârlılık" →
-  "Ürünler"). Grubun giriş ekranı ağaçta ve sekmede "Özet" olabilir, H1'i grubun adıdır ("Vergi, KDV, SGK").
+  "Ürünler"). Grubun giriş ekranı ağaçta ve sekmede "Özet" olabilir, H1'i grubun adıdır.
   `metadata.title` H1'le aynı. `tests/sayfa-basligi.test.ts` tutar.
 - **Bağlam satırı** (H1'in üstündeki küçük satır): elle yazılmaz, ağaçtan türer (`groupLabelOf(path, role)`: bu adresi
   açan grubun adı); üst düzey ekranda ve grubun adını taşıyan giriş ekranında çizilmez, telefonda hiç yok (üst çubuk
@@ -189,9 +189,6 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
   genişlikte, eylem onun altına iner, özet yerinde kalır. Eylemin görünmez dokunma kenarı komşu özetinkinin üstündedir.
   `NoticeLink` satır yüksekliğinde (20 px) + 12 px kenar = 44 px; "Teknik ayrıntı" özeti 16 + 2 × 14 = 44 px ve
   metni `text-ink-soft` (12 px'te `text-ink-mute` nötr kutunun panel zemininde 4,4:1).
-- Vergi bandı (`TaxBanner`, `vergi/ui.tsx`) uyarı değil, kutusuz tek satır `role="note"`: "Tahmin, beyanname değil" +
-  ⓘ (tam feragat), kapsam çipi, Muhasebeci çipi. Bekçide izinli tek elle rol; tam metin Muhasebeci'nin sonunda bir kez
-  ([VERGI.md](VERGI.md) §3.2).
 - Geliştirici dili (anahtar adı, Vercel, komut, `docs/…` yolu) yalnız `tech`'te ("Teknik ayrıntı (geliştirici
   için)", Ayrıntı'nın içinde kapalı); personelin açtığı ekranda `tech` hiç verilmez, yönetici talimatı yerine "sorun
   sürerse yöneticiye haber verin". Turuncu yalnız uyarıdır: iş listelerinin "Yapılacak" durumu gri.
