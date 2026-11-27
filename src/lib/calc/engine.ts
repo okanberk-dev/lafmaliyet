@@ -13,6 +13,7 @@ import { duplicateCellWarn, duplicateExpenses as findDuplicateExpenses, type Dup
 import { fixedIdOfKey } from "../fixed-expense-rules";
 import { channelOf } from "../commission/channels";
 import { paidWithholdingRate } from "../tax/rules";
+import { branchPosRateAt, monthSettingsResolver } from "../month-settings";
 import { money, monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { ikramTillDays, panelWasteCounts } from "../asilpos/ikram";
@@ -1240,7 +1241,16 @@ export interface ModelOptions {
 
 export function createModel(ds: Dataset, opts: ModelOptions = {}) {
   const personal = opts.personal === true;
+  /** Bu ayın ayarları: ürün kartı, reçete maliyeti, önerilen fiyat ve bugünün listeleri bununla */
   const st = ds.settings;
+  /**
+   * Ayın ayarları (docs/AYARLAR.md, src/lib/month-settings.ts): KDV, komisyon, kartlı oran, fire, SGK oranları, yemek
+   * kartı ve alış KDV'leri o ayda geçerli sürümden. Ayın kâr-zararı, personeli, POS komisyonu ve tüketimi bununla: bir
+   * oran "şu aydan itibaren" değişince önceki aylar değişmez. Sürüm yoksa her ay `st`; bu ay her zaman `st`
+   */
+  const resolveMonth = monthSettingsResolver(ds.settingsBase ?? st, ds.settingVersions);
+  const stNow = ds.currentMonth ?? currentMonthTR();
+  const stOf = (month: string): Settings => (month === stNow || !ds.settingVersions?.length ? st : resolveMonth(month));
   const ingById = new Map(ds.ingredients.map((i) => [i.id, i]));
   const catById = new Map(ds.categories.map((c) => [c.id, c]));
   const productById = new Map(ds.products.map((p) => [p.id, p]));
@@ -1258,11 +1268,11 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
    * Ayarlar › kartlı satış oranı. POS komisyonu bununla hesaplanır; ürün fiyatı hesabı Ayarlar'daki oranla kalır.
    */
   function cardShareOf(month: string): { rate: number; source: "manual" | "kasa" | "ayar" } {
-    return cardShareOfInfo(monthInfo.get(month));
+    return cardShareOfInfo(monthInfo.get(month), month);
   }
-  function cardShareOfInfo(info: Month | undefined): { rate: number; source: "manual" | "kasa" | "ayar" } {
+  function cardShareOfInfo(info: Month | undefined, month: string): { rate: number; source: "manual" | "kasa" | "ayar" } {
     const v = info?.cardShare ?? null;
-    if (v === null) return { rate: st.kartOrani, source: "ayar" };
+    if (v === null) return { rate: stOf(month).kartOrani, source: "ayar" };
     return { rate: v, source: info?.sources?.cardShare === "kasa" ? "kasa" : "manual" };
   }
   /**
@@ -1275,10 +1285,10 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
    * `meal`: düşülen yemek kartı payı (ayrılamadıysa null)
    */
   function bankShareOf(month: string): { rate: number; source: "manual" | "kasa" | "ayar"; split: boolean; meal: number | null } {
-    return bankShareOfInfo(monthInfo.get(month));
+    return bankShareOfInfo(monthInfo.get(month), month);
   }
-  function bankShareOfInfo(info: Month | undefined): { rate: number; source: "manual" | "kasa" | "ayar"; split: boolean; meal: number | null } {
-    const base = cardShareOfInfo(info);
+  function bankShareOfInfo(info: Month | undefined, month: string): { rate: number; source: "manual" | "kasa" | "ayar"; split: boolean; meal: number | null } {
+    const base = cardShareOfInfo(info, month);
     const till = info?.kasa?.till;
     const bank = till?.bankShare ?? null;
     if (!till || bank === null || base.source === "ayar") return { ...base, split: false, meal: null };
@@ -1291,7 +1301,11 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
    * (testler, ilk aktarımın verisi) Ayarlar'daki eski genel oranla (`komisyon`)
    */
   const branchRateById = new Map((ds.branchRates ?? []).map((b) => [b.id, b]));
-  const posRateOf = (branchId: string | null): number => (branchId !== null ? branchRateById.get(branchId)?.posRate : undefined) ?? st.komisyon;
+  /** Ayda geçerli oran (Şubeler › POS oranı "şu aydan itibaren", src/lib/month-settings.ts): şubenin sürümü, yoksa sütunu */
+  const posRateOf = (branchId: string | null, month: string): number => {
+    const b = branchId !== null ? branchRateById.get(branchId) : undefined;
+    return b ? branchPosRateAt(ds.settingVersions, b.id, b.posRate, month) : stOf(month).komisyon;
+  };
   /**
    * Ayın kasadan gelen banka kartı (yemek kartı hariç): ciro kasadan geliyor ve kartlı oran elle yazılmamışsa; yoksa null
    * (elle yazılan ciro ya da oran geçerlidir: o ay eski formülle)
@@ -1312,11 +1326,11 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     const entries: [string | null, Month][] = info.byBranch ? Object.entries(info.byBranch) : [[ds.branchView?.id ?? null, info]];
     if (!entries.some(([, m]) => kasaCardOf(m) !== null)) return null;
     const parts = entries.flatMap(([branchId, m]): PosCommissionPart[] => {
-      const rate = posRateOf(branchId);
+      const rate = posRateOf(branchId, month);
       const card = kasaCardOf(m);
       if (card !== null) return [{ branchId, card, rate, amount: kurus(card * rate) }];
       if (!((m.posRevenue ?? 0) > 0)) return [];
-      return [{ branchId, card: null, rate, amount: kurus((m.posRevenue ?? 0) * rate * bankShareOfInfo(m).rate) }];
+      return [{ branchId, card: null, rate, amount: kurus((m.posRevenue ?? 0) * rate * bankShareOfInfo(m, month).rate) }];
     });
     return { amount: kurus(parts.reduce((a, p) => a + p.amount, 0)), parts };
   }
@@ -1584,7 +1598,8 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
    */
   function siteRevenueOf(month: string): SiteMonthRevenue | null {
     const r = siteByMonth.get(month);
-    return r ? { ...siteRevenue(r, st.kdv, st.kdvHizmet), pulledAt: r.pulledAt, closed: r.closed } : null;
+    const sm = stOf(month);
+    return r ? { ...siteRevenue(r, sm.kdv, sm.kdvHizmet), pulledAt: r.pulledAt, closed: r.closed } : null;
   }
 
   // --- Su + buz birim maliyeti (Ayarlar) ------------------------------------------
@@ -1783,8 +1798,8 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     const t = lp ? coverageByMonth.get(month)?.till : null;
     if (!lp || !t || typeof t.card !== "number") return { amount: pc.amount, month: pc, period: null };
     const amount = t.cardByBranch
-      ? kurus(Object.entries(t.cardByBranch).reduce((a, [b, card]) => a + kurus(card * posRateOf(b)), 0))
-      : kurus(t.card * posRateOf(ds.branchView?.id ?? null));
+      ? kurus(Object.entries(t.cardByBranch).reduce((a, [b, card]) => a + kurus(card * posRateOf(b, month)), 0))
+      : kurus(t.card * posRateOf(ds.branchView?.id ?? null, month));
     return { amount, month: pc, period: { from: lp.from, through: lp.through } };
   }
 
@@ -1795,6 +1810,8 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     if (ms) return ms;
     const raw = linesByMonth.get(month) ?? [];
     const cardShare = cardShareOf(month).rate;
+    // Ayın ayarları (KDV, komisyon): oran sonradan değişse de geçmiş ay kendi değeriyle (docs/AYARLAR.md)
+    const sm = stOf(month);
     // Banka POS komisyonu Gelir-gider'in kuralıyla (salesPosCommission: ay bitince aynı tutar, süren ayda liste kısaysa
     // listenin günleriyle), satırlara ciro payıyla; kasa kartı olmayan ayda eski formül (satır cirosu × komisyon × kartlı
     // oran)
@@ -1804,8 +1821,8 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       const product = line.productId ? productById.get(line.productId) : undefined;
       const pc = product ? computeProduct(product) : undefined;
       // Hizmet satışı (karaoke odası) kendi KDV oranıyla; ürünler satış KDV'siyle
-      const net = line.revenue / (1 + (line.isService ? st.kdvHizmet : st.kdv));
-      const commission = pos === null ? line.revenue * st.komisyon * cardShare : listRevenue > 0 ? (pos * line.revenue) / listRevenue : 0;
+      const net = line.revenue / (1 + (line.isService ? sm.kdvHizmet : sm.kdv));
+      const commission = pos === null ? line.revenue * sm.komisyon * cardShare : listRevenue > 0 ? (pos * line.revenue) / listRevenue : 0;
       return { line, pc, net, commission };
     });
     // Ortalama maliyet oranı yalnız reçeteli ürünlerden: reçetesi boş ürünün maliyeti 0 sayılırsa oranı düşürür, o
@@ -1870,6 +1887,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     let out: OnlineMonthCalc | null = null;
     if (r) {
       const revenue = siteRevenueOf(month)!;
+      const sm = stOf(month);
       const soldBy = onlineSold(month);
       const lines = siteLines(month);
       let mappedCost = 0;
@@ -1886,15 +1904,15 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       }
       // Dayanak: satırın liste tutarı (eşlenmeyen satırınki gibi), seçenekte ürünün menü fiyatı (satırın tutarı yok)
       for (const { line, product } of lines.mapped) {
-        if (noRecipeBase.has(product.id)) noRecipeBase.set(product.id, noRecipeBase.get(product.id)! + line.listMinor / 100 / (1 + st.kdv));
+        if (noRecipeBase.has(product.id)) noRecipeBase.set(product.id, noRecipeBase.get(product.id)! + line.listMinor / 100 / (1 + sm.kdv));
       }
       for (const o of lines.options) {
         if (o.product && noRecipeBase.has(o.product.id)) noRecipeBase.set(o.product.id, noRecipeBase.get(o.product.id)! + o.qty * computeProduct(o.product).net);
       }
       const noRecipe = [...noRecipeBase].map(([productId, base]) => ({ productId, qty: soldBy.get(productId) ?? 0, base }));
       // Eşlenmeyen kafe satırları liste fiyatıyla, mağaza kolileri kargo ücreti (taşıma hizmeti, hizmet KDV'si) düşülerek
-      const unmappedNet = sum(lines.unmapped.map((l) => l.listMinor)) / 100 / (1 + st.kdv);
-      const shopGoods = Math.max(0, revenue.shop - r.shop.deliveryMinor / 100 / (1 + st.kdvHizmet));
+      const unmappedNet = sum(lines.unmapped.map((l) => l.listMinor)) / 100 / (1 + sm.kdv);
+      const shopGoods = Math.max(0, revenue.shop - r.shop.deliveryMinor / 100 / (1 + sm.kdvHizmet));
       // Ayın satış listesi yoksa (süren ay, liste ay sonunda) son satış ayının oranı
       const ratioMonth = linesByMonth.has(month) ? month : (salesMonths.filter((m) => m <= month).at(-1) ?? salesMonths[0]);
       const avgCostRatio = ratioMonth ? monthSales(ratioMonth).avgCostRatio : 0;
@@ -2037,7 +2055,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     if (!p) {
       p = personnelSummary(
         ds.staff,
-        st,
+        stOf(month),
         month,
         ds.staffVersions,
         (x) => calledDaysOf(x, month),
@@ -2112,7 +2130,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       history,
       cost: staffCost(
         cur,
-        st,
+        stOf(valueMonth),
         isPartTime(cur) ? { calledDays: calledDaysOf(cur, valueMonth), asilposDays: asilposMealDaysOf(cur, valueMonth) } : { asilposDays: asilposMealDaysOf(cur, valueMonth) },
       ),
       asilposDays: asilposDaysOf(cur, valueMonth),
@@ -2323,7 +2341,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       extrasTotal,
       total: sum(groups.map((g) => g.total)) + extrasTotal,
       // Listede olmayan kalemin malzeme kaydı (Alış KDV'si) yok: gıda grubunun olağan oranıyla (Ayarlar, %1)
-      totalVatIncl: sum(groups.map((g) => g.totalVatIncl)) + extrasTotal * (1 + st.alisKdvGida),
+      totalVatIncl: sum(groups.map((g) => g.totalVatIncl)) + extrasTotal * (1 + stOf(month).alisKdvGida),
       hasData: counts.size > 0 || extras.length > 0,
     };
     stockCache.set(month, s);
@@ -2567,20 +2585,22 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
       ing += l.line.qty * l.product.ingredientTotal;
       cost += l.line.qty * l.product.cost;
     }
-    const fireFreeRatio = cost > 0 ? ing / cost : 1 / (1 + st.fire);
+    // Ayın fire ve KDV oranı (docs/AYARLAR.md): oran sonradan değişse de geçmiş ayın tüketimi kendi değeriyle
+    const sm = stOf(month);
+    const fireFreeRatio = cost > 0 ? ing / cost : 1 / (1 + sm.fire);
     let basis: CogsConsumption["basis"] = "recipe";
     let material = sales.cost + (online?.material ?? 0);
     if (!sales.lines.length && !online) {
       const info = monthInfo.get(month);
       const revenue = info?.posRevenue ?? null;
-      material = revenue && ref ? (revenue / (1 + st.kdv)) * ref.avgCostRatio : 0;
+      material = revenue && ref ? (revenue / (1 + sm.kdv)) * ref.avgCostRatio : 0;
       basis = material > 0 ? "revenue" : "none";
     }
     const fireFree = material * fireFreeRatio;
-    const recipe = fireFree * (1 + st.fire);
+    const recipe = fireFree * (1 + sm.fire);
     const offRevenue = monthInfo.get(month)?.offRevenue ?? 0;
-    const offCost = ref ? (offRevenue / (1 + st.kdv)) * ref.avgCostRatio : 0;
-    const out: CogsConsumption = { basis, material, fireFree, fireRate: st.fire, recipe, offCost, total: recipe + offCost };
+    const offCost = ref ? (offRevenue / (1 + sm.kdv)) * ref.avgCostRatio : 0;
+    const out: CogsConsumption = { basis, material, fireFree, fireRate: sm.fire, recipe, offCost, total: recipe + offCost };
     consumptionCache.set(month, out);
     return out;
   }
@@ -2711,8 +2731,9 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     if (revenue === null) return null;
     const service = Math.min(Math.max(revenue, 0), monthSales(month).serviceRevenue);
     const dv = info?.kasa?.till.dayVat;
+    const sm = stOf(month);
     if (!dv || info?.sources?.posRevenue !== "kasa") {
-      const net = (revenue - service) / (1 + st.kdv) + service / (1 + st.kdvHizmet);
+      const net = (revenue - service) / (1 + sm.kdv) + service / (1 + sm.kdvHizmet);
       return { net, vat: revenue - net, byDay: false };
     }
     const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -2720,10 +2741,10 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     const lafService = dv.known.days ? sum((linesByMonth.get(month) ?? []).filter((l) => l.asilpos && l.isService).map((l) => l.revenue)) : 0;
     const rest = Math.max(0, revenue - dv.known.revenue);
     const restService = Math.min(rest, Math.max(0, service - lafService));
-    const daysNet = sum(dv.days.map((d) => r2(d / (1 + st.kdv))));
+    const daysNet = sum(dv.days.map((d) => r2(d / (1 + sm.kdv))));
     // Öteki şubelerin cirosu ("Tümü"de): ay toplamından
     const other = Math.max(0, rest - sum(dv.days));
-    const net = r2(dv.known.base + daysNet + other / (1 + st.kdv) - restService * (1 / (1 + st.kdv) - 1 / (1 + st.kdvHizmet)));
+    const net = r2(dv.known.base + daysNet + other / (1 + sm.kdv) - restService * (1 / (1 + sm.kdv) - 1 / (1 + sm.kdvHizmet)));
     return { net, vat: r2(revenue - net), byDay: true };
   }
 
@@ -2865,7 +2886,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
         : (pers.mealCard - pers.mealCardAsilpos) * ratio + pers.mealCardAsilpos;
       sections.personel += auto(MEAL_CARD_KEY, fullMeal + pers.partTime.mealCard);
       cells.get(MEAL_CARD_KEY)!.info =
-        mealCardText(pers.rows, st, scaled || pers.mealCard === pers.mealCardAsilpos ? 1 : ratio, days, dim, { names: personal }) +
+        mealCardText(pers.rows, stOf(month), scaled || pers.mealCard === pers.mealCardAsilpos ? 1 : ratio, days, dim, { names: personal }) +
         (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
     }
     // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok).
@@ -3006,7 +3027,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     const bank = bankShareOf(month);
     // Kasa kartı olan ayda Σ şube (kart × şubenin oranı), Satışlar'la aynı (posCommission); yoksa eski formül
     const pos = posCommission(month);
-    sections.komisyon += auto("commission:pos", pos ? pos.amount : (revenue ?? 0) * st.komisyon * bank.rate);
+    sections.komisyon += auto("commission:pos", pos ? pos.amount : (revenue ?? 0) * stOf(month).komisyon * bank.rate);
     const commBySupplier = new Map<string, number>();
     const commInvs = invs.filter((i) => i.category === COMMISSION_CATEGORY);
     for (const inv of commInvs) {
@@ -3218,7 +3239,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
 
     const kom = sec("komisyon");
     // Etiketin oranı: gösterilen ayların hepsinde aynıysa (kasa kartı olan ayda şubenin oranı, olmayanda Ayarlar'daki)
-    const posRates = new Set(months.flatMap((m) => posCommission(m)?.parts.map((p) => p.rate) ?? [st.komisyon]));
+    const posRates = new Set(months.flatMap((m) => posCommission(m)?.parts.map((p) => p.rate) ?? [stOf(m).komisyon]));
     kom({
       key: "commission:pos",
       label: posRates.size === 1 ? `BANKA POS KOMİSYONU (%${([...posRates][0] * 100).toLocaleString("tr-TR")})` : "BANKA POS KOMİSYONU",
@@ -3349,6 +3370,10 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
 
   return {
     settings: st,
+    /** Ayın ayarları (ay bazlı anahtarlar o ayda geçerli sürümden; docs/AYARLAR.md) */
+    settingsAt: stOf,
+    /** Şubenin ayda geçerli banka POS oranı (kütükte olmayan şube Ayarlar'daki komisyonla) */
+    posRateAt: posRateOf,
     ds,
     water,
     unitCost,

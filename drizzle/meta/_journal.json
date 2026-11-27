@@ -708,6 +708,13 @@
       "when": 1795760867053,
       "tag": "0100_hata_kaydi",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795764219139,
+      "tag": "0101_ay_ayarlari",
+      "breakpoints": true
     }
   ]
 }

@@ -4,8 +4,10 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { DEFAULT_SETTINGS, MANUAL_PNL_ROWS } from "@/lib/constants";
+import { currentMonthTR } from "@/lib/calc/engine";
+import { MANUAL_PNL_ROWS } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { affectedText } from "@/lib/month-settings";
 import { todayTR } from "@/lib/reminders";
 import { assetCandidates, invoiceLabelOf, invoiceRemaining } from "@/lib/tax/assets";
 import { quarterOfMonth } from "@/lib/tax/calendar";
@@ -42,9 +44,10 @@ import { unreachable } from "@/lib/unreachable";
 import { requireAdmin } from "@/server/auth/dal";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { applySettingChange } from "@/server/setting-versions";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zMoney, zOptText, zText } from "./util";
+import { attempt, UserError, zDate, zSettingEffective, zMoney, zOptText, zText } from "./util";
 
 /*
  * Vergi bölümünün eylemleri (plan docs/planlar/vergi.md §7.2; docs/VERGI.md). Yalnız yönetici: her eylem oturumu ve
@@ -561,9 +564,11 @@ export async function deleteTaxAsset(id: number) {
 
 /**
  * Gelir-gider'in işveren SGK oranı (Ayarlar › `isverenSgk`): yalnız bu anahtar yazılır (saveStaffRates dört oranı birden
- * yazar; istemcinin eski değerlerle göndermesi başka sekmedeki değişikliği ezerdi). Bütün ayların gelir-gideri değişir
+ * yazar; istemcinin eski değerlerle göndermesi başka sekmedeki değişikliği ezerdi). Oran seçilen aydan itibaren (ya da
+ * yalnız o ay) geçer, verilmezse bu aydan: önceki ayların gelir-gideri değişmez, kapalı aya dokunan değişiklik reddedilir
+ * (docs/AYARLAR.md)
  */
-export async function setEmployerSgkRate(rate: number) {
+export async function setEmployerSgkRate(rate: number, effective?: z.input<typeof zSettingEffective>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const value = z
@@ -572,16 +577,10 @@ export async function setEmployerSgkRate(rate: number) {
       .min(0, "Oran negatif olamaz")
       .max(EMPLOYER_SGK_MAX, "İşveren SGK oranı en çok %21,75")
       .parse(rate);
-    const db = getDb();
-    const prev = await db.transaction(async (tx) => {
-      const [row] = await tx.select().from(s.settings).where(eq(s.settings.key, "isverenSgk")).for("update");
-      await tx
-        .insert(s.settings)
-        .values({ key: "isverenSgk", value })
-        .onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
-      return typeof row?.value === "number" ? row.value : DEFAULT_SETTINGS.isverenSgk;
-    });
-    await logActivity(me, "SGK oranları", `isverenSgk ${rateText(prev)} → ${rateText(value)} (Vergi)`);
+    const eff = zSettingEffective.parse(effective ?? { mode: "from", month: currentMonthTR() });
+    const done = await getDb().transaction((tx) => applySettingChange(tx, { key: "isverenSgk", value, month: eff.month, mode: eff.mode, by: me.name }));
+    if (!done) return null;
+    await logActivity(me, "SGK oranları", `isverenSgk ${rateText(done.before)} → ${rateText(value)} (Vergi; ${affectedText(done.affected)})`);
     refresh();
     return null;
   });

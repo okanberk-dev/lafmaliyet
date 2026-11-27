@@ -8,11 +8,13 @@ import { invoiceLabel } from "@/lib/cari/account";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
 import { BANK_MATCH, isPosLine, SUPPLIER_MATCH, type Candidate, type Decision, type MatchLine, type RecordKind } from "@/lib/mutabakat/match";
 import type { StatementKind } from "@/lib/mutabakat/parse";
+import { branchPosRateAt } from "@/lib/month-settings";
 import { posCardOf, posReconciliation, posSalesFrom, type PosSaleDay } from "@/lib/mutabakat/pos";
 import { missingFor, poolOf, reconcilePool, statementSummary, supplierScope, type ReconRow, type StatementSummary } from "@/lib/mutabakat/view";
 import { addDays, todayTR } from "@/lib/reminders";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { loadSettingVersions } from "@/server/setting-versions";
 import { loadLedgerInvoices, loadSupplierCards, type LedgerRow } from "@/server/data/suppliers";
 
 import { readPosBlockDays } from "./store";
@@ -389,7 +391,7 @@ export interface PosView {
  */
 export async function loadPosView(today = todayTR()): Promise<PosView> {
   const db = getDb();
-  const [blockDays, branchRows, bankLines, bankStatements] = await Promise.all([
+  const [blockDays, branchRows, bankLines, bankStatements, versions] = await Promise.all([
     readPosBlockDays(db),
     listBranches(db),
     db
@@ -398,6 +400,8 @@ export async function loadPosView(today = todayTR()): Promise<PosView> {
       .innerJoin(s.reconStatements, eq(s.reconLines.statementId, s.reconStatements.id))
       .where(eq(s.reconStatements.kind, "banka")),
     db.select({ from: s.reconStatements.periodFrom, to: s.reconStatements.periodTo }).from(s.reconStatements).where(eq(s.reconStatements.kind, "banka")),
+    // Şubenin POS oranı ay bazlı (docs/AYARLAR.md): her gün kendi ayının oranıyla
+    loadSettingVersions(db),
   ]);
   const coverage = bankStatements.length
     ? { from: bankStatements.reduce((m, x) => (x.from < m ? x.from : m), bankStatements[0].from), to: bankStatements.reduce((m, x) => (x.to > m ? x.to : m), bankStatements[0].to) }
@@ -412,11 +416,12 @@ export async function loadPosView(today = todayTR()): Promise<PosView> {
   const tills = tillBranches(branchRows);
   const all = branchRows.filter((b) => b.kind === "fiziksel");
   const rates = Object.fromEntries(all.map((b) => [b.id, b.posRate ?? 0.02]));
+  const rateAt = (branchId: string, date: string) => (branchId in rates ? branchPosRateAt(versions, branchId, rates[branchId], date.slice(0, 7)) : null);
   const days: PosSaleDay[] = reports.map((r) => ({ date: r.date, branchId: r.branchId, ...posCardOf(r) }));
-  const result = posReconciliation({ days, inflows, settings: { blockDays, rates, defaultRate: 0.02 }, coverage, today });
+  const result = posReconciliation({ days, inflows, settings: { blockDays, rates, rateAt, defaultRate: 0.02 }, coverage, today });
   return {
     blockDays,
-    branches: (tills.length ? tills : all).map((b) => ({ id: b.id, name: b.name, rate: b.posRate ?? 0.02 })),
+    branches: (tills.length ? tills : all).map((b) => ({ id: b.id, name: b.name, rate: branchPosRateAt(versions, b.id, b.posRate ?? 0.02, today.slice(0, 7)) })),
     coverage,
     inflowCount: inflows.length,
     bankStatements: bankStatements.length,

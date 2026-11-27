@@ -5,6 +5,7 @@ import type { PgColumn } from "drizzle-orm/pg-core";
 
 import { businessDate } from "@/lib/cash-report";
 import { SEPARATE_CATEGORIES, settingsFromRows } from "@/lib/constants";
+import { settingsAt } from "@/lib/month-settings";
 import { isCountable } from "@/lib/ingredient-usage";
 import { asilposSalesCountFrom } from "@/lib/asilpos/sales";
 import { singleTill } from "@/lib/pos/tills";
@@ -33,6 +34,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
 import { switchDayOf } from "@/server/pos/tills";
 import { siteLinkSecret } from "@/server/site-link";
 import { loadBranchSiteSales } from "@/server/site-sales/sync";
+import { loadSettingVersions } from "@/server/setting-versions";
 
 import { loadAsilposIkram } from "./asilpos-ikram";
 import { suspectFactorLine } from "./purchase-lots-query";
@@ -67,8 +69,10 @@ export async function loadStockEstimate(
   opts: { asOf?: string; leadDays?: number } = {},
 ): Promise<StockEstimateData | null> {
   const today = opts.asOf ?? businessDate(now);
-  const [settingRows, ingredients, products, recipeRows, counts, thresholds] = await Promise.all([
+  const [settingRows, settingVersions, ingredients, products, recipeRows, counts, thresholds] = await Promise.all([
     db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings),
+    // Fire oranı ay bazlı (docs/AYARLAR.md): tahminin günü kendi ayının oranıyla
+    loadSettingVersions(db),
     db
       .select({
         id: s.ingredients.id,
@@ -94,7 +98,7 @@ export async function loadStockEstimate(
       .from(s.stockThresholds)
       .where(eq(s.stockThresholds.branchId, STOCK_ESTIMATE_BRANCH)),
   ]);
-  const settings = settingsFromRows(settingRows);
+  const settings = settingsAt(settingsFromRows(settingRows), settingVersions, today.slice(0, 7));
   // Tahmin Marina'nın AsilPOS gün sonlarıyla: Marina'nın kasası AsilPOS değilse tahmin yok (öteki kasalar için tahmin ayrı
   // dilim; docs/SUBE.md › Sırada ne var). Geçiş günü Marina'nın şube ayarından (switchDayOf; çok şube)
   const switchDay = await switchDayOf(STOCK_ESTIMATE_BRANCH, db);

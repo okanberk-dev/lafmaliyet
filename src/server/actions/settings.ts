@@ -6,7 +6,9 @@ import { z } from "zod";
 
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
 import { DEFAULT_SETTINGS, FIFO_OFF, ROLES, settingsFromRows, type Role } from "@/lib/constants";
+import { currentMonthTR } from "@/lib/calc/engine";
 import { monthLabel } from "@/lib/format";
+import { isMonthSettingKey } from "@/lib/month-settings";
 import { blockReasonOf, oldAddressNotice, userListNotice } from "@/lib/notify-recipients";
 import { BRANCH_REQUIRED_ROLES, BRANCH_ROLES } from "@/lib/roles";
 import { linkedDeleteText } from "@/lib/staff-link";
@@ -21,9 +23,10 @@ import { listBranches } from "@/server/branches";
 import { lockStaffLinks, staffLinkedTo } from "@/server/data/staff-links";
 import { getDb, schema as s } from "@/server/db";
 import { listsWithEmail } from "@/server/notify/recipients";
+import { applySettingChange, removeSettingVersion } from "@/server/setting-versions";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zText } from "./util";
+import { attempt, UserError, zSettingEffective, zText } from "./util";
 
 const numKey = z.number().finite();
 
@@ -129,10 +132,13 @@ const PCT_SANITY = ["kdv", "kdvHizmet", "komisyon", "hedefMaliyet"] as const;
  * Yalnızca gönderilen ve kayıtlı değerden farklı ayarları yazar; işlem geçmişine "Etiket: eski → yeni" olarak
  * düşer. Dönüşteki `changes` aynı metinlerdir (istemci bildirimde gösterir).
  */
-export async function saveSettings(input: Partial<z.input<typeof settingsSchema>>) {
+export async function saveSettings(input: Partial<z.input<typeof settingsSchema>>, effective?: z.input<typeof zSettingEffective>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = settingsSchema.partial().parse(input);
+    // Ay bazlı anahtarlar (KDV, komisyon, kartlı oran, fire, yemek kartı, alış KDV'leri) seçilen aydan (ya da yalnız o
+    // ay) geçer; verilmezse bu aydan itibaren: geçmiş aylar sessizce değişmez (docs/AYARLAR.md)
+    const eff = zSettingEffective.parse(effective ?? { mode: "from", month: currentMonthTR() });
     for (const key of PCT_SANITY) {
       const v = data[key];
       if (v !== undefined && v > 0 && v < 0.005) {
@@ -146,6 +152,12 @@ export async function saveSettings(input: Partial<z.input<typeof settingsSchema>
       for (const r of rows) if (r.key in DEFAULT_SETTINGS) prev[r.key] = r.value;
       const out: string[] = [];
       for (const [key, value] of Object.entries(data)) {
+        if (isMonthSettingKey(key)) {
+          if (typeof value !== "number") continue;
+          const done = await applySettingChange(tx, { key, value, month: eff.month, mode: eff.mode, by: me.name });
+          if (done) out.push(done.text);
+          continue;
+        }
         if (!(key in DEFAULT_SETTINGS) || value === undefined || sameValue(prev[key], value)) continue;
         if (value === null) await tx.delete(s.settings).where(eq(s.settings.key, key));
         else await tx.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
@@ -158,6 +170,21 @@ export async function saveSettings(input: Partial<z.input<typeof settingsSchema>
       refresh();
     }
     return { changes };
+  });
+}
+
+/**
+ * Ay bazlı ayarın bir değişikliğini kaldırır (Ayarlar › Ay bazlı ayarlar › geçmiş): o aydan sonraki değişikliğe kadar
+ * önceki değer geçer. Kapalı aya dokunuyorsa reddedilir; başlangıç değeri kaldırılmaz
+ */
+export async function removeSettingChange(id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const vid = z.number().int().positive().parse(id);
+    const done = await getDb().transaction((tx) => removeSettingVersion(tx, vid));
+    await logActivity(me, "Ayarlar", done.text);
+    refresh();
+    return { text: done.text };
   });
 }
 

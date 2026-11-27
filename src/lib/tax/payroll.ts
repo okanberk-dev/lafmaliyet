@@ -299,7 +299,7 @@ export function firstSalesMonth(model: Pick<Model, "monthInfo">): string | null 
  * `sgk.isverenOran` uygulanmış; Ayarlar'daki SGK oranları kullanılmaz.
  */
 export function taxPayrollFromModel(
-  model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth"> & Partial<Pick<Model, "calledDaysOf" | "asilposMealDaysOf">>,
+  model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth" | "settingsAt"> & Partial<Pick<Model, "calledDaysOf" | "asilposMealDaysOf">>,
   year: number,
   settings: Pick<TaxSettings, "periodStart" | "minWageSupport" | "overrides">,
   overrides: TaxOverrides = settings.overrides,
@@ -319,13 +319,13 @@ export function taxPayrollFromModel(
         // Part-time (Faz 5): günlük ücret işletmenin gün başına maliyetidir, yasal bordroda brütleştirilmez; ayın Vardiya
         // planındaki bütün çalışma günleriyle (ücret + yemek kartı + ek) ek ödeme gibi maliyete. Bağlantısızsa yalnız ek
         const days = model.calledDaysOf?.(at, m, { planned: true }) ?? null;
-        months.push({ month: m, net: 0, extras: staffCost(at, model.ds.settings, { calledDays: days }).total });
+        months.push({ month: m, net: 0, extras: staffCost(at, model.settingsAt(m), { calledDays: days }).total });
         continue;
       }
       // Yemek kartı (Faz 5) ek ödeme gibi: vergisiz, brütleştirilmeden maliyete (Ayarlar'daki günlük tutar × gün; biten
       // ayda AsilPOS'ta çalıştığı gün biliniyorsa o gün, Gelir-gider ve Maaşlar gibi: LM-4b, model.asilposMealDaysOf)
       const asilposDays = model.asilposMealDaysOf?.(at, m) ?? null;
-      months.push({ month: m, net: at.netSalary, extras: at.extras + mealCardOf(at, model.ds.settings, asilposDays ?? undefined) });
+      months.push({ month: m, net: at.netSalary, extras: at.extras + mealCardOf(at, model.settingsAt(m), asilposDays ?? undefined) });
     }
     return { id: s.id, name: s.name, months };
   });

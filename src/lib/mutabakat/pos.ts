@@ -22,6 +22,11 @@ export interface PosSettings {
   blockDays: number;
   /** Şubenin banka POS komisyon oranı (0,02 = %2; branches.pos_rate) */
   rates: Readonly<Record<string, number>>;
+  /**
+   * Günün oranı (Şubeler › POS oranı "şu aydan itibaren", docs/AYARLAR.md): verilirse `rates`'in yerine; null dönerse
+   * `rates`
+   */
+  rateAt?: (branchId: string, date: string) => number | null;
   defaultRate: number;
 }
 
@@ -130,7 +135,7 @@ export function posReconciliation(input: PosInput): { rows: PosRow[]; totals: Po
     const due = settlementDay(d.date, settings.blockDays);
     if (due > today) continue;
     if (coverage && due < coverage.from) continue;
-    const rate = settings.rates[d.branchId] ?? settings.defaultRate;
+    const rate = settings.rateAt?.(d.branchId, d.date) ?? settings.rates[d.branchId] ?? settings.defaultRate;
     const net = r2(d.card * (1 - rate));
     let row = byDue.get(due);
     if (!row) {

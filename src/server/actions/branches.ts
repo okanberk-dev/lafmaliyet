@@ -24,6 +24,8 @@ import {
   type BranchPosSource,
 } from "@/lib/branches";
 import { ESKI_KASA_KAYNAGI } from "@/lib/asilpos/eski-adlar";
+import { currentMonthTR } from "@/lib/calc/engine";
+import { POS_RATE_KEY } from "@/lib/month-settings";
 import { posOffConfirmText } from "@/lib/pos/tills";
 import { requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
 import { INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
@@ -33,10 +35,11 @@ import { staffBranchLock } from "@/server/branch-scope";
 import { branchSettingsCloseError, putBranchSetting } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { applySettingChange } from "@/server/setting-versions";
 import { forgetPosBranches, asilposInUse } from "@/server/asilpos/branch";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zText } from "./util";
+import { attempt, UserError, zDate, zSettingEffective, zText } from "./util";
 
 // Şube ve kanal yönetimi (/panel/subeler; docs/SUBE.md). Yalnız yönetici. Kimlik veriye yazılır: eklendikten sonra
 // değişmez. Kurallar saf dosyada (src/lib/branches.ts) ve tests/subeler.test.ts onları doğrudan çalıştırır; buradaki
@@ -62,8 +65,6 @@ const posRate = z
     const hata = v === undefined ? null : posRateError(v);
     if (hata) ctx.addIssue({ code: "custom", message: hata });
   });
-/** "%2", "%1,5" (işlem geçmişi) */
-const oranMetni = (v: number) => `%${(Math.round(v * 10_000) / 100).toLocaleString("tr-TR")}`;
 const scopeInput = z.object({ scope: z.string().trim().max(24) });
 
 /** Şubenin e-postası (isteğe bağlı): verilirse şube hesabı açılır ve AsilPOS kurulum bağlantısı gider */
@@ -188,6 +189,11 @@ const updateInput = z.object({
   openedOn,
   active: z.boolean(),
   posRate,
+  /**
+   * POS oranının geçerliliği (docs/AYARLAR.md): seçilen aydan itibaren ya da yalnız o ay; verilmezse bu aydan itibaren.
+   * Oran ay bazlı saklanır (setting_versions): önceki aylar kendi oranıyla kalır
+   */
+  posRateFrom: zSettingEffective.optional(),
   /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (posOffConfirmText) */
   confirmPosOff: z.boolean().optional(),
 });
@@ -226,8 +232,11 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     // birden açık kalmasın (src/lib/branch-features.ts featureChangeError)
     const closing = mevcut.active && !d.active;
     const kept = closing ? BRANCH_FEATURES.filter((f) => f.single).reduce((acc, f) => withFeature(acc, f.id, false), branchFeatures(mevcut)) : null;
-    await db.transaction(async (tx) => {
+    const posChange = await db.transaction(async (tx) => {
       if (posOff) await putBranchSetting(tx, ASILPOS_GROUP, d.id, { switchDay: null }, me.name);
+      // POS oranı ay bazlı (sütun ilk sürümden önceki aylar için taban kalır): seçilen aydan itibaren sürüm yazılır
+      const eff = d.posRateFrom ?? { mode: "from" as const, month: currentMonthTR() };
+      const rate = d.posRate !== undefined && d.kind === "fiziksel" ? await applySettingChange(tx, { key: POS_RATE_KEY, branchId: d.id, value: d.posRate, month: eff.month, mode: eff.mode, by: me.name }) : null;
       await tx
       .update(s.branches)
       .set({
@@ -237,17 +246,17 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
         openedOn: d.openedOn,
         active: d.active,
         ...(kept ? { features: kept } : {}),
-        ...(d.posRate !== undefined ? { posRate: d.posRate } : {}),
         updatedAt: new Date(),
       })
       .where(eq(s.branches.id, d.id));
+      return rate;
     });
     // Kasa kaynağı ya da durum değiştiyse AsilPOS kasaları değişmiş olabilir: bu sunucunun önbelleği hemen düşer
     forgetPosBranches();
     const degisen = [
       mevcut.name === d.name ? null : `ad: ${mevcut.name} → ${d.name}`,
       mevcut.posSource === d.posSource ? null : `kasa: ${mevcut.posSource} → ${d.posSource}`,
-      d.posRate === undefined || mevcut.posRate === d.posRate ? null : `POS oranı: ${mevcut.posRate === undefined ? "?" : oranMetni(mevcut.posRate)} → ${oranMetni(d.posRate)}`,
+      posChange ? posChange.text : null,
       mevcut.active === d.active ? null : d.active ? "açıldı" : "kapatıldı",
       posOff ? "AsilPOS geçiş günü silindi" : null,
     ].filter(Boolean);

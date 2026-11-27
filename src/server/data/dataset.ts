@@ -14,6 +14,7 @@ import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { countedRecords, redateLots } from "@/lib/closed-period";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
+import { settingsAt } from "@/lib/month-settings";
 import { modposZBetween, otherBranchLists, type OtherBranchList } from "@/lib/asilpos/sales";
 import type { AsilposWorked } from "@/lib/asilpos/personel";
 import { countedTillIds, earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, type SwitchDays } from "@/lib/pos/tills";
@@ -28,6 +29,7 @@ import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadPosTills, loadSwitchDays } from "@/server/pos/tills";
+import { loadSettingVersions } from "@/server/setting-versions";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
@@ -36,15 +38,24 @@ import { mergeWithAsilpos } from "./asilpos-sales";
 import { loadHeldPurchases, loadPurchaseLots } from "./purchase-lots";
 
 /**
- * Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez. Şube başına
+ * Sürümsüz (taban) ayarlar. Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez. Şube başına
  * tutulan iki alan şube ayarından gelir (docs/SUBE.md › Şube başına ayarlar): AsilPOS'a geçiş günü kasaların en erkeni
  * (çok şube; grup SUBE_AYAR_GRUBU, her kasanın kendi günü: veri kümesi görünümün kasasınınkini koyar), ayda açık gün
  * varsayılan şubenin (grup isletme.takvim; veri kümesi seçili şubeninkini koyar)
  */
-export async function loadSettings(): Promise<Settings> {
-  const db = getDb();
+export async function loadBaseSettings(db: DB = getDb()): Promise<Settings> {
   const [rows, switchDays, calendar] = await Promise.all([db.select().from(s.settings), loadSwitchDays(db), resolveBranchSetting(CALENDAR_GROUP, DEFAULT_BRANCH_ID, db)]);
   return { ...settingsFromRows(rows), asilposGecisGunu: earliestSwitchDay(switchDays), acikGun: calendar.value.openDays };
+}
+
+/**
+ * Bir ayın ayarları (verilmezse bu ay, Türkiye saati): ay bazlı anahtarlar (KDV, komisyon, SGK, yemek kartı …) o ayda
+ * geçerli sürümden (docs/AYARLAR.md, src/lib/month-settings.ts), ötekiler tabandan (loadBaseSettings)
+ */
+export async function loadSettings(month?: string): Promise<Settings> {
+  const db = getDb();
+  const [base, versions] = await Promise.all([loadBaseSettings(db), loadSettingVersions(db)]);
+  return settingsAt(base, versions, month ?? currentMonthTR());
 }
 
 /** Veri kümesinin şube kapsamı: verilmezse seçicinin seçimi (docs/SUBE.md › Seçici) */
@@ -73,6 +84,7 @@ async function readDataset(): Promise<Dataset> {
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
   const [
     storedSettings,
+    settingVersions,
     ingredients,
     categories,
     products,
@@ -105,7 +117,9 @@ async function readDataset(): Promise<Dataset> {
     calendar,
     periods,
   ] = await Promise.all([
-    loadSettings(),
+    loadBaseSettings(db),
+    // Ay bazlı ayarların sürümleri (docs/AYARLAR.md): motor her ayı kendi ayarıyla hesaplar
+    loadSettingVersions(db),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
     db.select().from(s.categories).orderBy(asc(s.categories.sortOrder)),
     db.select().from(s.products).orderBy(asc(s.products.sortOrder), asc(s.products.id)),
@@ -206,7 +220,9 @@ async function readDataset(): Promise<Dataset> {
   // (Satışlar, Genel bakış, Gelir-gider, Ürünler, Analiz, Zayi) bunu görür
   const allSwitchDays = posTills.switchDays;
   const viewSwitchDays: SwitchDays = scopeSwitchDays(allSwitchDays, scope);
-  // Ayda açık gün seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
+  // Ayda açık gün seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin). Taban
+  // ayarlar sürümsüz; veri kümesinin `settings`'i bu ayınkiler (ay bazlı anahtarlar bu ayda geçerli sürümden,
+  // src/lib/month-settings.ts), `settingsBase` bu
   const settings = { ...storedSettings, asilposGecisGunu: scopeSwitchDay(allSwitchDays, scope), acikGun: calendar.value.openDays };
   // Kalem kalem sınıflandırma (src/lib/invoice-split.ts): payı faturanın kategorisinden ayrılan kalemler
   const splitOf = await loadSplitLines(db, invoices);
@@ -332,7 +348,9 @@ async function readDataset(): Promise<Dataset> {
         });
 
   return {
-    settings,
+    settings: settingsAt(settings, settingVersions, currentMonth),
+    settingsBase: settings,
+    settingVersions,
     posTills: posTills.ids,
     posSwitchDays: allSwitchDays,
     currentMonth,

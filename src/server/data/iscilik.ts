@@ -124,7 +124,6 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   const perBranch: { b: (typeof branches)[number]; days: LaborDay[]; month: WageMonth | null }[] = [];
   branches.forEach((b, i) => {
     const model = models[i];
-    const st = model.settings;
     const shiftDays = new Map<string, string[]>();
     for (const d of model.ds.shifts ?? []) {
       if (d.branchId !== b.id) continue;
@@ -142,7 +141,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
           name: r.staff.name,
           kind: "part_time",
           monthly: r.staff.extras,
-          perDay: (r.staff.dailyWage ?? 0) + (r.staff.mealCard ? st.mealCardDaily : 0),
+          perDay: (r.staff.dailyWage ?? 0) + (r.staff.mealCard ? model.settingsAt(m).mealCardDaily : 0),
           workDays: ref ? (shiftDays.get(ref) ?? []).filter((d) => d.startsWith(m)) : null,
         };
       });
@@ -157,7 +156,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
       name: b.name,
       people,
       netFactor,
-      kdv: st.kdv,
+      kdv: model.settingsAt(month).kdv,
       sales: (date) => {
         const c = read(kiyasBranch, date);
         return c.kind === "satis" ? { kind: "satis", gross: c.revenue } : c;

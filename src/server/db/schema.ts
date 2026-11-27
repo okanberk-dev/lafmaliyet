@@ -160,6 +160,35 @@ export const settings = pgTable("settings", {
   updatedAt: updatedAt(),
 });
 
+/**
+ * Ay bazlı ayarların sürümleri (docs/AYARLAR.md; src/lib/month-settings.ts): parayı etkileyen oranlar ve tutarlar (KDV,
+ * POS komisyonu, kartlı oran, fire, dört SGK oranı, yemek kartı, alış KDV'leri; şubede POS oranı) "şu aydan itibaren"
+ * saklanır, hesap her ayı kendi değeriyle yapar. Ayda geçerli değer `from_month` ≤ ay olan en son sürüm; sürümü olmayan
+ * anahtar `settings` satırını (yoksa varsayılanı), şubenin POS oranı `branches.pos_rate`'i okur. Bu anahtarlar yalnız
+ * src/server/setting-versions.ts ile yazılır: settings satırına doğrudan yazmak ilk sürümün arkasında kalır.
+ * `branch_id` genel ayarda boş metin (şube kimliği yalnız POS oranında). Göç 0101 bugünkü değerleri "2000-01"den geçerli
+ * ilk sürüm olarak yazdı (hiçbir ayın rakamı değişmedi)
+ */
+export const settingVersions = pgTable(
+  "setting_versions",
+  {
+    id: serial("id").primaryKey(),
+    key: text("key").notNull(),
+    branchId: text("branch_id").notNull().default(""),
+    /** YYYY-MM: bu aydan itibaren (sonraki sürüme kadar) */
+    fromMonth: text("from_month").notNull(),
+    value: doublePrecision("value").notNull(),
+    note: text("note"),
+    /** Değiştiren kişinin adı (geçmişte görünür) */
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("setting_versions_key_month_uq").on(t.key, t.branchId, t.fromMonth),
+    check("setting_versions_month_ck", sql`${t.fromMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+  ],
+);
+
 // ---------------------------------------------------------------- Şubeler ve kanallar
 /**
  * Şube ve kanal kütüğü (docs/SUBE.md): fiziksel şubeler (Tuzla, Marina) ile laffogato.net'in online kanalı tek

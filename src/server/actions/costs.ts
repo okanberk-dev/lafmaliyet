@@ -20,11 +20,12 @@ import { ALL_BRANCHES } from "@/lib/branches";
 import { currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { applySettingChange } from "@/server/setting-versions";
 import { advanceCounts } from "@/server/staff-advances";
 import { dropStaffDocFiles, staffDocKeys } from "@/server/staff-docs";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zMonth, zOptText, zRate, zText } from "./util";
+import { attempt, UserError, zMonth, zOptText, zRate, zSettingEffective, zText } from "./util";
 
 // ---------------------------------------------------------------- Geçmiş aylar (ortak)
 //
@@ -495,17 +496,29 @@ const rateSchema = z
   // brüt = net ÷ (1 − işçi kesintileri): toplam %100'e ulaşırsa brüt maaş sonsuz / negatif olur
   .refine((r) => r.isciSgk + r.isciIssizlik < 1, "İşçi kesintileri toplamı %100'ün altında olmalı");
 
-export async function saveStaffRates(input: z.input<typeof rateSchema>) {
+/**
+ * Dört SGK oranı, seçilen aydan itibaren ya da yalnız o ay (docs/AYARLAR.md; verilmezse bu aydan itibaren): önceki aylar
+ * kendi oranıyla kalır. Değişmeyen oran yazılmaz; değiştirdiği aylardan biri kapalıysa hiçbiri yazılmaz
+ */
+export async function saveStaffRates(input: z.input<typeof rateSchema>, effective?: z.input<typeof zSettingEffective>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = rateSchema.parse(input);
+    const eff = zSettingEffective.parse(effective ?? { mode: "from", month: currentMonthTR() });
     const db = getDb();
-    for (const [key, value] of Object.entries(data)) {
-      await db.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
+    const changes = await db.transaction(async (tx) => {
+      const out: string[] = [];
+      for (const key of ["isciSgk", "isciIssizlik", "isverenSgk", "isverenIssizlik"] as const) {
+        const done = await applySettingChange(tx, { key, value: data[key], month: eff.month, mode: eff.mode, by: me.name });
+        if (done) out.push(done.text);
+      }
+      return out;
+    });
+    if (changes.length) {
+      await logActivity(me, "SGK oranları", changes.join(", "));
+      refresh();
     }
-    await logActivity(me, "SGK oranları", Object.entries(data).map(([k, v]) => `${k} %${(v * 100).toFixed(2)}`).join(", "));
-    refresh();
-    return null;
+    return { changes };
   });
 }
 

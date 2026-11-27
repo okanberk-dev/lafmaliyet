@@ -2,6 +2,7 @@
 // Veritabanı satırlarıyla aynı şekle sahiptir ama hiçbir sunucu bağımlılığı yoktur;
 // hem sunucuda hem tarayıcıda (canlı hesap) kullanılabilir.
 
+import type { SettingVersion } from "../month-settings";
 import type { SiteSalesMonth } from "../site-sales/schema";
 import type { TaxDoc, Withholding } from "../tax/rules";
 
@@ -607,7 +608,18 @@ export interface WasteEntry {
 }
 
 export interface Dataset {
+  /** Bu ayın ayarları (ay bazlı anahtarlar bu ayda geçerli sürümden; src/lib/month-settings.ts) */
   settings: Settings;
+  /**
+   * Sürümsüz (taban) ayarlar: ilk sürümden önceki aylar ve sürümü olmayan anahtarlar bunu okur. Yoksa `settings`
+   * (testler, önizleme: her ay aynı ayar)
+   */
+  settingsBase?: Settings;
+  /**
+   * Ay bazlı ayarların sürümleri (docs/AYARLAR.md): motor her ayı kendi ayarıyla hesaplar (KDV, komisyon, kartlı oran,
+   * fire, SGK oranları, yemek kartı, alış KDV'leri; şubenin POS oranı `posRate`). Yoksa her ay `settings`
+   */
+  settingVersions?: SettingVersion[];
   ingredients: Ingredient[];
   categories: Category[];
   products: Product[];

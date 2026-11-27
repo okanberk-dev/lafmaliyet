@@ -42,6 +42,11 @@ export const zAmount = z.number({ message: "Tutar girin" }).finite("Geçersiz tu
 export const zSignedAmount = zMoney.min(-100_000_000, "Tutar çok büyük").max(100_000_000, "Tutar çok büyük");
 export const zRate = z.number({ message: "Oran girin" }).min(0, "Oran negatif olamaz").max(1, "Oran %100'den büyük olamaz");
 export const zMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Geçersiz ay");
+/**
+ * Ay bazlı ayarın geçerliliği (docs/AYARLAR.md): "şu aydan itibaren" ya da "yalnız bu ay". Verilmezse bu aydan itibaren
+ * (geçmiş aylar değişmez)
+ */
+export const zSettingEffective = z.object({ mode: z.enum(["from", "only"]), month: zMonth });
 /** Takvimde var olan gün (YYYY-MM-DD): 2026-02-30 ve 2026-00-10 reddedilir (KP-09) */
 export const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Geçersiz tarih").refine(isCalendarDate, "Geçersiz tarih");
 export const zText = (label: string, max = 200) =>

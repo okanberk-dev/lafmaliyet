@@ -274,7 +274,7 @@ export interface TaxPnlExtras {
 export function taxPnlInputFromModel(
   model: Pick<
     Model,
-    "settings" | "ds" | "pnlMonth" | "siteSales" | "countedMonths" | "closingStock" | "monthInfo" | "expenseAmounts" | "expenseCategories" | "staffAtMonth"
+    "settings" | "settingsAt" | "ds" | "pnlMonth" | "siteSales" | "countedMonths" | "closingStock" | "monthInfo" | "expenseAmounts" | "expenseCategories" | "staffAtMonth"
   >,
   extras: TaxPnlExtras,
 ): TaxPnlInput {
@@ -306,7 +306,7 @@ export function taxPnlInputFromModel(
       revenueNet: pm.revenueNet,
       openDays: pm.openDays,
       site: pm.site ? pm.site.total : null,
-      siteRefundPending: r2(pending / 100 / (1 + st.kdvHizmet)),
+      siteRefundPending: r2(pending / 100 / (1 + model.settingsAt(m).kdvHizmet)),
       // Vergi yalnız sayımla (sayımsız ayın tahmini devri Gelir-gider'de; köprüde "stockEstimate")
       opening: pm.countOpening,
       closing: pm.countClosing,

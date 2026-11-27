@@ -166,7 +166,6 @@ export interface VatMonthInput {
  * laffogato.net'in ilk kaydı; ondan önceki faturalar (açılış öncesi, eski Paraşüt kayıtları) sayılmaz.
  */
 export function vatMonthInputs(model: Model, today: string): { months: VatMonthInput[]; firstSalesMonth: string | null; hasSite: boolean } {
-  const st = model.settings;
   const cur = today.slice(0, 7);
   const hasSite = model.siteMonths.length > 0;
   const posMonths = [...model.monthInfo.values()].filter((m) => (m.posRevenue ?? 0) > 0).map((m) => m.month);
@@ -177,6 +176,8 @@ export function vatMonthInputs(model: Model, today: string): { months: VatMonthI
   for (let m = firstSalesMonth > floor ? firstSalesMonth : floor; m <= cur; m = shiftMonth(m, 1)) {
     const info = model.monthInfo.get(m);
     const revenue = info?.posRevenue ?? 0;
+    // Ayın KDV oranları (ay bazlı ayarlar, docs/AYARLAR.md)
+    const st = model.settingsAt(m);
     let pos: VatMonthInput["pos"] = null;
     if (revenue > 0) {
       const service = Math.min(revenue, model.monthSales(m).serviceRevenue);
