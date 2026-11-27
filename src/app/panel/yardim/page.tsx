@@ -742,11 +742,17 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Şube seçiliyken ekranlar, zil, Bugün ve Claude yalnız o şubenin verisini gösterir; Vergi, Nakit planı, Ödemeler ve cari firma geneli kalır,
             ekran bunu söyler. Tümü seçiliyken şubeye ait bir kayıt (kasa raporu, sayım, zayi, ay bilgisi, satış listesi) yazacaksanız ekran önce şubeyi
-            sorar; sessizce Tuzla&apos;ya yazılmaz. Şubeye kilitli personel yalnız kendi şubesini görür ve yazar.
+            sorar; sessizce Tuzla&apos;ya yazılmaz. Şubeye kilitli personel yalnız kendi şubesini görür ve yazar.{" "}
+            <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong>: Vergi, Nakit planı, Ödemeler, Tutarlılık gibi firma geneli ekranların
+            şube seçiliyken yalnız şubeyi mi, firmanın tamamını mı göstereceğini ekran ekran siz seçersiniz; ekrandaki “Firma geneline geç” düğmesi aynı
+            ayardır. Vergi beyanı, banka ekstresi ve tam yedek hep firmanındır.
           </>
         ),
         icon: Globe,
-        links: [{ href: "/panel/subeler", label: "Şubeler" }],
+        links: [
+          { href: "/panel/subeler", label: "Şubeler" },
+          { href: "/panel/hesap#sube-gorunumu", label: "Hesabım (Şube görünümü)" },
+        ],
       },
       {
         id: "sube-ayarlari",

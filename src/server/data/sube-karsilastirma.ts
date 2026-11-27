@@ -54,6 +54,7 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
   const [models, rows, switchDay, reports, closed] = await Promise.all([
     // Her şube kendi görünümüyle (soldaki seçimden bağımsız): Gelir-gider'de o şube seçiliyken görünen ay hesabı
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
+    // şube-ayrımı: karsilastirma.sayfa
     withBranchScope(ALL_BRANCHES, () => tillRows(db)),
     loadSwitchDays(db),
     db

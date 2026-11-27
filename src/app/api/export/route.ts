@@ -43,12 +43,14 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
       db.select().from(s.investments).orderBy(asc(s.investments.id)),
       db.select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
       // Tedarikçilere elle girilen borç ve ödemeler ("Cari hareketleri" sekmesi; kayıt yokken sekme yok). Firma geneli
+      // şube-ayrımı: tedarikciler.disa-aktar
       withBranchScope(ALL_BRANCHES, () => loadCariExport()),
     ]);
     const month = resolveMonth(request.nextUrl.searchParams.get("ay") ?? undefined, model);
     // "Vergi" sekmesi (dalga 12, docs/VERGI.md): Vergi sayfasının varsayılan yılı (30 Nisan'a kadar geçen yıl), takvimi
     // nakit planıyla. Okunamazsa sekme yok, dosyanın geri kalanı iner
     // Vergi firma geneli: şube dosyasında da bütün şubelerin modeliyle (Vergi sayfası gibi)
+    // şube-ayrımı: vergi.disa-aktar
     const tax = await withBranchScope(ALL_BRANCHES, async () => loadTaxView(whole ? model : await loadModel({ scope: ALL_BRANCHES })))
       .then((d) => ({ view: d.view, settings: d.inputs.settings }))
       .catch((e) => {

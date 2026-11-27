@@ -143,6 +143,7 @@ export interface MatchBatchResult {
  */
 export async function suggestNextBatch(me: { id: number }, now = new Date(), startedAt = Date.now()): Promise<MatchBatchResult> {
   const db = getDb();
+  // şube-ayrımı: parasut.eslenmemis
   const [{ items: products }, ingredients, links, store] = await Promise.all([unlinkedProducts(40), matchIngredients(db), exampleLinks(db), loadStore(db)]);
   const active = ingredients.filter((i) => i.active);
   if (!active.length) throw new UserError("Önce hammadde ekleyin: AI yalnız listedeki hammaddelerden önerir.");

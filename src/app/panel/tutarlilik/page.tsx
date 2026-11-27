@@ -78,6 +78,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const [model, findings, linkedRows] = await Promise.all([
     // Tutarlılık işletme geneli: faturalar (alınan mal) şubeye bölünmez, sayım, satış ve zayi bütün şubelerden
     // (docs/SUBE.md › Neyi süzer); şube seçiliyken alım ile tek şubenin tüketimi karşılaştırılmaz
+    // şube-ayrımı: tutarlilik.sayfa
     loadModel({ scope: ALL_BRANCHES }),
     getDb().select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
     // Paraşüt'teki bir ürüne bağlı hammaddeler: alımı faturadan gelir; bu ay faturası yoksa toplu "Alım yok (0)"

@@ -55,6 +55,7 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  // şube-ayrımı: vergi.sayfa
   const { model, view, inputs, reminders } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     return { model, ...(await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null })) };

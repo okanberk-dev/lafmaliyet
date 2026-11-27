@@ -81,6 +81,7 @@ const SKIP = new Set([
   "setPushTopics",
   "sendTestPush",
   "chooseBranchScope",
+  "saveBranchView",
   "cashReportWhatsapp",
 ]);
 

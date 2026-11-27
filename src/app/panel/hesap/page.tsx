@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { Download, KeyRound, MonitorDown, PlugZap, UserRound } from "lucide-react";
+import { Download, KeyRound, MonitorDown, PlugZap, Store, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -10,13 +10,26 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { twoFactorRequiredFor } from "@/lib/admin-security";
+import {
+  ALWAYS_COMPANY_WIDE,
+  BRANCH_VIEW_TITLE,
+  branchViewCardState,
+  type BranchViewPrefs,
+  defaultView,
+  lockedViewLine,
+  VIEW_AREAS,
+  viewAreasFor,
+} from "@/lib/branch-view";
 import { ROLES } from "@/lib/constants";
 import { KURULUM_DURUM_ETIKET } from "@/lib/asilpos/kurulum";
 import { installForAccount } from "@/server/asilpos/kurulum";
-import { requireUser } from "@/server/auth/dal";
+import { type CurrentUser, requireUser } from "@/server/auth/dal";
+import { staffBranchLock, userBranchView } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { loadMyConnections } from "@/server/mcp/connections";
 
+import { BranchViewCard, type BranchViewRow } from "./branch-view-card";
 import { ConnectionsCard } from "./connections";
 import { AccountAvatar, PasswordForm, ProfileForm } from "./password-form";
 import { sessionsNote } from "./session-note";
@@ -45,6 +58,26 @@ function AccountSkeleton() {
   );
 }
 
+/**
+ * Hesabım › Şube görünümü kartının verisi (docs/SUBE.md › Şube ayrımı; kural `branchViewCardState`): tek şube açıkken
+ * ve para ekranı olmayan rolde yok, şubesine kilitli hesapta tek satır, öteki hesapta rolün ekranlarının satırları
+ */
+async function loadBranchView(user: CurrentUser): Promise<{ kind: "kilitli"; line: string } | { kind: "kart"; rows: BranchViewRow[]; prefs: BranchViewPrefs } | null> {
+  const [branches, lock, prefs] = await Promise.all([listBranches(), staffBranchLock(), userBranchView()]);
+  const locked = lock !== null || user.role === "manager";
+  const state = branchViewCardState({ role: user.role, locked, activeBranches: branches.filter((b) => b.active).length });
+  if (state === "yok") return null;
+  if (state === "kilitli") {
+    const name = branches.find((b) => b.id === (lock ?? user.branchId))?.name;
+    return name ? { kind: "kilitli", line: lockedViewLine(name) } : null;
+  }
+  const rows = viewAreasFor(user.role).map((area): BranchViewRow => {
+    const { label, help, modes, firmOnly } = VIEW_AREAS[area];
+    return { area, label, help, modes, firmOnly, fallback: defaultView(area, user.role) };
+  });
+  return { kind: "kart", rows, prefs };
+}
+
 async function Account() {
   const user = await requireUser();
   // Bağlı uygulamalar (Claude bağlantısı) yalnız yöneticide; okunamazsa sayfanın geri kalanı yine açılır
@@ -61,6 +94,11 @@ async function Account() {
   // gittiği adres, şubeye kilitli personel). Şubenin öbür personeli, müdür, muhasebeci ve yönetici görmez: bağlantıdaki
   // kod kasanın eşitleme anahtarını verir (installForAccount)
   const install = await installForAccount(getDb(), user).catch(() => null);
+  // Şube görünümü okunamazsa kart çizilmez; sayfanın geri kalanı açılır
+  const branchView = await loadBranchView(user).catch((e) => {
+    console.error("Şube görünümü okunamadı", e);
+    return null;
+  });
   // Parola, iki adımlı ve oturumları kapatma Claude bağlantısını da kapatır: pencereler bunu söyler (YO-08)
   const claude = Boolean(connections?.rows.length);
   return (
@@ -111,6 +149,16 @@ async function Account() {
               </p>
             )}
           </CardContent>
+        </Card>
+      ) : null}
+      {branchView ? (
+        // Çipin "Hesabım › Şube görünümü" bağlantısı buraya getirir
+        <Card id="sube-gorunumu" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
+          {branchView.kind === "kart" ? (
+            <BranchViewCard rows={branchView.rows} prefs={branchView.prefs} always={ALWAYS_COMPANY_WIDE} />
+          ) : (
+            <CardHeader icon={<Store />} title={BRANCH_VIEW_TITLE} description={branchView.line} />
+          )}
         </Card>
       ) : null}
       <Card>

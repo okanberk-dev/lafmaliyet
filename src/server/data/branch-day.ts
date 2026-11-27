@@ -63,6 +63,7 @@ export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySu
           .where(and(gte(s.posDayReports.date, asilposFrom), lte(s.posDayReports.date, today)))
           .then((rows) => rows.filter((r) => isCountedPosDay(switchDays, r.branchId, r.date))),
     // Bütün şubelerin föyleri (kart seçili şubeden bağımsız); anahtar kapalıyken föy tablosu okunmaz
+    // şube-ayrımı: karsilastirma.sube-gunu
     withBranchScope(ALL_BRANCHES, () => modposFallbackSheets(db, from, today)),
   ]);
 

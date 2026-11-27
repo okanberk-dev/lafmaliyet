@@ -114,7 +114,8 @@ hesabı ve cari hesap firmanın; POS hakedişinde kart satışı şube şube ken
 tam yedek (Dışa aktar, seçicisiz) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir;
 denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Tedarikçiler başlığın altında
 **"Marina seçili: bu ekran firma geneli"** notunu gösterir (`companyWideNote`, `CompanyWideNotice`; şube kapsamı C,
-sahibin varsayılanı: tek firma). Paraşüt ekranı ve Faturalar firma geneli değildir (25 Kasım 2026): seçili şubenin
+sahibin varsayılanı: tek firma; 27 Kasım'dan beri kişinin ayarına bağlanıyor: [Şube ayrımı](#şube-ayrımı-27-kasım-2026)).
+Paraşüt ekranı ve Faturalar firma geneli değildir (25 Kasım 2026): seçili şubenin
 Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Genel bakış'ın **Dışa aktar** düğmesi ise
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
 geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubeyle biter.
@@ -659,6 +660,105 @@ varsayılanı açılıyor, hoparlör seçilmeden sipariş zili ve alarm susuyord
 bilgisayarda anahtar bir kez elle açılır; seçim o bilgisayarda saklanır. Kural tek yerde: `src/lib/audio-output.ts` ›
 `ONLY_COMPUTER_BRANCHES`, `deviceBranch`, `onlyComputerFor`. Ayrıntı: docs/BILDIRIMLER.md.
 
+## Şube ayrımı (27 Kasım 2026)
+
+Sahibin isteği (27 Kasım 2026): "ladmin'de bir şube seçince sadece o şubeye ait bilgiler çıksın, diğerleri çıkmasın; tüm
+her yerde bu ayrımı yap." Bugün bilerek firma geneli olan ekranlar için (Vergi, Nakit planı, Tutarlılık, Mutabakat,
+tedarikçi bakiyeleri, stok değeri, Ödemeler; [yukarıda](#neyi-süzer-neyi-süzmez)): "bunu kullanıcının ayarlarından duruma
+göre değiştirilebilir yap, isteyen istediği gibi ayarlasın." Şube kapsamı A–C'nin devamı (**D**); altı parçada kurulur.
+
+### Şube görünümü (kişinin ayarı)
+
+**Hesabım › Şube görünümü** (`/panel/hesap#sube-gorunumu`): "Soldan bir şube seçtiğinizde bu ekranlar yalnız o şubeyi
+mi, firmanın tamamını mı göstersin? Tercih yalnız sizin hesabınızda saklanır." Ekran ekran **Yalnız şube | Firma geneli**,
+altında tek satır yardım; düğmeler **Hepsi yalnız şube**, **Hepsi firma geneli**, **Varsayılanlara dön**; en altta salt
+okunur **Her zaman firma geneli** listesi (gerekçeleriyle). Seçim hemen kaydedilir, hata olursa geri döner.
+
+| Alan (kimlik) | Yalnız şube kipinde | Firma geneli kalan | Muhasebecinin varsayılanı |
+|---|---|---|---|
+| Ödemeler ve faturalar (`odemeler`) | Şubenin ve işletme genelinin hatırlatıcıları, şubeye seçilmiş faturalar; Bugün, zil, Genel bakış, e-posta | Faturasız cari borç, dağıtılmamış ödeme ("İşletme geneli" bölümü) | Yalnız şube |
+| Nakit planı (`nakit`) | "Şubenin nakit akışı": şubenin satış tahmini, kasa devri, ödemeleri, faturaları, maaşları, sabit giderleri; vergi, SGK, işletme geneli tek satır ("Net akış") | Açılış bakiyesi | Firma geneli |
+| Vergi (`vergi`) | "Şubenin payı (bilgi)" kartı: satış KDV'si, şubenin faturalarının KDV'si, şube personelinin SGK ve stopajı, şubenin amortismanı | Beyan tutarları ve takvim ("Firma geneli · beyan") | Firma geneli |
+| Tutarlılık (`tutarlilik`) | Şubenin satışı, Z'si, reçete kullanımı, sayımı, zayisi; alım yalnız şubeye seçilmiş faturalardan | Bulgular (şube sütunu yok) | Firma geneli |
+| Mutabakat (`mutabakat`) | Şubenin POS hakedişi; ekstrede şubenin kayıtlarıyla eşleşen satırlar üstte | Ekstrenin kendisi, gelen POS parası | Firma geneli |
+| Tedarikçi bakiyeleri (`tedarikciler`) | Şubenin faturaları, onlara ödemeler, şubenin kasasından ödemeler; "İşletme geneli" satırı | — | Firma geneli |
+| Stok değeri, FIFO (`stok_degeri`) | Şubenin ve işletme genelinin faturalarındaki partiler | — | Firma geneli |
+| Komisyon ve hakediş (`komisyon`) | Şubenin payı ana görünüm, firmanın raporu katlı ekte | — | (ekran kapalı) |
+| Şubeleri yan yana (`karsilastirma`) | Kipler **Yalnız seçili şube \| Yan yana** | — | (ekran kapalı) |
+| İşletme geneli giderler (`ortak_gider`) | Kipler **Yalnız not \| Tutarla göster**; "Yalnız not": "İşletme geneli giderler bu şubenin kârına girmez (Tümü'de sayılır)", tutar yok | — | Tutarla göster |
+
+- **Yönetici**: her alanda varsayılan "Yalnız şube" (kart ve çip). **Muhasebeci**: kart ve çip, varsayılanı yukarıdaki
+  sütun; kartında yalnız açabildiği ekranların alanları (Vergi, İşletme geneli giderler). **Müdür ve şubesine kilitli
+  personel**: kart yerine tek satır ("Hesabınız Marina şubesine bağlı: her ekran yalnız Marina'yı gösterir."), çip yok, her
+  alan "Yalnız şube"; eylem reddeder ("Hesabınız şubenize bağlı"). **Şubesiz personel**: kart yok (para ekranı yok),
+  varsayılan geçer. Tek şube açıkken kart yok (seçici de çizilmez).
+- **Ekranın çipi** (`src/components/panel/branch-view-chip.tsx`): alanın ekranında, tek şube seçiliyken, bütün şubeleri
+  gören ve kilitsiz hesapta. Şube kipinde "Marina görünümü" + **Firma geneline geç** ve alanın firma geneli kalan satırı
+  ("Beyan tutarları … her görünümde firmanın"); firma kipinde "Firma geneli · Marina seçili" + **Yalnız Marina'yı göster**.
+  Altında "Bütün ekranlar için: Hesabım › Şube görünümü". Düğme aynı tercihi o alan için yazar. Alan ekranında "Marina
+  seçili: bu ekran firma geneli" notunun (`CompanyWideNotice`) yerini alır; not yalnız hep firma geneli ekranlarda kalır.
+- **Saklama**: `users.branch_view` (jsonb nesne, migration `0100_sube_gorunumu`; CHECK `jsonb_typeof = 'object'`),
+  ör. `{"vergi":"firma"}`; eksik anahtar rolün varsayılanı, bilinmeyen anahtar ve değer okurken düşer (`parseBranchView`).
+  Yazım yalnız kişinin satırına, anahtar anahtar (`branch_view || jsonb_build_object(alan, kip)`); oturum sürümü değişmez,
+  oturum (`readSessionUser`, `CurrentUser`) tercihi taşımaz. Saklanan değer her alanda `sube` / `firma` (iki alanın
+  seçenek adı başka, değeri aynı).
+- **Kod**: kurallar `src/lib/branch-view.ts` (`VIEW_AREAS`, `effectiveView`, `parseBranchView`, `viewAreasFor`,
+  `viewChipText`); okuma `src/server/branch-scope.ts` › `userBranchView` (istek başına tek küçük okuma), `currentBranchView(alan)`,
+  `areaScope(alan)` (firma kipinde "Tümü", şube kipinde seçim; alanın yükleyicisi `withBranchScope(ALL_BRANCHES, …)` yerine
+  `withBranchScope(await areaScope("vergi"), …)` ile okur), `withBranchView(tercih, fn)` (testler, bağlantı anahtarının
+  sahibi); yazma `src/server/actions/branch-view.ts` › `saveBranchView` (`requireUser` + `sube.tumu`; muhasebeci de yazar:
+  kendi hesabı). **Müdürün kilidi okumada kalır**: `areaScope` "Tümü" dönse de `currentBranchScope` onu şubesine daraltır.
+- **Bağlantı ve panel asistanı** (parça 4): isteğe bağlı `gorunum: "sube" | "firma"`; verilmezse anahtar sahibinin
+  tercihi (`withBranchView`). Çıktının `kapsam` satırı alanın kipini yazar.
+
+**Sahibin kararı bekleyen**: İşletme geneli giderler için üçüncü kip, **"Ciroya göre pay et"**, eklenmedi: 23 Kasım'daki
+"bölüştürme yok" kararını ve "Σ şube − işletme geneli = Tümü" denetimini bozardı.
+
+### Her zaman firma geneli (ayarı yok)
+
+Tam yedek (geri yüklenebilir yedek bütün veritabanını ister); vergi beyan tutarları ve takvim (tek vergi numarası); banka
+ve cari ekstresi, nakit açılış bakiyesi (firmanın hesabı ve parası); Paraşüt eşitlemesi (hesap başına, ortak hesap "hesap
+geneli"); hammadde fiyatı, menü, reçete, tedarikçi kütüğü (ortak veri); su + buz litre fiyatı (tek fatura, döküm şube
+şube); silme engelleri (bütünlük, veri olarak görünmez); Tükendi, uygulama siparişleri, masa çağrıları (site şubeyi
+göndermiyor: "Bütün şubeler"); firmaya giden sabah ve haftalık e-postası, aylık muhasebeci paketi e-postası (alıcı firma);
+Tutarlılık bulguları (şube sütunu yok). Kaçak raporu şimdilik yalnız Marina'nın (tahmini stok; öbür şubede "Bu şube için
+tahmini stok yok"). Hesabım'daki liste `ALWAYS_COMPANY_WIDE`.
+
+### Kayıt ve denetim
+
+Seçimi bilerek aşan her okuma kayıtlıdır: `COMPANY_WIDE_READS` (`src/lib/branch-view.ts`; kimlik, `dosya#işlev`, tür,
+gerekçe) ve okumanın üstünde `// şube-ayrımı: <kimlik>` işareti. Türler: `yalniz-firma`, `alan` (yalnız `areaScope`
+çağrısında, alanıyla), `butunluk`, `ortak-veri`, `sozlesme`, `hesap`, `gecici`, `yazim` (okuma değil, kaydın işletme geneli
+hedefi), `bekliyor` (sonraki parça kapatır). `tests/sube-ayrimi.test.ts`:
+
+- (a) `src/` altında (saf `src/lib` hariç) her `withBranchScope(ALL_BRANCHES`, `scope: ALL_BRANCHES`, kapsamsız
+  `loadUpcoming()` / `unlinkedProducts(n)` / `countUnlinkedProducts()` ve `areaScope(…)` çağrısının üstünde kayıtlı bir işaret;
+  her kimlik en az bir yerde kullanılır ve `where` dosyasında işareti durur (eskimiş kayıt kalmaz).
+- (b) Şubesi olan tabloların (`cashReports`, `invoices`, `reminders` …) `src/server/{data,bell,notify,ai,mcp,assistant-reads}`
+  ve panel sayfalarındaki her `.from(s.X)` ifadesi kapsamla okur (`branchWhere`, `invoiceScopeWhere`, `requestInScope` …)
+  ya da işaretlidir. Bugün kalanlar `BEKLEYEN_B`'de (dosya başına sayı; 27 Kasım'da 104 ifade): sayı yalnız azalır.
+- (c) Alanın ekranı çipini çizer (`<BranchViewChip area="…">`); "bu ekran firma geneli" notu yalnız hep firma geneli
+  ekranlarda ve çipi henüz gelmemiş alanların ekranlarında (`BEKLEYEN_ALANLAR`).
+- (d) Saf kurallar: yöneticinin varsayılanı her alanda şube, kilitli hesap her alanda şube, tanınmayan tercih düşer.
+
+Veritabanında: `tests/sube-gorunumu-db.test.ts` (yazım yalnız kendi satırına, birleşerek; muhasebecinin alanları; müdür ve
+personel reddedilir; müdürde firma yazılı olsa da her alan şubesi ve okuma şubesine daralır). Saf kurallar ve ekran:
+`tests/sube-gorunumu.test.ts`.
+
+### Sıra
+
+| Parça | Ne | Durum |
+|---|---|---|
+| 1 | Altyapı: ayar, migration 0100, `areaScope`, eylem, çip, Hesabım kartı, kayıt ve tarama | Kuruldu (27 Kasım 2026) |
+| 2 | Ayarsız sızıntılar: Bugün ve zil sayıları, onaylar, kişi seçicileri, Paraşüt, asistan, kayıp önleme | Sırada |
+| 3 | Şube sütunu olmayan tablolar: `checklist_runs`, `activity_log`, `notification_log`, `investments` (migration 0101) | Sırada |
+| 4 | Alanlar: Ödemeler, Nakit planı, Tedarikçiler, Komisyon | Sırada |
+| 5 | Alanlar: Vergi, Tutarlılık, Mutabakat, Stok değeri | Sırada |
+| 6 | Şubeleri yan yana, İşletme geneli giderler, dışa aktarım, e-posta önizlemeleri, kapanış | Sırada |
+
+Bir alan ekranına bağlanana kadar o alanın tercihi okumayı değiştirmez ve ekranda çip çizilmez (ekran bugünkü gibi
+firma geneli notunu gösterir); hangi okumanın beklediği kayıtta `bekliyor` türüyle ve parçasıyla yazılı.
+
 ## Sırada ne var
 
 Dalga 1 kütüğü ve ekranı, dalga 2 şube sütununu, seçiciyi ve para yolunun süzülmesini, dalga 3 kalan okumaların
@@ -685,7 +785,7 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   yerinde kalır (taşınmaz, sayılmaz), kasayı başka şubeye taşımak yeni kurulum kodu ister (anahtar şubeyi tanıtır).
   "Tümü"de iki kasanın son günleri farklıysa süren ayın satış dönemi en geç gelen günle biter (ModPOS listelerinin
   ortak dönemi gibi en kısasıyla kesilmez). **Şube kapsamı D** ("şube seçiliyken her ekranda yalnız o şubenin bilgisi")
-  ayrı iştir.
+  başladı: [Şube ayrımı](#şube-ayrımı-27-kasım-2026).
 - **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
   şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.
 - **Faturanın şubesi** kuruldu (25 Kasım 2026, aşağıda): şubenin faturası Gelir-gider'de şubenin harcama hücresinde.

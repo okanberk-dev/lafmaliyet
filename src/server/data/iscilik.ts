@@ -101,6 +101,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
 
   const [models, rows, switchDay, reports, closed] = await Promise.all([
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
+    // şube-ayrımı: karsilastirma.iscilik
     withBranchScope(ALL_BRANCHES, () => tillRows(db)),
     loadSwitchDays(db),
     db

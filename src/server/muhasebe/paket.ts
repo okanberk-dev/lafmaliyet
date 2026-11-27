@@ -80,6 +80,7 @@ export async function loadPackageData(month: string, now = new Date()): Promise<
       .from(s.cashReports)
       .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
       .orderBy(asc(s.cashReports.date), asc(s.cashReports.branchId)),
+    // şube-ayrımı: muhasebe.paket-eposta
     loadModel({ scope: ALL_BRANCHES }),
   ]);
   const branchName = (id: string | null | undefined) => (id ? (branches.find((b) => b.id === id)?.name ?? id) : null);

@@ -288,6 +288,7 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
     latestParasutRun(db).then((r) => (r ? [r] : [])),
+    // şube-ayrımı: parasut.eslenmemis
     countUnlinkedProducts().catch(() => 0),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
     countStockOnlyReview(db).catch(() => 0),

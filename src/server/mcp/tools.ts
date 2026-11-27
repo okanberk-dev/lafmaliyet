@@ -163,8 +163,10 @@ export const TOOLS = [
         const up = await loadUpcoming(undefined, { branch: await currentBranchScope() });
         // Nakit planı firmanın: şube seçiliyken de bütün şubelerle (Nakit planı ekranı gibi)
         const plan = args.nakitPlani
+          // şube-ayrımı: nakit.mcp
           ? await withBranchScope(ALL_BRANCHES, async () => {
               const model = await loadModel();
+              // şube-ayrımı: nakit.mcp
               const view = await loadCashPlan(model, await loadUpcoming());
               return { plan: view.plan, komisyon: model.settings.komisyon, acikGun: model.settings.acikGun };
             }).catch((e: Error) => {

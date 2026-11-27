@@ -23,11 +23,12 @@ import {
   tillBranches,
 } from "@/lib/branches";
 
+import { type BranchViewPrefs, effectiveView, parseBranchView, type ViewArea, type ViewMode, viewScope } from "@/lib/branch-view";
 import { BRANCH_ROLES } from "@/lib/roles";
 
 import { getCurrentUser } from "./auth/dal";
 import { listBranches } from "./branches";
-import { getDb, type DB } from "./db";
+import { getDb, schema as s, type DB } from "./db";
 import { UserError } from "./user-error";
 
 /**
@@ -157,6 +158,68 @@ export async function currentBranchScope(): Promise<BranchScope> {
  */
 export function withBranchScope<T>(scope: BranchScope, fn: () => Promise<T>): Promise<T> {
   return scopeOverride.run(scope, fn);
+}
+
+// ---------------------------------------------------------------- Şube görünümü (şube ayrımı D, 27 Kasım 2026)
+
+/**
+ * İsteğin kullanıcısının şube görünümü tercihi (`users.branch_view`; docs/SUBE.md › Şube ayrımı): istek başına tek küçük
+ * okuma. Oturum (`readSessionUser`, `CurrentUser`) değişmedi; tercih yalnız onu soran ekranda okunur. İstek dışında,
+ * oturumsuz ya da okunamazsa boş (rolün varsayılanı geçer)
+ */
+export const userBranchView = cache(async (): Promise<BranchViewPrefs> => {
+  const user = await requestUser();
+  if (!user) return {};
+  try {
+    const [row] = await getDb().select({ v: s.users.branchView }).from(s.users).where(eq(s.users.id, user.id)).limit(1);
+    return parseBranchView(row?.v);
+  } catch (e) {
+    console.error("[şube görünümü] tercih okunamadı; varsayılan", e);
+    return {};
+  }
+});
+
+/** `withBranchView` ile verilen tercih (testler, bağlantı anahtarının sahibi); yoksa isteğin kullanıcısınınki */
+const viewOverride = new AsyncLocalStorage<BranchViewPrefs>();
+
+/**
+ * Hesap şubesine kilitli mi (müdür; şubesi seçilmiş ve etkin personel): kilitli hesapta her alan "sube", tercih okunmaz.
+ * İstek başına bir kez
+ */
+const requestViewLock = cache(async (): Promise<boolean> => {
+  if (await managerLock()) return true;
+  return (await lockedBranch(await listBranches())) !== null;
+});
+
+/**
+ * Alanın geçerli kipi ("sube" ya da "firma"; src/lib/branch-view.ts › effectiveView): kilitli hesapta hep "sube";
+ * öteki hesapta `withBranchView`'ın tercihi, yoksa kişinin tercihi, yoksa rolün varsayılanı. Oturum yoksa (bağlantı
+ * anahtarı, arka plan işi, test) yöneticinin varsayılanı
+ */
+export async function currentBranchView(area: ViewArea): Promise<ViewMode> {
+  const [user, locked] = await Promise.all([requestUser(), requestViewLock()]);
+  const prefs = viewOverride.getStore() ?? (await userBranchView());
+  return effectiveView(area, user?.role ?? "admin", locked, prefs);
+}
+
+/**
+ * Alanın okuma kapsamı: firma kipinde "Tümü", şube kipinde seçim (`currentBranchScope`). Alanın yükleyicisi bugünkü
+ * `withBranchScope(ALL_BRANCHES, …)` yerine `withBranchScope(await areaScope("vergi"), …)` ile okur; çağrının üstünde
+ * kaydın işareti durur (`// şube-ayrımı: …`, tests/sube-ayrimi.test.ts). Müdürün kilidi okumanın kendisinde kalır:
+ * "Tümü" dönse de `currentBranchScope` onu şubesine daraltır
+ */
+export async function areaScope(area: ViewArea): Promise<BranchScope> {
+  const scope = await currentBranchScope();
+  if (scope === ALL_BRANCHES) return scope;
+  return viewScope(scope, await currentBranchView(area));
+}
+
+/**
+ * Tercihi istekten bağımsız verir: `fn` içindeki `currentBranchView` / `areaScope` bu tercihi okur (testler; bağlantı
+ * anahtarının sahibinin tercihi). Kilit yine geçerli: müdürde her alan "sube"
+ */
+export function withBranchView<T>(prefs: BranchViewPrefs, fn: () => Promise<T>): Promise<T> {
+  return viewOverride.run(prefs, fn);
 }
 
 /**

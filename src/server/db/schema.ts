@@ -89,12 +89,20 @@ export const users = pgTable(
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
     /** Parola, iki adımlı doğrulama ya da yetki değişince artar; eski oturumlar geçersiz olur */
     sessionVersion: integer("session_version").notNull().default(1),
+    /**
+     * Şube görünümü (docs/SUBE.md › Şube ayrımı; src/lib/branch-view.ts): şube seçiliyken ekran ekran "yalnız şube" ya da
+     * "firma geneli" tercihi, `{"vergi":"firma"}`. Eksik anahtar rolün varsayılanı; okurken bilinmeyen anahtar ve değer
+     * düşer (`parseBranchView`). Yalnız kişinin kendisi yazar (Hesabım ve ekranın çipi, `saveBranchView`)
+     */
+    branchView: jsonb("branch_view").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
   },
   (t) => [
     // Tanınmayan rol yazılamaz (oturum da tanımaz: src/server/auth/session.ts)
     check("users_role_ck", sql`${t.role} in ('admin','manager','staff','accountant')`),
     // Müdür şubesine kilitli: şubesiz müdür olmaz (src/server/auth/dal.ts › managerWithoutBranch)
     check("users_manager_branch_ck", sql`${t.role} <> 'manager' or ${t.branchId} is not null`),
+    // Şube görünümü nesne olmalı ("||" ile anahtar anahtar yazılır)
+    check("users_branch_view_ck", sql`jsonb_typeof(${t.branchView}) = 'object'`),
   ],
 );
 

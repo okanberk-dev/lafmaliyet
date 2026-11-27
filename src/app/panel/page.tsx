@@ -234,6 +234,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve "Tümü" kapsamında (kasa raporları,
     // kasalardaki devir; Nakit planı sayfası gibi, docs/SUBE.md › Neyi süzer)
     upcoming
+      // şube-ayrımı: nakit.genel-bakis
       ? (model.ds.branchView ? loadModel({ scope: ALL_BRANCHES }) : Promise.resolve(model))
           .then((m) => withBranchScope(ALL_BRANCHES, () => loadCashPlan(m, upcoming)))
           .catch(() => null)

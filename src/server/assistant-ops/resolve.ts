@@ -53,11 +53,13 @@ export function physicalBranch(raw: string | undefined, scope: BranchScope, bran
  * geneli (ekrandaki gibi). Dönüş: kayıt şubesi (null = işletme geneli) ve yazımın kapsamı.
  */
 export function expenseBranch(raw: string | undefined, scope: BranchScope, branches: readonly BranchRow[]): { branchId: string | null; scope: BranchScope; label: string } {
+  // şube-ayrımı: asistan.isletme-geneli
   if (raw && COMPANY_WIDE.has(foldName(raw))) return { branchId: null, scope: ALL_BRANCHES, label: "İşletme geneli" };
   if (raw) {
     const b = physicalBranch(raw, scope, branches);
     return { branchId: b.id, scope: b.id, label: b.name };
   }
   const chosen = branches.find((b) => b.id === scope && b.active && b.kind === "fiziksel");
+  // şube-ayrımı: asistan.isletme-geneli
   return chosen ? { branchId: chosen.id, scope: chosen.id, label: chosen.name } : { branchId: null, scope: ALL_BRANCHES, label: "İşletme geneli" };
 }

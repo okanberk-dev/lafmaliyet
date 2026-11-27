@@ -291,6 +291,7 @@ export async function loadCommissionReport(): Promise<CommissionReport> {
  * işletme geneli: seçicide şube seçili olsa da uyarı ve hakediş işletmenindir (docs/SUBE.md)
  */
 async function loadLightReport(today?: string): Promise<CommissionReport> {
+  // şube-ayrımı: komisyon.hafif
   return withBranchScope(ALL_BRANCHES, async () => buildCommissionReport(await loadCommissionInput({ resolveNames: false, today })));
 }
 
@@ -302,6 +303,7 @@ export async function loadCommissionReports(): Promise<{ all: CommissionReport; 
   const scope = await currentBranchScope();
   if (scope === ALL_BRANCHES) return { all: await loadCommissionReport(), branch: null, scope };
   // Ödeme süreleri her iki raporda işletmenin (businessPayDays): son gün ve gecikme seçiciye göre değişmez, zille aynı
+  // şube-ayrımı: komisyon.sayfa
   const [all, branch] = await Promise.all([withBranchScope(ALL_BRANCHES, () => loadCommissionReport()), withBranchScope(scope, () => loadCommissionReport())]);
   return { all, branch, scope };
 }

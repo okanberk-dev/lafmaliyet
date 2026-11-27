@@ -670,11 +670,13 @@ export async function previewDigest() {
     await requireAdmin();
     // Gerçek gönderim gibi seçiciden bağımsız, "Tümü"yle okur (runReminderDigest): Marina seçiliyken önizlemenin zam
     // tutarı ve ek kutuları Marina'nınki oluyordu (denetim 21 Kasım #18)
+    // şube-ayrımı: eposta.firma
     return withBranchScope(ALL_BRANCHES, digestPreview);
   });
 }
 
 async function digestPreview() {
+  // şube-ayrımı: eposta.firma
   const { today, items } = await loadUpcoming();
   const due = dueNotifications(items);
   // Yükleyiciler yalnız okur; failedRunKey gönderimden sonra günlüğe yazmak içindir, burada kullanılmaz

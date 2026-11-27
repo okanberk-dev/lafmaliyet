@@ -200,6 +200,7 @@ const komisyon: Collector = {
     // Yemek kartı hiçbir şubede kullanılmıyorsa madde yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
     if (!(await featureHere("yemek_karti", ALL_BRANCHES))) return one(null);
     // İşletme geneli (haftalık özet seçiciden bağımsız; docs/SUBE.md)
+    // şube-ayrımı: eposta.firma
     const report = buildCommissionReport(await withBranchScope(ALL_BRANCHES, () => loadCommissionInput({ resolveNames: false, today: ctx.today })));
     const cands = commissionAlerts(report, ctx.today, Infinity)
       .map((a) => commissionCand(report, a))
@@ -352,6 +353,7 @@ export async function collectWeekly(now: Date, o: { budgetMs: number }): Promise
     cashWeeks: () => (cashP ??= cashReportsBetween(addDays(week.lastFrom, -28), week.lastTo)),
   };
   const budget = Math.max(0, o.budgetMs);
+  // şube-ayrımı: eposta.firma
   const results = await withBranchScope(ALL_BRANCHES, () =>
     Promise.all(
       COLLECTORS.map(async (c) => {

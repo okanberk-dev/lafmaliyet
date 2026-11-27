@@ -510,6 +510,7 @@ async function staffTillsWaiting(day: string, now: Date, evening: Awaited<Return
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
   if (tills.length < 2 || tills.some((b) => b.id === scope)) return null;
+  // şube-ayrımı: kasa.zil-tumu
   const [reports, switchDays] = await Promise.all([withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)), loadSwitchDays().catch(() => ({}))]);
   return tills
     // Kasanın kendi saatinden sonra (şube ayarı isletme.takvim)

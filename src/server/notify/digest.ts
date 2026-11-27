@@ -286,11 +286,13 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
  * işletme geneli rakamı göndermesini engelliyordu (denetim 21 Kasım #18).
  */
 export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number } = {}): Promise<DigestResult> {
+  // şube-ayrımı: eposta.firma
   return withBranchScope(ALL_BRANCHES, () => sendReminderDigest(trigger, ctx));
 }
 
 async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number }): Promise<DigestResult> {
   const db = getDb();
+  // şube-ayrımı: eposta.firma
   const { today, settings, items, reminders } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };
   if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: "nokey" };

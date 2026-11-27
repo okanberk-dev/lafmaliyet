@@ -103,6 +103,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
     db.select({ id: s.staff.id, name: s.staff.name, userId: s.staff.userId, personRef: s.staff.personRef }).from(s.staff),
     db.select({ id: s.users.id, name: s.users.name }).from(s.users),
     loadSwitchDays(db),
+    // şube-ayrımı: kayip-onleme
     loadModel({ scope: ALL_BRANCHES }),
   ]);
 

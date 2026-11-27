@@ -701,6 +701,13 @@
       "when": 1795748380705,
       "tag": "0099_pos_cok_sube",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1795759648741,
+      "tag": "0100_sube_gorunumu",
+      "breakpoints": true
     }
   ]
 }

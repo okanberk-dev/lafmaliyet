@@ -220,6 +220,7 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
             : null,
       })),
     ),
+    // şube-ayrımı: parasut.eslenmemis
     safe(countUnlinkedProducts()),
     safe(loadUnpricedIngredients()),
     // Onay bekleyenler: reçete değişiklikleri ve yeni ürünler (boyları tek öneri), ilk ürün adları; personel istekleri

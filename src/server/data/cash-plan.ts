@@ -98,6 +98,7 @@ async function tillsCarry(before: string, branches: readonly BranchRow[]): Promi
  * içindedir. Besleme hesaplanamazsa plan vergi satırsız çalışır (`tax: null`).
  */
 export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<typeof loadUpcoming>>, opts: { taxInputs?: TaxInputs } = {}): Promise<CashPlanView> {
+  // şube-ayrımı: nakit.sayfa
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
   const branchesP = listBranches();

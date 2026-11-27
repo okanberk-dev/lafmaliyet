@@ -38,6 +38,7 @@ export default function CashPlanPage() {
 async function CashPlanContent() {
   await requireAdmin();
   // Ödemeler ve nakit işletmenindir: şube seçiciden bağımsız, bütün şubeler (docs/SUBE.md › Neyi süzer)
+  // şube-ayrımı: nakit.sayfa
   const { model, plan, state, carry, invoiceTermDays } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     return { model, ...(await loadCashPlan(model)) };

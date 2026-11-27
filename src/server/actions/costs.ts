@@ -64,6 +64,7 @@ async function dataMonths(tx: Tx, before?: string): Promise<string[]> {
   // seçicisinin ilk veri ayı. Seçili şubeye göre süzülürse Marina seçiliyken `past` boşalır, staffUsedMonths
   // hiçbir ay bulmaz ve Tuzla'da maaş hesabına girmiş kişi silinebilir hale gelir (docs/SUBE.md › Neyi süzer,
   // neyi süzmez). Aynısı sabit gider için geçerli. tillRows de bu kapsamın içinde: o da ay rakamını getiriyor.
+  // şube-ayrımı: costs.dataMonths
   return withBranchScope(ALL_BRANCHES, async () => {
     const [rows, till] = await Promise.all([
       tx

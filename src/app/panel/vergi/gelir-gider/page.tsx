@@ -66,6 +66,7 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const rawYear = pick(sp.yil);
   const rawQuarter = pick(sp.ceyrek);
   // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  // şube-ayrımı: vergi.sayfa
   const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
     const model = await loadModel();
     const loaded = await loadTaxView(model, {

@@ -453,6 +453,7 @@ async function SettingsContent() {
   // Stok değerleme işletme geneli bir ayar (settings.stokFifoBaslangic): Tümü'nün kâr-zararını değiştirir. Önizleme de
   // "Tümü"nün sayımlarıyla ve elle girilmiş devirleriyle; şube seçiliyken şubenin kısmi stoğu ve süzülen stock:*
   // satırları yanıltırdı (denetim 21 Kasım #32; Genel bakış'ın nakit planı kartıyla aynı kalıp)
+  // şube-ayrımı: stok-degeri.ayarlar
   const company = model.ds.branchView ? await loadModel({ scope: ALL_BRANCHES }) : model;
   const fifoOptions = fifoMonthOptions(company.countedMonths, company.fifoStart, company.ds.currentMonth ?? currentMonthTR());
 

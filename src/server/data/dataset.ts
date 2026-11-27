@@ -326,6 +326,7 @@ async function readDataset(): Promise<Dataset> {
   const companyMonths =
     branch === null
       ? null
+      // şube-ayrımı: dataset.companyMonths
       : await withBranchScope(ALL_BRANCHES, async () => {
           const [allMonths, allTill] = await Promise.all([db.select().from(s.months).orderBy(asc(s.months.month)), tillRows()]);
           return allBranchMonths(allMonths, allTill, closedFor(closedRows, allTill));
@@ -630,6 +631,7 @@ async function companyWaterSales(
 ): Promise<NonNullable<Dataset["waterSales"]>> {
   const switchMonths = Object.values(input.switchDays).flatMap((d) => (d ? [d.slice(0, 7)] : []));
   const read = [...new Set([...input.months, ...switchMonths])];
+  // şube-ayrımı: dataset.companyWaterSales
   return withBranchScope(ALL_BRANCHES, async () => {
     const [lines, till, site] = await Promise.all([
       db.select().from(s.salesLines).where(inArray(s.salesLines.month, read)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
