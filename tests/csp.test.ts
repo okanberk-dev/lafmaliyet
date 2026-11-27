@@ -87,15 +87,16 @@ test("ihlal raporu: iki biçim de okunur; adres köken + yol, sorgu ve kişisel 
   assert.equal(parseCspReports(JSON.stringify(Array.from({ length: 50 }, () => JSON.parse(modern)[0]))).length, 20, "en çok 20");
 });
 
-test("kaynak: başlıklar derlemede next.config'te, yalnız sayfalara; rapor ucu oturumsuz, sınırlı, hep 204", () => {
+test("kaynak: başlıklar derlemede next.config'te, yalnız sayfalara; rapor ucu oturumsuz, sınırlı, hep 204, hata kaydına yazar", () => {
   const config = read("next.config.ts");
   assert.match(config, /const CSP_HEADERS = cspHeaders\(\{ enforce: cspEnforced\(process\.env\), dev: process\.env\.NODE_ENV === "development", env: process\.env \}\);/);
   assert.match(config, /\{ source: "\/\(\(\?!api\/\|_next\/\)\.\*\)", headers: CSP_HEADERS \}/, "API ve derlenmiş dosyalar hariç (fotoğrafın sandbox CSP'si korunur)");
   const route = read("src/app/api/csp-rapor/route.ts");
   assert.match(route, /export async function POST\(request: Request\)/);
-  assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin|getDb/, "oturum ve veritabanı yok");
+  assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin|getDb/, "oturum yok; veritabanına yalnız hata kaydı (beklemeden) yazar");
   assert.match(route, /const MAX_BYTES = 16 \* 1024;/);
-  assert.match(route, /if \(logged >= PER_MINUTE\) break;/);
+  // Sınırlı satırlar hem günlüğe hem hata kaydına (docs/HATA-KAYDI.md; davranışı tests/hata-kaydi-db.test.ts)
+  assert.match(route, /if \(logged >= PER_MINUTE\) break;\s*logged\+\+;\s*console\.warn\(cspLogLine\(v\)\);\s*void reportError\(cspEntry\(v\)\);/);
   assert.doesNotMatch(read("src/proxy.ts"), /csp-rapor/, "oturum ara katmanı rapor ucuna dokunmaz");
   // Fotoğraf ucu kendi kısıtlı politikasını taşır
   assert.match(read("src/app/api/foto/[id]/route.ts"), /"Content-Security-Policy": "default-src 'none'; sandbox"/);
