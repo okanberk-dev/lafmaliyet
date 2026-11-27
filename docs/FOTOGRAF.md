@@ -379,12 +379,14 @@ Kodla okunan fişte hiçbir rakam tahminle doldurulmaz:
 **AsilPOS'un kendi gün sonu kâğıdı** (24 Kasım 2026, Marina: fotoğraf "Z raporu" olarak tanınmadı). AsilPOS kapanışta fiş
 yazıcısından kâğıt basar (AsilPOS `src/lib/print.tsx`). Kasanın rakamlarını gören basınca önce AsilPOS'un yönetim raporu
 ("GÜN SONU · Z 31", NET CİRO, ödemeler, KDV, altında "AsilPOS yönetim raporudur, mali Z değildir"), ardından Pavo'nun banka
-gün sonu ("BANKA GÜN SONU · PAVO": Batch, Bankalar, TOPLAM, "PAVO - LAFPOS KARŞILAŞTIRMA"); kör kasada yalnız banka kısmı.
+gün sonu ("BANKA GÜN SONU · PAVO": Batch, Bankalar, TOPLAM, "PAVO - ASILPOS KARŞILAŞTIRMA"; AsilPOS #189'dan önceki
+kasalarda ve eski fotoğraflarda "PAVO - LAFPOS KARŞILAŞTIRMA"); kör kasada yalnız banka kısmı.
 Mali değildir: Z no'su AsilPOS'un kendi sayacıdır. Pavo ayrı mali Z basmaz (AsilPOS'ta `zReport: false`), detaylı Z'yi
 yalnız cihazdan istenince basar.
 - İstemler (`OKC_TASK`, `OKC_SHORT_TASK`) kâğıdı tanıtır: başlık aynen, banka kısmı varsa `batch_slip` yoksa
-  `software_z`; Z no, NET CİRO, ödeme ve KDV okunmaz; Bankalar altındaki her satır aynı batch'in bir bankası. Yeni şema
-  değeri yok (eski `ai_calls` satırları aynı yoldan geçer).
+  `software_z`; Z no, NET CİRO, ödeme ve KDV okunmaz; Bankalar altındaki her satır aynı batch'in bir bankası, kıyas
+  başlığının iki adının (`KIYAS_BASLIKLARI`) altındaki satırlar batch değil. Yeni şema değeri yok (eski `ai_calls`
+  satırları aynı yoldan geçer).
 - Kod modelin kararına güvenmez (`okcPaperView`, `isAsilposPaper`): başlık "GÜN SONU · Z n" ya da "BANKA GÜN SONU · PAVO"
   ise (ya da mali işareti olmayan kâğıtta toplamın etiketi NET CİRO ise) model `z_report` dese de banka gün sonu fişi
   sayılır; Z no'su ve rakamları forma, karşılaştırmaya ve `okc_z_no`'ya hiç gitmez (`zNoFromPhoto` olmaz). Banka kısmı
@@ -394,7 +396,7 @@ yalnız cihazdan istenince basar.
   yazarkasa rakamları AsilPOS'tan gelir." (ayrı mali Z basan cihazda ya da cihaz bilinmiyorsa eski yönerge kalır).
   Yöneticinin karşılaştırmasında Pavo gününde fotoğrafta Z yoksa bilgi satırı çıkar ("Pavo detaylı Z: fotoğrafta yok ·
   AsilPOS'ta Z rakamları geldi"); fark değildir, alarm e-postası gitmez.
-- Kodla okuma kâğıdı işaretlerinden tanır ("mali Z değildir", "BANKA GÜN SONU · PAVO", "PAVO - LAFPOS KARŞILAŞTIRMA"…):
+- Kodla okuma kâğıdı işaretlerinden tanır ("mali Z değildir", "BANKA GÜN SONU · PAVO", kıyas başlığı iki adla da…):
   Z kısmı okunmaz, banka satırları batch olur (toplamı TOPLAM'ı tutmuyorsa hepsi şüpheli), karşılaştırma satırları atılır.
 - Her okuma tek günlük satırı bırakır: `[foto] okuma {photoId, kind, steps, model, documentType, ok}` (rakam ve görsel
   yok).

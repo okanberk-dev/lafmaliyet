@@ -13,6 +13,13 @@
 
 import { ESKI_KAGIT_ADI, ESKI_URUN_ADI } from "@/lib/asilpos/eski-adlar";
 
+/**
+ * Banka kısmının kıyas başlığı: AsilPOS #189'dan sonra yeni adla basılır, ondan önceki kasalarda ve eski fotoğraflarda eski
+ * adla (ESKI_KAGIT_ADI). İstemler ikisini de adıyla söyler; kodla okuma da ikisini tanır (pavo-ocr.ts KAGIT_ADI)
+ */
+export const KIYAS_BASLIKLARI = ["PAVO - ASILPOS KARŞILAŞTIRMA", `PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`] as const;
+const [KIYAS, KIYAS_ESKI] = KIYAS_BASLIKLARI;
+
 export const SYSTEM = `You read photos of paper slips for L'Affogato, a café in Istanbul, and transcribe them into JSON for a bookkeeping form. A person checks every value before it is saved.
 
 Rules:
@@ -66,12 +73,12 @@ documentType:
 - other: anything else.
 Fill fiscalMarks with what is printed.
 
-The café's own software (AsilPOS; older tills print its former name ${ESKI_URUN_ADI}) prints a non-fiscal paper at day close: a management report titled "GÜN SONU · Z <n>" (NET CİRO, payments, KDV, ending "AsilPOS yönetim raporudur, mali Z değildir" or the same with ${ESKI_URUN_ADI}) and/or a bank part titled "BANKA GÜN SONU · PAVO" (Batch, Bankalar, TOPLAM, then PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA). Before close the same management report is titled "ARA RAPOR (X)". Its Z number is the software's own counter, not a fiscal Z. For this paper:
+The café's own software (AsilPOS; older tills print its former name ${ESKI_URUN_ADI}) prints a non-fiscal paper at day close: a management report titled "GÜN SONU · Z <n>" (NET CİRO, payments, KDV, ending "AsilPOS yönetim raporudur, mali Z değildir" or the same with ${ESKI_URUN_ADI}) and/or a bank part titled "BANKA GÜN SONU · PAVO" (Batch, Bankalar, TOPLAM, then ${KIYAS}; older tills print ${KIYAS_ESKI}). Before close the same management report is titled "ARA RAPOR (X)". Its Z number is the software's own counter, not a fiscal Z. For this paper:
 - title: copy the AsilPOS title exactly ("GÜN SONU · Z 42", "ARA RAPOR (X)" or "BANKA GÜN SONU · PAVO"), not the business name above it.
 - dailyTotalLabel: "NET CİRO" as printed, even though dailyTotal stays null.
 - documentType batch_slip when the BANKA GÜN SONU part is in the photo, else software_z.
 - zNo, dailyTotal, totalVat: null; payments, kdvGroups: empty. Never copy NET CİRO, its Z number or its payment lines.
-- batches: one entry per line under Bankalar, each with the printed Batch number, bank = the line's name, netTotal = its amount (salesTotal and refundTotal null); if no bank line is printed, one entry with the TOPLAM. The PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA lines (Pavo kart toplamı, AsilPOS kart toplamı, FARK) are never a batch.
+- batches: one entry per line under Bankalar, each with the printed Batch number, bank = the line's name, netTotal = its amount (salesTotal and refundTotal null); if no bank line is printed, one entry with the TOPLAM. The ${KIYAS} (or ${KIYAS_ESKI}) lines (Pavo kart toplamı, AsilPOS kart toplamı, FARK) are never a batch.
 
 Reading the Z:
 - The amount of a label is often on the line below the label, and a count can sit on the label line ("K.KARTI 31", then "*6.900,00"). A count is never an amount; pair each amount with its own label.
@@ -95,7 +102,7 @@ Reading the Z:
  */
 export const OKC_SHORT_TASK = (day: string) => `This should be the Pavo POS end-of-day slip of the café (GÜN SONU / DETAYLI Z). Business day: ${day} (printed before 05:00 = the day before).
 - documentType: z_report if Z figures are printed (Z NO, total, payment lines, KDV), also when the bank end-of-day is on the same paper; batch_slip if only the bank end-of-day (BATCH / GRUP, bank, net); else other.
-- AsilPOS paper (also printed as ${ESKI_URUN_ADI}; title "GÜN SONU · Z <n>" or "ARA RAPOR (X)" with NET CİRO and "mali Z değildir", or "BANKA GÜN SONU · PAVO"): not fiscal. title = that title exactly; batch_slip if the BANKA GÜN SONU part is there, else software_z; zNo, dailyTotal null, payments and kdvGroups empty; batches: one per line under Bankalar (Batch no, bank, net = its amount), never the PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA lines.
+- AsilPOS paper (also printed as ${ESKI_URUN_ADI}; title "GÜN SONU · Z <n>" or "ARA RAPOR (X)" with NET CİRO and "mali Z değildir", or "BANKA GÜN SONU · PAVO"): not fiscal. title = that title exactly; batch_slip if the BANKA GÜN SONU part is there, else software_z; zNo, dailyTotal null, payments and kdvGroups empty; batches: one per line under Bankalar (Batch no, bank, net = its amount), never the ${KIYAS} (or ${KIYAS_ESKI}) lines.
 - dailyTotal: the Z's own total (TOPLAM / NET SATIŞ / MALİ VERİ TOPLAM). Never KÜM. / cumulative, never TOPKDV.
 - payments: every payment line. NAKİT → cash; KREDİ KARTI / K.KARTI → card; YEMEK KARTI → meal_card; a bank name under the card line → bank_subline; else other.
 - kdvGroups: per rate total and vat (skip 0,00 groups); totalVat: TOPKDV. zNo: Z NO / Z SAYAÇ (not FİŞ NO, not BATCH NO).

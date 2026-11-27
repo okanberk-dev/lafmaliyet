@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Trash2 } from "lucide-react";
+import { KeyRound, Link2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -15,7 +15,7 @@ import { monthLabel, num } from "@/lib/format";
 import { ASILPOS_RESEND_HINT } from "@/lib/asilpos/status";
 import { dayMonthYearTR, switchAffectedMonths, switchDayProblem } from "@/lib/asilpos/switch";
 import { isStepUpError } from "@/lib/step-up";
-import { deleteAsilposDay, saveAsilposSwitchDay } from "@/server/actions/asilpos";
+import { deleteAsilposDay, saveAsilposSwitchDay, testAsilposKeys } from "@/server/actions/asilpos";
 import { matchAsilposName } from "@/server/actions/sales";
 
 import { ProductPicker, type ProductOption } from "../satislar/product-picker";
@@ -256,5 +256,33 @@ export function AsilposUnmatchedList({
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Ayarlar › AsilPOS › Uzaktan ve site anahtarı › Anahtarları sına (docs/ASILPOS.md › Anahtar değişimi): iki uç panelin
+ * dağıttığı anahtarı şimdi kabul ediyor mu; sonuç bildirimde, kart yeni durumu gösterir
+ */
+export function AsilposKeyTest() {
+  const [pending, start] = useActionTransition();
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      className="max-sm:w-full"
+      disabled={pending}
+      onClick={() =>
+        start(async () => {
+          const res = await testAsilposKeys();
+          if (!res.ok) return void toast.error(res.error);
+          if (res.data.ok) toast.success("Anahtarlar uyumlu", { description: res.data.ozet });
+          else if (res.data.panelEski) toast.warning("Panelin anahtarı eski", { description: res.data.ozet });
+          else toast.error("Anahtar uyuşmuyor", { description: res.data.ozet });
+        })
+      }
+    >
+      <KeyRound size={15} aria-hidden="true" className={pending ? "animate-pulse" : undefined} />
+      {pending ? "Sınanıyor…" : "Anahtarları sına"}
+    </Button>
   );
 }
