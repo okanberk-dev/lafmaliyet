@@ -38,7 +38,9 @@ const SERVER_URL = process.env.BILDIRIM_TEST_DATABASE_URL ?? process.env.LAFPOS_
 const DB_NAME = `laffogato_bildirim_${process.pid}`;
 const PASSWORD = "Bildirim-Deneme-2026";
 
-type Who = { id: number; name: string; email: string; role: "admin" | "staff" | "manager" };
+type Who = { id: number; name: string; email: string; role: "admin" | "staff" };
+/** Oturumdaki kullanıcı: hesaplar yönetici ya da personel kurulur, müdür sonradan indirilir */
+type Me = Omit<Who, "role"> & { role: Who["role"] | "manager" };
 
 describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_URL && "BILDIRIM_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
@@ -66,7 +68,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
   };
   const ACCOUNTANT = "muhasebe@ornek.com";
   /** Oturumdaki kullanıcı (src/server/auth/dal taklidi) */
-  let me: Who = users.ali;
+  let me: Me = users.ali;
 
   const fields = (date: string): CashReportFields & { discounts: number | null } => ({
     date,

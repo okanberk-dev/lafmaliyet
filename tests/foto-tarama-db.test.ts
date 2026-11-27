@@ -17,8 +17,9 @@ import type { NextRequest } from "next/server";
 import postgres from "postgres";
 
 import { businessDate } from "../src/lib/cash-report";
+import type { Role } from "../src/lib/constants";
 import { SCAN_HINT_DAILY_CAP, type ScanInfo } from "../src/lib/photo-scan";
-import { READ_ONLY_TEXT, type Role } from "../src/lib/roles";
+import { READ_ONLY_TEXT } from "../src/lib/roles";
 import type { AiClient, AiMessage, CreateParams } from "../src/server/ai/run";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";

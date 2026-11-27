@@ -303,7 +303,7 @@ export const OWNER_ROW_HIDDEN_FIELDS = ["store", "description", "receiptDate", "
 
 /** Satırın yalnız türü ve tutarıyla hâli: OWNER_ROW_HIDDEN_FIELDS'ten satırda olanlar null */
 export function amountOnlyRow<T extends object>(row: T): T {
-  const out: Record<string, unknown> = { ...row };
+  const out = { ...row } as Record<string, unknown>;
   for (const k of OWNER_ROW_HIDDEN_FIELDS) if (k in out) out[k] = null;
   return out as T;
 }
