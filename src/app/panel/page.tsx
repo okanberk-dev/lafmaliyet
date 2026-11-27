@@ -61,11 +61,11 @@ import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
-import { loadCashPlan } from "@/server/data/cash-plan";
+import { loadAreaCashPlan } from "@/server/data/cash-plan";
 import { tillRows } from "@/server/data/cash-reports";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -206,8 +206,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     loadModel(),
     loadPayments(),
     // "Yaklaşan ödemeler" kartı ve ayın işlerinin ödeme olguları şube seçimine uyar (Bugün, zil ve Ödemeler gibi;
-    // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri. "Tümü"nde aynı liste
-    scope === ALL_BRANCHES ? Promise.resolve(null) : loadPayments(scope),
+    // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri ve faturaları, kişinin şube
+    // görünümü "Firma geneli" ise bütün şubelerin (şube ayrımı parça 4). "Tümü"nde aynı liste
+    // şube-ayrımı: alan.odemeler
+    scope === ALL_BRANCHES ? Promise.resolve(null) : areaScope("odemeler").then((branch) => loadPayments(branch)),
     loadParasut(),
     // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; seçili şubenin kasasından çıkanlar
     // (docs/SUBE.md › Ödemeler). Okunamazsa liste onsuz
@@ -231,12 +233,15 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
   const [priceAlerts, cashPlan, stockAlert] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
-    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve "Tümü" kapsamında (kasa raporları,
-    // kasalardaki devir; Nakit planı sayfası gibi, docs/SUBE.md › Neyi süzer)
+    // Nakit planı alanı (şube ayrımı parça 4; Nakit planı sayfası gibi): firma kipinde ve "Tümü"de firmanın planı (bütün
+    // şubelerin modeli ve ödemeleri; ikinci kez okunmaz), şube kipinde şubenin nakit akışı
     upcoming
-      // şube-ayrımı: nakit.genel-bakis
-      ? (model.ds.branchView ? loadModel({ scope: ALL_BRANCHES }) : Promise.resolve(model))
-          .then((m) => withBranchScope(ALL_BRANCHES, () => loadCashPlan(m, upcoming)))
+      ? Promise.all([
+          // şube-ayrımı: alan.nakit
+          areaScope("nakit"),
+          model.ds.branchView ? null : model,
+        ])
+          .then(([area, firmModel]) => loadAreaCashPlan(area, { model: firmModel ?? undefined, upcoming }))
           .catch(() => null)
       : null,
     // Kıyas kartı: son kapanmış günün cirosu ve dün / geçen hafta / geçen ay kıyası (seçili şubeyle; okunamazsa çizilmez)
@@ -660,7 +665,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
             {stockAlert ? <StockAlertCard data={stockAlert} /> : null}
             {shownPayments ? <DashboardPayments items={shownPayments.items} /> : null}
-            {cashPlan?.plan.hasData ? <DashboardCashPlan plan={cashPlan.plan} /> : null}
+            {cashPlan?.view.plan.hasData ? <DashboardCashPlan plan={cashPlan.view.plan} flow={cashPlan.flow} /> : null}
             <DashboardAlerts items={shownAlerts} className="flex-1" />
           </div>
           <CostCard

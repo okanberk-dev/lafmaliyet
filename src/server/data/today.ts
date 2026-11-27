@@ -29,7 +29,7 @@ import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
 import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { blindForStaff, cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
@@ -206,8 +206,10 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     isProductionRuntime()
       ? safe(Promise.all([loadJobsOverview(now), lastParasutSyncOkAt()]).then(([o, okAt]) => systemIssues(o, now, okAt)))
       : Promise.resolve([]),
-    // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
-    safe(loadUpcoming(undefined, { branch: scope })),
+    // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri ve faturaları (docs/SUBE.md › Ödemeler); kişinin şube
+    // görünümü "Firma geneli" ise bütün şubelerin (şube ayrımı parça 4). Müdürde hep şubesi
+    // şube-ayrımı: alan.odemeler
+    safe(areaScope("odemeler").then((branch) => loadUpcoming(undefined, { branch }))),
     // Kontrol bekleyen faturalar seçili şubenin ve işletme genelinin (Faturalar'ın süzgeciyle aynı: invoiceScopeWhere);
     // şubesi seçilmemiş fatura tek şubede sayılmaz, "Tümü"de sayılır
     safe(

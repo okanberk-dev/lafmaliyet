@@ -2,7 +2,7 @@
 
 import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChartNoAxesColumn, ChevronDown, Layers, PiggyBank, SlidersHorizontal, Wallet } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
@@ -14,6 +14,7 @@ import { useQueryState } from "@/components/ui/filters";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { lineLabel, rangeText, shortDate, STALE_BALANCE_DAYS, weekTitle, type CashPlan, type CashPlanState, type PlanLine, type PlanWeek } from "@/lib/cash-plan";
+import type { BranchCashFlow, SharedWeek } from "@/lib/cash-plan-branch";
 import { monthLabel, money, tl } from "@/lib/format";
 import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -49,14 +50,20 @@ export function CashPlanClient({
   carry,
   notes,
   scopeNote = null,
+  flow = null,
+  scopeChip = null,
 }: {
+  /** Şube kipinde şubenin akışının İşletme geneli satırları ve firmanın bakiyesi (src/lib/cash-plan-branch.ts); yoksa null */
+  flow?: BranchCashFlow | null;
+  /** Ekranın şube görünümü çipi (sunucu bileşeni) */
+  scopeChip?: ReactNode;
   title: string;
   description: string;
   plan: CashPlan;
   state: CashPlanState;
   carry: { date: string; amount: number; tills?: number } | null;
   notes: { key: string; title: string; text: string }[];
-  /** Şube seçiliyken "bu ekran firma geneli" notu (companyWideNote); "Tümü"de null */
+  /** Şube kipinde şubenin akışının notu (branchFlowNote); yoksa null */
   scopeNote?: { title: string; text: string } | null;
 }) {
   const [ask, setAsk] = useQueryState("bakiye", "");
@@ -92,6 +99,7 @@ export function CashPlanClient({
       />
       {/* Yardım'ın ve Vergi'nin "KDV tahmini" bağlantısı (#kdv) içerik akınca iner */}
       <HashScroll />
+      {scopeChip}
 
       {!plan.hasData ? (
         <Card>
@@ -110,6 +118,15 @@ export function CashPlanClient({
         <>
           {/* Karolar: telefonda 2×2, md'de 4 sütun (Ödemeler'in karolarıyla aynı ızgara) */}
           <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
+            {flow ? (
+              <Stat
+                compact
+                icon={<Wallet />}
+                label="Elinizdeki para · Firma geneli"
+                value={flow.firmOpening ? tl(flow.firmOpening.amount) : "Girilmedi"}
+                sub="Bakiye firmanın; şubenin akışına girmez"
+              />
+            ) : (
             <Stat
               compact
               icon={<Wallet />}
@@ -135,9 +152,19 @@ export function CashPlanClient({
                 )
               }
             />
+            )}
             <Stat compact icon={<ArrowDownLeft />} label="Gelecek para" value={tl(totals.in)} sub={plan.basis.online ? "Satışlar ve laffogato.net, tahmini" : "Satışlar, tahmini"} />
             <Stat compact icon={<ArrowUpRight />} label="Ödenecek" value={tl(out)} sub={`Kesin ${tl(totals.outKnown)} · tahmini ${tl(totals.outEstimated)}`} />
-            {opening ? (
+            {flow ? (
+              <Stat
+                compact
+                icon={<PiggyBank />}
+                label="Net akış"
+                value={signed(totals.net)}
+                tone={totals.net < 0 ? "bad" : "good"}
+                sub={`İşletme geneli ${tl(flow.sharedTotal)} ayrıca`}
+              />
+            ) : opening ? (
               <Stat
                 compact
                 icon={<PiggyBank />}
@@ -162,7 +189,7 @@ export function CashPlanClient({
           {scopeNote ? <Notice tone="neutral" size="sm" className="mb-4" title={scopeNote.title} text={scopeNote.text} /> : null}
           {/* Tek uyarı şeridi (docs/planlar/ux-sade.md U2): para yetmiyorsa kırmızı (katlanmaz), bakiye girilmediyse nötr
               (giriş başlıktaki "Bakiyeyi gir"), yetiyorsa yeşil */}
-          {firstNegative ? (
+          {flow ? null : firstNegative ? (
             <Notice
               tone="bad"
               risk="para"
@@ -185,7 +212,7 @@ export function CashPlanClient({
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-12 xl:items-start">
-            <Weeks plan={plan} className="xl:col-span-8" />
+            <Weeks plan={plan} shared={flow?.shared ?? null} className="xl:col-span-8" />
             <div className="space-y-4 xl:col-span-4">
               {plan.vat ? <VatCard vat={plan.vat} carry={state.vatCarry} today={plan.today} /> : null}
               <Card>
@@ -265,7 +292,7 @@ export function CashPlanClient({
 }
 
 /** Haftalar: her biri açılır satır; ilk eksi günün haftası (yoksa bu hafta) açık gelir */
-function Weeks({ plan, className }: { plan: CashPlan; className?: string }) {
+function Weeks({ plan, shared = null, className }: { plan: CashPlan; shared?: SharedWeek[] | null; className?: string }) {
   const firstOpen = plan.firstNegative ? Math.max(0, plan.weeks.findIndex((w) => w.from <= plan.firstNegative!.date && plan.firstNegative!.date <= w.to)) : 0;
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set([firstOpen]));
   // Çubuklar en büyük haftalık tutara göre ölçeklenir
@@ -287,7 +314,16 @@ function Weeks({ plan, className }: { plan: CashPlan; className?: string }) {
       <CardContent className="px-3 sm:px-5">
         <ul className="space-y-2">
           {plan.weeks.map((w) => (
-            <WeekRow key={w.index} week={w} today={plan.today} open={open.has(w.index)} onToggle={() => toggle(w.index)} max={max} withBalance={plan.opening !== null} />
+            <WeekRow
+              key={w.index}
+              week={w}
+              today={plan.today}
+              open={open.has(w.index)}
+              onToggle={() => toggle(w.index)}
+              max={max}
+              withBalance={plan.opening !== null}
+              shared={shared ? (shared.find((x) => x.index === w.index) ?? null) : undefined}
+            />
           ))}
         </ul>
       </CardContent>
@@ -295,13 +331,33 @@ function Weeks({ plan, className }: { plan: CashPlan; className?: string }) {
   );
 }
 
-function WeekRow({ week: w, today, open, onToggle, max, withBalance }: { week: PlanWeek; today: string; open: boolean; onToggle: () => void; max: number; withBalance: boolean }) {
+/**
+ * Haftanın satırı. `shared` şube kipinde verilir (undefined: firmanın planı): satır "Net akış" yazar, açılınca İşletme
+ * geneli satırı (şubenin akışına girmez) en altta
+ */
+function WeekRow({
+  week: w,
+  today,
+  open,
+  onToggle,
+  max,
+  withBalance,
+  shared,
+}: {
+  week: PlanWeek;
+  today: string;
+  open: boolean;
+  onToggle: () => void;
+  max: number;
+  withBalance: boolean;
+  shared?: SharedWeek | null;
+}) {
   const panelId = useId();
   const out = w.outKnown + w.outEstimated;
   const end = withBalance ? w.endBalance! : w.net;
   const endText = (
     <span className="text-[13px] whitespace-nowrap text-ink-mute tabular">
-      {withBalance ? "Hafta sonu" : "Net"} <span className={cn("text-[15px] font-semibold", end < 0 ? "text-bad" : "text-ink")}>{withBalance ? tl(end) : signed(end)}</span>
+      {withBalance ? "Hafta sonu" : shared !== undefined ? "Net akış" : "Net"} <span className={cn("text-[15px] font-semibold", end < 0 ? "text-bad" : "text-ink")}>{withBalance ? tl(end) : signed(end)}</span>
     </span>
   );
   const known = w.lines.filter((l) => l.direction === "out" && !l.estimated);
@@ -343,6 +399,18 @@ function WeekRow({ week: w, today, open, onToggle, max, withBalance }: { week: P
           {estimated.length ? <LineGroup title="Tahmini" lines={estimated} today={today} /> : null}
           {incoming.length ? <LineGroup title="Gelecek" lines={incoming} today={today} /> : null}
           {!w.lines.length ? <p className="text-sm text-ink-mute">Bu hafta ödeme ya da gelir yok.</p> : null}
+          {shared && shared.amount >= 0.5 ? (
+            <div className="rounded-xl bg-panel/60 px-3 py-2.5">
+              <p className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="font-medium text-ink">İşletme geneli</span>
+                <span className="font-semibold text-ink-soft tabular">−{tl(shared.amount)}</span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-mute">
+                {shared.top.map((l) => `${l.title} ${tl(l.amount)}`).join(" · ")}
+                {shared.count > shared.top.length ? ` · ${shared.count - shared.top.length} kalem daha` : ""}. Şubenin akışına girmez.
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </li>

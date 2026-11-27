@@ -14,7 +14,10 @@ import {
   type PeriodCheck,
   type PeriodRecord,
 } from "@/lib/closed-period";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { branchWhereWithShared } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { UserError } from "@/server/user-error";
 
 /*
@@ -99,7 +102,7 @@ export interface HeldRecord {
  * Bekleyen kayıtlar: kapalı aya tarihli, kapanıştan sonra açılmış, kararı olmayan faturalar ve harcamalar (eskiden
  * yeniye). Kapalı ay yoksa sorgu yok.
  */
-export async function loadHeldRecords(db: Reader = getDb(), periods?: ClosedPeriods): Promise<HeldRecord[]> {
+export async function loadHeldRecords(db: Reader = getDb(), periods?: ClosedPeriods, scope: BranchScope = ALL_BRANCHES): Promise<HeldRecord[]> {
   const p = periods ?? (await loadClosedPeriods(db));
   const months = Object.keys(p.months).sort();
   if (!months.length) return [];
@@ -118,7 +121,7 @@ export async function loadHeldRecords(db: Reader = getDb(), periods?: ClosedPeri
         source: s.invoices.source,
       })
       .from(s.invoices)
-      .where(and(isNull(s.invoices.periodDate), gte(s.invoices.date, from), lte(s.invoices.date, to))),
+      .where(and(isNull(s.invoices.periodDate), gte(s.invoices.date, from), lte(s.invoices.date, to), invoiceScopeWhere(scope))),
     db
       .select({
         id: s.expenseEntries.id,
@@ -131,7 +134,7 @@ export async function loadHeldRecords(db: Reader = getDb(), periods?: ClosedPeri
       })
       .from(s.expenseEntries)
       .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
-      .where(and(isNull(s.expenseEntries.periodDate), gte(s.expenseEntries.date, from), lte(s.expenseEntries.date, to))),
+      .where(and(isNull(s.expenseEntries.periodDate), gte(s.expenseEntries.date, from), lte(s.expenseEntries.date, to), branchWhereWithShared(s.expenseEntries.branchId, scope))),
   ]);
   const held = (r: PeriodRecord) => periodStateOf(r, p).kind === "held";
   const out: HeldRecord[] = [
@@ -161,9 +164,12 @@ export async function loadHeldRecords(db: Reader = getDb(), periods?: ClosedPeri
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id);
 }
 
-/** Bekleyenlerin sayısı (zil, Bugün): kapalı ay yoksa sorgu yok */
-export async function heldCounts(db: Reader = getDb()): Promise<{ invoices: number; expenses: number }> {
-  const held = await loadHeldRecords(db);
+/**
+ * Bekleyenlerin sayısı (zil, Bugün): kapalı ay yoksa sorgu yok. `scope` tek şubeyse o şubenin ve işletme genelinin
+ * faturaları ve harcamaları (şube ayrımı parça 4; Faturalar'ın ve Harcamalar'ın süzgeci); "Tümü"de hepsi
+ */
+export async function heldCounts(db: Reader = getDb(), scope: BranchScope = ALL_BRANCHES): Promise<{ invoices: number; expenses: number }> {
+  const held = await loadHeldRecords(db, undefined, scope);
   return { invoices: held.filter((h) => h.kind === "invoice").length, expenses: held.filter((h) => h.kind === "expense").length };
 }
 

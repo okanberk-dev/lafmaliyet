@@ -1,15 +1,18 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { Model } from "@/lib/calc/engine";
-import { buildCashPlan, goodsRows, parseCashPlanState, planCashReports, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanState } from "@/lib/cash-plan";
+import { buildCashPlan, goodsRows, parseCashPlanState, planCashReports, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanInput, type CashPlanState } from "@/lib/cash-plan";
+import { BRANCH_PLAN_EXCLUDED, branchCashFlow, type BranchCashFlow, type SharedPlanIds } from "@/lib/cash-plan-branch";
 import { addDays, type UpcomingItem } from "@/lib/reminders";
 import type { TaxInputs } from "@/lib/tax/inputs";
 import type { TaxPlanFeed } from "@/lib/tax/view";
 import { unreachable } from "@/lib/unreachable";
 import { loadExpectedDebtsByCard } from "@/server/data/cari";
-import { tillBranches, type BranchRow } from "@/lib/branches";
+import { ALL_BRANCHES, tillBranches, type BranchRow, type BranchScope } from "@/lib/branches";
+import { withBranchScope } from "@/server/branch-scope";
+import { loadModel } from "@/server/data/dataset";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween, previousCarryOverByBranch } from "@/server/data/cash-reports";
 import { loadRecentPaid } from "@/server/data/recent-paid";
@@ -97,8 +100,17 @@ async function tillsCarry(before: string, branches: readonly BranchRow[]): Promi
  * (Vergi › Özet: tablolar ikinci kez okunmaz); verilmezse burada okunur. Ödendi kaydı (payments.vat-paid) girdinin
  * içindedir. Besleme hesaplanamazsa plan vergi satırsız çalışır (`tax: null`).
  */
-export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<typeof loadUpcoming>>, opts: { taxInputs?: TaxInputs } = {}): Promise<CashPlanView> {
-  // şube-ayrımı: nakit.sayfa
+export async function loadCashPlan(
+  model: Model,
+  upcoming?: Awaited<ReturnType<typeof loadUpcoming>>,
+  opts: { taxInputs?: TaxInputs; branch?: string } = {},
+): Promise<CashPlanView> {
+  // Şubenin akışı (`opts.branch`; şube ayrımı parça 4): model, kasa raporları ve `upcoming` o şubenin kapsamıyla okunmuş
+  // olmalı (loadAreaCashPlan). Plan yalnız şubeye ait kalemlerle kurulur: işletme geneli hatırlatıcı, işletme geneli
+  // fatura, faturasız borç, vergi, KDV ve SGK firmanın planındadır (src/lib/cash-plan-branch.ts); açılış bakiyesi yok
+  const branch = opts.branch ?? null;
+  // Verilmezse firmanın ödemeleri (firmanın planı: loadAreaCashPlan "Tümü"yle çağırır)
+  // şube-ayrımı: nakit.bakiye
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
   const branchesP = listBranches();
@@ -107,11 +119,12 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
     loadPaidOnDelivery(),
-    branchesP.then((bs) => tillsCarry(addDays(today, 1), bs)),
+    branchesP.then((bs) => tillsCarry(addDays(today, 1), branch ? bs.filter((b) => b.id === branch) : bs)),
     loadRecentPaid(),
-    opts.taxInputs ?? taxInputsForPlan(),
-    // Faturası beklenen cari borçlar: o tedarikçinin mal tahmini bu kadar düşer (K19); kayıt yokken boş
-    loadExpectedDebtsByCard(),
+    branch ? null : (opts.taxInputs ?? taxInputsForPlan()),
+    // Faturası beklenen cari borçlar: o tedarikçinin mal tahmini bu kadar düşer (K19); kayıt yokken boş. Cari firmanın:
+    // şubenin akışında yok
+    branch ? [] : loadExpectedDebtsByCard(),
     branchesP,
   ]);
   // Vergi girdileri okunamadıysa Ödendi kaydı ayrıca (KDV'nin ödenmiş dönemleri vergiden bağımsız)
@@ -126,18 +139,21 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
   }
   const termOf = (supplier: string) => (paidOnDelivery(supplier) ? 0 : (termDays(supplier) ?? up.settings.invoiceTermDays));
   const goods = goodsRows(model.ds.invoices, today, termOf);
+  const fromModel = planInputFromModel(model, today, taxInputs?.settings, { feed: tax !== null });
   const plan = buildCashPlan({
     // Besleme yoksa stopajlı sabit gider brüt ödenir: muhtasar ve KDV-2 satırı da yok, stopaj kaybolmasın (§13)
-    ...planInputFromModel(model, today, taxInputs?.settings, { feed: tax !== null }),
+    ...fromModel,
+    ...(branch ? { months: ownFixedMonths(model, fromModel.months, branch) } : {}),
     tax,
     today,
-    opening: state.balance !== null && state.balanceDate ? { amount: state.balance, date: state.balanceDate } : null,
-    excluded: state.excluded,
+    opening: !branch && state.balance !== null && state.balanceDate ? { amount: state.balance, date: state.balanceDate } : null,
+    excluded: branch ? [...state.excluded, ...BRANCH_PLAN_EXCLUDED] : state.excluded,
     invoiceTermDays: up.settings.invoiceTermDays,
     // Şube şube (günlük satış şubelerin ortalamalarının toplamı); pasif şube sayılmaz
     cashReports: planCashReports(reports, branches),
-    invoices: up.items.filter(isPayable),
-    reminders: up.reminders,
+    // Şubenin akışında yalnız şubeye seçilmiş faturalar (işletme geneli fatura ve faturasız borç firmanın planında)
+    invoices: up.items.filter(isPayable).filter((i) => !branch || (i.source === "invoice" && up.invoiceBranches.get(i.sourceId)?.branchId === branch)),
+    reminders: branch ? up.reminders.filter((r) => r.branchId === branch) : up.reminders,
     paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),
     vatPaid,
     goods: goods.rows,
@@ -146,4 +162,58 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     vatAnchor: state.vatCarry ? { month: state.vatCarry.month, amount: state.vatCarry.amount } : null,
   });
   return { plan, state, carry, invoiceTermDays: up.settings.invoiceTermDays };
+}
+
+/** Şubenin akışında sabit giderler yalnız şubenin (işletme geneli sabit gider şubenin kârına da akışına da girmez) */
+function ownFixedMonths(model: Model, months: CashPlanInput["months"], branch: string): CashPlanInput["months"] {
+  return Object.fromEntries(
+    Object.entries(months).map(([m, v]) => {
+      const own = new Set(model.fixedInMonth(m).filter((f) => f.branchId === branch).map((f) => f.id));
+      return [m, { ...v, fixed: v.fixed.filter((f) => own.has(f.id)) }];
+    }),
+  );
+}
+
+export interface AreaCashPlan {
+  /** Ekranın planı: firma kipinde ve "Tümü"de firmanın, şube kipinde şubenin akışı */
+  view: CashPlanView;
+  /** Planın modeli (notlar: komisyon, açık gün) */
+  model: Model;
+  /** Şube kipinde İşletme geneli satırları ve firmanın bakiyesi (bilgi); firma kipinde null */
+  flow: BranchCashFlow | null;
+}
+
+/**
+ * Nakit planı alanının okuması (şube ayrımı parça 4; Nakit planı ekranı, Genel bakış'ın kartı, bağlantının `odemeler`
+ * aracı): `area` "Tümü"yse (firma kipi ya da "Tümü" seçili) bugünkü firmanın planı; tek şubeyse şubenin akışı ve
+ * firmanın planından İşletme geneli satırları (src/lib/cash-plan-branch.ts). `company` önceden okunmuş firmanın modeli ve
+ * ödemeleri (Genel bakış ikinci kez okumaz)
+ */
+export async function loadAreaCashPlan(area: BranchScope, company: { model?: Model; upcoming?: Awaited<ReturnType<typeof loadUpcoming>> } = {}): Promise<AreaCashPlan> {
+  // şube-ayrımı: nakit.bakiye
+  const firm = await withBranchScope(ALL_BRANCHES, async () => {
+    const model = company.model ?? (await loadModel());
+    return { model, view: await loadCashPlan(model, company.upcoming) };
+  });
+  if (area === ALL_BRANCHES) return { ...firm, flow: null };
+  const [own, branches, shared] = await Promise.all([
+    withBranchScope(area, async () => {
+      const [model, upcoming] = await Promise.all([loadModel(), loadUpcoming(undefined, { branch: area })]);
+      return { model, view: await loadCashPlan(model, upcoming, { branch: area }) };
+    }),
+    listBranches(),
+    sharedPlanIds(),
+  ]);
+  const name = branches.find((b) => b.id === area)?.name ?? area;
+  return { ...own, flow: branchCashFlow(firm.view.plan, shared, name) };
+}
+
+/** İşletme geneli hatırlatıcıların ve faturaların kimlikleri (firmanın planından İşletme geneli satırını ayırmak için) */
+async function sharedPlanIds(): Promise<SharedPlanIds> {
+  const db = getDb();
+  const [reminders, invoices] = await Promise.all([
+    db.select({ id: s.reminders.id }).from(s.reminders).where(isNull(s.reminders.branchId)),
+    db.select({ id: s.invoices.id }).from(s.invoices).where(and(eq(s.invoices.unpaid, true), eq(s.invoices.companyWide, true))),
+  ]);
+  return { reminders: new Set(reminders.map((r) => r.id)), invoices: new Set(invoices.map((i) => i.id)) };
 }

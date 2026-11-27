@@ -30,7 +30,7 @@ import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { vardiyaBell } from "@/server/bell/vardiya";
 import { newDeviceBellRows } from "@/server/auth/new-device";
-import { currentBranchScope } from "@/server/branch-scope";
+import { areaScope, currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedMarksOn } from "@/server/closed-days";
 import { heldCounts } from "@/server/closed-period";
@@ -316,7 +316,10 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
       .catch(() => ({ pending: [], duplicates: [] })),
     // Kapalı döneme düşen, kararı bekleyen fatura ve harcamalar (docs/DONEM-KAPANISI.md); kapalı ay yoksa sorgu yok
-    heldCounts(db).catch(() => ({ invoices: 0, expenses: 0 })),
+    // Kapalı aya düşen kayıtlar seçili şubenin ve işletme genelinin (şube ayrımı parça 4)
+    currentBranchScope()
+      .then((scope) => heldCounts(db, scope))
+      .catch(() => ({ invoices: 0, expenses: 0 })),
   ]);
   const cashOuts = cashState.pending;
   const twice = cashState.duplicates;
@@ -592,7 +595,9 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, asilpos, vardiya, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
-    currentBranchScope()
+    // Ödemeler ve faturalar alanının kapsamı (şube ayrımı parça 4): şube kipinde şubenin ve işletme genelinin
+    // şube-ayrımı: alan.odemeler
+    areaScope("odemeler")
       .then((branch) => loadUpcoming(undefined, { branch }))
       .catch(upcomingFailed),
     safe("fatura", invoiceNotifications()),

@@ -8,6 +8,7 @@ import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
+import { digestItemBranch, scopeUpcoming, type InvoiceBranchRef } from "@/lib/upcoming-scope";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
 import { allDroppedSentence, digestGroups, digestItemInGroup, droppedListText, droppedLogSuffix, type DroppedRecipient } from "@/lib/notify-recipients";
 import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
@@ -42,9 +43,11 @@ export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
  */
 /**
  * Yaklaşan ödemeler: hatırlatıcılar, ödenmemiş faturalar ve faturasız borçlar. `opts.branch` tek şube verilirse
- * hatırlatıcılar o şubenin ve işletme genelinin olanlarıyla gelir (docs/SUBE.md › Ödemeler); faturalar ve cari
- * işletme genelidir, süzülmez. Verilmezse (sabah e-postası, nakit planı, vergi, haftalık özet) bütün ödemeler — para
- * işletmenindir. "Tümü"nde şubeye ait hatırlatıcının başlığına şubesi eklenir ("Kira · Marina").
+ * (Ödemeler ve faturalar alanının şube kipi, `areaScope("odemeler")`; docs/SUBE.md › Şube ayrımı) hatırlatıcılar o
+ * şubenin ve işletme genelinin, faturalar şubenin ve işletme genelinin (şubesi seçilmemişler `unassigned` sayısında),
+ * faturasız borçlar (cari) firmanın "İşletme geneli" bölümünde (`shared`; src/lib/upcoming-scope.ts). Mahsup firmanın
+ * hesabıyla yapılır: liste bütün faturalarla kurulur, sonra süzülür. Verilmezse (sabah e-postası, vergi, haftalık özet)
+ * bütün ödemeler. "Tümü"nde şubeye ait hatırlatıcının başlığına şubesi eklenir ("Kira · Marina").
  */
 export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchScope } = {}) {
   const db = getDb();
@@ -63,6 +66,8 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
         allocated: s.invoices.allocated,
         ledgerBase: s.invoices.ledgerBase,
         supplierTaxNumber: s.invoices.supplierTaxNumber,
+        branchId: s.invoices.branchId,
+        companyWide: s.invoices.companyWide,
       })
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true)),
@@ -77,7 +82,7 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
     rowsP,
     loadCariIndex(today, { unpaid: rowsP.then((r) => r.map((i) => ({ date: i.date, supplier: i.supplier, tax: i.supplierTaxNumber }))) }),
   ]);
-  const invoices = rows.map(({ supplierTaxNumber, ...i }) => ({
+  const invoices = rows.map(({ supplierTaxNumber, branchId: _b, companyWide: _c, ...i }) => ({
     ...i,
     termDays: i.dueDate ? null : index.termDays(i.supplier, supplierTaxNumber),
     cardId: index.resolveCard(i.supplier, supplierTaxNumber),
@@ -92,10 +97,24 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
   const branchNames = !single && reminders.some((r) => r.branchId) ? new Map((await listBranches(db)).map((b) => [b.id, b.name])) : null;
   const labelled = branchNames ? reminders.map((r) => (r.branchId ? { ...r, title: `${r.title} · ${branchNames.get(r.branchId) ?? r.branchId}` } : r)) : reminders;
   const up = upcomingWithCari({ reminders: labelled, invoices, debts, credit: index.credit, hints, hrefOf: index.hrefOf }, today, opts);
-  const items = up.items;
+  // Faturanın şubesi: alanın şube kipinde süzmek ve sabah e-postasında kalemi şubesinin alıcısına göndermek için
+  const invoiceBranches = new Map<number, InvoiceBranchRef>(rows.map((r) => [r.id, { branchId: r.branchId, companyWide: r.companyWide }]));
+  const scoped = scopeUpcoming({ items: up.items, later: up.later, covered: up.covered }, single ?? ALL_BRANCHES, (id) => invoiceBranches.get(id));
+  const items = scoped.items;
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
-  const laterInvoices: UpcomingItem[] = up.later;
-  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index, single) };
+  const laterInvoices: UpcomingItem[] = scoped.later;
+  return {
+    today,
+    settings,
+    reminders,
+    items,
+    laterInvoices,
+    covered: scoped.covered,
+    shared: scoped.shared,
+    unassigned: scoped.unassigned,
+    invoiceBranches,
+    cari: cariSummary(index, single),
+  };
 }
 
 /**
@@ -293,7 +312,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
 async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number }): Promise<DigestResult> {
   const db = getDb();
   // şube-ayrımı: eposta.firma
-  const { today, settings, items, reminders } = await loadUpcoming();
+  const { today, settings, items, reminders, invoiceBranches } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };
   if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: "nokey" };
 
@@ -328,7 +347,9 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   const [recipientRows, branchRows] = await Promise.all([activeDigestRecipients(db), listBranches(db)]);
   const tills = tillBranches(branchRows);
   const reminderBranch = new Map(reminders.map((r) => [r.id, r.branchId ?? null]));
-  const itemBranch = (item: UpcomingItem) => (item.source === "reminder" ? (reminderBranch.get(item.sourceId) ?? null) : null);
+  // Kalemin şubesi: hatırlatıcının ve şubeye seçilmiş faturanın (şube ayrımı parça 4); işletme geneli, şubesi seçilmemiş
+  // fatura ve faturasız borç her gruba gider
+  const itemBranch = (item: UpcomingItem) => digestItemBranch(item, (id) => reminderBranch.get(id) ?? null, (id) => invoiceBranches.get(id));
   const groups = await Promise.all(
     digestGroups(recipientRows, tills).map(async (g) => {
       const branch = g.branchIds.length ? g.branchIds.map((id) => tills.find((b) => b.id === id)?.name ?? id).join(", ") : null;

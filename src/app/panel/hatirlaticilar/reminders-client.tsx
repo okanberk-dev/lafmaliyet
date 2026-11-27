@@ -2,7 +2,7 @@
 
 import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChevronDown, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useOptimistic, useRef, useState } from "react";
+import { type ReactNode, useMemo, useOptimistic, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -126,7 +126,10 @@ function RemindersView({
   recentPaid = NO_RECENT,
   weekly = null,
   drifts = NO_DRIFTS,
+  scopeBanner = null,
 }: {
+  /** Şube kipinin çipi, şubesi seçilmemiş faturalar ve İşletme geneli bölümü (sunucu bileşeni; branch-area.tsx) */
+  scopeBanner?: ReactNode;
   today: string;
   items: UpcomingItem[];
   /** Vadesi 45 günden sonra olan ödenmemiş faturalar ve faturasız borçlar (yalnız takvimde) */
@@ -359,6 +362,7 @@ function RemindersView({
         }
         tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar" role="admin" />}
       />
+      {scopeBanner}
 
       {/* Özet karoları: dokununca liste o aralığa süzülür */}
       <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4" role="group" aria-label="Özet ve aralık süzgeci">
