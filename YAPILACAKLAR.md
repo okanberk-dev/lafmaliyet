@@ -177,6 +177,9 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - AsilPOS: kasa programının adı her yerde AsilPOS (26 Kasım 2026'ya kadar adı LafPOS; panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
   (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
 - P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).
+- 27 Kasım gece sırası: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md) › "27 Kasım gece: durum ve sıra". Yeni: özel günler
+  bölümünün kaldırılması; kullanan ve satılacak işletmeler için ekranların sadeleştirilmesi; sitenin altyapı güncellemesi ve
+  e-Arşiv girişi (10 Aralık'tan önce).
 ## Sahibin tarafında (kod değil)
 
 - [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira ve fatura rakamları taşıyor; kişi adları
