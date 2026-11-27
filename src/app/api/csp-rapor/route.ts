@@ -1,13 +1,17 @@
 import { connection } from "next/server";
 
 import { cspLogLine, parseCspReports } from "@/lib/csp";
+import { cspEntry } from "@/lib/error-log";
+import { reportError } from "@/server/errors/store";
 
 /*
  * Content-Security-Policy ihlal raporları (src/lib/csp.ts; docs/DEPLOY.md › Güvenlik başlıkları). Tarayıcı, sayfanın
  * politikasının engellediği (ya da Report-Only'de engelleyeceği) her kaynağı buraya bildirir; rapor Vercel'in çalışma
- * günlüğüne `[csp]` satırı olarak düşer. Oturum istemez (tarayıcı raporu çerezsiz gönderebilir), hiçbir şey yazmaz,
- * her zaman 204. Kötüye kullanıma karşı: gövde en çok 16 KB, sunucu örneği başına dakikada en çok 30 satır; adresler
- * köken + yola indirilir (sorgu dizgesi, kişisel veri günlüğe girmez).
+ * günlüğüne `[csp]` satırı olarak düşer ve panelin hata kaydına yazılır (Ayarlar › Hata kaydı: aynı ihlal tek satır,
+ * sayısıyla; `CSP_ENFORCE` kararı oradan; docs/HATA-KAYDI.md). Oturum istemez (tarayıcı raporu çerezsiz gönderebilir),
+ * her zaman 204, kayıt beklenmez. Kötüye kullanıma karşı: gövde en çok 16 KB, sunucu örneği başına dakikada en çok 30
+ * satır; adresler köken + yola indirilir (sorgu dizgesi, kişisel veri günlüğe girmez); kayıtta aynı ihlal örnek başına
+ * 10 saniyede bir yazılır, günde en çok 30 yeni CSP satırı açılır (src/lib/error-log.ts DAILY_NEW_CAP).
  */
 
 const MAX_BYTES = 16 * 1024;
@@ -37,6 +41,7 @@ export async function POST(request: Request) {
     if (logged >= PER_MINUTE) break;
     logged++;
     console.warn(cspLogLine(v));
+    void reportError(cspEntry(v));
   }
   return done();
 }

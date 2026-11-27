@@ -13,8 +13,9 @@
  *   kimlik sunucusu: "Paraşüt hesabını bağla" formu Paraşüt'ün onay ekranına 303 ile gider; tarayıcılar form hedefini
  *   yönlendirmede de denetler). Bu üçü hiçbir kaynak yüklemesini değiştirmez, ekranı bozamaz.
  * - **Tam politika** (kaynaklar): `CSP_ENFORCE=1` değilken `Content-Security-Policy-Report-Only` olarak gider:
- *   tarayıcı hiçbir şeyi engellemez, yalnız ihlali `/api/csp-rapor`'a bildirir (Vercel günlüklerinde `[csp]`). Günlük
- *   temiz kalınca `CSP_ENFORCE=1` ile uygulanır; geri almak değişkeni silmektir (ikisi de yeniden deploy).
+ *   tarayıcı hiçbir şeyi engellemez, yalnız ihlali `/api/csp-rapor`'a bildirir (Vercel günlüklerinde `[csp]`, panelde
+ *   Ayarlar › Hata kaydı). Kayıt 7 gün temiz kalınca `CSP_ENFORCE=1` ile uygulanır (kart karar verir: src/lib/error-log.ts
+ *   cspVerdict); geri almak değişkeni silmektir (ikisi de yeniden deploy).
  */
 
 /** İhlal raporlarının gittiği uç (src/app/api/csp-rapor/route.ts) */
@@ -126,11 +127,13 @@ export interface CspViolation {
 
 const MAX_FIELD = 160;
 
-/** Adres: yalnız köken + yol (sorgu ve parça atılır); anahtar sözcükler olduğu gibi; boşsa "?" */
+/** Adres: yalnız köken + yol (sorgu ve parça atılır); anahtar sözcükler olduğu gibi; eklenti "eklenti"; boşsa "?" */
 function safeUrl(raw: unknown, pathOnly = false): string {
   if (typeof raw !== "string" || !raw.trim()) return "?";
   const v = raw.trim();
   if (/^(inline|eval|wasm-eval|trusted-types-[\w-]+|self|data|blob)$/i.test(v)) return v.toLowerCase();
+  // Tarayıcı eklentisinin kaynağı: panelin kodu değil (hata kaydında CSP kararına girmez; src/lib/error-log.ts)
+  if (/^(chrome|moz|safari(-web)?|ms-browser)-extension:/i.test(v)) return "eklenti";
   try {
     const u = new URL(v);
     if (u.protocol === "data:" || u.protocol === "blob:") return u.protocol.slice(0, -1);
