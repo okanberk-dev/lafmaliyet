@@ -20,6 +20,7 @@ import {
 } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_MAX } from "@/lib/branches";
 import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/request";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import type { StepUpConfirm } from "@/lib/step-up";
 import { PRESET_KEYS, PRESET_LABELS, presetHours, presetText, shiftPresetsError, shiftPresetsOf, type SavedShiftPreset } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
@@ -241,13 +242,17 @@ export async function saveShiftPresets(input: z.input<typeof presetInput>) {
 
 const secretInput = z.object({
   branchId: zBranch,
-  /** Yeni anahtar; null: panelde saklanan anahtar silinir (ortamdaki ASILPOS_SYNC_SECRET kullanılır) */
+  /**
+   * Yeni anahtar; null: panelde saklanan anahtar silinir (Marina'da ortamdaki ASILPOS_SYNC_SECRET kullanılır, öbür şubede
+   * kasa bağlantısız kalır)
+   */
   secret: z.string().trim().min(ASILPOS_SECRET_MIN, `Anahtar en az ${ASILPOS_SECRET_MIN} karakter olmalı`).max(256, "Anahtar çok uzun").nullable(),
 });
 
 /**
- * AsilPOS'un imza anahtarı, AsilPOS'un şubesinde (şube ayarı SUBE_AYAR_GRUBU; şifreli, secret-box). Saklanan anahtar ortamdaki
- * ASILPOS_SYNC_SECRET'ın önüne geçer; AsilPOS'ta aynı anahtar (LAFMALIYET_SYNC_SECRET) yazılmalıdır. Sitenin anahtarıyla
+ * AsilPOS'un imza anahtarı, kasanın şubesinde (şube ayarı SUBE_AYAR_GRUBU; şifreli, secret-box). Eski kurulumun şubesinde
+ * (Marina) saklanan anahtar ortamdaki ASILPOS_SYNC_SECRET'ın önüne geçer; öbür şubeye ortamdaki anahtar hiç hizmet etmez
+ * (silinirse kasa bağlantısız kalır). AsilPOS'ta aynı anahtar (LAFMALIYET_SYNC_SECRET) yazılmalıdır. Sitenin anahtarıyla
  * (KARAOKE_SYNC_SECRET) aynısı reddedilir. Anahtar hiçbir yere yazılmaz: işlem geçmişine yalnız "değişti" ya da
  * "silindi", istemciye yalnız durumu döner. Yalnız yönetici ve parolasıyla (anahtar makinenin gün sonu yazımlarının
  * güven kökü: açık kalmış bir oturum sahte gün sonu imzalayamasın, gerçek kasayı 401'e düşüremesin). Çok şube: yeni anahtar
@@ -278,7 +283,9 @@ export async function saveAsilposSecret(input: z.input<typeof secretInput>, conf
     const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
     await db.transaction(async (tx) => {
       await putBranchSetting(tx, ASILPOS_GROUP, d.branchId, { secret: d.secret }, me.name);
-      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : "silindi (ortamdaki anahtar kullanılır)"}`);
+      // Silinince: ortamdaki anahtar yalnız eski kurulumun şubesine (Marina) hizmet eder; öbür şubenin kasası bağlantısız kalır
+      const dropped = d.branchId === LEGACY_POS_BRANCH_ID ? "silindi (ortamdaki anahtar kullanılır)" : "silindi (şubenin kasası bağlantısız kalır)";
+      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : dropped}`);
     });
     forgetPosKeys();
     refresh();

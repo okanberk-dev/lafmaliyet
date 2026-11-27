@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { after, before, beforeEach, describe, test } from "node:test";
+import { after, before, beforeEach, describe, mock, test } from "node:test";
 
 import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -101,7 +101,7 @@ describe("Çok şubeli AsilPOS: veritabanında", { skip: !SERVER_URL && "ASILPOS
       require.cache[p] = { id: p, filename: p, loaded: true, exports } as unknown as NodeJS.Module;
     };
     stub("server-only", {});
-    stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {} });
+    stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {}, cacheTag: () => {}, cacheLife: () => {} });
     stub(require.resolve("../src/server/auth/dal"), {
       requireAdmin: async () => {
         if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
@@ -279,6 +279,70 @@ describe("Çok şubeli AsilPOS: veritabanında", { skip: !SERVER_URL && "ASILPOS
     const { withBranchScope } = await import("../src/server/branch-scope");
     const tuzlaOnly = await withBranchScope("tuzla", () => reports.asilposTillRows(db));
     assert.deepEqual(tuzlaOnly.map((x) => x.zTotal), [8000]);
+  });
+
+  test("iki kasa: süren ayın kasa raporu beklemesi kasa başına; \"Tümü\" şube görünümlerinin toplamı (inceleme 27 Kasım)", async () => {
+    await setSource("tuzla", "asilpos");
+    await storeKey("tuzla", KEY_T);
+    await storeSwitch("tuzla", T_SWITCH);
+    branch.forgetPosBranches();
+    await db.execute(sql`DELETE FROM cash_reports`);
+    const D3 = "2029-06-17";
+    const D4 = "2029-06-18";
+    // Marina 10, 16, 17 Haziran; Tuzla 16 ve 18 Haziran (geçiş günü 15)
+    for (const [key, date, total] of [[KEY_M, D, 2000], [KEY_M, D2, 3000], [KEY_M, D3, 1700], [KEY_T, D2, 8000], [KEY_T, D4, 1600]] as const) {
+      const r = await push(key, body(date, { total }));
+      assert.equal(r.status, 200, `${date} ${JSON.stringify(r.body)}`);
+    }
+    // Kasa raporları: Marina'nınki 16 Haziran'a, Tuzla'nınki 15 Haziran'a kadar
+    const report = (branchId: string, date: string, zTotal: number) => db.insert(s.cashReports).values({ date, branchId, zTotal, cash: zTotal, submittedByName: "Ayşe" });
+    await report("marina", D, 2000);
+    await report("marina", D2, 3000);
+    await report("tuzla", T_SWITCH, 100);
+    mock.timers.enable({ apis: ["Date"], now: NOW });
+    try {
+      const dataset = await import("../src/server/data/dataset");
+      const { withBranchScope } = await import("../src/server/branch-scope");
+      const { asilposMonthNotes } = await import("../src/lib/asilpos/sales");
+      const load = (scope: string) => withBranchScope(scope, () => dataset.loadDataset());
+      const june = (ds: Awaited<ReturnType<typeof load>>) => ds.salesLines.filter((l) => l.month === "2029-06").reduce((a, l) => a + l.revenue, 0);
+      const heldOf = (ds: Awaited<ReturnType<typeof load>>) => ds.asilposSales?.months.find((m) => m.month === "2029-06")?.held;
+      const marina = await load("marina");
+      const tuzla = await load("tuzla");
+      const both = await load(ALL_BRANCHES);
+      assert.equal(june(marina), 5000, "Marina'nın 17'si kendi raporunu bekler");
+      assert.equal(june(tuzla), 0, "Tuzla'nın 16 ve 18'i kendi raporunu (15 Haziran) bekler");
+      assert.equal(june(both), june(marina) + june(tuzla), "eskiden Marina'nın raporu Tuzla'nın 16'sını saydırırdı (13.000)");
+      assert.deepEqual(heldOf(marina), { from: D3, to: D3 });
+      assert.deepEqual(heldOf(tuzla), { from: D2, to: D4 });
+      assert.deepEqual(heldOf(both), { from: D2, to: D4, tills: [{ branchId: "tuzla", from: D2, to: D4 }, { branchId: "marina", from: D3, to: D3 }] });
+      const names: Record<string, string> = { marina: "Marina", tuzla: "Tuzla" };
+      const st = both.asilposSales!.months.find((m) => m.month === "2029-06")!;
+      assert.match(asilposMonthNotes(st, SWITCH, (id) => names[id]).info.replace(/[\u00a0\u2060]/g, (c) => (c === "\u00a0" ? " " : "")), /Tuzla 16–18 Haziran, Marina 17 Haziran kasa raporu girilince sayılır/);
+      // Tuzla'nın raporu girilince onun günleri sayılır; Marina'nın 17'si yine bekler
+      await report("tuzla", D4, 1600);
+      const entered = await load(ALL_BRANCHES);
+      assert.equal(june(entered), 5000 + 8000 + 1600);
+      assert.deepEqual(heldOf(entered), { from: D3, to: D3 });
+    } finally {
+      mock.timers.reset();
+      await db.execute(sql`DELETE FROM cash_reports`);
+    }
+  });
+
+  test("kurulum kodu: aynı anda kod üretilip verilirse kasaya giden anahtar panelde saklanan anahtardır (kilit, inceleme 27 Kasım)", async () => {
+    const kurulum = await import("../src/server/asilpos/kurulum");
+    for (let i = 0; i < 5; i++) {
+      await storeKey("tuzla", null);
+      branch.forgetPosKeys();
+      const { raw } = await kurulum.issueInstallCode(db, { branchId: "tuzla", email: "tuzla@test.local", by: me.id }, NOW);
+      await storeKey("tuzla", null);
+      branch.forgetPosKeys();
+      const [redeemed] = await Promise.all([kurulum.redeemInstallCode(raw, db, NOW), kurulum.issueInstallCode(db, { branchId: "tuzla", email: "tuzla@test.local", by: me.id }, NOW)]);
+      const stored = await branch.posKeyOf("tuzla", db);
+      assert.ok(stored);
+      if (redeemed.status === 200) assert.ok(Object.values(redeemed.body.baglanti).includes(stored), "kasanın anahtarı panelinkiyle aynı");
+    }
   });
 
   test("kurulum kodu şubenin kendi anahtarını verir, başka şubeninkini hiçbir zaman", async () => {

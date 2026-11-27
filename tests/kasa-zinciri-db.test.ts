@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -353,6 +353,34 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
       "ödemeye bağlı satır kaldı, AsilPOS bağı çözüldü",
     );
     assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, rows[0].id))).length, 0, "kalkan satırın gider kaydı da kalktı");
+  });
+
+  test("hareketler: anahtar yalnız kendi şubesinin satırını yazar; kimliği başka şubenin satırında olan hareket ona dokunmaz, yeni satır da açmaz (inceleme 27 Kasım)", async () => {
+    const date = "2026-11-26";
+    // Tuzla'nın AsilPOS satırı (ör. Tuzla'nın yedeğinden kurulmuş kasa Marina'nın anahtarıyla eski günü yeniden yolluyor)
+    const [tuzlaRow] = await db
+      .insert(s.cashOuts)
+      .values({ branchId: "tuzla", date: "2026-11-20", kind: "harcama", amount: 75, description: "Tuzla'nın", docType: "yok", createdByName: "AsilPOS", asilposId: ulid("R1") })
+      .returning();
+    const moves = [move("R1", "harcama", 91.5), move("R2", "teslim", 333.25)];
+    const mine = async () =>
+      (await db.select().from(s.cashOuts).where(inArray(s.cashOuts.asilposId, [ulid("R1"), ulid("R2")])).orderBy(asc(s.cashOuts.id))).map((o) => [o.branchId, o.date, o.kind, o.amount, o.asilposId]);
+    const r = await send(day(date, { moves }), NOV28);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(
+      await mine(),
+      [
+        ["tuzla", "2026-11-20", "harcama", 75, ulid("R1")],
+        [ASILPOS_SUBE, date, "teslim", 333.25, ulid("R2")],
+      ],
+      "Tuzla'nın satırı değişmedi, Marina'ya taşınmadı; yalnız Marina'nın kendi hareketi yazıldı",
+    );
+    assert.equal((await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, tuzlaRow.id)))[0].description, "Tuzla'nın");
+    const [log] = await db.select({ detail: s.activityLog.detail }).from(s.activityLog).where(eq(s.activityLog.action, "Kasadan çıkanlar (AsilPOS)")).orderBy(desc(s.activityLog.id)).limit(1);
+    assert.match(log.detail ?? "", /1 hareket başka şubenin satırı olduğu için yazılmadı/);
+    // Yeniden gönderim de aynı: 500'e düşmez, Tuzla'nın satırı kalır
+    assert.equal((await send(day(date, { moves, revision: 2 }), NOV28)).status, 200);
+    assert.deepEqual((await mine())[0], ["tuzla", "2026-11-20", "harcama", 75, ulid("R1")]);
   });
 
   test("hareketler: sayılmayan günde, eski AsilPOS'un (alan yok) ve bozuk listenin gövdesinde satırlara dokunulmaz", async () => {

@@ -305,8 +305,8 @@ export function asilposMonthStatus(i: {
   modposZ?: number | null;
   /** Listenin günlerinin kasa raporlarındaki indirim toplamı (liste indirimden öncedir; modposOverZText) */
   modposDiscounts?: number | null;
-  /** Kasa raporunu bekleyen günler (süren ay) */
-  held?: { from: string; to: string } | null;
+  /** Kasa raporunu bekleyen günler (süren ay; birden çok kasa bekliyorsa `tills` kasa kasa) */
+  held?: AsilposSalesMonth["held"];
   /** Ayın kasa raporu olan günleri ve gelen AsilPOS gün sonları: raporlu ama gün sonu gelmemiş gün (`missing`) */
   kasaDays?: readonly string[];
   asilposDates?: readonly string[];
@@ -433,11 +433,22 @@ function salesZChecks(st: AsilposSalesMonth): { checks: AsilposMonthNotes["check
   return { checks, warnings };
 }
 
-/** Satışlar'ın bandı: ayın kaynağı ve sorunlar (sakin dille; çözümüyle) */
-export function asilposMonthNotes(st: AsilposSalesMonth, switchDay: string): AsilposMonthNotes {
+/**
+ * Kasa raporunu bekleyen günlerin metni: "; 11–15 Aralık kasa raporu girilince sayılır". Birden çok kasa bekliyorsa
+ * ("Tümü"; `held.tills`) ve şube adı verildiyse kasa kasa: "; Kadıköy 11–15 Aralık, Marina 16–19 Aralık kasa raporu
+ * girilince sayılır" (bir kasanın raporu öbürünün gününü saydırmaz)
+ */
+export function heldText(held: AsilposSalesMonth["held"], nameOf?: (branchId: string) => string): string {
+  if (!held) return "";
+  const range = held.tills?.length && nameOf ? held.tills.map((h) => `${nameOf(h.branchId)} ${dayRangeTR(h.from, h.to)}`).join(", ") : dayRangeTR(held.from, held.to);
+  return `; ${range} kasa raporu girilince sayılır`;
+}
+
+/** Satışlar'ın bandı: ayın kaynağı ve sorunlar (sakin dille; çözümüyle). `nameOf`: şube adı (kasa kasa metinler) */
+export function asilposMonthNotes(st: AsilposSalesMonth, switchDay: string, nameOf?: (branchId: string) => string): AsilposMonthNotes {
   const name = monthLabel(st.month).split(" ")[0];
   const warnings: string[] = [];
-  const held = st.held ? `; ${dayRangeTR(st.held.from, st.held.to)} kasa raporu girilince sayılır` : "";
+  const held = heldText(st.held, nameOf);
   const days = st.asilpos ? ` (${st.asilpos.days} gün geldi, son gün ${dayMonthTR(st.asilpos.last)}${held})` : "";
   const missing = st.missing?.length
     ? `${st.missing.length} günün AsilPOS gün sonu gelmedi, kasa raporu var: ${missingText(st.missing)}. Bu günlerin satışı hesapta yok; AsilPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın.`

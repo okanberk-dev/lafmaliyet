@@ -607,7 +607,7 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
   assert.match(data, /\.\.\.\(branchOnly \? \{ openedOn: tillOpenedOn\(branchRow\[0\] \?\? null\) \} : \{\}\),/);
   assert.match(data, /\.\.\.\(modposFrom \? \{ modposScope: \{ switchDay: modposFrom \} \} : \{\}\),/);
   // Föyün markası geçiş ayının başından ("Tümü" ve Tuzla aynı günleri böler; geçiş gününden önceki günler de)
-  assert.match(data, /const brandsFrom = switchDay \?\? modposFrom;/);
+  assert.match(data, /const brandsFrom = switchDay && modposFrom \? \(modposFrom < switchDay \? modposFrom : switchDay\) : \(switchDay \?\? modposFrom\);/);
   assert.match(data, /brandsStart \? loadModposBrands\(brandsStart, today\)/);
   assert.match(read("src/server/weekly/collect.ts"), /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionInput\(\{ resolveNames: false, today: ctx\.today \}\)\)/);
 });

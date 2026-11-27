@@ -152,12 +152,14 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     loadBusinessPayDays(db),
   ]);
   // Geçiş günleri görünümün kasalarınınki (çok şube): kasası ModPOS olan şube (Tuzla) seçiliyken AsilPOS hiç okunmaz, Z'si
-  // kasaların en erken geçiş ayından itibaren föyün markasıyla (modposScope). "Tümü"de her kasa kendi geçiş gününden
+  // kasaların en erken geçiş ayından itibaren föyün markasıyla (modposScope); geçiş günü sonra olan kasa seçiliyken kendi
+  // geçiş ayına dek öyle, sonra AsilPOS'tan. "Tümü"de her kasa kendi geçiş gününden
   const switchDays = scopeSwitchDays(switchRow, scope);
   const { asilpos: switchDay, modpos: modposFrom } = commissionScopeDays(switchRow, scope);
   const asilposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
-  // Föyün markası geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır)
-  const brandsFrom = switchDay ?? modposFrom;
+  // Föyün markası ilk geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır): iki gün de
+  // varsa erkeni
+  const brandsFrom = switchDay && modposFrom ? (modposFrom < switchDay ? modposFrom : switchDay) : (switchDay ?? modposFrom);
   const brandsStart = brandsFrom ? (`${brandsFrom.slice(0, 7)}-01` > fromDay ? `${brandsFrom.slice(0, 7)}-01` : fromDay) : null;
   const [asilposDays, modposBrands] = await Promise.all([
     asilposFrom ? loadAsilposPaymentDays(switchDays, fromDay, scope) : Promise.resolve([]),

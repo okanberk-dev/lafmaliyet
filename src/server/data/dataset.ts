@@ -16,7 +16,7 @@ import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { modposZBetween, otherBranchLists, type OtherBranchList } from "@/lib/asilpos/sales";
 import type { AsilposWorked } from "@/lib/asilpos/personel";
-import { earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, type SwitchDays } from "@/lib/pos/tills";
+import { countedTillIds, earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, type SwitchDays } from "@/lib/pos/tills";
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
@@ -585,18 +585,24 @@ function mergeSales(
   },
 ) {
   // Yalnız kasa raporları: AsilPOS'un yedek ay satırları (G6, source "asilpos") ve ModPOS föyü rapor değildir. AsilPOS'un
-  // günleriyle yalnız kasası AsilPOS olan şubelerin kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta kalan şubeninki
-  // değil; denetim 21 Kasım #5)
-  const tills = new Set(Object.keys(input.switchDays));
+  // günleriyle yalnız sayılan AsilPOS kasalarının (geçiş günü olan) kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta
+  // kalan şubeninki ve geçiş günü olmayan kasanınki değil: onların listesi ModPOS listesidir; denetim 21 Kasım #5)
+  const tills = new Set(countedTillIds(input.switchDays));
   const reportRows = input.till.filter((r) => isReportRow(r) && tills.has(r.branchId ?? DEFAULT_BRANCH_ID));
+  // Kasa başına kasa raporlarının son günü: süren ayın sonraki AsilPOS günleri o kasanın raporu girilince sayılır (bir
+  // kasanın raporu öbürünün gününü saydırmaz; "Tümü" şube görünümlerinin toplamı, inceleme 27 Kasım)
+  const lastTillDays: Record<string, string> = {};
+  for (const r of reportRows) {
+    const b = r.branchId ?? DEFAULT_BRANCH_ID;
+    if (!(b in lastTillDays) || r.date > lastTillDays[b]) lastTillDays[b] = r.date;
+  }
   return mergeWithAsilpos(db, {
     switchDays: input.switchDays,
     salesLines: input.salesLines,
     coverage: input.coverage,
     coverageOf: input.coverageOf,
     today: input.today,
-    // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki AsilPOS günleri rapor girilince sayılır
-    lastTillDay: reportRows.at(-1)?.date ?? null,
+    lastTillDays,
     reportDays: reportRows.map((r) => r.date),
     // Z ve indirim: ModPOS listesi indirimden öncedir, liste − indirim Z ile karşılaştırılır ("%8 fazla", 23 Kasım 2026)
     zOf: (from, upto) => modposZBetween(reportRows, from, upto),

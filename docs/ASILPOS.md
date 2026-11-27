@@ -280,21 +280,25 @@ yazar.
 
 #### Kasadan çıkanlar AsilPOS'tan (Soru 5 yanıtlandı)
 
-Gövdenin `cashMoves[]`'ı AsilPOS'un şubesinin **sayılan** gününde (geçiş gününden önce değil) ve gövde listeyi taşıyorsa
+Gövdenin `cashMoves[]`'ı kasanın şubesinin **sayılan** gününde (geçiş gününden önce değil) ve gövde listeyi taşıyorsa
 "Kasadan çıkanlar"a (`cash_outs`) yazılır, gün sonunun işleminde ve kilidinde (`src/server/asilpos/cash-moves.ts`, planı
 saf: `src/lib/asilpos/cash-moves.ts` › `planAsilposCashOuts`):
 
 - **Harcama ve teslim satır olur, giriş olmaz** (tablo kasadan çıkanı tutar; giren Kasa raporunda `cashIn`, gün
-  görünümünde **Kasa hareketleri (AsilPOS)**: harcama, teslim, giriş sayı ve toplamla). Satır: şube Marina, gönderen
-  "AsilPOS" (kişi adı yazılmaz), saat hareketin anı, belge "yok", açıklama AsilPOS'un, `asilpos_id` hareketin kimliği
-  (benzersiz).
+  görünümünde **Kasa hareketleri (AsilPOS)**: harcama, teslim, giriş sayı ve toplamla). Satır: şube kasanınki (imzanın
+  anahtarının şubesi), gönderen "AsilPOS" (kişi adı yazılmaz), saat hareketin anı, belge "yok", açıklama AsilPOS'un,
+  `asilpos_id` hareketin kimliği (benzersiz).
+- **Anahtar yalnız kendi şubesinin satırını yazar** (çok şube, inceleme 27 Kasım 2026): kimliği başka şubenin satırında
+  olan hareket (ör. öbür şubenin yedeğinden kurulmuş kasa eski günleri yeniden yolladı) o satıra dokunmaz, şubeye taşımaz,
+  yeni satır da açmaz (benzersiz kimlik gönderimi kalıcı 500'e düşürürdü); işlem geçmişine "1 hareket başka şubenin
+  satırı olduğu için yazılmadı" düşer. Şubenin başka güne düşmüş aynı kimlikli satırı bugünkü gibi bu güne döner.
 - **Teslimin "Kime"si AsilPOS'tan** (25 Kasım 2026, sahibin isteği "teslim edilirken kime olduğu yazılsın"): AsilPOS'ta
   teslimde alıcı zorunlu (patron ya da müdür hesabı, Banka ya da elle yazılan ad); gövdede `recipient` olarak gelir,
   satırın "Kime"sine (`store`; listede "Teslim · Patron") yazılır (`asilposRecipient`, en çok 60 karakter). Kime'si boş
   sahiplenilen elle satır ve alıcıyı okumayan sürümün yazdığı AsilPOS teslimi de yeniden gönderimde dolar
   (`planAsilposRecipientFill`); panelde yazılmış Kime'ye dokunulmaz. Alıcısız eski AsilPOS teslimi Kime'siz kalır.
 - **Aylık harcamalar:** harcamanın `categoryId`'si personelin seçebildiği bir kategoriyse kayıt da açılır (personelin
-  fişsiz alışverişinin kuralı; nakit, "Kasadan · gün", şube Marina). Kategorisiz ya da yöneticinin kategorisindeki
+  fişsiz alışverişinin kuralı; nakit, "Kasadan · gün", şube kasanınki). Kategorisiz ya da yöneticinin kategorisindeki
   harcama yalnız satır olur; kategoriyi panelde personel (satırı düzeltince kategori sorulur, kayıt açılır) ya da
   yönetici seçer. Personelin bu kuralı yalnız **kategorisini bekleyen AsilPOS harcamasında** geçer
   (`asilposAwaitingCategory`, satırla pencereye gelir): AsilPOS'un açtığı, kaydı olmayan ve saklı gövdede personelin
@@ -393,8 +397,11 @@ son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:
   AsilPOS'tan da sayılır. Liste ürün cirosudur (indirimden önce), küçük fark olağandır.
 - **Kapsam:** AsilPOS satırı olan ayın satırları son sayılan AsilPOS gününe kadardır (`salesCoverage`): süren ayda ya da
   günleri eksik ayda günlük ortalama ve "ayda …" adetleri yarım ayı tam ay saymaz (engine `listPeriod`). **Süren ayda**
-  AsilPOS günü kasa raporlarının son gününden sonraysa o gün kasa raporu girilince sayılır (`mergeWithAsilpos`
-  `lastTillDay`; Satışlar'ın bandı "10 Aralık kasa raporu girilince sayılır" der): AsilPOS gün sonunu kapanışta yollar,
+  AsilPOS günü kasanın kendi kasa raporlarının son gününden sonraysa o gün kasa raporu girilince sayılır
+  (`mergeWithAsilpos` `lastTillDays`, kasa başına; Satışlar'ın bandı "10 Aralık kasa raporu girilince sayılır" der, "Tümü"de
+  birden çok kasa bekliyorsa kasa kasa: "Kadıköy 11–15 Aralık, Marina 16–19 Aralık kasa raporu girilince sayılır"). Bir
+  kasanın raporu öbür kasanın gününü bekletmez ya da saydırmaz: "Tümü" şube görünümlerinin toplamıdır (çok şube, inceleme
+  27 Kasım 2026; önceden "Tümü" bütün kasaların en son raporunu ölçü alırdı). AsilPOS gün sonunu kapanışta yollar,
   rapor sonra (çoğu kez ertesi sabah) girilir; o arada satırlar kasa döneminden bir gün ileride olur, liste ↔ POS cirosu
   karşılaştırması yanlış uyarı verir, günlük ortalama bir günün satışı kadar şişerdi. Süren ayda hiç kasa raporu yoksa
   beklenmez (ayın kasa dönemi yok). Ay rakamlarının raporsuz günde AsilPOS Z'sinden gelmesi (B09) bu bekleyişi kendiliğinden
@@ -1106,7 +1113,9 @@ kopyaladı. Okuyan her yer `src/server/pos/tills.ts`'ten geçer (`loadPosTills`,
   Panel kasanın şubesini **anahtardan** tanır (`resolvePosCaller`, `src/server/asilpos/branch.ts`): imza hangi şubenin
   anahtarıyla tutuyorsa istek o şubenindir; kurulu kasa devir, ürün ve gider kategorisi isteklerinde şube göndermeyebilir.
   Ortamdaki `ASILPOS_SYNC_SECRET` (eski adı da okunur) yalnız eski tek kasalı kurulumun şubesinindir (Marina) ve yalnız
-  Marina'nın saklanan anahtarı yokken. İki şubenin anahtarı aynı olamaz: kayıt başka şubenin (ya da ortamdaki) anahtarını
+  Marina'nın saklanan anahtarı yokken. Öbür şubede saklanan anahtar silinirse (ya da `AUTH_SECRET` değişip açılamazsa)
+  kasa bağlantısız kalır (401): Şube ayarları kartı, silme onayı, işlem geçmişi ve Ayarlar kartı bunu söyler, ortamdaki
+  değişkeni önermez ("şube anahtarı yok"; inceleme 27 Kasım 2026). İki şubenin anahtarı aynı olamaz: kayıt başka şubenin (ya da ortamdaki) anahtarını
   reddeder; yine de aynıysa ikisi de kullanılmaz ve kart "Anahtar başka bir şubenin AsilPOS anahtarıyla aynı" der (bir
   şubenin günleri öbürüne yazılmasın). En az 32 karakter, sitenin anahtarı (`KARAOKE_SYNC_SECRET`) reddedilir. Tarayıcıya,
   işlem geçmişine ve yedeğe gitmez; ekran yalnız "Panelde kayıtlı / Sunucuda kayıtlı / Anahtar yok" der. **Döndürülen
@@ -1342,7 +1351,8 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
    iptal / süresi dolmuş, 400 biçim, 429 çok deneme (IP başına 15 dk'da 20). Kod koşullu güncellemeyle bir kez geçer.
    Anahtar **şubenin kendi anahtarıdır** (çok şube, 27 Kasım 2026; `posKeyOf`): kod üretilirken şubenin kullanılabilen
    anahtarı yoksa yenisi üretilip şubenin ayarına şifreli saklanır (`ensurePosKey`), var olan anahtar değişmez (kurulu
-   kasa çalışmaya devam eder). Kasaya hiçbir zaman başka şubenin anahtarı ya da (Marina dışında) ortamdaki anahtar
+   kasa çalışmaya devam eder). Anahtar grubun kilidinin altında okunur ya da üretilir ve kasaya o işlemin anahtarı gider:
+   aynı şubeye aynı anda kod üretilip kod verilirse ikincisi ilkinin anahtarını görür, üzerine yazmaz (inceleme 27 Kasım). Kasaya hiçbir zaman başka şubenin anahtarı ya da (Marina dışında) ortamdaki anahtar
    verilmez: panel günü anahtardan şubeye yazar. Göçten önce Marina'nın anahtarını almış başka şube kasası yeni bir
    kurulum koduyla kendi anahtarını almalıdır. AsilPOS Uzaktan ve site yalnız panelin ortamında
    `ASILPOS_CLOUD_URL` + `ASILPOS_CLOUD_SECRET`, `ASILPOS_SITE_URL` + `ASILPOS_SITE_SECRET` (en az 32 karakter) tanımlıysa;

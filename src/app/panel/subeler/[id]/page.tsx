@@ -17,6 +17,7 @@ import { effectiveSettings } from "@/lib/commission/report";
 import { blindCountSettingOn } from "@/lib/kor-sayim";
 import { modposKeyProblem } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import { shiftPresetsOf } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
 import { branchSettingView } from "@/server/branch-settings-view";
@@ -145,6 +146,8 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
               problem: secret.problem,
               envName: secret.envName,
               sourceModpos: branch.posSource !== "asilpos",
+              till: tillHere,
+              legacy: branch.id === LEGACY_POS_BRANCH_ID,
             }}
           />
         ) : (asilpos.secrets.secret ?? "none") !== "none" ? (

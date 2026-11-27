@@ -11,7 +11,7 @@ import { posEnvName } from "@/lib/asilpos/env";
 import { envSyncSecret, secretFrom, secretProblem, type SecretProblem } from "@/lib/asilpos/request";
 import { isAsilposDay } from "@/lib/asilpos/switch";
 import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
-import { putBranchSetting, resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
+import { lockGroup, putBranchSetting, resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { forgetPosTills, loadBranchSwitchDay, loadPosTillIds, switchDayOf } from "@/server/pos/tills";
 
 import { getDb, schema as s, type DB } from "../db";
@@ -214,14 +214,19 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 /**
  * Şubenin kullanılabilen anahtarı yoksa yenisini üretip şubenin ayarına saklar (kurulum kodu; çok şube): kasa kurulumda
  * yalnız kendi şubesinin anahtarını alır, başka şubenin (ya da ortamdaki eski kurulum) anahtarını hiçbir zaman. Var olan
- * kullanılabilen anahtar değişmez (kurulu kasa çalışmaya devam eder). Üretildiyse true
+ * kullanılabilen anahtar değişmez (kurulu kasa çalışmaya devam eder). Okuma grubun kilidinin altında (inceleme 27 Kasım):
+ * aynı şubeye aynı anda kod üretilip kod verilirse ikincisi ilkinin anahtarını görür, üzerine yazmaz. Döner: şubenin
+ * anahtarı (bu işlemde okunan ya da üretilen; kasaya verilen bu) ve üretildi mi
  */
-export async function ensurePosKey(tx: Tx, branchId: string, by: string, env: Env = process.env): Promise<boolean> {
+export async function ensurePosKey(tx: Tx, branchId: string, by: string, env: Env = process.env): Promise<{ key: string; created: boolean }> {
+  await lockGroup(tx, ASILPOS_GROUP.id);
   const { info } = await readKeys(tx, env);
-  if (info.get(branchId)?.secret) return false;
-  await putBranchSetting(tx, ASILPOS_GROUP, branchId, { secret: randomBytes(32).toString("base64url") }, by);
+  const have = info.get(branchId)?.secret;
+  if (have) return { key: have, created: false };
+  const key = randomBytes(32).toString("base64url");
+  await putBranchSetting(tx, ASILPOS_GROUP, branchId, { secret: key }, by);
   forgetPosKeys();
-  return true;
+  return { key, created: true };
 }
 
 /** Kasa listesinin önbelleksiz okunuşu (anahtarın güncelliği; testler) */

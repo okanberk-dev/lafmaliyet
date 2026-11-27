@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 
 import { staffCategory } from "@/lib/cash-outs";
 import { isCashOutMove, ASILPOS_CASH_OUT_BY, asilposRecipient, planAsilposCashOuts, planAsilposDetach, planAsilposRecipientFill, type AsilposCashOutRow } from "@/lib/asilpos/cash-moves";
@@ -13,10 +13,10 @@ import { schema as s } from "@/server/db";
 /**
  * AsilPOS'un kasa hareketleri → "Kasadan çıkanlar" (Faz 3, 23 Kasım 2026; sahibin kararı "Soru 5": AsilPOS satırların
  * kaynağı; docs/ASILPOS.md › Kasadan çıkanlar AsilPOS'tan). Gün sonunun işleminde, (şube, gün) danışma kilidinin altında
- * çağrılır (ingest.ts storePosDay): yalnız AsilPOS'un şubesinin sayılan gününde (geçiş gününden önce değil) ve gövde
+ * çağrılır (ingest.ts storePosDay): yalnız kasanın şubesinin sayılan gününde (geçiş gününden önce değil) ve gövde
  * `cashMoves` taşıyorsa (eski AsilPOS ya da okunamayan listede satırlara dokunulmaz). Plan saf: src/lib/asilpos/cash-moves.ts.
  *
- * - Yeni harcama ve teslim satır olur: şube Marina, gönderen "AsilPOS" (kişi adı yazılmaz), saat hareketin anı, belge
+ * - Yeni harcama ve teslim satır olur: şube kasanınki (imzanın anahtarının şubesi), gönderen "AsilPOS" (kişi adı yazılmaz), saat hareketin anı, belge
  *   "yok", açıklama AsilPOS'un. Teslimde "Kime" (`store`) AsilPOS'un alıcısıdır (`recipient`, 25 Kasım 2026); boş Kime'li
  *   eski ya da sahiplenilen satır da alıcıyla dolar, panelde yazılmış Kime'ye dokunulmaz (planAsilposRecipientFill). Harcamanın kategorisi personelin seçebildiği bir kategoriyse (etkin, staffCategory)
  *   Aylık harcamalar'a da yazılır (personelin fişsiz alışverişinin kuralı); kategorisizse ya da kategori yöneticininse
@@ -43,22 +43,41 @@ export interface AsilposCashOutSync {
   recipients: number;
 }
 
-/** `branchId`: kasanın şubesi (gün sonunu yazan işlem verir) */
-export async function syncAsilposCashOuts(tx: CashOutTx, date: string, moves: readonly PosCashMove[], branchId: string): Promise<AsilposCashOutSync> {
+/**
+ * `branchId`: kasanın şubesi (gün sonunu yazan işlem verir; imzanın anahtarının şubesi). Anahtar yalnız kendi şubesinin
+ * satırlarını yazar (çok şube, inceleme 27 Kasım): kimliği başka şubenin satırında olan hareket o şubenin kasasınındır
+ * (ör. öbür şubenin yedeğinden kurulmuş kasa eski günleri yeniden yolladı); o satıra dokunulmaz, şubeye taşınmaz ve yeni
+ * satır da açılmaz (benzersiz kimlik gönderimi kalıcı 500'e düşürürdü); işlem geçmişine yazılır
+ */
+export async function syncAsilposCashOuts(tx: CashOutTx, date: string, allMoves: readonly PosCashMove[], branchId: string): Promise<AsilposCashOutSync> {
+  const allIds = allMoves.filter(isCashOutMove).map((m) => m.id);
+  // Başka şubenin satırındaki kimlikler (kilitlenmez: o satıra yazılmaz)
+  const foreign = new Set(
+    allIds.length
+      ? (
+          await tx
+            .select({ asilposId: s.cashOuts.asilposId })
+            .from(s.cashOuts)
+            .where(and(inArray(s.cashOuts.asilposId, allIds), ne(s.cashOuts.branchId, branchId)))
+        ).map((r) => r.asilposId)
+      : [],
+  );
+  const moves = allMoves.filter((m) => !(isCashOutMove(m) && foreign.has(m.id)));
   const ids = moves.filter(isCashOutMove).map((m) => m.id);
-  // Günün satırları ve (olmaması gereken) başka güne düşmüş aynı kimlikli satır: benzersiz indeks ikinci satırı açtırmaz
+  // Şubenin günün satırları ve (olmaması gereken) şubenin başka güne düşmüş aynı kimlikli satırı: benzersiz indeks ikinci
+  // satırı açtırmaz
   const rows: CashOutRow[] = await tx
     .select()
     .from(s.cashOuts)
-    .where(or(and(eq(s.cashOuts.date, date), eq(s.cashOuts.branchId, branchId)), ids.length ? inArray(s.cashOuts.asilposId, ids) : undefined))
+    .where(and(eq(s.cashOuts.branchId, branchId), or(eq(s.cashOuts.date, date), ids.length ? inArray(s.cashOuts.asilposId, ids) : undefined)))
     .for("update");
   const byId = new Map(rows.map((r) => [r.id, r]));
   const plan = planAsilposCashOuts(
     moves,
     rows.map((r): AsilposCashOutRow => ({ id: r.id, kind: r.kind, amount: r.amount, asilposId: r.asilposId, createdAt: r.createdAt })),
   );
-  // Başka güne ya da şubeye düşmüş AsilPOS satırı bu güne döner (kilit eşitlemeye uygulanmaz)
-  const movedRows = rows.filter((r) => r.asilposId !== null && ids.includes(r.asilposId) && (r.date !== date || r.branchId !== branchId));
+  // Şubenin başka güne düşmüş AsilPOS satırı bu güne döner (kilit eşitlemeye uygulanmaz)
+  const movedRows = rows.filter((r) => r.asilposId !== null && ids.includes(r.asilposId) && r.date !== date);
   const update = [...plan.update];
   for (const r of movedRows) if (!update.some((u) => u.rowId === r.id)) update.push({ rowId: r.id, move: moves.find((m) => m.id === r.asilposId)! });
 
@@ -123,7 +142,6 @@ export async function syncAsilposCashOuts(tx: CashOutTx, date: string, moves: re
       },
       { prev, asilpos: { id: u.move.id, at: new Date(u.move.at) } },
     );
-    if (prev.branchId !== branchId) await tx.update(s.cashOuts).set({ branchId }).where(eq(s.cashOuts.id, prev.id));
     out.updated += 1;
   }
 
@@ -156,7 +174,9 @@ export async function syncAsilposCashOuts(tx: CashOutTx, date: string, moves: re
     out.removed && `${out.removed} kaldırıldı`,
     out.released && `${out.released} tedarikçi ödemesine bağlı olduğu için kaldı`,
     out.recipients && `${out.recipients} teslime Kime yazıldı`,
+    foreign.size > 0 && `${foreign.size} hareket başka şubenin satırı olduğu için yazılmadı`,
   ]);
+  if (foreign.size) console.error(`[asilpos] ${branchId} ${date}: ${foreign.size} kasa hareketinin kimliği başka şubenin satırında; yazılmadı`);
   return out;
 }
 

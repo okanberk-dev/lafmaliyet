@@ -760,10 +760,11 @@ export interface AsilposSalesMonth {
   /** Gelen AsilPOS gün sonları (sayılan ve kasa raporunu bekleyen): kaç gün geldi, son gün; hiç gelmediyse null */
   asilpos: { days: number; last: string } | null;
   /**
-   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan AsilPOS günleri (kasa raporlarının son gününden
-   * sonra; docs/ASILPOS.md › Kapsam); yoksa null ya da yok
+   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan AsilPOS günleri (kasanın kendi kasa raporlarının
+   * son gününden sonra; docs/ASILPOS.md › Kapsam); yoksa null ya da yok. Birden çok kasa bekliyorsa ("Tümü") `from` → `to`
+   * ilk bekleyen günden son gelen güne, `tills` kasa kasa
    */
-  held?: { from: string; to: string } | null;
+  held?: { from: string; to: string; tills?: { branchId: string; from: string; to: string }[] } | null;
   /**
    * AsilPOS'un sayılması gereken (`from`'dan dünden önceye) ama gün sonu gelmemiş, kasa raporu olan günler: o günlerin
    * satışı hiçbir kaynakta yok; yoksa alan yok

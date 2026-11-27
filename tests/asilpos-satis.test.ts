@@ -18,6 +18,7 @@ import {
   commonListText,
   dayRangeTR,
   asilposMonthNotes,
+  heldText,
   asilposMonthStatus,
   asilposSalesCountFrom,
   mergeSalesSources,
@@ -396,6 +397,20 @@ test("Satışlar bandı: geçiş ayı, eksik günler, sayılmayan AsilPOS günle
     "Aralık AsilPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir (4 gün geldi, son gün 4 Aralık; 4 Aralık kasa raporu girilince sayılır). ModPOS listesi yüklenmez.",
   );
   assert.equal("held" in dec, false, "bekleyen gün yoksa alan yok");
+  // Çok şube (inceleme 27 Kasım): iki kasa kendi raporunu bekliyorsa "Tümü"nün metni kasa kasa; şube adı yoksa aralık
+  const two = asilposMonthStatus({
+    month: "2026-12",
+    switchDay: S,
+    today: "2026-12-20",
+    modpos: null,
+    asilpos: { days: 9, last: "2026-12-19" },
+    held: { from: "2026-12-11", to: "2026-12-19", tills: [{ branchId: "kadikoy", from: "2026-12-11", to: "2026-12-15" }, { branchId: "marina", from: "2026-12-16", to: "2026-12-19" }] },
+  })!;
+  const names: Record<string, string> = { kadikoy: "Kadıköy", marina: "Marina" };
+  assert.equal(plain(heldText(two.held, (id) => names[id])), "; Kadıköy 11–15 Aralık, Marina 16–19 Aralık kasa raporu girilince sayılır");
+  assert.match(plain(asilposMonthNotes(two, S, (id) => names[id]).info), /\(9 gün geldi, son gün 19 Aralık; Kadıköy 11–15 Aralık, Marina 16–19 Aralık kasa raporu girilince sayılır\)/);
+  assert.equal(plain(heldText(two.held)), "; 11–19 Aralık kasa raporu girilince sayılır");
+  assert.equal(heldText(null), "");
   assert.equal(
     plain(asilposMonthNotes(asilposMonthStatus({ month: "2027-01", switchDay: S, today: "2026-12-04", modpos: null, asilpos: null })!, S).info),
     "Ocak AsilPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir. ModPOS listesi yüklenmez.",
@@ -468,7 +483,7 @@ test("kaynak: veri kümesi geçiş günü yokken AsilPOS'u hiç okumaz; Satışl
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
   assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && tills\.has\(r\.branchId \?\? DEFAULT_BRANCH_ID\)\);/);
-  assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
+  assert.match(dataset, /\n\s+lastTillDays,\n/);
   // Görünümün geçiş günü: ModPOS'ta kalan şube seçiliyken yok (denetim 21 Kasım #5)
   assert.match(dataset, /const settings = \{ \.\.\.storedSettings, asilposGecisGunu: scopeSwitchDay\(allSwitchDays, scope\), acikGun: calendar\.value\.openDays \};/);
   assert.match(dataset, /const viewSwitchDays: SwitchDays = scopeSwitchDays\(allSwitchDays, scope\);/);

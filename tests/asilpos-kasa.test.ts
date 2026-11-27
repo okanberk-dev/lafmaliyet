@@ -216,7 +216,9 @@ test("G6: raporsuz AsilPOS günü ayın rakamına girer, gün yine 'rapor yok'; 
   // AsilPOS'un günleriyle yalnız AsilPOS'un şubesinin raporları (denetim 21 Kasım #5: Marina'nın raporu Tuzla'nın AsilPOS'unu beklemez).
   // Birleşme mergeSales'te: hem görünümün satışı hem su litresinin "Tümü" satışı aynı kuralı kullanır (#4)
   assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && tills\.has\(r\.branchId \?\? DEFAULT_BRANCH_ID\)\);/);
-  assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
+  // Bekleme kasa başına: kasanın kendi raporlarının son günü (inceleme 27 Kasım: "Tümü" = şube görünümlerinin toplamı)
+  assert.match(dataset, /const tills = new Set\(countedTillIds\(input\.switchDays\)\);/);
+  assert.match(dataset, /if \(!\(b in lastTillDays\) \|\| r\.date > lastTillDays\[b\]\) lastTillDays\[b\] = r\.date;/);
 });
 
 test("G6: kapalı işaretli gün yalnız satışlı AsilPOS gün sonuyla 'rapor yok' olur; satışsız Z kapalı kalır", () => {

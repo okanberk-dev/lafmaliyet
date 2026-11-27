@@ -946,6 +946,15 @@ test("Ayarlar kartı: sakin durumlar (kurulmadı / bağlı, deneme / geçiş bek
   const broken = asilposCardSummary({ ...base, secretProblem: "missing", switchDay: "2026-11-10" });
   assert.deepEqual([broken.tone, broken.badge], ["red", "Bağlantı kapalı"]);
   assert.match(broken.headline, /Geçiş günü seçili \(10 Kasım 2026\) ama ASILPOS_SYNC_SECRET yok: AsilPOS günleri gelemez/);
+  // Marina dışındaki kasa (çok şube, inceleme 27 Kasım): ortamdaki değişken o şubeye hiç hizmet etmez, şubenin anahtarı söylenir
+  const nb = (s: string) => s.replace(/\u00a0/g, " ");
+  const branchBroken = asilposCardSummary({ ...base, secretProblem: "missing", secretLegacy: false, switchDay: "2026-11-10" });
+  assert.equal(nb(branchBroken.headline), "Geçiş günü seçili (10 Kasım 2026) ama şube anahtarı yok: AsilPOS günleri gelemez.");
+  assert.deepEqual(branchBroken.lines, ["Şube ayarları'ndan anahtar kaydedin ya da kurulum kodu gönderin."]);
+  assert.doesNotMatch(JSON.stringify(branchBroken), /SYNC_SECRET/);
+  const branchShort = asilposCardSummary({ ...base, secretProblem: "short", secretLegacy: false });
+  assert.match(branchShort.lines[0], /^Şube anahtarı 32 karakterden kısa: bağlantı kapalı/);
+  assert.match(asilposCardSummary({ ...base, secretProblem: "same_as_other_branch", switchDay: "2026-11-10" }).headline, /ama anahtar başka bir şubenin AsilPOS anahtarıyla aynı:/);
 
   // Bağlı, geçiş günü yok
   const fresh = asilposCardSummary(base);

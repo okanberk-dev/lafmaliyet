@@ -6,7 +6,9 @@
 -- (a) Eski genel geçiş günü (settings; yeni adlı kayıt varsa o) Marina'nın kendi ayar satırına kopyalanır. Var olan
 --     satır kazanır (açıkça boş bırakılmış gün dahil), saklanan anahtar korunur.
 -- (b) Marina'nın kasa kaynağı AsilPOS olur (sahibin kararı: Marina'da ModPOS tamamen bitti, föyü çekilmez). Yalnız
---     Marina'nın geçiş günü varsa: geçiş günü olmayan kurulumda (geliştirme, test) föyün çekimi kesilmez.
+--     Marina'nın geçiş günü varsa: göçle gelen eski bir veritabanında geçiş günü yoksa Marina ModPOS'ta kalır, föyü
+--     çekilir. Yeni tohumlanan veritabanında Marina zaten AsilPOS'tadır (DEFAULT_BRANCHES; geçiş günü yokken günleri
+--     deneme sayılır, föyü çekilmez); bu koşul ona dokunmaz.
 -- Bağlantının durum satırı taşınmaz: Marina'nınki genel satırda kalır (canlıdaki eski sürüm ve geri dönüş onu okur),
 -- öteki kasalar kendi şube satırını açar (src/lib/asilpos/status.ts stateKeysOf).
 

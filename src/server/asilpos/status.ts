@@ -22,7 +22,7 @@ import { sentWorkedStaffRefs } from "@/lib/asilpos/day";
 import type { NextOpening } from "@/lib/asilpos/devir";
 import type { WorkedStaffAnswer } from "@/lib/asilpos/personel";
 import { isAsilposDay } from "@/lib/asilpos/switch";
-import { singleTill } from "@/lib/pos/tills";
+import { LEGACY_POS_BRANCH_ID, singleTill } from "@/lib/pos/tills";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadAsilposIkram } from "@/server/data/asilpos-ikram";
@@ -339,6 +339,8 @@ export async function loadAsilposCard(db: DB = getDb(), branchId: string, now: D
     secretProblem: secret.problem,
     secretSource: secret.source,
     secretEnvName: secret.envName,
+    // Ortamdaki anahtar yalnız eski kurulumun şubesinin (Marina); öbür kasanın metni şubenin anahtarını söyler
+    secretLegacy: branchId === LEGACY_POS_BRANCH_ID,
     switchDay,
     today,
     state,

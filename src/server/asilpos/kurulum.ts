@@ -13,7 +13,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { ensurePosKey, forgetPosKeys, posKeyOf } from "@/server/asilpos/branch";
+import { ensurePosKey, forgetPosKeys } from "@/server/asilpos/branch";
 
 // Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): kodu üretir, e-postayla gönderir, şube hesabına gösterir ve kasa
 // verince (POST /api/asilpos/kurulum) şubeyi ve bağlantı bilgilerini döner. Kurallar saf dosyada (src/lib/asilpos/kurulum.ts).
@@ -129,7 +129,10 @@ export async function redeemInstallCode(raw: string, db: DB = getDb(), now = new
   }
   const [branch] = await db.select({ id: s.branches.id, name: s.branches.name }).from(s.branches).where(eq(s.branches.id, row.branchId)).limit(1);
   if (!branch) return { status: 404, body: { ok: false, error: "Şube bulunamadı" } };
-  if (await db.transaction((tx) => ensurePosKey(tx, branch.id, "kurulum kodu"))) forgetPosKeys();
-  const baglanti = kurulumBaglantilari({ panelUrl: appUrl(), syncSecret: await posKeyOf(branch.id, db) });
+  // Anahtar işlemin içinden (grubun kilidinin altında okunan ya da üretilen): aynı anda üretilen kod onu ezemez, kasaya
+  // panelin sakladığı anahtar gider
+  const { key, created } = await db.transaction((tx) => ensurePosKey(tx, branch.id, "kurulum kodu"));
+  if (created) forgetPosKeys();
+  const baglanti = kurulumBaglantilari({ panelUrl: appUrl(), syncSecret: key });
   return { status: 200, body: { ok: true, sube: { id: branch.id, ad: branch.name }, baglanti } };
 }

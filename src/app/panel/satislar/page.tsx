@@ -82,7 +82,6 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const asilpos = switchDay
     ? (model.ds.asilposSales?.months.find((m) => m.month === month) ?? asilposMonthStatus({ month, switchDay, today, modpos: null, asilpos: null }))
     : null;
-  const notes = asilpos && switchDay ? asilposMonthNotes(asilpos, switchDay) : null;
   // Ayın satış kaynağı: başlığın açıklaması ve altındaki satır (docs/planlar/ux-sade.md §10)
   const source = salesSourceOf(month, switchDay, model.ds.asilposSales);
   const defaultThrough = coverageFor(month, today);
@@ -138,6 +137,8 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // sayılırdı; denetim 13 Kasım HM-02). "Tümü"de birden çok kasa açıkken form çizilmez, şube sorulur (aşağıda); tek kasada
   // o kasanın
   const [writeId, scope, branches] = await Promise.all([currentWriteBranch(), currentBranchScope(), listBranches()]);
+  // Bandın metinleri; "Tümü"de birden çok kasa kasa raporunu bekliyorsa şube şube
+  const notes = asilpos && switchDay ? asilposMonthNotes(asilpos, switchDay, (id) => branches.find((b) => b.id === id)?.name ?? id) : null;
   const formInfo = info?.byBranch ? info.byBranch[writeId] : info;
   // Birden çok kasanın toplamıyken form hangi şubeye yazdığını adıyla söyler; liste ↔ POS kutusu çıkmaz (liste bütün
   // şubelerin, POS cirosu yalnız yazılan şubenin olurdu)
