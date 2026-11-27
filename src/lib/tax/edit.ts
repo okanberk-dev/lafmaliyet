@@ -8,7 +8,8 @@
 import { shiftMonth } from "../calc/engine";
 import type { FixedSection } from "../calc/types";
 import { SEPARATE_CATEGORIES } from "../constants";
-import { dateTR, money, monthLabel, tl } from "../format";
+import { dateTR, money, monthLabel, num, tl } from "../format";
+import { numberAblative } from "../month-settings";
 import { isCalendarDate, isMuhtasarReminder, isProvisionalTaxReminder, postponedFrom, type ReminderRow } from "../reminders";
 
 import { directExpenseAllowed, QUARTER_DEPRECIATION_LABELS } from "./assets";
@@ -328,8 +329,11 @@ export function ruleTableValue(key: string): number | null {
   return rule && typeof rule.value === "number" ? rule.value : null;
 }
 
-/** Ayarlar'ın işveren SGK oranı (K19, `setEmployerSgkRate`): 0 … %21,75 */
-export const EMPLOYER_SGK_MAX = 0.2175;
+/**
+ * Ayarlar'ın işveren SGK oranının üst sınırı (K19, `setEmployerSgkRate`): kural tablosunun indirimsiz yasal oranı
+ * (`sgk.isverenOran.overrideMax`, 2026: %21,75); tablonun yılından türer
+ */
+export const EMPLOYER_SGK_MAX = TAX_RULES[RULES_LATEST_YEAR].sgk.isverenOran.overrideMax ?? 0.2175;
 export const rateText = (v: number) => `%${(Math.round(v * 10000) / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Gelir-gider'deki SGK oranı uyarısı (K19, §4.6) */
@@ -355,7 +359,7 @@ export function employerRateNotice(settingsRate: number, tax: Pick<TaxSettings, 
   if (!Number.isFinite(settingsRate) || Math.abs(settingsRate - target) < 1e-9) return null;
   const head = `Maaşlar'da işveren SGK ${rateText(settingsRate)}.`;
   // Tablosu olmayan yıl son bilinen yılın kurallarıyla (tahmini)
-  const when = !estimated && fromYear === 2026 ? "2026'da" : `${fromYear} kurallarıyla`;
+  const when = !estimated ? `${fromYear}'${yearLocative(fromYear)}` : `${fromYear} kurallarıyla`;
   const middle = rule.override
     ? `Vergi'de elle girilen oran ${rateText(target)} (Muhasebeci › SGK işveren payı).`
     : `${when} imalat dışı işyerinde 2 puan indirimle standart oran ${rateText(target)}; ek teşvikiniz varsa farklı olabilir.`;
@@ -364,6 +368,64 @@ export function employerRateNotice(settingsRate: number, tax: Pick<TaxSettings, 
     target,
     current: settingsRate,
     canApply: Boolean(tax.checks.sgk_oran),
+  };
+}
+
+/** Yılın bulunma hâli eki: 2026'da, 2027'de, 2030'da, 2025'te */
+export function yearLocative(y: number): string {
+  // Ayrılma ekinin ünlüsü ve sertliği aynı: "-dan" → "-da", "-ten" → "-te"
+  return numberAblative(y).slice(0, -1);
+}
+
+/** Sahibe sorulan SGK sorusu (P5): seçeneklerin anlamı ve ayda ne kadar fark ettiği */
+export interface EmployerSgkQuestion {
+  current: number;
+  target: number;
+  title: string;
+  /** Önce bugünkü oran (değişmez), sonra vergi kuralının oranı */
+  options: { choice: "current" | "target"; rate: number; label: string; text: string }[];
+  /** Bu ayın tam zamanlı brüt maaşlarıyla ayda fark: (hedef − bugünkü) × brüt */
+  monthlyDiff: number;
+  diffText: string;
+}
+
+/**
+ * Maaşlar'daki işveren SGK oranı vergi kuralının oranından farklı ve sahip henüz cevap vermemişse (Muhasebeciye
+ * sorulacaklar › SGK oranı işaretsiz) sorulacak soru; yoksa null. Oran kendiliğinden değişmez (K19): sahip muhasebecisine
+ * sorar, cevabı bir düğmeyle verir (`answerEmployerSgk`). Oranlar ve puanlar kural tablosundan (yıldan) türer
+ */
+export function employerSgkQuestion(settingsRate: number, tax: Pick<TaxSettings, "overrides" | "checks">, year: number, monthlyGross: number): EmployerSgkQuestion | null {
+  const notice = employerRateNotice(settingsRate, tax, year);
+  if (!notice || notice.canApply) return null;
+  const { rules, fromYear, estimated } = rulesFor(year, tax.overrides);
+  const rule = rules.sgk.isverenOran;
+  const full = rule.overrideMax ?? rule.value;
+  const target = notice.target;
+  const cur = rateText(settingsRate);
+  const tgt = rateText(target);
+  const excel = Math.abs(settingsRate - 0.1575) < 1e-9;
+  const yearText = estimated ? `${fromYear} kurallarıyla (${year} tablosu henüz yok)` : `${fromYear}'${yearLocative(fromYear)}`;
+  const currentText = excel
+    ? `Excel'den gelen oran: %20,75 − 5 puan teşvik. Bu 5 puanlık indirim imalat dışı işyerinde Ocak 2025'e kadardı (Şubat 2025'ten %16,75, 2026'dan beri ${rateText(full)} − 2 puan). Muhasebeciniz başka bir teşvik (6111, 7103 …) uyguluyorsa doğru olabilir. Maaşlar ve Gelir-gider bugün bununla hesaplanıyor.`
+    : `Maaşlar'daki bugünkü oran; Maaşlar ve Gelir-gider bununla hesaplanıyor. Muhasebeciniz bu oranı (bir teşvikle) uyguluyorsa doğru.`;
+  const targetText = rule.override
+    ? `Vergi'de elle girilen oran (Muhasebeci › SGK işveren payı); vergi ve nakit planı bunu kullanıyor. Seçtiğiniz aydan itibaren Maaşlar ve Gelir-gider de bununla hesaplanır, önceki aylar değişmez.`
+    : `${yearText} yasal oran: ${rateText(full)} − imalat dışı işyerinde ${num(Math.round((full - target) * 10_000) / 100, 0, 2)} puan Hazine indirimi (primler süresinde ödenir, vadesi geçmiş borç yoksa). Vergi ve nakit planı bunu kullanıyor. Seçtiğiniz aydan itibaren Maaşlar ve Gelir-gider de bununla hesaplanır; önceki aylar değişmez.`;
+  const monthlyDiff = Math.max(0, monthlyGross) * (target - settingsRate);
+  const diffText =
+    monthlyGross > 0
+      ? `Fark: bu ayın brüt maaşlarıyla ayda ≈ ${money(Math.round(Math.abs(monthlyDiff)))} ${monthlyDiff >= 0 ? "daha fazla" : "daha az"} işveren maliyeti.`
+      : "Bu ay tam zamanlı personel yok; fark personel girilince görünür.";
+  return {
+    current: settingsRate,
+    target,
+    title: `Muhasebecinize sorun: işveren SGK ${cur} mi, ${tgt} mi?`,
+    options: [
+      { choice: "current", rate: settingsRate, label: `${cur} kalsın`, text: currentText },
+      { choice: "target", rate: target, label: `${tgt} olsun`, text: targetText },
+    ],
+    monthlyDiff,
+    diffText,
   };
 }
 
