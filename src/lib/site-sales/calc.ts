@@ -213,6 +213,15 @@ export interface TillOnlineRow {
 export const TILL_ROW_NOTE = "kasadan geçmez";
 
 /**
+ * Kasa sayfasındaki site satırının başlığı: online toplamı herkese; karaoke ön ödemesi yalnız `karaoke` açıkken
+ * (src/lib/roles.ts › "karaoke.tutar": yönetici ve muhasebeci; müdür ve personel görmez). Başlık sunucuda kurulur,
+ * kapalıyken tutar tarayıcıya hiç gitmez. Bilgi satırıdır: kasa hesabına girmez.
+ */
+export function siteDayTitle(row: Pick<TillOnlineRow, "online" | "karaoke">, dateLabel: string, karaoke: boolean): string {
+  return `laffogato.net · ${dateLabel}: online ${money(row.online)}${karaoke ? ` · karaoke ön ödeme ${money(row.karaoke)}` : ""}, ${TILL_ROW_NOTE}`;
+}
+
+/**
  * Sitenin şubeleri (laffogato #279, sitenin docs/PANEL-SALES.md › Şube kırılımı): kasa raporunun satırı kasanın şubesini
  * `&branch=` ile ister. Şube verilmezse Tuzla (eski davranış: şubesiz kasa Tuzla'nındı); sitede karşılığı olmayan kanal
  * (laffogato.net online kanalı) null: satır yok

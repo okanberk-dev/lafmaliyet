@@ -131,9 +131,9 @@ test("kaynak: eylemlerin rolleri; kip sunucuda; personel yükleyicisi ham yük v
   const exported = [...actions.matchAll(/^export (async function|const|function|class|let|type|interface) (\w+)/gm)].map((m) => `${m[1]} ${m[2]}`);
   assert.deepEqual(exported.sort(), ["async function requestLateWaste", "async function requestWasteDelete", "async function reviewWasteRequest"]);
   const body = (name: string) => actions.slice(actions.indexOf(`export async function ${name}`)).slice(0, 300);
-  assert.match(body("requestLateWaste"), /return attempt\(async \(\) => \{\s+const me = await requireUser\(\);/);
-  assert.match(body("requestWasteDelete"), /return attempt\(async \(\) => \{\s+const me = await requireUser\(\);/);
-  assert.match(body("reviewWasteRequest"), /return attempt\(async \(\) => \{\s+const me = await requireAdmin\(\);/);
+  assert.match(body("requestLateWaste"), /return attempt\(async \(\) => \{\s+const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
+  assert.match(body("requestWasteDelete"), /return attempt\(async \(\) => \{\s+const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
+  assert.match(body("reviewWasteRequest"), /return attempt\(async \(\) => \{\s+(?:\/\/[^\n]*\n\s+)*const me = await requireCan\("onay"\);/);
   // Personelin çağırdığı eylemlerin yanıtında yalnız isteğin kimliği ve sürümü
   const staffPart = actions.slice(actions.indexOf("export async function requestLateWaste"), actions.indexOf("export async function reviewWasteRequest"));
   assertNoCostKeys(staffPart, "istek eylemleri");
@@ -144,8 +144,8 @@ test("kaynak: eylemlerin rolleri; kip sunucuda; personel yükleyicisi ham yük v
   assert.match(core, /staffDeleteMode\(/);
   assert.match(core, /closedDayRefusal\(/);
   const waste = read("src/server/actions/waste.ts");
-  assert.match(waste, /addWaste\(getDb\(\), me,/);
-  assert.match(waste, /removeWaste\(getDb\(\), me,/);
+  assert.match(waste, /addWaste\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\),/);
+  assert.match(waste, /removeWaste\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\),/);
   // Personel yükleyicisi: yalnız zayi türleri, yükten beyaz listeyle (ad, birim, miktar, gün, tür, neden)
   const loader = read("src/server/data/waste-requests.ts");
   assert.match(loader, /^import "server-only";/);

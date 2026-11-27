@@ -5,9 +5,11 @@ import { z } from "zod";
 
 import { monthTitle } from "@/lib/closed-period";
 import { readRecipients } from "@/lib/muhasebe/paket";
+import { emailKey, recipientRefusal } from "@/lib/notify-recipients";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
 import { loadPackageSettings, savePackageSettings, sendAccountingPackage } from "@/server/muhasebe/paket";
+import { blockedAccounts } from "@/server/notify/recipients";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth } from "./util";
@@ -25,6 +27,12 @@ export async function savePackageOptions(input: z.input<typeof settingsInput>) {
     const read = readRecipients(d.recipients);
     if (!read.ok) throw new UserError(read.error);
     const db = getDb();
+    // Pakette bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları var: personel ya da müdür hesabının
+    // adresi alıcı olamaz, pasif hesaba gitmez (kasa alıcıları ve bildirim adresleriyle aynı kural; docs/BILDIRIMLER.md ›
+    // Alıcılar ve hesaplar). Gönderim de aynı kuralla süzer (kayıttan sonra müdüre indirilen hesap da düşer)
+    const blocked = await blockedAccounts(db, read.emails);
+    const first = read.emails.find((e) => blocked.has(emailKey(e)));
+    if (first) throw new UserError(recipientRefusal("package", { email: first, reason: blocked.get(emailKey(first))! }));
     const cur = await loadPackageSettings(db);
     await savePackageSettings(db, { ...cur, recipients: read.emails, auto: d.auto });
     await logActivity(me, "Muhasebeci paketi ayarlandı", `${read.emails.length ? read.emails.join(", ") : "alıcı yok"} · ay kapanınca ${d.auto ? "gönderilir" : "gönderilmez"}`);

@@ -368,7 +368,9 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
 - Personelin düzeltmesi Aylık harcamalar kaydını açmaz ve silmez: yöneticinin oradan sildiği kayıt geri gelmez,
   faturaya açtığı kayıt kalır; tutar ve tarih kayda yansır, yöneticinin yazdığı açıklama, ödeme şekli ve not kalır.
   Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırın her değişikliği ve silinmesi yöneticinin onayıyla
-  (aşağıda); kategoriyi yalnız yönetici değiştirir.
+  (aşağıda); kategoriyi yalnız yönetici değiştirir. Müdür bu satırı düzeltemez ve silemez, isteğine de karar vermez:
+  Kasa'da ona kilitli ve yalnız türü ve tutarıyla görünür ("Harcama"; yeri, açıklaması, fişi ve fotoğrafı ne satırda,
+  ne ay penceresinde, ne WhatsApp metninde; [ROLLER.md](ROLLER.md) › Kararlar).
 - Aylık harcamalar'da bu kayıtlarda fotoğraf simgesi ve **Kasadan** rozeti görünür; tutarı ve tarihi Kasa raporu'nda
   düzeltilir. Aylık harcamalar'dan silinen kayıt kasa satırını silmez.
 
@@ -424,12 +426,14 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
 - Kapanmış güne kasadan çıkan eklenmesini yöneticinin kategorisi seçilerek istemek olmaz: kategori personelin
   kategorilerinden biridir, yönetici onayda değiştirebilir.
 - **Onaylar › Kasa** kartı: satır ve fişi, düzeltmede değişecekler ve bağlı gider; bağlam olarak günün kasa farkı, o
-  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar
-  günün açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve
-  düzeltmede "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler). İstekten sonra satır, fişi ya da bağlı
-  gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın fotoğrafı
-  yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki fark kartta
-  görünür, rapor normal yoldan düzeltilir.
+  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar günün
+  açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve düzeltmede
+  "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler; müdüre personelinkiler). Yöneticinin kategorisindeki
+  satırın isteğinde müdürün kartı karar düğmesi çizmez: "isteğe yönetici karar verir"; kart ona satırı ve öneriyi yalnız
+  türü ve tutarıyla gösterir (yeri, açıklaması, fişi ve personelin notu yok). İstekten sonra satır, fişi ya da
+  bağlı gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın
+  fotoğrafı yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki
+  fark kartta görünür, rapor normal yoldan düzeltilir.
 - **Fotoğraf kaldırma kartı:** küçük resim, okuma farkları ve neden. Onayda okuma farkı işlem geçmişine yazılır
   ("Fotoğraf rapordan çıkarıldı · … · okuma: …"), fotoğrafın rapor bağı silinir ve fotoğraf 30 gün saklanır; okumanın
   kendisi kalır. Yönetici fotoğrafı doğrudan silerse bekleyen kaldırma isteği kapanır.
@@ -510,11 +514,11 @@ Formun altında, site bağlıysa o günün online satışı tek satır olarak g�
 
 Uygulama ve web siparişleri (kafe + mağaza) ile ön ödemeli karaoke, KDV dahil, iadeler düşülmüş. Parası sanal POS'tan
 alındığı için **kasadan geçmez**: kasa farkına, Z kontrolüne ve devre girmez; ModPOS'un "Online" ödemesi (Yemeksepeti,
-Getir…) ayrıdır. Personel karaoke tutarını görmez. Rapor açılınca, gönderilince ve e-postası gönderilince siteden
-sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye) satır görünmez, form ve gönderim hiç beklemez. Sitenin günü
-gece yarısında biter (kasanınki 05:00'te). Satır kasanın şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın
-kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz.
-Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
+Getir…) ayrıdır. Personel ve müdür karaoke tutarını görmez (yalnız online toplamı; `karaoke.tutar`, [ROLLER.md](ROLLER.md)).
+Rapor açılınca, gönderilince ve e-postası gönderilince siteden sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye)
+satır görünmez, form ve gönderim hiç beklemez. Sitenin günü gece yarısında biter (kasanınki 05:00'te). Satır kasanın
+şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile
+sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz. Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
 
 **Marina (LafPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu LafPOS'un gün sonu gelince kendiliğinden yazılır
 (gönderen "LafPOS (otomatik)"; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**
@@ -634,7 +638,8 @@ değiştirmek doğrudan kaydedilir.
 - **Personel e-postanın neden gitmediğini görmez** (denetim E-64): Resend anahtarı ya da alıcı listesi yöneticinin
   işidir. Gönderimde, "Yeniden dene"de ve kayıtlı raporun satırında personel "E-posta gitmedi; yöneticiye haber verin.
   Raporu WhatsApp ile gönderebilirsiniz." görür (`src/lib/staff-errors.ts`; personelin DTO'sunda da bu metin);
-  yönetici ayrıntıyı.
+  yönetici ayrıntıyı. Kural okuyanın gerçek rolüne bakar, DTO'nun düzeyine değil: rakamları gören müdür ve muhasebeci
+  de (günün formu, ayın penceresi, müdürün Onaylar'daki kararının yanıtı) sabit metni görür ([ROLLER.md](ROLLER.md)).
 
 Dosyalar: `src/lib/cash-requests.ts` (yük, birleştirme, metinler), `src/server/cash/report-store.ts` (yazım yolu,
 kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash-requests.ts` (uçlar),

@@ -48,10 +48,10 @@ ikramı panelde girilmeye ve sayılmaya devam eder; Marina'nın gün sonu yalnı
   ödenmezin kişi türü (personel, müşteri, patron) yöneticide parantezde.
 - **Gün listesi** LafPOS'un o günkü ikram ve zayi satırlarını salt okunur gösterir ("LafPOS'ta işaretlenen ikram ve
   zayi"): personele ad ve adet; yöneticiye ayrıca nedeni ve menü değeri. Ürüne bağlanamayan satır yöneticide "ürüne
-  bağlı değil: tüketime girmez · Ayarlar › LafPOS'ta bağlayın" der; Ayarlar › LafPOS'un "İkramda ürüne bağlanamayan POS
-  adları" listesinden bağlanır (yalnız ikram edilen kalem satış listesine düşmez). Bugünün gün sonu henüz gelmediyse
-  "LafPOS'un bu günün sonu gelmedi; ikram ve zayi gün sonuyla gelir."; geçmiş günse ürün ikramının panele
-  girilebileceğini söyler.
+  bağlı değil: tüketime girmez · Ayarlar › LafPOS'ta bağlayın" der (müdürde not kalır, bağlantı yok: Ayarlar
+  yöneticinin); Ayarlar › LafPOS'un "İkramda ürüne bağlanamayan POS adları" listesinden bağlanır (yalnız ikram edilen
+  kalem satış listesine düşmez). Bugünün gün sonu henüz gelmediyse "LafPOS'un bu günün sonu gelmedi; ikram ve zayi gün
+  sonuyla gelir."; geçmiş günse ürün ikramının panele girilebileceğini söyler.
 - **Kasa e-postası** LafPOS gününde "Panelde kayıtlı ikram" yerine "LafPOS'taki ikram" (ve varsa "LafPOS'ta zayi
   yazılan") yazar ve ModPOS'un uyarısı ("ödenmez tutarı panelde kayıtlı ikramdan fazla") yerine LafPOS'un iki rakamını
   karşılaştırır: Z'deki ödenmez tutarı (LafPOS'ta zayi yazılanı da kapsar) ile listenin tamamının menü değeri ayrıysa
@@ -118,7 +118,8 @@ Personel hiçbir yerde tutar görmez.
 
 - **Onaylar › Zayi ve ikram**, istek başına kart (`#istek-<id>`), en eski gün önce:
   - Geç kayıt: "2× Latte M · 15 Ekim Perşembe", neden, not ve açıklama, isteyen ve ne zamandır beklediği; "Malzeme
-    maliyeti 38 ₺ (KDV hariç, bugünkü fiyatlarla)", ikramda "· menü değeri 170 ₺" (maliyet ay özetiyle aynı
+    maliyeti 38 ₺ (KDV hariç, bugünkü fiyatlarla)" (yalnız yönetici; müdürde yok: kartında `cost` gitmez, ikramda
+    yalnız "Menü değeri 170 ₺"; `wasteCardsFor`), ikramda "· menü değeri 170 ₺" (maliyet ay özetiyle aynı
     fonksiyondan, `model.wasteCost`). Bağlam: o gün aynı kalemden kayıt, aynı gün ve kalem için başka bekleyen istek,
     ikramda "Z ödenmez … · kayıtlı ikram menü değeri … → bu kayıtla …", günün kasa raporu (yok ya da gönderilmiş,
     özetinde bu kayıt yok), ayın sayımı girildiyse "onaylanırsa tutarlılık değişir". "Onayla ve ekle" / "Reddet".
@@ -153,7 +154,7 @@ Personel hiçbir yerde tutar görmez.
 | Kasa raporu (`/panel/kasa`) | Günün zayi ve ikramı ekrana, e-postaya ve WhatsApp metnine eklenir. E-postada kayıtlı ikramın menü değeri, Z raporundaki ödenmez tutarıyla karşılaştırılır (LafPOS gününde LafPOS'un ikramı ve kendi ödenmez tutarı, yukarıda) |
 | Bugün (`/panel/bugun`, personel) | Günün kayıt sayısı ve özeti. Akşam (20:00'den sonra) kasa raporu gönderilmeden "Rapordan önce" der: özet rapora geçtiği için eksik kayıt rapordan önce girilir; rapor gönderilince tamam ([BUGUN.md](BUGUN.md)) |
 | Satışlar (`/panel/satislar`) | Ayın "Ödenmez / ikram" alanının altında panelde kayıtlı ikram ve menü değeri görünür; "Bunu yaz" ile alana yazılır. ModPOS'un rakamı esastır, kendiliğinden değişmez |
-| Yönetici ay özeti (`/panel/zayi`) | Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, kasanın ödenmez tutarı ve en çok giden kalemler (geçiş gününden itibaren LafPOS'un ikramı da) |
+| Yönetici ay özeti (`/panel/zayi`) | (Yalnız yönetici; müdürde yok.) Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, kasanın ödenmez tutarı ve en çok giden kalemler (geçiş gününden itibaren LafPOS'un ikramı da) |
 
 **Çift sayım yok.** Gelir-giderdeki mal maliyeti stok farkından gelir (geçen ay sayımı + alınan − bu ay sayımı). Zayi
 ve ikramın malzemesi bu tutarın zaten içindedir. Bu yüzden ayrıca gider yazılmaz; kayıtlar yalnız farkın nereye

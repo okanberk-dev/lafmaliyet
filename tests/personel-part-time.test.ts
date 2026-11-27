@@ -15,7 +15,7 @@ import ExcelJS from "exceljs";
 
 import { buildWorkbook } from "../src/app/api/export/workbook";
 import { planInputFromModel } from "../src/lib/cash-plan";
-import { createModel, staffCost, staffShiftRef } from "../src/lib/calc/engine";
+import { createModel, partTimeCountText, partTimeUnlinkedCountText, staffCost, staffShiftRef } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
 import { staffWarnings } from "../src/lib/calc/personnel";
 import { linkConflict, linkedDeleteText, type LinkRow } from "../src/lib/staff-link";
@@ -105,7 +105,8 @@ test("Vardiya bağlantısı: hesap u:<id>, hesapsız ad n:<ad>; çağrıldığı
 });
 
 test("Gelir-gider: PART-TIME (GÜNLÜK) satırı ücret + ek (gün oranı yok), yemek kartı kendi satırında; bağlantısız uyarılı", () => {
-  const m = createModel(ds([AYSE, MERT, ECE]));
+  // Kişi kişi metin yalnız maaşı gören rolde (personal: true; yönetici). Varsayılan kişisiz: aşağıdaki test
+  const m = createModel(ds([AYSE, MERT, ECE]), { personal: true });
   const pm = m.pnlMonth("2026-12");
   close(pm.cells.get("personnel:parttime")!.value!, 15_000 + 2_000 + 4_800, "Ayşe ücret + ek, Mert ücret");
   close(pm.cells.get("personnel:meal")!.value!, 3_300, "Ayşe'nin yemek kartı (10 gün)");
@@ -117,6 +118,28 @@ test("Gelir-gider: PART-TIME (GÜNLÜK) satırı ücret + ek (gün oranı yok), 
   assert.match(row.hint!, /SGK brütleştirmesi yok/);
   // Kimsede part-time yoksa satır yok
   assert.equal(createModel(ds([])).pnlRowDefs(["2026-12"]).some((r) => r.key === "personnel:parttime"), false);
+});
+
+test("Gelir-gider varsayılan kişisiz (muhasebeci; docs/ROLLER.md): tutarlar aynı, personel hücrelerinde ad, kişinin günü, günlük ücreti ve eki yok", () => {
+  const personal = createModel(ds([AYSE, MERT, ECE]), { personal: true }).pnlMonth("2026-12");
+  const pm = createModel(ds([AYSE, MERT, ECE])).pnlMonth("2026-12");
+  const cellsOf = (p: typeof pm) => [...p.cells].filter(([k]) => k.startsWith("personnel:"));
+  // Tutarlar birebir aynı (toplam olarak durur), yalnız metin değişir
+  assert.deepEqual(
+    cellsOf(pm).map(([k, c]) => [k, c.value, c.computed]),
+    cellsOf(personal).map(([k, c]) => [k, c.value, c.computed]),
+  );
+  const text = JSON.stringify(cellsOf(pm)).replace(/\u00a0/g, " ");
+  for (const name of ["Ayşe", "Mert", "Ece"]) assert.ok(!text.includes(name), `${name} metinde`);
+  // Günlük ücret (1.500, 1.200), ek ödeme (2.000) ve "kişi: gün ×" dökümü yok
+  for (const v of ["1.500 ₺", "1.200 ₺", "2.000 ₺", ": 10 gün", ": 4 gün"]) assert.ok(!text.includes(v), `${v} metinde`);
+  const cell = pm.cells.get("personnel:parttime")!;
+  assert.equal(cell.info, partTimeCountText([{ calledDays: 10 }, { calledDays: 4 }, { calledDays: null }]));
+  assert.match(cell.info!, /^2 part-time kişi:/);
+  assert.equal(cell.warn, partTimeUnlinkedCountText(1));
+  assert.match(cell.warn!, /^1 part-time kişinin Vardiya kişisi bağlı değil/);
+  // Yöneticinin metninde aynı hücre kişi kişi (kanal gerçek)
+  assert.match(JSON.stringify(cellsOf(personal)), /Ayşe: 10 gün × 1\.500\s₺ \+ ek 2\.000\s₺/);
 });
 
 test("uyarılar: bağlantısız part-time; aynı ayda haftalık 'Part-time çalışan' kalemi ve günlük part-time satırı (çift sayım)", () => {

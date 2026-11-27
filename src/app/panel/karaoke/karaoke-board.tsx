@@ -21,6 +21,7 @@ import { Field, Input, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
+import { adminLevel } from "@/lib/roles";
 import { blockReason, deskRemoveRefusal } from "@/lib/karaoke/desk";
 import { karaokeStaleLine } from "@/lib/karaoke/freshness";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
@@ -495,7 +496,7 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
   const block = isBlock(s);
   const blockWhy = block ? blockReason(s.note) : null;
   // Elle satır: kaldırma düğmesi kuralın izin verdiği kişiye (personelde ilk 10 dakika; sonrası yönetici)
-  const canRemove = Boolean(s.desk) && s.status !== "cancelled" && deskRemoveRefusal(s, env.role, now) === null;
+  const canRemove = Boolean(s.desk) && s.status !== "cancelled" && deskRemoveRefusal(s, adminLevel(env.role), now) === null;
   return (
     <li className={cn("flex flex-wrap items-start gap-x-3 gap-y-2 px-5 py-3", (p === "cancelled" || p === "held") && "opacity-60")}>
       <div className="w-[7.5rem] shrink-0 pt-0.5 text-sm font-semibold text-ink tabular">

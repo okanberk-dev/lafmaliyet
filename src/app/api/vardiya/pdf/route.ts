@@ -2,11 +2,13 @@ import type { NextRequest } from "next/server";
 
 import { todayTR } from "@/lib/reminders";
 import { pdfFileName, weekParam } from "@/lib/vardiya";
+import { can } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
 import { renderShiftPdf } from "@/server/vardiya/pdf";
+import { loadShiftPresets } from "@/server/vardiya/presets";
 import { loadShiftWeek, shiftBranches } from "@/server/vardiya/store";
 
 /**
@@ -18,6 +20,8 @@ import { loadShiftWeek, shiftBranches } from "@/server/vardiya/store";
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Giriş gerekli" }, { status: 401 });
+  // Vardiya planı sahadakilerin (yönetici, müdür, personel); muhasebecinin değil (docs/ROLLER.md)
+  if (!can(user.role, "kayit.yaz")) return Response.json({ error: "Bu planı göremezsiniz" }, { status: 403 });
   const params = request.nextUrl.searchParams;
   const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
   const wanted = params.get("sube");
@@ -27,8 +31,9 @@ export async function GET(request: NextRequest) {
   if (!branch) return Response.json({ error: "Şube bulunamadı" }, { status: 404 });
   const monday = weekParam(params.get("hafta"), todayTR());
   try {
-    const week = await loadShiftWeek(getDb(), branch, monday, { roster: false });
-    const bytes = await renderShiftPdf({ branchId: branch.id, branchName: branch.name, monday, rows: week.rows, updated: week.updated, generatedAt: new Date() });
+    const db = getDb();
+    const [week, presets] = await Promise.all([loadShiftWeek(db, branch, monday, { roster: false }), loadShiftPresets(branch.id, db)]);
+    const bytes = await renderShiftPdf({ presets, branchName: branch.name, monday, rows: week.rows, updated: week.updated, generatedAt: new Date() });
     return new Response(bytes as Uint8Array<ArrayBuffer>, {
       headers: {
         "Content-Type": "application/pdf",

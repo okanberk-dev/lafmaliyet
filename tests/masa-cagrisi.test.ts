@@ -265,7 +265,7 @@ test("Gördüm eylemi: oturum gerekir (personel de); önce doğrulama, ortak imz
   assert.deepEqual(exported, ["ackTableCall"], "'use server' dosyasının her dışa verilen işlevi bir uçtur");
   const body = action.slice(action.indexOf("export async function ackTableCall"));
   assert.doesNotMatch(action, /requireAdmin/);
-  const order = ["requireUser()", "zAck.parse(input)", "siteLinkSecret()", "callSite("].map((s) => body.indexOf(s));
+  const order = ['requireCan("kayit.yaz")', "zAck.parse(input)", "siteLinkSecret()", "callSite("].map((s) => body.indexOf(s));
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), `sıra: oturum → doğrulama → anahtar → site (${order})`);
   assert.match(action, /id: z\.string\(\)\.regex\(SITE_ORDER_ID/);
   assert.match(action, /callSite\(secret, CALL_ACK_PATH, \{ method: "POST", body: JSON\.stringify\(buildCallAckBody\(\{ id: data\.id, actor: me\.name \}\)\) \}\)/);

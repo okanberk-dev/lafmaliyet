@@ -8,6 +8,7 @@ import { test } from "node:test";
 
 import { reportNo, reportSubject, whatsappText, type CashReportFields } from "../src/lib/cash-report";
 import { reportChecks } from "../src/lib/cash-report-checks";
+import { STAFF_EMAIL_ERROR } from "../src/lib/staff-errors";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -64,6 +65,11 @@ test("kontrol listesi: sorunsuz raporda boş; her uyarı tek satır, e-posta hat
       ["card", "warn", "Banka POS ModPOS kartından 150,50 ₺ fazla"],
       ["modpos:zTotal", "warn", "ModPOS API'den farklı: Toplam satış 28.450,50 ₺ (ModPOS API'de 28.500 ₺)"],
     ],
+  );
+  // Müdürün ve muhasebecinin penceresi: sabit metin zaten tam cümle, "E-posta gitmedi:" iki kez yazılmaz (bulgu 9)
+  assert.deepEqual(
+    reportChecks({ report: day, emailError: STAFF_EMAIL_ERROR }).map((c) => [c.key, c.tone, c.text]),
+    [["email", "bad", STAFF_EMAIL_ERROR]],
   );
 });
 

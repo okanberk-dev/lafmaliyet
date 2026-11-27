@@ -302,7 +302,7 @@ test("kaldırma: yönetici her zaman; personel yazıldıktan sonraki ilk 10 daki
   assert.match(remove, /const refusal = deskRemoveRefusal\(dto, me\.role, Date\.now\(\)\);\s+if \(refusal\) throw new UserError\(refusal\);/);
   assert.match(remove, /out\.reply\.code === "already_cancelled"/);
   // Ekran düğmeyi aynı kuralla gösterir
-  assert.match(read("src/app/panel/karaoke/karaoke-board.tsx"), /deskRemoveRefusal\(s, env\.role, now\) === null/);
+  assert.match(read("src/app/panel/karaoke/karaoke-board.tsx"), /deskRemoveRefusal\(s, adminLevel\(env\.role\), now\) === null/);
 });
 
 // ---------------------------------------------------------------- Sayılar

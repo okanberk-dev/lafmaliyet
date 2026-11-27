@@ -83,10 +83,10 @@ test("kasa: personelin istek okuyucuları sabit sütunla; başkasının isteğin
 test("kasa: yöneticinin kartları yalnız Onaylar'da; personel sayfası yönetici okuyucusunu çağırmaz", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /loadCashRequestQueue|pendingCashBellRows/);
-  assert.match(page, /admin && showForm \? pendingCashForDayAdmin\(date\)/);
+  assert.match(page, /admin && showForm && !readOnly \? pendingCashForDayAdmin\(date\)/);
   assert.match(page, /!admin && report \? pendingCashForDay\(date, user\)/);
   const section = read("src/app/panel/onaylar/kasa-section.tsx");
-  assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
+  assert.match(section, /export async function KasaRequests\(\) \{\s*(?:\/\/[^\n]*\n\s*)?const me = await requireCan\("onay"\);/);
 });
 
 test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğinden yalnız ad ve an; yönetici kartı personel sayfasında yok", () => {
@@ -103,7 +103,7 @@ test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğin
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /lateCards|lateBellRows/);
   const section = read("src/app/panel/onaylar/kasa-section.tsx");
-  assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
+  assert.match(section, /export async function KasaRequests\(\) \{\s*(?:\/\/[^\n]*\n\s*)?const me = await requireCan\("onay"\);/);
 });
 
 test("kasadan çıkan istekleri: personelin okuyucuları sabit sütunla; kendi isteğinden yalnız satır, başkasınınkinden yalnız satırın kimliği ve ad", () => {
@@ -180,7 +180,8 @@ test("yazarkasa Z'si: kasa sayfası personele önceki Z'den yalnız gün ve numa
   assert.match(page, /prevOkcZ=\{prevOkc\.z\}/g);
   assert.equal([...page.matchAll(/prevOkcZ=\{([^}]*)\}/g)].filter((m) => m[1] !== "prevOkc.z").length, 0);
   assert.match(page, /\{\.\.\.\(admin && report \? \{ okcAdmin: okcAdminView\(/);
-  assert.match(page, /getCashReport\(date, user\.role\)/);
+  // Düzey (sunucu sütunları) ve okuyanın gerçek rolü (e-postanın ham hatası yalnız yöneticiye; bulgu 9)
+  assert.match(page, /getCashReport\(date, audience, undefined, user\.role\)/);
   // DTO: sunucu sütunları yalnız "admin" ile
   const dto = read("src/server/data/cash-reports.ts");
   assert.match(dto, /if \(audience === "admin"\) return \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \};/);
@@ -317,5 +318,5 @@ test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 g
   assert.match(page, /const whatsapp = report && !blind/);
   assert.match(page, /cashReportsBetween\(addDays\(today, -6\), today\)\.then\(\(r\) => blindForStaff\(r, "staff"\)\)/);
   assert.match(page, /getCashReport\(date, "staff"\)\.then\(async \(r\) => \(r \? \(await blindForStaff\(\[r\], "staff"\)\)\[0\] : null\)\)/);
-  assert.match(read("src/server/data/today.ts"), /cashReportsBetween\(c\.yesterday, c\.day\)\.then\(\(r\) => blindForStaff\(r, user\.role\)\)/);
+  assert.match(read("src/server/data/today.ts"), /cashReportsBetween\(c\.yesterday, c\.day\)\.then\(\(r\) => blindForStaff\(r, cashAudience\(user\.role\)\)\)/);
 });

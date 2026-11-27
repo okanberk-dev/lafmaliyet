@@ -4,19 +4,20 @@ import { eq, inArray, sql } from "drizzle-orm";
 
 import { blockReasonOf, emailKey, splitByBlocked, type BlockReason, type DroppedRecipient, type RecipientList } from "@/lib/notify-recipients";
 import { CASH_REPORT_GROUP } from "@/lib/branch-settings/groups";
+import { PACKAGE_SETTINGS_KEY, parsePackageSettings } from "@/lib/muhasebe/paket-ayar";
 import { resolveForTills } from "@/server/branch-settings";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /*
  * Bildirim alıcıları ve hesaplar (denetim E-52, E-53; kurallar src/lib/notify-recipients.ts): kasa raporu e-postası,
- * sabah e-postası, bekçi uyarısı ve deneme e-postaları gönderim anında buradan geçer. Sorgular küçük: listedeki
- * adreslerin hesapları (en çok birkaç satır).
+ * sabah e-postası, bekçi uyarısı, deneme e-postaları ve muhasebeci paketi gönderim anında buradan geçer. Sorgular
+ * küçük: listedeki adreslerin hesapları (en çok birkaç satır).
  */
 
 /** Okuma yapan her şey: veritabanı ya da açık bir işlem */
 type Reader = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
 
-/** Listedeki adreslerden hesabı e-posta almayanlar (personel ya da pasif): emailKey → neden. Hesabı olmayan adres yok */
+/** Listedeki adreslerden hesabı e-posta almayanlar (personel, müdür ya da pasif): emailKey → neden. Hesapsız adres yok */
 export async function blockedAccounts(db: Reader, emails: readonly string[]): Promise<Map<string, BlockReason>> {
   const keys = [...new Set(emails.map(emailKey))];
   const out = new Map<string, BlockReason>();
@@ -75,31 +76,45 @@ async function cashRecipientLists(db: Reader, o: { all: boolean }): Promise<stri
 }
 
 /**
- * Adres hangi listelerde: herhangi bir şubenin kasa raporu alıcıları (e-posta kapalı olsa da: açılınca giderdi) ve
- * sabah e-postasının bildirim adresleri (duraklatılmış satır da: açılınca giderdi). Büyük-küçük harf fark etmez.
+ * Muhasebeci paketinin alıcıları (Ayarlar › Muhasebeci paketi; docs/MUHASEBE-PAKETI.md): "Ay kapanınca gönder" kapalı
+ * olsa da ("Şimdi gönder" bu listeye gönderir). Ayar src/server/muhasebe/paket.ts'in yazdığı kayıt; burada hafif okunur
+ * (paketin kendisi exceljs taşır, Hesabım ve zil onu yüklemesin)
+ */
+export async function packageRecipients(db: Reader = getDb()): Promise<string[]> {
+  const [row] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, PACKAGE_SETTINGS_KEY)).limit(1);
+  return parsePackageSettings(row?.value).recipients;
+}
+
+/**
+ * Adres hangi listelerde: herhangi bir şubenin kasa raporu alıcıları (e-posta kapalı olsa da: açılınca giderdi),
+ * sabah e-postasının bildirim adresleri (duraklatılmış satır da: açılınca giderdi) ve muhasebeci paketinin alıcıları
+ * (kendiliğinden gönderim kapalı olsa da). Büyük-küçük harf fark etmez.
  */
 export async function listsWithEmail(email: string, db: Reader = getDb()): Promise<RecipientList[]> {
   const key = emailKey(email);
-  const [cash, digest] = await Promise.all([
+  const [cash, digest, pkg] = await Promise.all([
     cashRecipientLists(db, { all: true }),
     db
       .select({ id: s.notificationRecipients.id })
       .from(s.notificationRecipients)
       .where(eq(sql`lower(${s.notificationRecipients.email})`, key))
       .limit(1),
+    packageRecipients(db),
   ]);
   const out: RecipientList[] = [];
   if (cash.some((e) => emailKey(e) === key)) out.push("cash");
   if (digest.length) out.push("digest");
+  if (pkg.some((e) => emailKey(e) === key)) out.push("package");
   return out;
 }
 
 /**
  * Zil ve ayar ekranları: listelerde duran ama gönderimde düşen adresler. Kasa listesi açık şubelerin, yalnız e-postası
- * açık olanların (kapalıyken zaten gitmiyor), bildirim adresleri yalnız etkin olanlar (duraklatılan bilerek kapalı).
+ * açık olanların (kapalıyken zaten gitmiyor), bildirim adresleri yalnız etkin olanlar (duraklatılan bilerek kapalı),
+ * paketin alıcılarının hepsi ("Şimdi gönder" her zaman gönderir).
  */
 export async function blockedRecipientsNow(db: Reader = getDb()): Promise<Record<RecipientList, DroppedRecipient[]>> {
-  const [cashList, digest] = await Promise.all([cashRecipientLists(db, { all: false }), activeDigestEmails(db)]);
-  const blocked = await blockedAccounts(db, [...cashList, ...digest]);
-  return { cash: splitByBlocked(cashList, blocked).dropped, digest: splitByBlocked(digest, blocked).dropped };
+  const [cashList, digest, pkg] = await Promise.all([cashRecipientLists(db, { all: false }), activeDigestEmails(db), packageRecipients(db)]);
+  const blocked = await blockedAccounts(db, [...cashList, ...digest, ...pkg]);
+  return { cash: splitByBlocked(cashList, blocked).dropped, digest: splitByBlocked(digest, blocked).dropped, package: splitByBlocked(pkg, blocked).dropped };
 }

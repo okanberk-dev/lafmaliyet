@@ -12,6 +12,7 @@ import {
   EVENING_HOUR_MIN,
   LAFPOS_GROUP,
   PARASUT_GROUP,
+  SHIFT_PRESET_GROUP,
   TILL_DEVICE_GROUP,
   tillDeviceLabel,
   type TillDevice,
@@ -19,6 +20,7 @@ import {
 import { BRANCH_ID_MAX } from "@/lib/branches";
 import { LAFPOS_SECRET_MIN } from "@/lib/lafpos/request";
 import type { StepUpConfirm } from "@/lib/step-up";
+import { PRESET_KEYS, PRESET_LABELS, presetHours, presetText, shiftPresetsError, shiftPresetsOf, type SavedShiftPreset } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { setBranchFeatureTx } from "@/server/branch-features";
@@ -188,6 +190,50 @@ export async function saveBlindCount(input: z.input<typeof blindInput>) {
     });
     refresh();
     return value;
+  });
+}
+
+/** Hazır vardiyanın saatleri ("09:00", "18:00"); null: şubede bu vardiya yok */
+const presetClock = z.object({ start: z.string().trim().max(5), end: z.string().trim().max(5) }).nullable();
+const presetInput = z.object({ branchId: zBranch, morning: presetClock, evening: presetClock });
+
+/** Hazır vardiyaların işlem geçmişindeki metni: "Sabahçı 09:00–18:00 · Akşamcı 16:00–01:00" ya da "hazır vardiya yok" */
+const presetsLogText = (list: readonly SavedShiftPreset[]) => (list.length ? list.map((p) => `${PRESET_LABELS[p.key]} ${presetText(p)}`).join(" · ") : "hazır vardiya yok");
+
+/**
+ * Şubenin hazır vardiyaları (şube ayarı vardiya.hazir; docs/VARDIYA.md › Hazır vardiyalar): Vardiya ekranındaki S
+ * (sabahçı) ve A (akşamcı) düğmelerinin saatleri. Saatler kutunun okuyucusuyla aynı kuralla okunur (bitiş başlangıçtan
+ * önceyse ertesi gün, en çok 16 saat, en geç 06:00); iki vardiya aynı saatte olamaz. Yalnız yönetici; tek işlem, işlem
+ * geçmişine eski → yeni. Kayıtlı haftaların hücreleri değişmez (yeni saatle eşleşmeyen eski hücre "başka saat" görünür)
+ */
+export async function saveShiftPresets(input: z.input<typeof presetInput>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const d = presetInput.parse(input);
+    const list: SavedShiftPreset[] = [];
+    for (const key of PRESET_KEYS) {
+      const v = d[key];
+      if (!v) continue;
+      const hours = presetHours(v.start, v.end);
+      if ("error" in hours) throw new UserError(`${PRESET_LABELS[key]}: ${hours.error}`);
+      list.push({ key, ...hours });
+    }
+    const clash = shiftPresetsError(list);
+    if (clash) throw new UserError(clash);
+    const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
+    const changed = await getDb().transaction(async (tx) => {
+      await lockGroup(tx, SHIFT_PRESET_GROUP.id);
+      const prev = (await resolveBranchSetting(SHIFT_PRESET_GROUP, d.branchId, tx)).value.presets;
+      const before = presetsLogText(shiftPresetsOf(d.branchId, prev));
+      const after = presetsLogText(list);
+      // Varsayılan saatlerle aynısı da bir kez yazılır (seçim kaydedilir); kayıtlı değerle aynıysa yazılmaz
+      if (prev !== null && before === after) return false;
+      await putBranchSetting(tx, SHIFT_PRESET_GROUP, d.branchId, { presets: list }, me.name);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${SHIFT_PRESET_GROUP.label}: ${before === after ? after : `${before} → ${after}`}`);
+      return true;
+    });
+    if (changed) refresh();
+    return { changed };
   });
 }
 

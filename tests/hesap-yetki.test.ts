@@ -107,7 +107,8 @@ test("Kullanıcılar: anahtar yalnız erişimi gönderir; düzenleme penceresi a
   assert.match(ui, /const \[seen\] = useState\(\(\) => \(\{ name: user\.name, email: user\.email, role: user\.role, active: user\.active, branchId: user\.branchId \?\? null \}\)\);/);
   assert.match(ui, /password: password \|\| undefined, seen \}, confirm\)/);
   const settings = read("src/server/actions/settings.ts");
-  assert.match(settings, /seen: z\.object\(\{ name: z\.string\(\), email: z\.string\(\), role: z\.enum\(\["admin", "staff"\]\), active: z\.boolean\(\), branchId: z\.string\(\)\.nullable\(\) \}\),/, "zorunlu");
+  assert.match(settings, /seen: z\.object\(\{ name: z\.string\(\), email: z\.string\(\), role: zRole, active: z\.boolean\(\), branchId: z\.string\(\)\.nullable\(\) \}\),/, "zorunlu");
+  assert.match(settings, /const zRole = z\.enum\(\["admin", "manager", "staff", "accountant"\]\);/);
   assert.match(settings, /\(before\.branchId \?\? null\) !== seen\.branchId/, "şube de (main'in personel şubesi)");
   // Reddetme parola sorulmadan önce
   const save = settings.slice(settings.indexOf("export async function saveUser"), settings.indexOf("export async function setUserActive"));

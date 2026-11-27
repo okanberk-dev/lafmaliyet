@@ -532,9 +532,9 @@ test("aşama eylemi: oturum gerekir (personel de); önce doğrulama, ortak imzal
   const exported = [...action.matchAll(/^export (?:async )?function (\w+)/gm)].map((m) => m[1]);
   assert.deepEqual(exported, ["advanceSiteOrder"]);
   const body = action.slice(action.indexOf("export async function advanceSiteOrder"));
-  assert.match(body.slice(0, 300), /const me = await requireUser\(\)/, "personel ve yönetici: barista bu ekranı kullanır");
+  assert.match(body.slice(0, 300), /const me = adminActor\(await requireCan\("kayit.yaz"\)\)/, "personel, müdür ve yönetici: barista bu ekranı kullanır (muhasebeci yazamaz)");
   assert.doesNotMatch(action, /requireAdmin/);
-  const order = ["requireUser()", "zStage.parse(input)", "siteLinkSecret()", "callSite("].map((s) => body.indexOf(s));
+  const order = ['requireCan("kayit.yaz")', "zStage.parse(input)", "siteLinkSecret()", "callSite("].map((s) => body.indexOf(s));
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), `sıra: oturum → doğrulama → anahtar → site (${order})`);
   assert.match(action, /\.refine\(\(d\) => canAdvance\(d\.action, d\.from\)/, "olmayan işlem / aşama çifti siteye gitmeden reddedilir");
   assert.match(action, /id: z\.string\(\)\.regex\(SITE_ORDER_ID/);

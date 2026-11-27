@@ -68,7 +68,9 @@ oranla 0–1000, görünüm, yöntem — `kagit` / `kenar` / `yazi` / `tam-kare`
 /api/foto/kenar` (en çok 1024 px JPEG; Ayarlar'daki ilk okuma modeli, varsayılan Claude Haiku 5.5, efor low; kod
 emin değilken sorulur: kâğıt yok ya da kareyi dolduruyor sanıldı, güven 0,6'nın altında, iki aday, kâğıda benzemiyor).
 `ai_calls`'a `tarama` olarak düşer; fotoğraf okumasının günlük sınırına sayılmaz, kendi sınırı var (günde 150,
-kişi başına saatte 30). Görüntü saklanmaz. Kurallar `src/lib/photo-scan.ts`, istem `src/lib/photo-read/scan-hint.ts`.
+kişi başına saatte 30). Görüntü saklanmaz. Yalnız yazabilen rol sorar (`kayit.yaz`): salt okuyan muhasebeciye uç ve
+çekirdek "salt okunur" döner (403; [ROLLER.md](ROLLER.md) › Muhasebeci). Kurallar `src/lib/photo-scan.ts`, istem
+`src/lib/photo-read/scan-hint.ts`.
 
 ### Canlı vizör
 
@@ -208,7 +210,11 @@ gün, yöneticinin satırı). Kural saf olarak
   satırında küçük resim yerine fiş simgesi); WhatsApp metnindeki "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı
   yazılan" satırları kalır. Kontrol listelerinin fotoğraflarını personel, personelin doldurduğu listelerin bugünkü ve
   dünkü (iş günü) kayıtlarında görür (`src/lib/checklists.ts` › `photoAccess`, [KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)
-  § 4). Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
+  § 4). Onay bekleyen isteğin tuttuğu fotoğrafı (geç kasa raporunun Z'si, kasadan çıkan isteğinin fişi; bağlanmamış,
+  yükleyeni personel) isteğe karar veren görür: yönetici ve müdür yalnız kendi şubesinin isteğininkini
+  (`reviewBranchRefusal`; önerilen kategori yöneticininse fiş müdüre gitmez); karardan sonra fotoğraf kayda bağlıdır
+  ya da bırakılır, türün kuralı geçer (`src/server/photo-read/rules.ts` › `heldForReview`, [ROLLER.md](ROLLER.md)).
+  Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur (hatalı ve zaman aşımına düşen okuma da sayılır); bir
   rapora en çok 6 fotoğraf, Banka POS Z bölümüne en çok 3 ("Banka POS Z bölümüne en çok 3 fotoğraf eklenir"); bir kontrol listesinde

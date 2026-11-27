@@ -2,16 +2,18 @@ import type { NextRequest } from "next/server";
 
 import { businessDate } from "@/lib/cash-report";
 import { isMonthKey, prevMonth } from "@/lib/closed-period";
+import { can } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { packageFile } from "@/server/muhasebe/paket";
 
 /**
  * Muhasebeci paketi (docs/MUHASEBE-PAKETI.md): ayın faturaları, harcamaları, kasa raporları, yazarkasa Z KDV dökümü ve
- * sabit giderleri tek .xlsx'te, bütün şubeler. Yalnız yönetici. `?ay=YYYY-MM`; verilmezse geçen ay (iş gününe göre).
+ * sabit giderleri tek .xlsx'te, bütün şubeler. Yönetici ve muhasebeci. `?ay=YYYY-MM`; verilmezse geçen ay (iş gününe göre).
  */
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
+  // Yönetici ve muhasebeci (docs/ROLLER.md): paket salt okunur, muhasebecinin işi
+  if (!user || !can(user.role, "muhasebe.oku")) return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
   const raw = request.nextUrl.searchParams.get("ay");
   const month = raw && isMonthKey(raw) ? raw : prevMonth(businessDate().slice(0, 7));
   try {

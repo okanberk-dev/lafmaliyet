@@ -79,7 +79,7 @@ test("kaynak yalıtımı: personelin sayfası yöneticinin Yardım'ını almaz, 
   assert.doesNotMatch(BUILD, /FAQ_GROUPS|STAFF_FAQ_GROUPS|ROUTINE|from "\.\/page"|from "\.\/personel/);
   // İçerik bir Suspense çocuğunda, requireUser'dan sonra
   assert.match(STAFF_PAGE, /<Suspense[\s\S]*<StaffHelpContent \/>/);
-  assert.match(STAFF_PAGE, /async function StaffHelpContent\(\) \{\s*await requireUser\(\);/);
+  assert.match(STAFF_PAGE, /async function StaffHelpContent\(\) \{\s*(const me = )?await requireUser\(\);/);
   // Yöneticinin sayfası içeriği requireAdmin ile başlayan iç bileşende çizer; sabitler yalnız orada kullanılır
   assert.match(ADMIN_PAGE, /async function HelpContent\(\) \{\s*await requireAdmin\(\);/);
   const outer = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf("export default function HelpPage"), ADMIN_PAGE.indexOf("async function HelpContent"));

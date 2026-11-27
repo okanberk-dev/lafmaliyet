@@ -1059,7 +1059,7 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
   assert.deepEqual(exported, ["saveLafposSwitchDay", "deleteLafposDay"], "dosyada yardımcı dışa aktarım yok (her biri bir POST ucu)");
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport /)[0];
-    assert.match(body, /return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/, `${name}: önce yönetici oturumu`);
+    assert.match(body, /return attempt\(async \(\) => \{\s*const me = adminActor\(await requireAdmin\(\)\);/, `${name}: önce yönetici oturumu`);
   }
   const del = actions.slice(actions.indexOf("export async function deleteLafposDay"));
   assert.ok(del.indexOf('requireStepUp(me, confirm, `LafPOS günü silme: ${data.date}`, "LafPOS")') > 0, "parola onayı, yeri LafPOS");

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 
-import { DAY_NAMES, dayHeadcount, hoursLabel, plannedRows, presetOf, presetShort, presetText, rowMinutes, shiftPresets, shiftTimes, weekDays, weekLabel, type ShiftRow } from "@/lib/vardiya";
+import { DAY_NAMES, dayHeadcount, hoursLabel, plannedRows, presetOf, presetShort, presetText, rowMinutes, shiftTimes, weekDays, weekLabel, type ShiftPreset, type ShiftRow } from "@/lib/vardiya";
 
 import { LAF_BEAN_PATH, LAF_LETTERS_PATH, LAF_MARK_BOX } from "./logo";
 
@@ -32,8 +32,11 @@ export function loadFonts() {
 }
 
 export interface ShiftPdfInput {
-  /** Şubenin kimliği: hazır vardiyalar (sabahçı / akşamcı) ona göre adlandırılır; yoksa adsız */
-  branchId?: string;
+  /**
+   * Şubenin hazır vardiyaları (şube ayarı; src/server/vardiya/presets.ts loadShiftPresets): saatleri tutan hücre
+   * "S" / "A" ile çizilir, alt bilgide saatleri yazar; yoksa hücreler adsız
+   */
+  presets?: readonly ShiftPreset[];
   branchName: string;
   monday: string;
   rows: readonly ShiftRow[];
@@ -124,8 +127,7 @@ export async function renderShiftPdf(input: ShiftPdfInput): Promise<Uint8Array> 
   doc.setModificationDate(input.generatedAt);
   doc.setLanguage("tr-TR");
 
-  const branchId = input.branchId ?? "";
-  const presets = shiftPresets(branchId);
+  const presets = input.presets ?? [];
   const days = weekDays(input.monday);
   const rows = [...plannedRows(input.rows)];
   const branch = safe(input.branchName, regular);
@@ -201,7 +203,7 @@ export async function renderShiftPdf(input: ShiftPdfInput): Promise<Uint8Array> 
           mark(page, x + 2 + r, cy, r, { letter: "İ" });
           page.drawText("İzin", { x: tx, y: cy - density.time * 0.36, size: density.time, font: regular, color: MUTE });
         } else {
-          const preset = presetOf(branchId, cell);
+          const preset = presetOf(presets, cell);
           mark(page, x + 2 + r, cy, r, preset ? { fill: DOT[preset.key], letter: presetShort(preset) } : {});
           page.drawText(shiftTimes(cell), { x: tx, y: cy - density.time * 0.36, size: density.time, font: regular, color: INK });
         }

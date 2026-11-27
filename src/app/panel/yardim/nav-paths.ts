@@ -17,18 +17,20 @@ export function pathOf(href: string): string[] {
     const c = n.children?.find((ch) => ch.href === href);
     if (c) return [n.label, c.label];
   }
-  for (const n of NAV_TREE) {
-    if (n.href === href) return [n.label];
-    const c = n.children?.find((ch) => ch.href === href);
-    if (c) return [n.label, c.label];
-  }
+  // Yöneticinin sekmeleri, öteki rollerin ağaçlarından önce: muhasebecinin "Aylık harcamalar"ı ayrı bir satır, yönetici
+  // onu Giderler & maaşlar'ın sekmesi olarak bulur
   for (const tabs of TAB_LISTS) {
     const i = tabs.findIndex((t) => t.href === href);
     // i > 0: ilk sekme zaten menü öğesinin adresi (yukarıda bulunur), özyineleme döngüye girmez
     if (i > 0) {
       const parent = pathOf(tabs[0].href);
-      return parent.length ? [...parent, tabs[i].label] : [];
+      if (parent.length) return [...parent, tabs[i].label];
     }
+  }
+  for (const n of NAV_TREE) {
+    if (n.href === href) return [n.label];
+    const c = n.children?.find((ch) => ch.href === href);
+    if (c) return [n.label, c.label];
   }
   return [];
 }

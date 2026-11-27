@@ -9,11 +9,12 @@ import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
 import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
-import { formTillBranch, withBranchScope } from "@/server/branch-scope";
+import { asActor, opsLevel, realRoleOf } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
-import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
+import { assertOwnerRowOpen, cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
 import { getDb } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
@@ -43,17 +44,24 @@ function logDetail(d: CashOutData, expense: boolean) {
 async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boolean; restoreId?: number; branchId?: string } = {}) {
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
   const admin = me.role === "admin";
+  // Tedarikçiler (cari) yalnız yöneticinin: "admin" düzeyinde yazan müdür bağlı satırda personel gibi kilitli
+  const owner = realRoleOf(me) === "admin";
   const saved = await getDb().transaction(async (tx) => {
-    // Tedarikçi ödemesine bağlı satır (src/server/cari/kasa.ts): personel düzeltemez, yöneticide önce kart kilitlenir
-    const link = d.id ? await lockCashOutLink(tx, d.id, admin) : null;
+    // Tedarikçi ödemesine bağlı satır (src/server/cari/kasa.ts): personel ve müdür düzeltemez, yöneticide önce kart kilitlenir
+    const link = d.id ? await lockCashOutLink(tx, d.id, owner) : null;
     const prev = d.id ? await lockCashOut(tx, d.id) : null;
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+    // Müdür "admin" düzeyinde yazar ama şubesine kilitli: var olan satır kendi şubesinin olmalı (kilit oturumdan)
+    if (admin && prev) {
+      const refusal = await staffBranchRefusal(me, prev.branchId);
+      if (refusal) throw new UserError(refusal);
+    }
     if (!admin) {
       const gate = await staffCashOutGate(tx, me, prev ? { op: "duzelt", row: prev } : { op: "ekle", date: d.date, restore: opts.restore });
       const moved = prev && prev.date !== d.date ? await staffCashOutGate(tx, me, { op: "ekle", date: d.date }) : "direct";
       if (gate === "request" || moved === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
     }
-    const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin, kind: d.kind, amount: d.amount, date: d.date }) : null;
+    const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin: owner, kind: d.kind, amount: d.amount, date: d.date }) : null;
     return { ...(await writeCashOut(tx, me, d, { prev, restore: opts.restore, restoreId: opts.restoreId, branchId: opts.branchId })), supplier };
   });
   await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null) + (saved.supplier ? ` · ${saved.supplier} ödemesi de güncellendi` : ""));
@@ -73,26 +81,35 @@ const saveSchema = cashOutSchema.extend({
  */
 export async function saveCashOut(input: z.input<typeof saveSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const { branchId, ...d } = saveSchema.parse(input);
+    // Müdür "admin" düzeyinde yazar ama bütün kategorileri seçemez: kural yazım yolunda (writeCashOut, gerçek rol
+    // `realRole`), isteğin onayı da aynı kuraldan geçer (docs/ROLLER.md › Kararlar)
     const till = await formTillBranch(branchId);
-    return withBranchScope(till, () => persist(me, d));
+    return withBranchScope(till, () => persist(asActor(me, opsLevel(me.role)), d));
   });
 }
 
 /**
  * Siler (bağlı harcama kaydıyla); fotoğraf 7 gün daha saklanır. Geri almak için silinenin mühürlü kopyası döner
  * (`undo`; istemci içini okuyamaz ve değiştiremez). Personel kapanmış günün ve yöneticinin kategorisindeki satırı
- * silmez: silinmesini ister (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı).
+ * silmez: silinmesini ister (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı). Müdür yöneticinin
+ * kategorisindeki satırı hiç silmez (istek de açmaz; yönetici siler).
  */
 export async function deleteCashOut(id: number) {
   return attempt(async (): Promise<{ undo: string }> => {
-    const me = await requireUser();
+    const actor = await requireCan("kayit.yaz");
+    const me = asActor(actor, opsLevel(actor.role));
     const cid = z.number().int().positive().parse(id);
     const snap = await getDb().transaction(async (tx) => {
       const row = await lockCashOut(tx, cid);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
-      await assertCashOutDeletable(tx, cid, me.role === "admin");
+      const otherBranch = await staffBranchRefusal(me, row.branchId);
+      if (otherBranch) throw new UserError(otherBranch);
+      // Bağlı satır: müdüre de personel gibi kilitli (tedarikçinin adı ve ödeme günü yalnız yöneticiye)
+      await assertCashOutDeletable(tx, cid, actor.role === "admin");
+      // Yöneticinin kategorisindeki (maaş, kira) satır: "admin" düzeyindeki müdür de silemez (gerçek rol; docs/ROLLER.md)
+      await assertOwnerRowOpen(tx, me, cid);
       if (me.role !== "admin" && (await staffCashOutGate(tx, me, { op: "sil", row })) === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
       return removeCashOut(tx, row);
     });
@@ -114,7 +131,8 @@ const constraintOf = (e: unknown) =>
  */
 export async function restoreCashOut(undo: string) {
   return attempt(async () => {
-    const me = await requireUser();
+    const actor = await requireCan("kayit.yaz");
+    const me = asActor(actor, opsLevel(actor.role));
     const sealed = z.string().max(8000).safeParse(undo);
     const opened = sealed.success ? readCashOutUndo(open(sealed.data, "cashout-undo"), me.id, Date.now()) : null;
     if (!opened) throw new UserError("Geri alma süresi doldu; satırı yeniden ekleyin");

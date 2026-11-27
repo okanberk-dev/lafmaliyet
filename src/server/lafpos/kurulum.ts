@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { accessLink, formatExpiry } from "@/app/panel/kullanicilar/access";
-import { kurulumBaglantilari, kurulumDurumu, kurulumLink, KURULUM_GUN, type KurulumDurumu } from "@/lib/lafpos/kurulum";
+import { isBranchAccount, kurulumBaglantilari, kurulumDurumu, kurulumLink, KURULUM_GUN, type KurulumDurumu } from "@/lib/lafpos/kurulum";
 import { kurulumMail } from "@/lib/lafpos/kurulum-mail";
 import { appUrl } from "@/server/auth/tokens";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -78,6 +78,16 @@ export async function listInstalls(db: DB, branchId: string, now = new Date()): 
       createdAt: r.createdAt.toISOString(),
     };
   });
+}
+
+/**
+ * Hesabım'daki LafPOS kurulumu kartı: şubenin son bağlantısı, yalnız şubenin kendi hesabına (`isBranchAccount`); öbür
+ * herkese null. Bağlantıdaki ham kod (kasanın anahtarını verir) yalnız bu denetimden sonra sayfaya gider
+ */
+export async function installForAccount(db: DB, user: { role: string; email: string; branchId?: string | null }, now = new Date()): Promise<KurulumView | null> {
+  if (user.role !== "staff" || !user.branchId) return null;
+  const [last] = await listInstalls(db, user.branchId, now);
+  return last && isBranchAccount(user, last) ? last : null;
 }
 
 /** İndirme: kod geçerliyse şube (sayaç artar); değilse null */

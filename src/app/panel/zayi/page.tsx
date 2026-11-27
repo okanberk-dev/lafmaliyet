@@ -17,7 +17,9 @@ import { monthSource } from "@/lib/lafpos/switch";
 import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
-import { requireUser } from "@/server/auth/dal";
+import type { Role } from "@/lib/constants";
+import { openableHref, opsLevel } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -36,8 +38,9 @@ export const metadata: Metadata = { title: "Zayi & ikram" };
 /**
  * Başlık ve Stok sekmeleri (Sayım, Zayi & ikram, yöneticide Tutarlılık; nav.ts SECTION_TABS). Rol bilinmeden (yükleniyor)
  * iki rolün de gördüğü sekmeler çizilir; yöneticinin Tutarlılık'ı içerik gelince eklenir, sekme satırı yer değiştirmez.
+ * Rol kişinin gerçek rolü (çekirdeğin düzeyi değil): müdür zayiyi "admin" düzeyinde yazar ama Tutarlılık ona kapalı.
  */
-function WasteHeader({ role, branch = null }: { role: "admin" | "staff"; branch?: string | null }) {
+function WasteHeader({ role, branch = null }: { role: Role; branch?: string | null }) {
   return (
     <PageHeader
       // Birden çok kasa açıkken formun şubesi başlıkta ("Tuzla · Zayi & ikram"); "Tümü"de form şubeyi sorar
@@ -70,8 +73,10 @@ export default function WastePage({ searchParams }: PageProps<"/panel/zayi">) {
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/zayi">["searchParams"] }) {
-  const user = await requireUser();
-  const admin = user.role === "admin";
+  const user = await requireCan("kayit.yaz");
+  // Müdür şubesinin zayi / ikramını yönetici gibi yönetir (src/lib/roles.ts › opsLevel); şubesi oturumdan kilitli
+  const level = opsLevel(user.role);
+  const admin = level === "admin";
   const sp = await searchParams;
   const now = new Date();
   const today = businessDate(now);
@@ -164,6 +169,8 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
         maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
         branchName: laf.branchName,
+        // Ayarlar yöneticinin: müdür zayiyi "admin" düzeyinde görse de bağlanmamış satırın Ayarlar bağlantısı ona çizilmez
+        settingsHref: openableHref(user.role, "/panel/ayarlar#lafpos"),
       }
     : null;
   // Satırın silme kipi kaydın kendi şubesinin kilidiyle (removeWaste gibi): "Tümü"deki şubesiz personel öteki şubenin
@@ -207,7 +214,10 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     );
   }
 
-  const ay = pick(sp.ay);
+  // Ay özeti malzeme maliyeti taşır: müdür "admin" düzeyinde yazar ama maliyet görmez (docs/ROLLER.md › Müdür); özet
+  // ona hiç çizilmez, maliyet RSC yüküne girmez
+  const costs = user.role === "admin";
+  const ay = costs ? pick(sp.ay) : undefined;
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   return (
     <div className="space-y-6">
@@ -217,7 +227,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
         <Notice tone="warn" title={`Bu gün ${num(waiting.count)} istek onay bekliyor`} action={<NoticeLink href={`/panel/onaylar#istek-${waiting.firstId}`}>Onaylar</NoticeLink>} />
       ) : null}
       {board}
-      <WasteMonth month={month} today={today} />
+      {costs ? <WasteMonth month={month} today={today} /> : null}
     </div>
   );
 }
@@ -225,11 +235,13 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
 /** Ayın kasası, ödenmez tutarının etiketi için: geçiş ayında iki kasa birden */
 const OFF_LABEL = { modpos: "ModPOS ödenmez / ikram", gecis: "Kasa ödenmez / ikram", lafpos: "LafPOS ödenmez / ikram" } as const;
 
-/** Yöneticinin ay özeti: zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın ödenmez tutarı, en çok giden
- * kalemler. Geçiş gününden itibaren LafPOS'un ikram ve zayi satırları da sayılır (adın yanında "LafPOS"); LafPOS'un gün sonu gelen günde
- * panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts). Geçiş günü boşken bugünkü gibi yalnız panel.
+/** Yöneticinin ay özeti (yalnız yönetici; müdürde yok): zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın
+ * ödenmez tutarı, en çok giden kalemler. Geçiş gününden itibaren LafPOS'un ikram ve zayi satırları da sayılır (adın
+ * yanında "LafPOS"); LafPOS'un gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts).
+ * Geçiş günü boşken bugünkü gibi yalnız panel.
  */
 async function WasteMonth({ month, today }: { month: string; today: string }) {
+  await requireAdmin();
   const end = addDays(`${shiftMonth(month, 1)}-01`, -1);
   const [model, entries] = await Promise.all([loadModel(), wasteEntriesBetween(`${month}-01`, end)]);
   const sum = model.wasteSummary(month);

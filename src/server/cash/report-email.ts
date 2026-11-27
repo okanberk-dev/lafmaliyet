@@ -55,7 +55,7 @@ export async function emailReport(
   // anında düşer (E-53). Düşen adres yöneticinin zilinde ve Rapor alıcıları kartında görünür; hepsi düştüyse e-posta
   // gitmedi sayılır (kapalı değil): yönetici nedenini formda görür, personel sabit metni (staff-errors.ts)
   const { to: recipients, dropped } = settings.emailEnabled ? await sendableRecipients(getDb(), settings.recipients) : { to: [], dropped: [] };
-  if (dropped.length) console.warn(`[kasa e-postası] ${dropped.length} alıcı atlandı (personel ya da pasif hesap)`);
+  if (dropped.length) console.warn(`[kasa e-postası] ${dropped.length} alıcı atlandı (personel, müdür ya da pasif hesap)`);
   let outcome: CashEmailOutcome;
   if (!settings.emailEnabled || !settings.recipients.length) {
     outcome = { status: "off", error: null, to: 0 };

@@ -112,6 +112,8 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
       ["kasa.cihaz", false, "tuzla", null],
       // Kör sayım (Dalga 2): şubenin kendisinin; seçilmemişken varsayılan (ModPOS'taki şubede açık)
       ["kasa.kor", false, "tuzla", null],
+      // Hazır vardiyalar (26 Kasım 2026): saatler şubenin açılışına bağlı, "aynı" yok; seçilmemişken bugünkü sabit saatler
+      ["vardiya.hazir", false, "tuzla", null],
     ],
   );
   assert.equal(branchSettingGroup("kasa.rapor"), CASH_REPORT_GROUP);
@@ -129,7 +131,7 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
   // Şifreli alan yalnız LafPOS'un anahtarı
   for (const g of BRANCH_SETTING_GROUPS) assert.deepEqual(g.secretFields, g.id === "pos.lafpos" ? ["secret"] : [], `${g.id}: şifreli alanlar`);
   assert.ok(SHARED_FOR_NOW.length > 0 && SHARED_FOR_NOW.every((g) => !branchSettingGroup(g.id)), "henüz ortak olanlar ayrı listede");
-  for (const id of ["pos.lafpos", "komisyon", "modpos", "isletme.takvim"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), `${id} artık şube başına`);
+  for (const id of ["pos.lafpos", "komisyon", "modpos", "isletme.takvim", "vardiya.hazir"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), `${id} artık şube başına`);
   assert.equal(branchSettingGroup("parasut"), PARASUT_GROUP, "Paraşüt hesabı şube başına (B4)");
 });
 

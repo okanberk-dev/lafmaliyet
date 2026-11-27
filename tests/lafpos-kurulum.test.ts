@@ -1,7 +1,7 @@
 // Şube kurulumu (docs/LAFPOS.md › Şube kurulumu; src/lib/lafpos/kurulum.ts, kurulum-mail.ts): şubeyi yalnız ana
 // yönetici ekler; şubeye özel kurucu genel kurucunun iki boş satırına panelin adresini ve tek kullanımlık kodu yazar;
-// kasa kodu verince bağlantılar (yalnız tanımlı ve yeterince uzun olanlar) döner. Uçlar ve eylem de burada bağlı mı
-// diye okunur.
+// kasa kodu verince bağlantılar (yalnız tanımlı ve yeterince uzun olanlar) döner; Hesabım'daki kurulum kartını yalnız
+// şubenin kendi hesabı görür (isBranchAccount). Uçlar, eylem ve Hesabım da burada bağlı mı diye okunur.
 // Çalıştırma: npx tsx --test tests/lafpos-kurulum.test.ts
 
 import assert from "node:assert/strict";
@@ -12,6 +12,7 @@ import { test } from "node:test";
 import {
   ANA_ADMIN_EMAIL,
   isAnaAdmin,
+  isBranchAccount,
   KOD_RE,
   kurucuDosyaAdi,
   kurucuWithCode,
@@ -32,6 +33,25 @@ test("şubeyi yalnız ana yönetici ekler: yönetici rolü ve info@nextgenlab.co
   assert.equal(isAnaAdmin(null, {}), false);
   // Ortamla değişir
   assert.equal(isAnaAdmin({ role: "admin", email: "a@b.co" }, { LADMIN_ANA_ADMIN: "a@b.co" }), true);
+});
+
+test("Hesabım'daki kurulum kartı yalnız şubenin kendi hesabına", () => {
+  // Bağlantıdaki kod kasanın eşitleme anahtarını verir (POST /api/lafpos/kurulum): şubenin öbür personeli, müdürü,
+  // muhasebeci ve yönetici görmez (veritabanında: tests/lafpos-kurulum-db.test.ts)
+  const install = { branchId: "marina", email: "marina@ornek.com" };
+  const hesap = (role: string, email: string, branchId: string | null) => ({ role, email, branchId });
+  assert.equal(isBranchAccount(hesap("staff", "marina@ornek.com", "marina"), install), true, "şubenin hesabı");
+  assert.equal(isBranchAccount(hesap("staff", " Marina@Ornek.COM ", "marina"), install), true, "harf büyüklüğü ve boşluk fark etmez");
+  assert.equal(isBranchAccount(hesap("staff", "barista@ornek.com", "marina"), install), false, "şubenin öbür personeli");
+  assert.equal(isBranchAccount(hesap("staff", "marina@ornek.com", "tuzla"), install), false, "öteki şubeye kilitli aynı adres");
+  assert.equal(isBranchAccount(hesap("staff", "marina@ornek.com", null), install), false, "şubesiz personel");
+  assert.equal(isBranchAccount({ role: "staff", email: "marina@ornek.com" }, install), false, "şubesi verilmemiş");
+  assert.equal(isBranchAccount(hesap("manager", "mudur@ornek.com", "marina"), install), false, "şubenin müdürü");
+  // Şube hesabı yalnız personel olabilir (branchEmailTaken): adres bir müdürde olsa da kart ona gitmez
+  assert.equal(isBranchAccount(hesap("manager", "marina@ornek.com", "marina"), install), false, "aynı adresteki müdür");
+  assert.equal(isBranchAccount(hesap("accountant", "marina@ornek.com", null), install), false, "muhasebeci");
+  assert.equal(isBranchAccount(hesap("admin", "marina@ornek.com", null), install), false, "yönetici");
+  assert.equal(isBranchAccount(hesap("admin", ANA_ADMIN_EMAIL, null), install), false, "ana yönetici");
 });
 
 test("kurucuya adres ve kod yazılır; satırlar yoksa (eski kurucu) ya da kod bozuksa hata", () => {
@@ -102,6 +122,10 @@ test("bağlantılar kurulu: şube eklemek ana yöneticide, uçlar herkese açık
   const proxy = read("src/proxy.ts");
   assert.ok(!proxy.includes("/lafpos/") && !proxy.includes("/api/lafpos"));
   assert.ok(read("drizzle/0095_lafpos_kurulum.sql").includes('CREATE TABLE "lafpos_installs"'));
+  // Hesabım bağlantıyı yalnız şubenin kendi hesabına okur (listInstalls şubenin bütün bağlantılarını açar)
+  const hesap = read("src/app/panel/hesap/page.tsx");
+  assert.ok(hesap.includes("installForAccount("), "Hesabım installForAccount'tan okur");
+  assert.ok(!hesap.includes("listInstalls("), "Hesabım listInstalls'u çağırmaz");
 });
 
 test("LafPOS kasası kur: şube listeden seçilir ya da aynı pencerede yeni şube eklenir; kart yalnız ana yöneticiye", () => {

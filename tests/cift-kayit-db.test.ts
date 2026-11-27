@@ -20,6 +20,7 @@ import postgres from "postgres";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { businessDate } from "../src/lib/cash-report";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.CIFT_KAYIT_TEST_DATABASE_URL ?? process.env.CARI_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_cift_kayit_${process.pid}`;
@@ -61,6 +62,7 @@ describe("çift kayıt engeli: istemci anahtarı ve aynı numaralı fatura", { s
     stub(require.resolve("../src/server/auth/dal"), {
       getCurrentUser: session,
       requireUser: session,
+      ...dalCapabilities(session),
       requireAdmin: async () => {
         if (me.role !== "admin") throw new Error("yönetici değil");
         return session();

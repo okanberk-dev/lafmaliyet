@@ -81,6 +81,9 @@ test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube ba
   const section = read("src/app/panel/onaylar/ops-section.tsx");
   assert.match(section, /loadWasteRequestQueue\(loadBranchModelOnce, now, await currentBranchScope\(\)\)/);
   assert.doesNotMatch(section, /loadModelOnce/);
+  // Bakana giden kartlar sunucuda süzülür: müdüre yalnız şubesininkiler, malzeme maliyeti olmadan (bulgu 4)
+  assert.match(section, /const waste = wasteCardsFor\(me, all\);/);
+  assert.doesNotMatch(section, /me\.role === "admin" \? all/);
   // Kart şubeyi adıyla yazar, "Günü aç" o şubenin zayi gününü açar
   const cards = read("src/app/panel/onaylar/ops-cards.tsx");
   assert.equal(cards.match(/<BranchBadge branch=\{card\.branch\} \/>/g)?.length, 2);

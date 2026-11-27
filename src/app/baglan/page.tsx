@@ -70,7 +70,7 @@ async function ConnectContent({ searchParams }: { searchParams: PageProps<"/bagl
 
   const me = await getCurrentUser();
   if (!me) {
-    // İki adımlıyı kurmamış yönetici (zorunluluk; src/lib/admin-security.ts): oturumu geçerli, önce kurulum, sonra bu ekran
+    // İki adımlıyı kurmamış yönetici, müdür ya da muhasebeci (zorunluluk açıkken; src/lib/admin-security.ts): oturumu geçerli, önce kurulum, sonra bu ekran
     if (await awaitingTwoFactorSetup()) redirect(twoFactorSetupHref(`/baglan?istek=${encodeURIComponent(raw)}`));
     // Girişten sonra bu ekrana dönülür (safeNext /baglan?… kabul eder). Çerez duruyor ama geçersizse (parola değişti,
     // oturumlar kapatıldı, çıkış yapıldı) "oturum bitti" ve çerezin özeti: proxy yalnız bu çerezi siler, giriş açılır

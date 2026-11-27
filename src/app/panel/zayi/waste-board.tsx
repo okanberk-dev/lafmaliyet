@@ -56,6 +56,11 @@ export interface LafposDayView {
   maybeTwice: number[];
   /** "Tümü"de birden çok kasa açıkken LafPOS'un şubesi (listenin başlığında; şube kapsamı C P2-7); yoksa null */
   branchName?: string | null;
+  /**
+   * Ürüne bağlı olmayan satırın "Ayarlar › LafPOS'ta bağlayın" bağlantısı; Ayarlar'ı açamayan rolde null (müdür satırın
+   * notunu görür, bağlantıyı görmez; src/lib/roles.ts › openableHref)
+   */
+  settingsHref: string | null;
 }
 
 /**
@@ -485,10 +490,10 @@ export function WasteBoard({
                       {l.reason || l.unmatched || l.service ? (
                         <p className="text-xs break-words text-ink-mute">
                           {[l.reason, l.unmatched ? LAFPOS_IKRAM_TEXT.unmatched : null, l.service ? LAFPOS_IKRAM_TEXT.service : null].filter(Boolean).join(" · ")}
-                          {l.unmatched ? (
+                          {l.unmatched && lafpos.settingsHref ? (
                             <>
                               {" · "}
-                              <Link href="/panel/ayarlar#lafpos" className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                              <Link href={lafpos.settingsHref} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
                                 Ayarlar › LafPOS&apos;ta bağlayın
                               </Link>
                             </>

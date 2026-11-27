@@ -119,15 +119,17 @@ test("kayıtlı raporun metni teslimin yanında Kime'yi yazar", () => {
   assert.match(plain(cashReportText(f, { by: "Ayşe" }, "admin")), /Teslim edilen: 2\.000 ₺ · Kime: Okan · Ertesi güne devir: 1\.500 ₺/);
 });
 
-test("ekran: Teslim defteri yalnız yöneticinin; ⌘K'da ve telefon başlığında adıyla", () => {
+test("ekran: Teslim defteri yöneticinin ve müdürün (şubesinin); ⌘K'da ve telefon başlığında adıyla", () => {
   assert.equal(canOpen("staff", "/panel/kasa/teslim"), false);
+  assert.equal(canOpen("accountant", "/panel/kasa/teslim"), false);
   assert.equal(canOpen("admin", "/panel/kasa/teslim"), true);
+  assert.equal(canOpen("manager", "/panel/kasa/teslim"), true);
   const item = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.href === "/panel/kasa/teslim");
   assert.ok(item, "⌘K'da Teslim defteri");
-  assert.deepEqual(item.roles, ["admin"]);
+  assert.deepEqual(item.roles, ["admin", "manager"]);
   assert.equal(mobileTitleFor("/panel/kasa/teslim"), "Teslim defteri");
   const page = read("src/app/panel/kasa/teslim/page.tsx");
-  assert.match(page, /await requireAdmin\(\)/);
+  assert.match(page, /await requireCan\("isletme\.yonet"\)/);
   // Kaynaklar: kasa raporunun teslimi ve Kasadan çıkanlar'ın teslim satırları (LafPOS'unkiler dahil), şube seçiciye göre
   const data = read("src/server/data/handover-ledger.ts");
   assert.match(data, /gt\(s\.cashReports\.handedOver, 0\)/);

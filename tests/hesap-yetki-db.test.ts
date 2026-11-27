@@ -18,6 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { ACCOUNTANT_HOME } from "../src/lib/roles";
 import { STEP_UP_REQUIRED } from "../src/lib/step-up";
 import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "../src/lib/two-factor-setup";
 import * as s from "../src/server/db/schema";
@@ -396,6 +397,14 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     await assert.rejects(login("ayse"), to("/panel/bugun"), "personelde isteğe bağlı");
     assert.equal((await dal.requireUser()).id, ids.ayse);
 
+    // Muhasebeci yöneticiyle aynı kuralda (TWO_FACTOR_ROLES): kurmadan panel yok (Ayşe'nin rolünü beforeEach personele
+    // geri alır; Kemal'in parolası önceki testlerde değişiyor)
+    await db.update(s.users).set({ role: "accountant" }).where(eq(s.users.id, ids.ayse));
+    jar = new Jar();
+    await assert.rejects(login("ayse"), to(`${SETUP}?next=${encodeURIComponent(ACCOUNTANT_HOME)}`), "muhasebeci de kurulum ekranına");
+    await assert.rejects(dal.requireUser(), to(SETUP));
+    assert.equal(await dal.getCurrentUser(), null, "veri uçları kurmamış muhasebeciye bir şey vermez");
+
     // Kurmuş yönetici: parola → kod → panel (kurulum ekranı yok)
     const secret = totp.generateTotpSecret();
     await db.update(s.users).set({ totpEnabled: true, totpSecret: box.seal(secret, "totp") }).where(eq(s.users.id, ids.veli));
@@ -422,6 +431,10 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     // Kurmuş yöneticinin kod adımı yerinde (isteğe bağlı, açtıysa sorulur)
     jar = new Jar();
     assert.deepEqual(await login("veli"), { step: "totp", email: BASE.veli.email });
+    // Varsayılanda iki adımlısız muhasebeci de parolayla doğrudan kendi ana ekranına
+    jar = new Jar();
+    await assert.rejects(login("ayse"), to(ACCOUNTANT_HOME), "muhasebecide de isteğe bağlı");
+    assert.equal((await dal.requireUser()).id, ids.ayse);
   });
 
   const UA_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";

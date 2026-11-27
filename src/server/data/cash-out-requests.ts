@@ -20,7 +20,7 @@ import {
   type RemovablePhotoKind,
   type StaffCashOutView,
 } from "@/lib/cash-out-requests";
-import { cashOutLabel, cashOutsTotal, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
+import { amountOnlyRow, cashOutLabel, cashOutsTotal, ownerCategoryRow, ownerRowsAmountOnly, staffCategory, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
@@ -32,7 +32,7 @@ import { waitedText } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { requestBranches } from "@/server/staff-requests/branch";
-import { cashOutsOn } from "@/server/data/cash-outs";
+import { cashOutsOn, staffCategoryIds } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { kasaEvidence, lafposAutoReportOf } from "@/server/data/lafpos-day";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
@@ -174,7 +174,10 @@ export interface DayLine {
 export interface CashOutCard extends CardBase {
   kind: "kasa-cikan";
   op: CashOutOp;
-  /** İstenen satır (ekleme ve düzeltme); silmede null */
+  /**
+   * İstenen satır (ekleme ve düzeltme); silmede null. Müdüre yöneticinin kategorisindeki satırın isteğinde (ve `before`,
+   * `changes`, `photoId`, `message`) yalnız türü ve tutarı (src/lib/cash-outs.ts › amountOnlyRow; docs/ROLLER.md)
+   */
   line: CashOutLineT | null;
   /** Satırın istendiği andaki hâli (düzeltme ve silme) */
   before: CashOutBeforeT | null;
@@ -184,8 +187,16 @@ export interface CashOutCard extends CardBase {
   changedSince: boolean;
   /** Satır artık yok (düzeltme ve silme) */
   rowGone: boolean;
-  /** Bağlı harcama kaydının kategorisi ve yöneticinin kategorisi mi (düzeltme ve silme) */
+  /**
+   * Bağlı harcama kaydının kategorisi ve yöneticinin kategorisi mi (düzeltme ve silme). Müdüre yöneticinin kategorisinin
+   * (maaş, kira gibi) adı gitmez: `categoryName` null (docs/ROLLER.md › Kararlar; Kasa sayfasındaki kuralla aynı)
+   */
   expense: { categoryName: string | null; admin: boolean } | null;
+  /**
+   * Kararı yalnız yönetici verir: satır yöneticinin kategorisinde ve kartı okuyan bütün kategorileri yazamıyor (müdür).
+   * Kart onay ve ret düğmesi çizmez; sunucu da reddeder (src/server/cash-outs/write.ts › assertOwnerRowOpen)
+   */
+  ownerDecides: boolean;
   /** Fiş fotoğrafı (eklemede istekte tutulan, düzeltme ve silmede satırınki) */
   photoId: number | null;
   /** Onayın varsayılanları: Aylık harcamalar'a yazılsın mı ve kategori */
@@ -196,7 +207,10 @@ export interface CashOutCard extends CardBase {
     lines: DayLine[];
     /** Satırların toplamı şimdi ve onaydan sonra */
     totals: { now: number; after: number };
-    /** Olası tekrar: aynı tutar (±0,01), ±1 gün ("Migros · 412,50 ₺ · 21 Ekim · kasadan çıkan") */
+    /**
+     * Olası tekrar: aynı tutar (±0,01), ±1 gün ("Migros · 412,50 ₺ · 21 Ekim · kasadan çıkan"). Müdüre yalnız isteğin
+     * şubesinin satırları ve personelin kategorisindeki harcama kayıtları (öteki şubeninki, maaş ve kira kaydı gitmez)
+     */
     duplicates: string[];
     /** Kırmızı işaretler */
     flags: string[];
@@ -217,8 +231,14 @@ export interface PhotoRemovalCard extends CardBase {
   refusal: string | null;
 }
 
-/** Bekleyen kasadan çıkan ve fotoğraf kaldırma kartları (yalnız yönetici; loadCashRequestQueue toplar) */
-export async function cashOutCards(now = new Date()): Promise<(CashOutCard | PhotoRemovalCard)[]> {
+/**
+ * Bekleyen kasadan çıkan ve fotoğraf kaldırma kartları (yönetici ve müdür; loadCashRequestQueue toplar).
+ * `allCategories` false (müdür, `kategori.tum` yok; docs/ROLLER.md): kart yöneticinin kategorisinin adını ve öteki
+ * şubenin, yöneticinin kategorisinin kayıtlarını taşımaz (kart tarayıcıya bütünüyle gider). Yöneticinin kategorisindeki
+ * (maaş, kira, avans) satır kartta yalnız türü ve tutarıyla: isteğin konusuysa satırın ve önerinin yeri, açıklaması, fişi,
+ * fotoğrafı ve personelin notu gitmez; günün satırları arasındaysa adı "Harcama", fişi yok; olası tekrarda hiç yok
+ */
+export async function cashOutCards(now = new Date(), allCategories = true): Promise<(CashOutCard | PhotoRemovalCard)[]> {
   const db = getDb();
   const rows = await db
     .select({
@@ -236,6 +256,8 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
     .orderBy(asc(r.day), asc(r.createdAt));
   if (!rows.length) return [];
   const thisMonth = businessDate(now).slice(0, 7);
+  // Müdür: personelin kategorileri (dışındaki satır yöneticinin; src/lib/cash-outs.ts › ownerCategoryRow); yöneticide null
+  const staffIds = allCategories ? null : await staffCategoryIds();
   const out: (CashOutCard | PhotoRemovalCard)[] = [];
   for (const x of rows) {
     if (!x.day) continue;
@@ -248,7 +270,7 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
     }
     const p = CashOutRequestPayload.safeParse(x.payload);
     if (!p.success) continue;
-    out.push(await cashOutCard(base, p.data, thisMonth, now));
+    out.push(await cashOutCard(base, p.data, thisMonth, now, staffIds));
   }
   return out;
 }
@@ -287,8 +309,16 @@ async function photoCard(base: Omit<CardBase, "branchId">, p: { photoId: number;
   };
 }
 
-async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
+/** `staffIds`: müdürde personelin kategorileri (yöneticinin kategorisindeki satır yalnız tutarıyla), yöneticide null */
+async function cashOutCard(
+  base: Omit<CardBase, "branchId">,
+  p: ReturnType<typeof CashOutRequestPayload.parse>,
+  thisMonth: string,
+  now: Date,
+  staffIds: ReadonlySet<number> | null,
+): Promise<CashOutCard> {
   const db = getDb();
+  const allCategories = staffIds === null;
   const day = p.day;
   // İsteğin kasası (yöneticinin seçimi değil): isteği açanın şubesi; eski isteklerde satırın şubesi, o da yoksa Tuzla
   const sube = p.branchId ?? (p.cashOutId !== null ? (await db.select({ b: s.cashOuts.branchId }).from(s.cashOuts).where(eq(s.cashOuts.id, p.cashOutId)).limit(1))[0]?.b : undefined) ?? DEFAULT_BRANCH_ID;
@@ -306,7 +336,9 @@ async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeo
   let expense: CashOutCard["expense"] = null;
   if (current && current.categoryId !== null) {
     const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, current.categoryId)).limit(1);
-    expense = { categoryName: current.categoryName, admin: staffExpenseLocked(cat) };
+    const locked = staffExpenseLocked(cat);
+    // Müdür yöneticinin kategorisinin adını görmez (kart "yöneticinin kategorisi" der); personelinkiler adıyla
+    expense = { categoryName: locked && !allCategories ? null : current.categoryName, admin: locked };
   }
   const changedSince =
     p.before !== null &&
@@ -323,47 +355,88 @@ async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeo
   const after =
     p.op === "ekle" ? nowTotal + p.line!.amount : p.op === "sil" ? nowTotal - (current?.amount ?? 0) : nowTotal - (current?.amount ?? 0) + (p.line?.amount ?? 0);
   const subjectLine = p.line ?? p.before;
-  // Olası tekrar: aynı tutar, ±1 gün (kasadan çıkan) ve ±7 gün (harcama kaydı); istenen satırın kendisi hariç
+  // Müdüre isteğin konusu yöneticinin kategorisindeki satırsa (şimdi ya da istendiği anda): satır, öneri ve değişiklikler
+  // yalnız türü ve tutarıyla, fotoğrafı ve personelin notu yok (docs/ROLLER.md › Kararlar; Kasa sayfasındaki kuralla aynı)
+  const ownerSubject = staffIds !== null && (expense?.admin === true || (p.before?.expense != null && !staffIds.has(p.before.expense.categoryId)));
+  const shownLine = p.line && ownerSubject ? amountOnlyRow(p.line) : p.line;
+  const shownBefore = p.before && ownerSubject ? amountOnlyRow(p.before) : p.before;
+  // Olası tekrar: aynı tutar, ±1 gün (kasadan çıkan) ve ±7 gün (harcama kaydı); istenen satırın kendisi hariç. Müdüre
+  // yalnız isteğin şubesinden ve personelin kategorisinden (öteki şubenin satırı, maaş ve kira kaydı gitmez)
   let duplicates: string[] = [];
   if (p.op === "ekle" && p.line) {
     const ref = p.line.receiptDate ?? day;
     const [outs, entries] = await Promise.all([
       db
-        .select({ id: s.cashOuts.id, date: s.cashOuts.date, receiptDate: s.cashOuts.receiptDate, amount: s.cashOuts.amount, store: s.cashOuts.store, description: s.cashOuts.description, kind: s.cashOuts.kind })
+        .select({
+          id: s.cashOuts.id,
+          date: s.cashOuts.date,
+          receiptDate: s.cashOuts.receiptDate,
+          amount: s.cashOuts.amount,
+          store: s.cashOuts.store,
+          description: s.cashOuts.description,
+          kind: s.cashOuts.kind,
+          categoryId: s.expenseEntries.categoryId,
+        })
         .from(s.cashOuts)
-        .where(and(gte(s.cashOuts.date, addDays(day, -1)), lte(s.cashOuts.date, addDays(day, 1)))),
+        .leftJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, s.cashOuts.id))
+        .where(and(gte(s.cashOuts.date, addDays(day, -1)), lte(s.cashOuts.date, addDays(day, 1)), allCategories ? undefined : eq(s.cashOuts.branchId, sube))),
       db
-        .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount, description: s.expenseEntries.description, cashOutId: s.expenseEntries.cashOutId })
+        .select({
+          date: s.expenseEntries.date,
+          amount: s.expenseEntries.amount,
+          description: s.expenseEntries.description,
+          cashOutId: s.expenseEntries.cashOutId,
+          section: s.expenseCategories.section,
+          panelGroup: s.expenseCategories.panelGroup,
+          active: s.expenseCategories.active,
+        })
         .from(s.expenseEntries)
-        .where(and(gte(s.expenseEntries.date, addDays(ref, -7)), lte(s.expenseEntries.date, addDays(ref, 7)))),
+        .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+        .where(and(gte(s.expenseEntries.date, addDays(ref, -7)), lte(s.expenseEntries.date, addDays(ref, 7)), allCategories ? undefined : eq(s.expenseEntries.branchId, sube))),
     ]);
     const near = (a: number) => Math.abs(a - p.line!.amount) <= 0.01;
     duplicates = [
-      ...outs.filter((o) => near(o.amount) && Math.abs(dayDiff(o.receiptDate ?? o.date, ref)) <= 1).map((o) => `${cashOutLabel(o)} · ${money(o.amount)} · ${dayMonthTR(o.date)} · kasadan çıkan`),
-      ...entries.filter((e) => e.cashOutId === null && near(e.amount)).map((e) => `${e.description ?? "Harcama"} · ${money(e.amount)} · ${dayMonthTR(e.date)} · harcama kaydı`),
+      // Müdüre yöneticinin kategorisindeki kasadan çıkan satırı gitmez (adı kişinin adı ve ücreti olabilir)
+      ...outs
+        .filter((o) => near(o.amount) && Math.abs(dayDiff(o.receiptDate ?? o.date, ref)) <= 1 && (staffIds === null || !ownerCategoryRow(o, staffIds)))
+        .map((o) => `${cashOutLabel(o)} · ${money(o.amount)} · ${dayMonthTR(o.date)} · kasadan çıkan`),
+      ...entries
+        .filter((e) => e.cashOutId === null && near(e.amount) && (allCategories || staffCategory(e)))
+        .map((e) => `${e.description ?? "Harcama"} · ${money(e.amount)} · ${dayMonthTR(e.date)} · harcama kaydı`),
     ].slice(0, 4);
   }
   const expenseDay = p.line && p.line.kind === "harcama" ? expenseDateFor(day, p.line.receiptDate) : null;
   return {
     ...base,
+    // Personelin "Yöneticiye not"u: müdüre yöneticinin kategorisindeki satırın isteğinde gitmez (kararı yöneticinin)
+    message: ownerSubject ? null : base.message,
     // Kartın okuduğu ve onayın yazdığı kasa
     branchId: sube,
     kind: "kasa-cikan",
     op: p.op,
-    line: p.line,
-    before: p.before,
-    changes: p.op === "duzelt" && p.before && p.line ? lineChanges(p.before, p.line) : [],
+    line: shownLine,
+    before: shownBefore,
+    changes: p.op === "duzelt" && shownBefore && shownLine ? lineChanges(shownBefore, shownLine) : [],
     changedSince: p.op !== "ekle" && !rowGone && changedSince,
     rowGone,
     expense,
-    photoId: p.op === "ekle" ? (p.line?.photoId ?? null) : (current?.photoId ?? p.before?.photoId ?? null),
+    ownerDecides: !allCategories && expense?.admin === true,
+    photoId: ownerSubject ? null : p.op === "ekle" ? (p.line?.photoId ?? null) : (current?.photoId ?? p.before?.photoId ?? null),
     defaults: {
       toExpenses: p.op === "ekle" ? (p.line ? staffToExpenses(p.line.kind, p.line.docType) : false) : current?.expenseEntryId != null,
       categoryId: p.op === "ekle" ? (p.line?.categoryId ?? null) : (current?.categoryId ?? null),
     },
     context: {
       report: report ? { cashDiff: report.cashDiff, cashOut: report.cashOut } : null,
-      lines: lines.map((l) => ({ id: l.id, label: cashOutLabel(l), amount: l.amount, by: l.createdByName, photo: l.photoId !== null, subject: l.id === p.cashOutId })),
+      // Müdüre yöneticinin kategorisindeki satır adsız ve fişsiz (ownerRowsAmountOnly): "Harcama · Ali · 5.000 ₺"
+      lines: (staffIds ? ownerRowsAmountOnly(lines, staffIds) : lines).map((l) => ({
+        id: l.id,
+        label: cashOutLabel(l),
+        amount: l.amount,
+        by: l.createdByName,
+        photo: l.photoId !== null,
+        subject: l.id === p.cashOutId,
+      })),
       totals: { now: nowTotal, after: Math.round(after * 100) / 100 },
       duplicates,
       flags: cashOutFlags({ op: p.op, line: subjectLine, dayClosed: !dayOpen, reportDiff: report?.cashDiff ?? null }),

@@ -359,7 +359,7 @@ test("kalemin notu: kim, ne zaman, nereden; paket fiyatını kimin yazdığı (p
   );
   assert.equal(countItemNote("Ayşe", "23.10.2026", { source: "recete" }), "Sayım listesine Ayşe ekledi (23.10.2026, reçete önerisinden).");
   // Çekirdek notu yazanın rolüyle kurar (paket fiyatı yazılmadıysa fiyat cümlesi yok)
-  assert.match(fnBody(CORE, "createCountItem"), /countItemNote\(me\.name, dateTR\(todayTR\(\)\), \{ pricedBy: data\.packagePrice !== null \? me\.role : null, source \}\)/);
+  assert.match(fnBody(CORE, "createCountItem"), /countItemNote\(me\.name, dateTR\(todayTR\(\)\), \{ pricedBy: data\.packagePrice !== null \? adminLevel\(me\.role\) : null, source \}\)/);
 });
 
 test("ortak çekirdeğin yazdığı kalem: grup varsayılanları, birim, sıra, ay; fiyat isteğe bağlı ve Tahmini", () => {
@@ -443,7 +443,7 @@ test("işlem geçmişi satırı: grup, birim, yazılan paket fiyatı; reçete ö
 
 test("aynı ad: çekirdek kaydı bulur; reçete önerisi aktif olanı seçtirir, pasifte metni gösterir", () => {
   const core = fnBody(CORE, "createCountItem");
-  assert.match(core, /throw new CountItemExists\(duplicateMessage\(dup, me\.role\), \{/);
+  assert.match(core, /throw new CountItemExists\(duplicateMessage\(dup, adminLevel\(me\.role\)\), \{/);
   const recipe = fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient");
   assert.match(recipe, /if \(e instanceof CountItemExists && e\.existing\.active && e\.existing\.id > 0\) return \{ ingredient: ref\(e\.existing\), existing: true as const \};/);
   assert.match(recipe, /throw e;/);
@@ -704,16 +704,16 @@ test("tahminin düzeltmesi veritabanında: başlangıç satırı yerinde düzeli
 test("personel kalem ekler (bu ay ve geçen ay); paket fiyatını yalnız yazar, personel fiyat görmez", () => {
   const actions = read("src/app/panel/sayim/actions.ts");
   const add = actions.slice(actions.indexOf("export async function addCountItem"));
-  assert.match(add, /const me = await requireUser\(\);/);
+  assert.match(add, /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   assert.doesNotMatch(add, /requireAdmin/);
   // "Listede olmayanlar" da aynı ay kuralıyla (Listeye ekle'ninki aşağıda, ortak çekirdekte)
   assert.match(fnBody("src/app/panel/sayim/actions.ts", "saveStaffStockExtras"), /const monthIssue = staffCountIssue\(me\.role, m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
   // Reçete önerisindeki "Yeni malzeme" de personelin; ay kuralı ve kilit ikisi için ortak çekirdekte
   const recipe = fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient");
-  assert.match(recipe, /const me = await requireUser\(\);/);
+  assert.match(recipe, /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   assert.doesNotMatch(recipe, /requireAdmin/);
   const core = fnBody(CORE, "createCountItem");
-  assert.match(core, /const monthIssue = staffCountIssue\(me\.role, m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
+  assert.match(core, /const monthIssue = staffCountIssue\(adminLevel\(me\.role\), m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
   assert.ok(core.indexOf("staffCountIssue(") < core.indexOf("getDb().transaction("), "ay kuralı yazmadan önce");
   assert.match(core, /pg_advisory_xact_lock\(hashtext\('sayim-listeye-ekle'\)\)/);
   assert.doesNotMatch(read(CORE), /"use server"/, "çekirdek dışarıdan çağrılan bir uç değil");
@@ -741,7 +741,7 @@ test("personel kalem ekler (bu ay ve geçen ay); paket fiyatını yalnız yazar,
 
 test("zil: fiyatı girilmemiş hammaddeler yalnız yöneticide, hata zili düşürmez", () => {
   const src = read("src/server/actions/notifications.ts");
-  const staffReturn = src.indexOf('if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];');
+  const staffReturn = src.indexOf('if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...devices, ...cash, ...kontrol, ...mine, ...recipes, ...ops];');
   const call = src.indexOf('safe("fiyatsiz", unpricedNotifications())');
   assert.ok(staffReturn > 0 && call > staffReturn, "personel dalından sonra, yöneticinin Promise.all'ında");
   const fn = src.slice(src.indexOf("async function unpricedNotifications"), src.indexOf("export async function loadPanelNotifications"));

@@ -13,6 +13,7 @@ import { KasaOkcRaw } from "@/lib/photo-read/schemas";
 import { okcReadRows } from "@/lib/photo-read/summary";
 import { linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
+import { linksAnyPhoto } from "@/lib/roles";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { lockCashReport, lockLateDay, okcServerColumns, type CashActor, type CashReportRow, type CashTx } from "@/server/cash/report-store";
 import { schema as s, type DB } from "@/server/db";
@@ -298,7 +299,8 @@ export async function attachLafposDayPhotoCore(db: DB, me: CashActor, input: { d
       .for("update")
       .limit(1);
     const p = await getPhoto(photoId, tx);
-    if (!p || (p.kind !== "kasa-okc" && p.kind !== "kasa-pos") || (me.role !== "admin" && p.createdBy !== me.id)) throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
+    // Başkasının fotoğrafı yalnız yöneticide ("admin" düzeyindeki müdür de yalnız kendi yüklediğini; linksAnyPhoto)
+    if (!p || (p.kind !== "kasa-okc" && p.kind !== "kasa-pos") || (!linksAnyPhoto(me) && p.createdBy !== me.id)) throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
     const report = await lockCashReport(tx, date, branchId);
     if (report && (state.reportId !== report.id || !state.autoValues)) throw new UserError("Bu günün raporu elle girildi; fotoğrafı raporun Düzenle'sinden ekleyin");
     const already = report ? (await dayPhotoIds(tx, report.id)).includes(photoId) : state.pendingPhotos.includes(photoId);

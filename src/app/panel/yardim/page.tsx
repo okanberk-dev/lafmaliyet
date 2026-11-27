@@ -521,11 +521,16 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/vardiya" /> ekranında haftayı kişi kişi yazın: günün kutusuna saatleri (“10-18”, gece yarısını geçen vardiyada “18-02”), isterseniz
             görevi (“10-18 kasa”), izin için “izin”. Okunamayan kutu kırmızı olur. Kaydet bütün haftayı yazar; PDF kaydedilen plandan çizilir. Geçen haftayı
-            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir.
+            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir: soldan
+            “Tümü” seçiliyken önce şube sorulur, Kaydet ekranda görünen şubeye yazar. Sabahçı ve akşamcının (S, A) saatleri şube başınadır:{" "}
+            <Path href="/panel/subeler" /> › şubenin Ayarlar&apos;ı › Hazır vardiyalar.
           </>
         ),
         icon: CalendarClock,
-        links: [{ href: "/panel/vardiya", label: "Vardiya ayarlama" }],
+        links: [
+          { href: "/panel/vardiya", label: "Vardiya ayarlama" },
+          { href: "/panel/subeler", label: "Şubeler" },
+        ],
       },
       {
         id: "tedarikci",
@@ -674,6 +679,22 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           { href: "/panel/hesap", label: "Hesabım (iki adımlı doğrulama)" },
           { href: "/panel/yardim/personel", label: "Personelin Yardım'ı" },
         ],
+      },
+      {
+        id: "roller",
+        q: "Müdür ve muhasebeci hesabı",
+        a: (
+          <>
+            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle, rol <strong className="font-semibold text-ink">Müdür</strong>: şubesini seçmek zorunludur, hesap
+            o şubeye kilitlidir. Personelin her ekranına ek olarak kasa raporlarını rakamlarıyla görür ve onaysız düzeltir, şubesinin isteklerini Onaylar&apos;da
+            karara bağlar, vardiyayı yazar, Teslim defterini ve İşçilik / ciro&apos;yu görür; maaş, vergi, Paraşüt, ayarlar ve öteki şubeler yok. Rol{" "}
+            <strong className="font-semibold text-ink">Muhasebeci</strong>: salt okunur; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve
+            muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş görmez. İki adımlı doğrulama isteğe bağlıdır; zorunluluk açıksa
+            (ADMIN_2FA_REQUIRED=1) ikisi de yönetici gibi kurmadan paneli kullanamaz. Yeni bir cihazdan girişleri bildirilir.
+          </>
+        ),
+        icon: UserPlus,
+        links: [{ href: "/panel/kullanicilar", label: "Kullanıcılar & roller" }],
       },
       {
         id: "claude",

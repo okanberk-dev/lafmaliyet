@@ -248,7 +248,7 @@ const body = (name: string) => {
 };
 
 test("yetki: personel önerir; yönetici fiyatıyla onaylar; Yeni ürün yalnız yöneticinin", () => {
-  assert.match(body("proposeNewProduct"), /const me = await requireUser\(\);/);
+  assert.match(body("proposeNewProduct"), /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   assert.match(body("approveNewProduct"), /const me = await requireAdmin\(\);/);
   assert.match(body("reviewRecipeChange"), /const me = await requireAdmin\(\);/);
   const products = read("src/server/actions/products.ts");

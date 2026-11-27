@@ -11,7 +11,8 @@ import { type NoticeItem, NoticeLink } from "@/components/ui/notice";
 import { ALL_BRANCHES } from "@/lib/branches";
 import { overdueTaxNotice } from "@/lib/tax/overdue";
 import { taxPayrollFromModel } from "@/lib/tax/payroll";
-import { requireAdmin } from "@/server/auth/dal";
+import { can } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
@@ -49,7 +50,8 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
  * kez okunur (loadTaxView, K30).
  */
 async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/vergi">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  const viewer = await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
@@ -112,7 +114,9 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   const filings = { mphb: filingKindData("mphb", ctx), gecici: filingKindData("gecici", ctx), kv: filingKindData("kv", ctx) };
   // Bordro dökümü: takvimdeki muhtasar aylarının bordrosu (geçen ve bu yıl)
   const ty = Number(view.today.slice(0, 4));
-  const payroll = payrollSheetMonths([...taxPayrollFromModel(model, ty - 1, settings).values(), ...taxPayrollFromModel(model, ty, settings).values()]);
+  // Kişi kişi bordro dökümü (ad ve ücret) yalnız maaşı görenin (docs/ROLLER.md › muhasebeci kişi başı maaş görmez); takvimin
+  // toplamları (SGK, muhtasar) herkese aynı
+  const payroll = can(viewer.role, "maas") ? payrollSheetMonths([...taxPayrollFromModel(model, ty - 1, settings).values(), ...taxPayrollFromModel(model, ty, settings).values()]) : [];
   const rules = Object.fromEntries(Object.entries(CALENDAR_RULES).map(([kind, keys]) => [kind, ruleRefs(keys, ty, settings.overrides)]));
   const s = view.stats;
 

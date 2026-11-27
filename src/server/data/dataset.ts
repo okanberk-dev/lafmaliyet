@@ -5,7 +5,7 @@ import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, branchPnlEntry, DEFAULT_BRANCH_ID, DEFAULT_POS_RATE, monthWriteLock, type BranchScope } from "@/lib/branches";
-import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
+import { activeFromRange, createModel, currentMonthTR, type ModelOptions } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
 import { isReportRow, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
@@ -639,8 +639,13 @@ async function companyWaterSales(
   });
 }
 
-export async function loadModel(opts: DatasetOptions = {}) {
-  return createModel(await loadDataset(opts));
+/**
+ * Veri + hesaplama motoru. `personal` (ModelOptions) varsayılan kapalı: Gelir-gider'in personel hücreleri kişi kişi metin
+ * taşımaz; yalnız maaşı gören rolün ekranı `personal: can(rol, "maas")` ile açar (docs/ROLLER.md › Muhasebeci)
+ */
+export async function loadModel(opts: DatasetOptions & ModelOptions = {}) {
+  const { personal, ...dataset } = opts;
+  return createModel(await loadDataset(dataset), { personal });
 }
 
 /** URL'deki ?ay= değeri geçerli bir aysa o (YYYY-MM), değilse null */

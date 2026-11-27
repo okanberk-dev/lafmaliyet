@@ -25,6 +25,7 @@ import { ALL_BRANCHES, BRANCH_REQUIRED, DEFAULT_BRANCHES } from "../src/lib/bran
 import { POS_UNDO_TEXT } from "../src/lib/prices/pos";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.KASA_FIYAT_TEST_DATABASE_URL;
 const DB_NAME = `lm_kasa_fiyat_${process.pid}`;
@@ -92,6 +93,7 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
         return { ...me, email: `${me.name}@test.local`, active: true };
       },
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
+      ...dalCapabilities(async () => ({ ...me, email: `${me.name}@test.local`, active: true })),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
     });
     const dbModule = await import("../src/server/db");

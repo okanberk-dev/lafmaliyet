@@ -1,7 +1,7 @@
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { loadBranchModelOnce } from "@/server/data/model-once";
-import { loadWasteRequestQueue } from "@/server/data/waste-requests";
+import { loadWasteRequestQueue, wasteCardsFor } from "@/server/data/waste-requests";
 
 import { WasteRequestCards } from "./ops-cards";
 
@@ -13,9 +13,11 @@ import { WasteRequestCards } from "./ops-cards";
  * istekleri (şube kapsamı C P1-1).
  */
 export async function OpsRequests() {
-  await requireAdmin();
+  // Yönetici ve müdür (yalnız şubesinin kartları, malzeme maliyeti olmadan; şubesi bilinmeyen kart müdüre gösterilmez)
+  const me = await requireCan("onay");
   const now = new Date();
-  const waste = await loadWasteRequestQueue(loadBranchModelOnce, now, await currentBranchScope());
+  const all = await loadWasteRequestQueue(loadBranchModelOnce, now, await currentBranchScope());
+  const waste = wasteCardsFor(me, all);
   if (!waste.length) return null;
   return <WasteRequestCards cards={waste} />;
 }

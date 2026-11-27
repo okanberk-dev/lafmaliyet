@@ -281,6 +281,12 @@ test("Gelir-gider: biten ayda LafPOS günüyle yemek kartı gün oranıyla bir d
   const pm = m.pnlMonth("2026-12");
   close(pm.cells.get("personnel:meal")!.value!, 330 * 38, "Arda 20 + Cenk 18 gün");
   assert.match(pm.cells.get("personnel:meal")!.info!, /LafPOS/);
+  // Kişi kişi (ad ve LafPOS günü) yalnız maaşı görende (personal: true); varsayılan kişi sayısıyla (muhasebeci; docs/ROLLER.md)
+  assert.match(pm.cells.get("personnel:meal")!.info!.replace(/\u00a0/g, " "), /LafPOS'ta çalıştığı günle \(oranlanmaz\): 2 kişi = 12\.540 ₺/);
+  assert.doesNotMatch(pm.cells.get("personnel:meal")!.info!, /Arda|Cenk/);
+  const named = createModel(ds([ARDA, CENK], { lafposWorked: decWorked() }), { personal: true }).pnlMonth("2026-12");
+  assert.match(named.cells.get("personnel:meal")!.info!, /Arda 20 gün, Cenk 18 gün/);
+  assert.equal(named.cells.get("personnel:meal")!.value, pm.cells.get("personnel:meal")!.value);
   const arda = staffCost(ARDA, DEFAULT_SETTINGS, { lafposDays: 20 });
   const cenk = staffCost(CENK, DEFAULT_SETTINGS, { lafposDays: 18 });
   close(pm.cells.get("personnel:employer")!.value!, arda.total + cenk.total - 67_000 - 330 * 38, "maliyet − net − yemek kartı");

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { after } from "next/server";
 
 import { addDays, todayTR } from "@/lib/reminders";
@@ -48,7 +48,10 @@ export interface ShiftNoticeRun {
   failed: number;
 }
 
-/** Değişiklikleri kişi kişi gönderir (kişi başına tek bildirim; etkin olmayan hesaba gitmez) */
+/**
+ * Değişiklikleri kişi kişi gönderir (kişi başına tek bildirim; etkin olmayan hesaba ve muhasebeciye gitmez: muhasebeci
+ * vardiyada çalışmaz, docs/ROLLER.md › Saha kitleleri). Kişiler kaydın denetiminden geçmiştir (store.ts › shiftAccounts)
+ */
 export async function sendShiftChangeNotices(db: DB, changes: readonly ShiftChange[], branch: { id: string; name: string }): Promise<ShiftNoticeRun> {
   const run: ShiftNoticeRun = { pushed: 0, emailed: 0, skipped: 0, failed: 0 };
   const byUser = new Map<number, ShiftChange[]>();
@@ -58,7 +61,7 @@ export async function sendShiftChangeNotices(db: DB, changes: readonly ShiftChan
     db
       .select({ id: s.users.id, name: s.users.name, email: s.users.email })
       .from(s.users)
-      .where(and(inArray(s.users.id, [...byUser.keys()]), eq(s.users.active, true))),
+      .where(and(inArray(s.users.id, [...byUser.keys()]), eq(s.users.active, true), ne(s.users.role, "accountant"))),
     listBranches(db),
   ]);
   const manyBranches = branches.filter((b) => b.active).length > 1;

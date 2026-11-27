@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, namedTill, requestInScope } from "@/lib/branches";
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
+import type { Role } from "@/lib/constants";
 import { productIkramRefusal, recordedOffRevenue } from "@/lib/lafpos/ikram";
 import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
@@ -21,7 +22,8 @@ import { requestBranches } from "@/server/staff-requests/branch";
  * Geç zayi / ikram ve silme isteklerinin okumaları (docs/ZAYI-IKRAM.md › Geç kayıt ve silme isteği; plan
  * docs/planlar/personel-yetki.md §2.8). Personelin okuyucuları önce: türler `zayi-gec` ve `zayi-sil` ile süzülür, yük
  * beyaz listeyle döner (ad, birim, miktar, gün, tür, neden); fiyat, maliyet ve ham yük gitmez (tests/zayi-istek.test.ts
- * sabitler). Yöneticinin okuyucuları ("Yönetici" bölümü) kartın bağlamını ve maliyetini kurar.
+ * sabitler). Yöneticinin okuyucuları ("Yönetici" bölümü) kartın bağlamını ve maliyetini kurar; müdüre kart maliyetsiz
+ * gider (`wasteCardsFor`).
  */
 
 const DAY_MS = 86_400_000;
@@ -237,8 +239,12 @@ interface CardBase {
 export interface LateWasteCard extends CardBase {
   kind: "zayi-gec";
   p: LateWastePayloadT;
-  /** Malzeme maliyeti (KDV hariç, bugünkü fiyatlarla; engine wasteCost) ve ikramda menü değeri */
-  cost: number;
+  /**
+   * Malzeme maliyeti (KDV hariç, bugünkü fiyatlarla; engine wasteCost): yalnız yöneticinin kartında; müdürün kartında
+   * anahtar yok (docs/ROLLER.md › Müdür; `wasteCardsFor`)
+   */
+  cost?: number;
+  /** İkramda menü değeri (menü fiyatıyla; müdür de görür) */
   menuValue: number | null;
   /** O gün aynı kalemden kayıtlar: "2× Latte M (Mehmet 21:40)" */
   sameDay: string[];
@@ -418,4 +424,20 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
     ];
   });
   return cards.filter((c) => requestInScope(c.branchId, scope));
+}
+
+/**
+ * Onaylar › Zayi ve ikram kartlarının bakana giden hali (docs/ROLLER.md › Müdür): yönetici hepsini maliyetiyle; müdür
+ * yalnız şubesininkileri (şubesi bilinmeyen kart düşer), malzeme maliyeti olmadan. Süzme sunucuda: maliyet müdürün
+ * tarayıcısına (RSC yükü) gitmez.
+ */
+export function wasteCardsFor(viewer: { role: Role; branchId?: string | null }, cards: WasteRequestCard[]): WasteRequestCard[] {
+  if (viewer.role === "admin") return cards;
+  return cards.flatMap((c): WasteRequestCard[] => {
+    if (c.branchId === null || c.branchId !== viewer.branchId) return [];
+    if (c.kind !== "zayi-gec") return [c];
+    const copy: LateWasteCard = { ...c };
+    delete copy.cost;
+    return [copy];
+  });
 }

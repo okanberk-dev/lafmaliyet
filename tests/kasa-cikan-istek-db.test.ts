@@ -42,14 +42,18 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
   let guard: typeof import("../src/server/cash-outs/guard");
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
-  const users: Record<"ali" | "ayse" | "mehmet" | "donen" | "zeynep", Who> = {
+  const users: Record<"ali" | "ayse" | "mehmet" | "donen" | "zeynep" | "fatma", Who> = {
     ali: { id: 0, name: "Ali", role: "admin" },
     ayse: { id: 0, name: "Ayşe", role: "staff" },
     mehmet: { id: 0, name: "Mehmet", role: "staff" },
     donen: { id: 0, name: "Dönen", role: "staff" },
     // Şube testinin personeli (öteki testlerin açık istek sınırına takılmasın)
     zeynep: { id: 0, name: "Zeynep", role: "staff" },
+    // Müdür testinin personeli
+    fatma: { id: 0, name: "Fatma", role: "staff" },
   };
+  /** Müdür (docs/ROLLER.md): çekirdeğe "admin" düzeyinde girer, gerçek rolü `realRole` (src/lib/roles.ts › asActor) */
+  const mudur = { id: 0, name: "Müdür", role: "admin" as const, realRole: "manager" as const };
   const cats = { staff: 0, admin: 0 };
   const dates: string[] = [];
   const photoIds: number[] = [];
@@ -170,6 +174,11 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
         .returning({ id: s.users.id });
       users[k].id = u.id;
     }
+    const [m] = await db
+      .insert(s.users)
+      .values({ email: `kasa-cikan-mudur-${tag}@ornek.com`, name: mudur.name, passwordHash: "x", role: "manager", branchId: "tuzla" })
+      .returning({ id: s.users.id });
+    mudur.id = m.id;
     const [a] = await db.insert(s.expenseCategories).values({ name: `Test market ${tag}`, section: "mal", panelGroup: "diger" }).returning({ id: s.expenseCategories.id });
     const [b] = await db.insert(s.expenseCategories).values({ name: `Test avans ${tag}`, section: "personel", panelGroup: "personel" }).returning({ id: s.expenseCategories.id });
     cats.staff = a.id;
@@ -180,7 +189,7 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
 
   after(async () => {
     if (!db) return;
-    const ids = Object.values(users).map((u) => u.id);
+    const ids = [...Object.values(users).map((u) => u.id), mudur.id];
     await db.delete(s.staffRequests).where(inArray(s.staffRequests.requestedBy, ids));
     const outs = await db.select({ id: s.cashOuts.id }).from(s.cashOuts).where(inArray(s.cashOuts.date, [TODAY, YESTERDAY, OLD, OPEN_DAY]));
     const all = [...new Set([...outIds, ...outs.map((o) => o.id)])];
@@ -563,5 +572,252 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.equal(card(removal.row.id).kind, "foto-kaldir");
     assert.equal(card(removal.row.id).branchId, "marina");
     assert.deepEqual(card(removal.row.id).branch, { id: "marina", name: "Marina" });
+  });
+
+  test("müdür ('admin' düzeyinde) kategoride personelin kuralına bağlı: onayda ve doğrudan kayıtta yöneticinin kategorisine yazamaz; o kategorideki satıra dokunamaz, isteğine karar veremez", async () => {
+    const ADMIN_CAT = "Bu kategoriye yalnız yönetici yazabilir";
+    // Ekleme isteğinin onayı: yöneticinin kategorisi (maaş, avans) reddedilir, istek bekler; personelin kategorisiyle yazılır
+    const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 61.5 }), clientKey: key() });
+    await refused(review(mudur, add.row.id, add.row.version, "approve", { toExpenses: true, categoryId: cats.admin }), ADMIN_CAT);
+    assert.equal((await requestOf(add.row.id)).status, "pending");
+    const ok = await review(mudur, add.row.id, add.row.version, "approve", { toExpenses: true, categoryId: cats.staff });
+    assert.ok(ok.status === "approved" && ok.op === "ekle");
+    outIds.push(ok.cashOutId);
+    assert.equal((await expenseOf(ok.cashOutId))?.categoryId, cats.staff);
+    // Düzeltme onayı: satırı yöneticinin kategorisine taşıyamaz
+    const plain = await adminRow(YESTERDAY, { amount: 30 });
+    const fix = await propose(users.fatma, { op: "duzelt", cashOutId: plain, line: line({ amount: 31, store: "Bim", description: "buz" }), clientKey: key() });
+    await refused(review(mudur, fix.row.id, fix.row.version, "approve", { toExpenses: true, categoryId: cats.admin }), ADMIN_CAT);
+    assert.equal((await expenseOf(plain))?.categoryId, cats.staff);
+    await review(mudur, fix.row.id, fix.row.version, "reject");
+    // Personelin kategorisindeki satırı doğrudan düzeltir (kıyas)
+    const edit = (id: number, o: { amount: number; categoryId: number | null; kind?: "harcama" | "teslim" }) =>
+      db.transaction(async (tx) => {
+        const prev = await write.lockCashOut(tx, id);
+        const harcama = (o.kind ?? "harcama") === "harcama";
+        return write.writeCashOut(
+          tx,
+          mudur,
+          { id, date: YESTERDAY, kind: o.kind ?? "harcama", amount: o.amount, store: "Bim", description: "buz", receiptDate: null, receiptNo: null, vat: null, docType: "yok", categoryId: harcama ? o.categoryId : null, toExpenses: harcama && o.categoryId !== null, photoId: null },
+          { prev },
+        );
+      });
+    assert.equal((await edit(plain, { amount: 32, categoryId: cats.staff })).updated, true);
+    assert.equal((await expenseOf(plain))?.amount, 32);
+
+    // Yöneticinin kategorisindeki satır (maaş, avans): müdür düzeltme isteğine karar vermez; onay (kategori kalsa, personelin
+    // kategorisine taşınsa, kaydı kaldırılsa) da ret de yöneticinin, istek bekler
+    const salary = await adminRow(YESTERDAY, { amount: 1_000, categoryId: cats.admin });
+    const fix2 = await propose(users.fatma, { op: "duzelt", cashOutId: salary, line: line({ amount: 1_100, store: "Bim", description: "buz", categoryId: null }), clientKey: key() });
+    for (const o of [{ toExpenses: true, categoryId: null }, { toExpenses: true, categoryId: cats.staff }, { toExpenses: false }]) {
+      await refused(review(mudur, fix2.row.id, fix2.row.version, "approve", o), CASH_OUT_REQUEST_TEXT.ownerReview);
+    }
+    await refused(review(mudur, fix2.row.id, fix2.row.version, "reject"), CASH_OUT_REQUEST_TEXT.ownerReview);
+    assert.equal((await requestOf(fix2.row.id)).status, "pending");
+    assert.deepEqual([(await outOf(salary)).amount, (await expenseOf(salary))?.categoryId, (await expenseOf(salary))?.amount], [1_000, cats.admin, 1_000]);
+    // Yönetici onaylar: tutar düzelir, kategori kalır
+    const r2 = await review(users.ali, fix2.row.id, fix2.row.version, "approve", { toExpenses: true, categoryId: null });
+    assert.ok(r2.status === "approved" && r2.op === "duzelt");
+    assert.deepEqual([(await expenseOf(salary))?.categoryId, (await expenseOf(salary))?.amount], [cats.admin, 1_100]);
+    // Silme isteğinin onayı da yöneticinin: satır ve maaş kaydı kalır
+    const del2 = await propose(users.fatma, { op: "sil", cashOutId: salary, clientKey: key() });
+    await refused(review(mudur, del2.row.id, del2.row.version, "approve"), CASH_OUT_REQUEST_TEXT.ownerReview);
+    assert.equal((await requestOf(del2.row.id)).status, "pending");
+    assert.ok(await outOf(salary), "satır silinmedi");
+    assert.equal((await expenseOf(salary))?.categoryId, cats.admin, "maaş kaydı silinmedi");
+    await review(users.ali, del2.row.id, del2.row.version, "reject");
+    // Doğrudan da: tutarı düzeltemez, personelin kategorisine taşıyamaz, teslime çevirip kaydı kaldıramaz
+    for (const o of [
+      { amount: 1_200, categoryId: cats.admin },
+      { amount: 1_100, categoryId: cats.staff },
+      { amount: 1_100, categoryId: null, kind: "teslim" as const },
+    ]) {
+      await refused(edit(salary, o), CASH_OUT_REQUEST_TEXT.ownerRow);
+    }
+    assert.deepEqual([(await outOf(salary)).kind, (await outOf(salary)).amount, (await expenseOf(salary))?.categoryId, (await expenseOf(salary))?.amount], ["harcama", 1_100, cats.admin, 1_100]);
+    // Silme kapısı (deleteCashOut çağırır): müdür reddedilir, yönetici ve personel geçer (personelin kuralı kapıda: istek)
+    await db.transaction(async (tx) => {
+      await refused(write.assertOwnerRowOpen(tx, mudur, salary), CASH_OUT_REQUEST_TEXT.ownerRow);
+      await write.assertOwnerRowOpen(tx, mudur, plain);
+      await write.assertOwnerRowOpen(tx, users.ali, salary);
+      await write.assertOwnerRowOpen(tx, { id: 0, name: "LafPOS", role: "admin" }, salary);
+    });
+    // Doğrudan kayıt: yeni satır yöneticinin kategorisine yazılmaz; geri alma silinen kaydın kategorisini getirir
+    const direct = (restore: boolean) =>
+      db.transaction((tx) =>
+        write.writeCashOut(
+          tx,
+          mudur,
+          { id: null, date: OPEN_DAY, kind: "harcama", amount: 45, store: null, description: "avans", receiptDate: null, receiptNo: null, vat: null, docType: "yok", categoryId: cats.admin, toExpenses: true, photoId: null },
+          { restore, branchId: "tuzla" },
+        ),
+      );
+    await refused(direct(false), ADMIN_CAT);
+    const back = await direct(true);
+    outIds.push(back.id);
+    assert.equal((await expenseOf(back.id))?.categoryId, cats.admin);
+  });
+
+  test("Onaylar kartı müdüre yöneticinin kategorisinin adını, öteki şubenin ve maaş kaydının olası tekrarını taşımaz (tarayıcıya giden kart)", async () => {
+    marinaAdded =
+      (await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing().returning({ id: s.branches.id }))
+        .length > 0 || marinaAdded;
+    const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
+    const ADMIN_NAME = `Test avans ${tag}`;
+    // Bağlı gideri yöneticinin kategorisinde (maaş, avans) ve personelin kategorisinde iki satır: düzeltme ve silme isteği
+    const salary = await adminRow(YESTERDAY, { amount: 2_222, categoryId: cats.admin });
+    const plain = await adminRow(YESTERDAY, { amount: 33 });
+    const fix = await propose(users.fatma, { op: "duzelt", cashOutId: salary, line: line({ amount: 2_300, store: "Bim", description: "buz", categoryId: null }), clientKey: key() });
+    const del = await propose(users.fatma, { op: "sil", cashOutId: plain, clientKey: key() });
+    // Ekleme isteğiyle aynı tutar: Tuzla'nın satırı, Marina'nın satırı, Tuzla'nın maaş kaydı ve personel kategorisindeki kaydı
+    const SAME = 987.65;
+    const tuzlaRow = await adminRow(YESTERDAY, { amount: SAME });
+    const marinaRow = await db.transaction((tx) =>
+      write.writeCashOut(
+        tx,
+        users.ali,
+        { id: null, date: YESTERDAY, kind: "harcama", amount: SAME, store: `Marina dükkân ${tag}`, description: null, receiptDate: null, receiptNo: null, vat: null, docType: "yok", categoryId: cats.staff, toExpenses: true, photoId: null },
+        { branchId: "marina" },
+      ),
+    );
+    outIds.push(marinaRow.id);
+    const entries = await db
+      .insert(s.expenseEntries)
+      .values([
+        { branchId: "tuzla", date: YESTERDAY, categoryId: cats.admin, description: `Maaş avansı ${tag}`, amount: SAME },
+        { branchId: "tuzla", date: YESTERDAY, categoryId: cats.staff, description: `Buz faturası ${tag}`, amount: SAME },
+      ])
+      .returning({ id: s.expenseEntries.id });
+    const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: SAME }), clientKey: key() });
+    try {
+      const cardIn = (cards: Awaited<ReturnType<typeof loadCashRequestQueue>>, id: number) => {
+        const c = cards.find((x) => x.id === id);
+        assert.ok(c && c.kind === "kasa-cikan", `kart ${id}`);
+        return c;
+      };
+      // Müdür (Tuzla, kategori.tum yok): yöneticinin kategorisi adsız; personelinki adıyla
+      const m = await loadCashRequestQueue(NOW, "tuzla", true, false);
+      assert.deepEqual(cardIn(m, fix.row.id).expense, { categoryName: null, admin: true });
+      assert.deepEqual(cardIn(m, del.row.id).expense, { categoryName: `Test market ${tag}`, admin: false });
+      // Yöneticinin kategorisindeki satırın isteğine müdür karar vermez (kart düğme çizmez; sunucu da reddeder)
+      assert.deepEqual([cardIn(m, fix.row.id).ownerDecides, cardIn(m, del.row.id).ownerDecides, cardIn(m, add.row.id).ownerDecides], [true, false, false]);
+      // Olası tekrar: yalnız Tuzla'nın satırı ve personel kategorisindeki kayıt
+      const mDup = cardIn(m, add.row.id).context.duplicates;
+      assert.equal(mDup.length, 2, mDup.join(" | "));
+      assert.ok(mDup.some((d) => d.startsWith("Bim · buz · ") && d.endsWith("kasadan çıkan")), mDup.join(" | "));
+      assert.ok(mDup.some((d) => d.startsWith(`Buz faturası ${tag}`)), mDup.join(" | "));
+      // Tarayıcıya giden kartların hiçbirinde yöneticinin kategorisinin adı, maaş kaydı ve öteki şubenin satırı yok
+      const sent = JSON.stringify(m);
+      for (const secret of [ADMIN_NAME, `Maaş avansı ${tag}`, `Marina dükkân ${tag}`]) assert.ok(!sent.includes(secret), secret);
+      // Yönetici: adı da, bütün şubelerin ve kategorilerin olası tekrarı da gelir
+      const a = await loadCashRequestQueue(NOW);
+      assert.deepEqual(cardIn(a, fix.row.id).expense, { categoryName: ADMIN_NAME, admin: true });
+      assert.equal(cardIn(a, fix.row.id).ownerDecides, false, "yönetici karar verir");
+      const aDup = cardIn(a, add.row.id).context.duplicates;
+      assert.equal(aDup.length, 4, aDup.join(" | "));
+      for (const want of [`Marina dükkân ${tag}`, `Maaş avansı ${tag}`, `Buz faturası ${tag}`]) assert.ok(aDup.some((d) => d.startsWith(want)), want);
+      assert.equal((await outOf(tuzlaRow)).branchId, "tuzla");
+    } finally {
+      for (const x of [fix, del, add]) await review(users.ali, x.row.id, x.row.version, "reject");
+      await db.delete(s.expenseEntries).where(inArray(s.expenseEntries.id, entries.map((e) => e.id)));
+    }
+  });
+
+  test("Onaylar kartı müdüre yöneticinin kategorisindeki satırın yalnız tutarını taşır: yeri, açıklaması, fişi, önerisi ve notu yok (günün satırlarında ve olası tekrarda da)", async () => {
+    const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
+    // Serbest metin kişinin adını ve ücretini taşır ("Selin · Kasım avansı")
+    const SECRETS = [`Selin ${tag}`, `Kasım avansı ${tag}`, `Aralık avansı ${tag}`, `AV-${tag}`, `avansı yanlış ${tag}`];
+    const receipt = await photo(users.ali);
+    const salary = await db.transaction((tx) =>
+      write.writeCashOut(tx, users.ali, {
+        id: null,
+        date: YESTERDAY,
+        kind: "harcama",
+        amount: 3_333,
+        store: `Selin ${tag}`,
+        description: `Kasım avansı ${tag}`,
+        receiptDate: null,
+        receiptNo: `AV-${tag}`,
+        vat: null,
+        docType: "fis",
+        categoryId: cats.admin,
+        toExpenses: true,
+        photoId: receipt,
+      }),
+    );
+    outIds.push(salary.id);
+    // Personel maaş satırının metnini ve tutarını düzeltmek ister (onaya gider); aynı tutarda bir ekleme ister (olası tekrar)
+    const fix = await propose(users.fatma, {
+      op: "duzelt",
+      cashOutId: salary.id,
+      line: line({ amount: 3_400, store: `Selin ${tag}`, description: `Aralık avansı ${tag}`, receiptNo: `AV-${tag}`, docType: "fis", categoryId: null, photoId: receipt }),
+      message: `avansı yanlış ${tag}`,
+      clientKey: key(),
+    });
+    const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 3_333, store: "Bim", description: "buz" }), clientKey: key() });
+    try {
+      const cardIn = (cards: Awaited<ReturnType<typeof loadCashRequestQueue>>, id: number) => {
+        const c = cards.find((x) => x.id === id);
+        assert.ok(c && c.kind === "kasa-cikan", `kart ${id}`);
+        return c;
+      };
+      const m = await loadCashRequestQueue(NOW, "tuzla", true, false);
+      const card = cardIn(m, fix.row.id);
+      assert.equal(card.ownerDecides, true);
+      assert.deepEqual(
+        [card.line?.amount, card.line?.store, card.line?.description, card.line?.receiptNo, card.line?.photoId],
+        [3_400, null, null, null, null],
+        "öneri yalnız tutarıyla",
+      );
+      assert.deepEqual([card.before?.amount, card.before?.store, card.before?.description, card.before?.receiptNo, card.before?.photoId], [3_333, null, null, null, null], "satır yalnız tutarıyla");
+      assert.deepEqual(card.changes, ["Tutar: 3.333\u00a0₺ → 3.400\u00a0₺"], "değişikliklerde yalnız tutar");
+      assert.deepEqual([card.photoId, card.message], [null, null], "fiş ve personelin notu yok");
+      const row = card.context.lines.find((l) => l.id === salary.id);
+      assert.deepEqual([row?.label, row?.amount, row?.photo], ["Harcama", 3_333, false], "günün satırlarında adsız ve fişsiz");
+      // Tarayıcıya giden kartların hiçbirinde (olası tekrar dahil) satırın metni yok
+      const sent = JSON.stringify(m);
+      for (const secret of SECRETS) assert.ok(!sent.includes(secret), `müdürün kartlarında yok: ${secret}`);
+      // Yönetici bütün satırı, öneriyi, fişi, notu ve olası tekrarı görür
+      const a = await loadCashRequestQueue(NOW);
+      const full = cardIn(a, fix.row.id);
+      assert.deepEqual([full.before?.store, full.line?.description, full.photoId, full.message], [`Selin ${tag}`, `Aralık avansı ${tag}`, receipt, `avansı yanlış ${tag}`]);
+      assert.ok(full.changes.some((c) => c.includes(`Aralık avansı ${tag}`)), full.changes.join(" | "));
+      assert.equal(full.context.lines.find((l) => l.id === salary.id)?.label, `Selin ${tag} · Kasım avansı ${tag}`);
+      assert.ok(cardIn(a, add.row.id).context.duplicates.some((d) => d.startsWith(`Selin ${tag}`)), cardIn(a, add.row.id).context.duplicates.join(" | "));
+    } finally {
+      for (const x of [fix, add]) await review(users.ali, x.row.id, x.row.version, "reject");
+    }
+  });
+
+  test("müdür ('admin' düzeyinde) başkasının bağsız fişini kendi satırına bağlayamaz (öteki şubenin fotoğrafı); onayladığı isteğin fişini bağlar", async () => {
+    const gone = /Fotoğraf bulunamadı/;
+    const foreign = await photo(users.fatma);
+    // Doğrudan yeni satır
+    await refused(
+      db.transaction((tx) =>
+        write.writeCashOut(
+          tx,
+          mudur,
+          { id: null, date: OPEN_DAY, kind: "harcama", amount: 12, store: null, description: "buz", receiptDate: null, receiptNo: null, vat: null, docType: "fis", categoryId: cats.staff, toExpenses: true, photoId: foreign },
+          { branchId: "tuzla" },
+        ),
+      ),
+      gone,
+    );
+    // Fotoğrafsız satıra fiş: başkasınınki hayır, kendi yüklediği evet
+    const bare = await adminRow(OPEN_DAY, { amount: 14 });
+    await refused(reqs.attachCashOutReceiptCore(db, mudur, { cashOutId: bare, photoId: foreign }, OPEN_NOW), gone);
+    assert.equal((await photoOf(foreign)).linkedAt, null, "fotoğraf bağlanmadı");
+    const own = await photo(mudur);
+    await reqs.attachCashOutReceiptCore(db, mudur, { cashOutId: bare, photoId: own }, OPEN_NOW);
+    assert.equal((await outOf(bare)).photoId, own);
+    // Onay: isteğin tuttuğu personel fişi bağlanır
+    const held = await photo(users.fatma);
+    const out = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 23, photoId: held, docType: "fis" }), clientKey: key() });
+    const r = await review(mudur, out.row.id, out.row.version, "approve");
+    assert.ok(r.status === "approved" && r.op === "ekle");
+    outIds.push(r.cashOutId);
+    assert.equal((await outOf(r.cashOutId)).photoId, held);
+    assert.notEqual((await photoOf(held)).linkedAt, null);
   });
 });

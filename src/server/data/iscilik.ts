@@ -9,10 +9,12 @@ import {
   dailyRows,
   dayRange,
   laborDays,
+  laborRow,
   missingWages,
   sumDays,
   weekStart,
   weeklyRows,
+  withoutDayWages,
   type LaborBranchInput,
   type LaborDay,
   type LaborPerson,
@@ -22,8 +24,9 @@ import {
 import { cellReader } from "@/lib/kiyas";
 import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
-import { requireAdmin } from "@/server/auth/dal";
-import { withBranchScope } from "@/server/branch-scope";
+import { can } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
@@ -31,21 +34,35 @@ import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
+/** Gelir-gider'in ayı: personel (işveren maliyeti, part-time'ın Vardiya'daki günleriyle) ve ciro (KDV hariç) */
+type WageMonth = { labor: number; revenue: number | null; ratio: number | null };
+
+/** Ekrandaki satır: işçilik tutarı (₺) yalnız kişisel ücreti görende (yönetici); müdürde null, oran kalır */
+export type LaborRowShown = Omit<LaborRow, "labor"> & { labor: number | null };
+
 /** Bir şubenin (ya da Tümü'nün) raporu */
 export interface LaborBranchReport {
   id: string;
   name: string;
-  /** Gelir-gider'in ayı: personel (işveren maliyeti) ve ciro (KDV hariç); cirosu girilmediyse null */
-  month: { labor: number; revenue: number | null; ratio: number | null };
-  /** Ayın günleri (yalnız seçilen ay, bugüne kadar) ve haftaları (pazartesiden pazara, ayın dışına taşan günlerle) */
-  days: LaborRow[];
-  weeks: LaborRow[];
-  /** Günlerin işçilik toplamı (seçilen ay); Gelir-gider'in personelinden 1 ₺'den çok ayrılıyorsa ekranda not */
-  daysLabor: number;
+  /**
+   * Yönetici: Gelir-gider'in ayı, personel (işveren maliyeti) ve ciro (KDV hariç); cirosu girilmediyse null. Müdür: ayın
+   * günlerinin satırı (bugüne kadar, aylık ücretlerle), tutarı null
+   */
+  month: { labor: number | null; revenue: number | null; ratio: number | null };
+  /** Ayın günleri (yalnız seçilen ay, bugüne kadar; müdürde boş) ve haftaları (pazartesiden pazara, ayın dışına taşan günlerle) */
+  days: LaborRowShown[];
+  weeks: LaborRowShown[];
+  /** Günlerin işçilik toplamı (seçilen ay); Gelir-gider'in personelinden 1 ₺'den çok ayrılıyorsa ekranda not. Müdürde null */
+  daysLabor: number | null;
 }
 
 export interface LaborReport {
   month: string;
+  /**
+   * Kişisel ücretli görünüm (`maas` yeteneği, yönetici): işçilik tutarı, günlük görünüm, part-time'ın Vardiya'daki günü.
+   * Değilse (müdür; docs/ROLLER.md) part-time'ın günlük ücreti sayılmaz (`withoutDayWages`), tutar yok, yalnız oran
+   */
+  wages: boolean;
   /** Süren ayda bugün (iş günü); geçmiş ayda ayın son günü */
   through: string;
   branches: LaborBranchReport[];
@@ -55,12 +72,18 @@ export interface LaborReport {
 }
 
 /**
- * İşçilik / ciro raporu (docs/RAPORLAR.md › İşçilik / ciro; hesap src/lib/iscilik.ts). Yalnız yönetici; soldaki seçiciden
- * bağımsız, açık fiziksel şubeler kendi görünümüyle (Gelir-gider'in şube hesabı: kişiler o şubenin, o ayın maaşıyla;
- * part-time'ın çalıştığı günler Vardiya'dan). Günün cirosu kasa satırından (Kıyas'ın hücresi). Açık şube yoksa null.
+ * İşçilik / ciro raporu (docs/RAPORLAR.md › İşçilik / ciro; hesap src/lib/iscilik.ts). Yönetici ve müdür; soldaki
+ * seçiciden bağımsız, açık fiziksel şubeler kendi görünümüyle (Gelir-gider'in şube hesabı: kişiler o şubenin, o ayın
+ * maaşıyla; part-time'ın çalıştığı günler Vardiya'dan). Günün cirosu kasa satırından (Kıyas'ın hücresi). Açık şube yoksa
+ * null. Müdürün raporu kişisel ücretsiz (`wages` false): Vardiya'ya bağlı hiçbir rakam yok, tutar yok, günlük satır yok.
  */
 export async function loadLaborReport(month: string, now: Date = new Date()): Promise<LaborReport | null> {
-  await requireAdmin();
+  // Yönetici ve müdür; müdürde yalnız kendi şubesi (kilit oturumdan; withBranchScope("hepsi") da şubesine daralır)
+  const me = await requireCan("rapor.sube");
+  // Kişisel ücret (Maaşlar'ın yeteneği) yalnız yöneticide: müdürün rakamları part-time'ın günlük ücretini taşımaz
+  // (docs/ROLLER.md › Kararlar; kendi yazdığı Vardiya hücresinin öncesi ve sonrası o kişinin ücretini verirdi)
+  const wages = can(me.role, "maas");
+  const lock = await staffBranchLock();
   const db = getDb();
   const today = businessDate(now);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
@@ -72,7 +95,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   if (`${month}-01` > today) return null;
 
   const all = await listBranches(db);
-  const branches = tillBranches(all);
+  const branches = tillBranches(all).filter((b) => lock === null || b.id === lock);
   if (!branches.length) return null;
   const range = dayRange(from, to);
   const months = [...new Set(range.map((d) => d.slice(0, 7)))];
@@ -99,7 +122,8 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   });
 
   const missing: LaborReport["missing"] = [];
-  const perBranch: { b: (typeof branches)[number]; days: LaborDay[]; month: LaborBranchReport["month"] }[] = [];
+  /** Şubenin günleri; ayı yalnız yöneticide Gelir-gider'den (müdürde null: ayın günlerinden) */
+  const perBranch: { b: (typeof branches)[number]; days: LaborDay[]; month: WageMonth | null }[] = [];
   branches.forEach((b, i) => {
     const model = models[i];
     const st = model.settings;
@@ -113,7 +137,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
     const people: Record<string, LaborPerson[]> = {};
     const netFactor: Record<string, number> = {};
     for (const m of months) {
-      people[m] = model.personnelFor(m).rows.map((r): LaborPerson => {
+      const list = model.personnelFor(m).rows.map((r): LaborPerson => {
         if (!isPartTime(r.staff)) return { name: r.staff.name, kind: "full_time", monthly: r.total, perDay: 0, workDays: null };
         const ref = staffShiftRef(r.staff);
         return {
@@ -124,6 +148,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
           workDays: ref ? (shiftDays.get(ref) ?? []).filter((d) => d.startsWith(m)) : null,
         };
       });
+      people[m] = wages ? list : withoutDayWages(list);
       if (m === month) for (const x of missingWages(m, people[m])) missing.push({ ...x, branch: b.name });
       const c = model.pnlMonth(m);
       if (c.revenue && c.revenueNet !== null && c.revenue > 0) netFactor[m] = c.revenueNet / c.revenue;
@@ -140,18 +165,26 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
         return c.kind === "satis" ? { kind: "satis", gross: c.revenue } : c;
       },
     };
-    const c = model.pnlMonth(month);
-    const revenue = c.revenueTotalNet;
+    // Gelir-gider'in personeli part-time'ın Vardiya'daki günleriyle: yalnız yöneticide
+    const c = wages ? model.pnlMonth(month) : null;
+    const revenue = c ? c.revenueTotalNet : null;
     perBranch.push({
       b,
       days: laborDays(input, range),
-      month: { labor: c.sections.personel, revenue, ratio: revenue ? c.sections.personel / revenue : null },
+      month: c ? { labor: c.sections.personel, revenue, ratio: revenue ? c.sections.personel / revenue : null } : null,
     });
   });
 
   const inMonth = (d: LaborDay) => d.date.startsWith(month) && d.date <= through;
-  const report = (id: string, name: string, days: LaborDay[], m: LaborBranchReport["month"]): LaborBranchReport => {
+  /** `m` Gelir-gider'in ayı; yalnız yöneticide var (null: müdürün kişisel ücretsiz raporu) */
+  const report = (id: string, name: string, days: LaborDay[], m: WageMonth | null): LaborBranchReport => {
     const monthDays = days.filter(inMonth);
+    if (!m) {
+      // Müdür: ay da günlerinden (aylık ücretlerle); tutar yok (oran × ciro onu verir, ama rakam Vardiya'dan bağımsız), günlük satır yok
+      const shown = (r: LaborRow): LaborRowShown => ({ ...r, labor: null });
+      const whole = laborRow(month, monthDays);
+      return { id, name, month: { labor: null, revenue: whole.revenue, ratio: whole.ratio }, days: [], weeks: weeklyRows(days).map(shown), daysLabor: null };
+    }
     return {
       id,
       name,
@@ -164,10 +197,11 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   const out = perBranch.map((x) => report(x.b.id, x.b.name, x.days, x.month));
   let total: LaborBranchReport | null = null;
   if (perBranch.length > 1) {
-    const labor = perBranch.reduce((a, x) => a + x.month.labor, 0);
+    const own = perBranch.flatMap((x) => (x.month ? [x.month] : []));
+    const labor = own.reduce((a, x) => a + x.labor, 0);
     // Bir şubenin cirosu girilmemişse toplamın cirosu da bilinmiyor (işçiliği sayılıp cirosu sayılmasaydı oran şişerdi)
-    const revenue = perBranch.every((x) => x.month.revenue !== null) ? perBranch.reduce((a, x) => a + (x.month.revenue ?? 0), 0) : null;
-    total = report(ALL_BRANCHES, "Şubelerin toplamı", sumDays(perBranch.map((x) => x.days)), { labor, revenue, ratio: revenue ? labor / revenue : null });
+    const revenue = own.every((x) => x.revenue !== null) ? own.reduce((a, x) => a + (x.revenue ?? 0), 0) : null;
+    total = report(ALL_BRANCHES, "Şubelerin toplamı", sumDays(perBranch.map((x) => x.days)), wages ? { labor, revenue, ratio: revenue ? labor / revenue : null } : null);
   }
-  return { month, through, branches: out, total, missing };
+  return { month, wages, through, branches: out, total, missing };
 }

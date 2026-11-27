@@ -16,6 +16,7 @@ import postgres from "postgres";
 
 import { currentMonthTR, shiftMonth } from "../src/lib/calc/engine";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.RAPOR_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_raporlar_${process.pid}`;
@@ -53,7 +54,7 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
     const [ali] = await db.insert(s.users).values({ email: "ali@laffogato.net", name: "Ali", passwordHash: "x", role: "staff" }).returning();
     aliId = ali.id;
     const me = async () => ({ ...a, role: "admin" as const });
-    stub(require.resolve("../src/server/auth/dal"), { requireUser: me, requireAdmin: me });
+    stub(require.resolve("../src/server/auth/dal"), { requireUser: me, requireAdmin: me, ...dalCapabilities(me) });
 
     // Marina (LafPOS'a geçilmedi: geçiş günü yok); Tuzla migration'la gelir
     await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "lafpos", sortOrder: 2 }).onConflictDoNothing();
@@ -136,13 +137,15 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
   test("İşçilik / ciro: ayın satırı Gelir-gider'in personeli; günlerin toplamı onu tutar; ücreti olmayan kişi yazılır", async () => {
     const data = await labor.loadLaborReport(PREV);
     assert.ok(data, "rapor var");
+    assert.equal(data.wages, true, "yönetici kişisel ücretli görünümü alır");
     const t = data.branches.find((b) => b.id === "tuzla")!;
     const tuzla = (await loadModel({ scope: "tuzla" })).pnlMonth(PREV);
-    assert.ok(Math.abs(t.month.labor - tuzla.sections.personel) < 0.01, `ay: ${t.month.labor} ↔ ${tuzla.sections.personel}`);
-    assert.ok(Math.abs(t.daysLabor - t.month.labor) < 1, `günlerin toplamı ${t.daysLabor} ↔ Gelir-gider ${t.month.labor}`);
+    const monthLabor = t.month.labor ?? NaN;
+    assert.ok(Math.abs(monthLabor - tuzla.sections.personel) < 0.01, `ay: ${t.month.labor} ↔ ${tuzla.sections.personel}`);
+    assert.ok(Math.abs((t.daysLabor ?? NaN) - monthLabor) < 1, `günlerin toplamı ${t.daysLabor} ↔ Gelir-gider ${t.month.labor}`);
     const day1 = t.days.find((r) => r.from === d(1))!;
     const day4 = t.days.find((r) => r.from === d(4))!;
-    assert.ok(Math.abs(day1.labor - day4.labor - 1_000) < 0.01, "Can'ın günlük ücreti çalıştığı güne");
+    assert.ok(Math.abs((day1.labor ?? NaN) - (day4.labor ?? NaN) - 1_000) < 0.01, "Can'ın günlük ücreti çalıştığı güne");
     assert.equal(day4.revenue, null, "raporu olmayan gün: veri yok");
     assert.ok(day1.ratio !== null && day1.ratio > 0, "raporlu günün oranı");
     assert.deepEqual(

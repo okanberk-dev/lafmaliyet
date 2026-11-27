@@ -1032,7 +1032,7 @@ function bodyOf(src: string, name: string): string {
 
 test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız adminFacts'te, zayi yalnız staffFacts'te", () => {
   const page = read("src/app/panel/bugun/page.tsx");
-  assert.match(page, /await requireUser\(\)/);
+  assert.match(page, /await requireCan\("kayit\.yaz"\)/);
   assert.doesNotMatch(page, /requireAdmin/);
 
   const src = read("src/server/data/today.ts");
@@ -1094,7 +1094,7 @@ test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (pers
   const src = read("src/server/data/today.ts");
   const adminBody = bodyOf(src, "adminFacts");
   const load = bodyOf(src, "loadToday");
-  assert.match(load, /safe\(loadChecklistDays\(\[c\.day, c\.yesterday\], user\.role, now\)\)/);
+  assert.match(load, /safe\(loadChecklistDays\(\[c\.day, c\.yesterday\], adminLevel\(user\.role\), now\)\)/);
   assert.match(load, /checklists: checklists \? \{ day: c\.day, lists: checklists\.get\(c\.day\) \?\? \[\] \} : null,/);
   assert.match(load, /checklistsYesterday: checklists \? \{ day: c\.yesterday, lists: checklists\.get\(c\.yesterday\) \?\? \[\] \} : null,/);
   assert.doesNotMatch(adminBody, /loadChecklistDay/);

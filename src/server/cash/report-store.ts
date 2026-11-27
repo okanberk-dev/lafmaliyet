@@ -20,6 +20,7 @@ import {
 } from "@/lib/cash-report";
 import { CASH_OUT_NOTE_REQUIRED, cashOutNoteMissing, cashOutNoteOf, type CashOutKind } from "@/lib/cash-outs";
 import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
+import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
 import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
 import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
@@ -27,6 +28,7 @@ import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
+import { linksAnyPhoto } from "@/lib/roles";
 import { HANDED_TO_BANK, HANDED_TO_MAX, handedToMissing, handedToName, HANDOVER_TEXT, type HandedToInput } from "@/lib/teslim";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { assertBlindCount } from "@/server/cash/blind-count";
@@ -58,6 +60,11 @@ export interface CashActor {
   id: number;
   name: string;
   role: "admin" | "staff";
+  /**
+   * Gerçek rol (src/lib/roles.ts › asActor): müdür "admin" düzeyinde yazar ama başkasının fotoğrafını bağlayamaz. Elle
+   * kurulan kişide yok: düzeyin kendisi sayılır
+   */
+  realRole?: Role;
 }
 
 export type CashReportRow = typeof s.cashReports.$inferSelect;
@@ -429,7 +436,8 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
     for (const id of ids) {
       const p = await getPhoto(id, tx);
       // kasa-okc: yazarkasa Z'si; geçişte eski sayfanın banka POS fotoğrafı da sunucuda kasa-okc olur (okc-z.md D2)
-      if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos" && p.kind !== "kasa-okc") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
+      // Başkasının fotoğrafı: yalnız yönetici; müdür onayladığı geç raporun fotoğraflarını (heldBy) bağlar (linksAnyPhoto)
+      if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos" && p.kind !== "kasa-okc") || !linkable(p) || (!linksAnyPhoto(actor, o.heldBy !== undefined) && p.createdBy !== actor.id)) {
         throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
       }
       // Yazarkasa Z bölümüne en çok 3 fotoğraf (uzun fişin parçaları)

@@ -11,7 +11,8 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { featureBranches, featureInScope } from "@/lib/branch-features";
 import { tillBranches } from "@/lib/branches";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
 import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
@@ -69,7 +70,7 @@ export default function SiparislerPage() {
 }
 
 async function SiparislerContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const configured = Boolean(siteLinkSecret());
   const now = new Date().getTime();
   // Sipariş satırının reçetesi: laffogato.net menüsüne bağlı ürünler (kalem + yuva → ürün adı; reçete defterinde aranır)

@@ -43,34 +43,16 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
 - **P8'e ek:** banka POS Z'sinin ÖZET bölümündeki "Toplam KDV" okunmadı ("fotoğrafta yok"), fiş yanlışlıkla "farklı"
   çıktı: kodla okuma + istem örnekleri + regresyon seti.
-- **Sıra:** P1 → AsilPOS (panel adı, kasa adı, çoklu şube + Marina) → P2 → şube ayrımı → P3–P9. P2 (#165) hazır ve
+- **Sıra:** P1 (bitti) → AsilPOS (panel adı, kasa adı, çoklu şube + Marina) → P2 → şube ayrımı → P3–P9. P2 (#165) hazır ve
   main'in #164'ten beri düşen iki testini düzeltiyor: önce o birleşir.
 - **Durum (27 Kasım gece):** P1'in 12 bulgusu ve iki ek maddesi testleriyle düzeltildi (`wip/entegre3-fix`, #163);
   ikinci bağımsız inceleme yarıda (kullanım limiti). Kasa deposunda ad değişikliği `asilpos-adi` dalında, incelemesi kaldı.
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
-### P1. Roller + vardiya şube ayarları (dal `wip/entegre3`; düzeltmeler `wip/entegre3-fix`'te başlamış olabilir)
-"Müdür" (şubesine kilitli, maaş görmez) ve salt okunur "Muhasebeci" (docs/ROLLER.md); hazır vardiya saatleri şube ayarı,
-"Tümü"de Vardiya şubeyi sorar. Göç `0096_roller` → main'de 0096 (#160) olduğu için **0097 olarak yeniden üret**.
-PR'dan önce bağımsız incelemenin DOĞRULADIĞI 12 bulguyu düzelt (her birine test):
-1. Müdür, Onaylar'da kasadan çıkan isteğini onaylarken maaş / kira kategorisine yazabiliyor.
-2. Müdürün "admin" düzeyi fotoğraf sahipliği denetimini atlıyor (öteki şubenin fotoğrafını kendi kaydına bağlar).
-3. Müdür kasadan çıkan satırını düzelterek cari ödemesini ve faturaların ödeme durumunu değiştirebiliyor.
-4. Müdür Zayi sayfasında ve Onaylar'daki zayi kartlarında malzeme maliyetini görüyor.
-5. Müdür Kasa raporu sayfasında karaoke ön ödemesini görüyor.
-6. Onaylar'daki kasadan çıkan kartı müdüre yöneticinin kategori adını / bütün listeyi gösteriyor.
-7. Muhasebeci `/api/canli`'dan bütün şubelerin karaoke rezervasyonlarını ve site siparişlerini alıyor.
-8. Kasa ay görünümü müdürün tarayıcısına ayın bütün kasadan çıkan satırlarını kategori adlarıyla gönderiyor.
-9. Kasa e-postasının ham hata metni müdüre / muhasebeciye gidiyor.
-10. Şube kurulumunun e-posta çakışma kapısı muhasebeci hesabını görmüyor.
-11. Yeni cihaz uyarısı müdür / muhasebecinin zilinde yok.
-12. İki adımlı doğrulamanın metinleri ve belgeleri davranışla tutarsız (#154: zorunluluk `ADMIN_2FA_REQUIRED=1` ile).
-Ayrıca bak: Hesabım'daki LafPOS kurulum bağlantısının şubeye kilitli personele görünmesi; vardiya ızgarasında müdüre
-yönetici ekranı bağlantısı; ROLLER.md'deki göç numarası. Düzeltmelerden sonra **ikinci bir bağımsız inceleme** yap
-(yetki: eylemler, okuma sızıntısı, API uçları, e-posta/zil). Birleştirmeden önce canlı veritabanının yedeği alınsın
-(sahip: Ayarlar › Yedek ya da Neon'da dal/anlık kopya). Yeni roller kimseye kendiliğinden verilmez; CHECK kısıtları
-canlıdaki admin/staff verisiyle uyumlu.
+### P1. Roller + vardiya şube ayarları — BİTTİ (#163)
+İlk incelemenin 12 bulgusu ve ikinci bağımsız yetki incelemesinin (eylemler, okuma sızıntısı, API uçları, e-posta / zil)
+doğruladığı 6 bulgu testleriyle düzeltildi; göç 0097_roller. Ayrıntı: YAPILACAKLAR.md › Bitenler.
 
 ### P2. Excel'den tam bağımsızlık — BİTTİ (#164 ve bu PR)
 

@@ -804,7 +804,7 @@ test("eylemler: toplu fiyat ve şube fiyatı yöneticinin; kasaya işle iki rold
   assert.deepEqual(markExports.map((m) => `${m[1]} ${m[2]}`).sort(), ["async function markPosDone", "async function undoPosMarks"]);
   for (const [, , name] of markExports) {
     const body = marks.slice(marks.indexOf(`export async function ${name}`));
-    assert.match(body.slice(0, 300), /return attempt\(async \(\) => \{\s+const me = await requireUser\(\);/, name);
+    assert.match(body.slice(0, 300), /return attempt\(async \(\) => \{\s+const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/, name);
   }
   // Geri alma istemciden fiyat almaz: yalnız işaretin kimliği
   const undoSchema = marks.slice(marks.indexOf("const zUndo"), marks.indexOf(";", marks.indexOf("const zUndo")));
@@ -822,7 +822,7 @@ test("eylemler: toplu fiyat ve şube fiyatı yöneticinin; kasaya işle iki rold
   assert.match(pos, /const tills = await loadTillScopes\(undefined, now\);/);
   assert.match(pos, /for \(const scope of tills\)/);
   assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(scope\) : await staffPosSummary\(scope\)/);
-  assert.match(pos, /posBell\(user\.role, summary, now, scope\.kasa\)/);
+  assert.match(pos, /posBell\(adminLevel\(user\.role\), summary, now, scope\.kasa\)/);
   // Yönetici dizisinin sırası korunur, operasyonun öğeleri uyarıların başında (sayim-ekle testi sonu sabitler)
   assert.match(bell, /\.\.\.invoices, \.\.\.ops, \.\.\.costs\.priceNote, \.\.\.unpriced, \.\.\.costs\.warnings\]/);
 });
@@ -865,7 +865,7 @@ test("kaynak: personelin kasaya işle yükleyicisi sabit sütunlu (beyaz liste),
   const page = read("src/app/panel/kasa/fiyatlar/page.tsx");
   // Personel sayfası yönetici okuyucularından ve Ürünler'den değer almaz
   assert.doesNotMatch(page, /from "@\/server\/data\/prices"|from "@\/app\/panel\/urunler/);
-  assert.match(page, /const me = await requireUser\(\);/);
+  assert.match(page, /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   assert.match(page, /if \(me\.role === "admin"\) redirect\("\/panel\/urunler\/fiyatlar\?sekme=kasa"\);/);
   // Ortak bileşen yönetici yükleyicisinden yalnız tip alır
   const comp = read("src/components/panel/pos-checklist.tsx");

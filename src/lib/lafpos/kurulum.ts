@@ -18,6 +18,18 @@ export function isAnaAdmin(user: { role: string; email: string } | null | undefi
 
 export const ANA_ADMIN_ONLY = "Şube yalnız ana yönetici hesabıyla eklenir";
 
+/**
+ * Hesabım › LafPOS kurulumu kartını gören tek hesap: şubenin kendi hesabı, yani bağlantının gittiği adresteki, o şubeye
+ * kilitli personel hesabı (büyük-küçük harf ve boşluk fark etmez). Şubenin öbür personeli (ortak tablette sırayla giren
+ * baristalar), müdürü, muhasebeci ve yönetici görmez: bağlantıdaki kod kasanın eşitleme anahtarını verir
+ * (POST /api/lafpos/kurulum) ve tek kullanımlıktır. Şube hesabı yalnız personel olabilir (`branchEmailTaken`); yönetici
+ * bağlantıyı Şubeler'de görür (yalnız ana yönetici)
+ */
+export function isBranchAccount(user: { role: string; email: string; branchId?: string | null }, install: { branchId: string; email: string }): boolean {
+  const norm = (v: string) => v.trim().toLowerCase();
+  return user.role === "staff" && !!user.branchId && user.branchId === install.branchId && norm(user.email) === norm(install.email);
+}
+
 /** Kurulum kodu ve indirme bağlantısının ömrü */
 export const KURULUM_GUN = 14;
 /** Kod: 32 bayt rastgele, base64url (43 karakter); LafPOS 24–128 karakter, harf-rakam-alt çizgi-tire kabul eder */

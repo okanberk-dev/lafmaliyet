@@ -11,6 +11,7 @@
  * Saf: veritabanına ve Next'e bağlı değil; `tests/sube-ozellik.test.ts` doğrudan çalıştırır.
  */
 
+import type { Role } from "./constants";
 import { ALL_BRANCHES, type BranchRow, type BranchScope, DEFAULT_BRANCH_ID } from "./branches";
 
 export type BranchFeature = (typeof BRANCH_FEATURE_IDS)[number];
@@ -115,7 +116,7 @@ export function featureInScope(feature: BranchFeature, scope: BranchScope, branc
  * olduğu şubenin personeli. Şubesi pasif ya da kütükte olmayan personel şubesiz sayılır (seçicinin kilidi gibi). Özellik
  * hiçbir şubede açık değilse kimse
  */
-export function featureAudience<U extends { role: "admin" | "staff"; branchId: string | null }>(
+export function featureAudience<U extends { role: Role; branchId: string | null }>(
   users: readonly U[],
   branches: readonly FeatureBranch[],
   feature: BranchFeature,
@@ -123,7 +124,8 @@ export function featureAudience<U extends { role: "admin" | "staff"; branchId: s
   const on = new Set(featureBranches(branches, feature).map((b) => b.id));
   if (!on.size) return [];
   const active = new Set(branches.filter((b) => b.active).map((b) => b.id));
-  return users.filter((u) => u.role === "admin" || u.branchId === null || !active.has(u.branchId) || on.has(u.branchId));
+  // Muhasebecinin şubesi yok ama sahada değil: özelliğin bildirimleri ona gitmez (docs/ROLLER.md)
+  return users.filter((u) => u.role !== "accountant" && (u.role === "admin" || u.branchId === null || !active.has(u.branchId) || on.has(u.branchId)));
 }
 
 /**
