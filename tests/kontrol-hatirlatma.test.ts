@@ -267,7 +267,9 @@ test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () =
   const run = read("src/server/notify/checklist-alerts.ts");
   // Her kişiye kendi adresine (adresler birbirine görünmez); etkin hesap, alıcılar vardiya planından (alertRecipients)
   assert.match(run, /to: \[u\.email\]/);
-  assert.match(run, /\.where\(eq\(s\.users\.active, true\)\)/);
+  // Alıcı havuzu bildirim alabilen hesaplar: etkin ve şubesi kapalı müdür değil (src/server/notify/reachable.ts;
+  // davranışı tests/kapali-sube-mudur-bildirim-db.test.ts)
+  assert.match(run, /reachableUsers\(db\)/);
   assert.match(run, /alertRecipients\(a\.branchId, people, shifts, at\)/);
   assert.match(run, /inArray\(s\.shifts\.date, \[at\.date, yesterday\]\), eq\(s\.shifts\.kind, "work"\), isNotNull\(s\.shifts\.userId\)/);
   assert.match(run, /emailEnabled/);

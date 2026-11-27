@@ -92,6 +92,16 @@ export function isRole(v: unknown): v is Role {
  */
 export const BRANCH_ROLES: readonly Role[] = ["manager", "staff"];
 
+/**
+ * Müdür şubesine kilitli olmak ZORUNDA (docs/ROLLER.md): şubesi yoksa (veritabanı kısıtı bunu zaten engeller) ya da şubesi
+ * pasife alındıysa hesabı kullanılmaz. Oturumu yok sayılır, girişi reddedilir (src/server/auth/dal.ts,
+ * src/server/actions/auth.ts) ve bildirim almaz (src/server/notify/reachable.ts aynı kuralı sorguda söyler). Personelde
+ * şube pasife alınınca kilit kalkar ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü, o yüzden kapalı.
+ */
+export function managerWithoutBranch(u: { role: string; branchId: string | null; branchActive: boolean | null }): boolean {
+  return u.role === "manager" && (!u.branchId || u.branchActive !== true);
+}
+
 /** Hesabında şube zorunlu olan roller (Kullanıcılar & roller, davet ve veritabanı kısıtı users_manager_branch_ck) */
 export const BRANCH_REQUIRED_ROLES: readonly Role[] = ["manager"];
 

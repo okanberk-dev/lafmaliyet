@@ -13,6 +13,7 @@ import { getDb, schema as s } from "@/server/db";
 import { photoStorage } from "@/server/storage/photos";
 
 import { renderChecklistAlert } from "./checklist-alert-template";
+import { reachableUsers } from "./reachable";
 import { isEmailConfigured, resolveFrom, sendEmail } from "./resend";
 import { loadNotifySettings } from "./settings";
 
@@ -73,7 +74,8 @@ export async function runChecklistAlerts(clock: Date = new Date(), deadlineAt: n
   const at = { date: local.toISOString().slice(0, 10), minute: local.getUTCHours() * 60 + local.getUTCMinutes() };
   const yesterday = new Date(local.getTime() - 86_400_000).toISOString().slice(0, 10);
   const [people, shiftRows] = await Promise.all([
-    db.select({ id: s.users.id, email: s.users.email, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
+    // Bildirim alabilen hesaplar: şubesi kapalı müdür (panele giremez) hatırlatma almaz
+    reachableUsers(db),
     db
       .select({ branchId: s.shifts.branchId, userId: s.shifts.userId, date: s.shifts.date, startMin: s.shifts.startMin, endMin: s.shifts.endMin })
       .from(s.shifts)
