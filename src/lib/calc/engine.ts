@@ -751,9 +751,25 @@ export function partTimeText(rows: readonly Pick<StaffCost, "staff" | "calledDay
   return parts.length ? `${parts.join(" · ")}. Vardiya'daki çalışma günleri; brütleştirilmez.` : "Vardiya'ya bağlı part-time kişi yok.";
 }
 
+/**
+ * Part-time hücresinin kişisiz bileşimi (maaşı görmeyen rol; docs/ROLLER.md › Muhasebeci): yalnız kişi sayısı. Ad, gün,
+ * günlük ücret ve ek ödeme yok (tek kişide gün ya da ücret, toplamla birlikte öbürünü verirdi)
+ */
+export function partTimeCountText(rows: readonly Pick<StaffCost, "calledDays">[]): string {
+  const linked = rows.filter((r) => r.calledDays !== null).length;
+  return linked
+    ? `${linked} part-time kişi: günlük ücret × Vardiya'daki çalışma günü + ek ödeme; brütleştirilmez. Kişi kişi döküm yöneticide.`
+    : "Vardiya'ya bağlı part-time kişi yok.";
+}
+
 /** Bağlantısız part-time uyarısı (hücre ve Maaşlar) */
 export function partTimeUnlinkedText(people: readonly Pick<Staff, "name">[]): string {
   return `${people.map((p) => p.name).join(", ")}: Vardiya kişisi bağlı değil, çağrıldığı gün bilinmiyor; günlük ücret sayılmadı (tahmin yok). Maaşlar'da Vardiya bağlantısını seçin.`;
+}
+
+/** Bağlantısız part-time uyarısının kişisiz hâli (maaşı görmeyen rol): kişi sayısı, ad yok; Maaşlar yöneticinin */
+export function partTimeUnlinkedCountText(count: number): string {
+  return `${count} part-time kişinin Vardiya kişisi bağlı değil, çağrıldığı gün bilinmiyor; günlük ücreti sayılmadı (tahmin yok). Bağlantıyı yönetici Maaşlar'da seçer.`;
 }
 export const MEAL_CARD_ROW_LABEL = "PERSONEL YEMEK KARTI";
 export const MEAL_CARD_HINT =
@@ -761,7 +777,8 @@ export const MEAL_CARD_HINT =
 
 /**
  * Yemek kartı hücresinin bu ayki bileşimi: "2 kişi × 330 ₺ × 26 gün = 17.160 ₺" (gün oranıyla). LafPOS'ta çalıştığı
- * günle sayılan kişiler (LM-4b) adıyla ve günüyle yazılır; onların payı oranlanmaz (`ratio` yalnız ötekilere)
+ * günle sayılan kişiler (LM-4b) adıyla ve günüyle yazılır; onların payı oranlanmaz (`ratio` yalnız ötekilere).
+ * `names: false` (maaşı görmeyen rol; ModelOptions.personal): LafPOS'lular da yalnız sayıyla ("2 kişi = 13.200 ₺")
  */
 export function mealCardText(
   rows: readonly (Pick<StaffCost, "mealCard" | "mealDays"> & Partial<Pick<StaffCost, "lafposDays">> & { staff?: Pick<Staff, "name" | "kind"> })[],
@@ -769,6 +786,7 @@ export function mealCardText(
   ratio: number,
   days: number,
   dim: number,
+  opts: { names?: boolean } = {},
 ): string {
   const flagged = rows.filter((r) => r.mealCard > 0);
   const isLafpos = (r: (typeof flagged)[number]) => r.lafposDays != null && r.staff?.kind !== "part_time";
@@ -786,7 +804,7 @@ export function mealCardText(
     parts.push(`${head}${Math.abs(ratio - 1) > 1e-9 ? ` × ${days} / ${dim} gün` : ""}`);
   }
   if (fromLafpos.length) {
-    const who = fromLafpos.map((r) => `${r.staff?.name ?? "kişi"} ${r.lafposDays} gün`).join(", ");
+    const who = opts.names === false ? `${fromLafpos.length} kişi` : fromLafpos.map((r) => `${r.staff?.name ?? "kişi"} ${r.lafposDays} gün`).join(", ");
     parts.push(`LafPOS'ta çalıştığı günle (oranlanmaz): ${who} = ${tl(sum(fromLafpos.map((r) => r.mealCard)))}`);
   }
   return `Yemek kartı ${parts.join("; ")}; brütleştirilmez.`;
@@ -1208,7 +1226,19 @@ export interface StaffView extends Staff {
   nextChange: StaffHistoryEntry | null;
 }
 
-export function createModel(ds: Dataset) {
+/** Modelin seçenekleri (createModel, loadModel) */
+export interface ModelOptions {
+  /**
+   * Gelir-gider'in personel hücrelerinin metni kişi kişi mi (part-time'ın adı, günü, günlük ücreti ve eki; yemek kartını
+   * LafPOS gününe göre alanların adı ve günü; bağlantısız part-time'ın adı). Varsayılan kapalı: yalnız maaşı gören rol
+   * (`can(rol, "maas")`, yönetici) için açılır; muhasebeci personel giderlerini toplam olarak görür (docs/ROLLER.md ›
+   * Muhasebeci). Tutarlar ve hesap aynı, yalnız metin kişisiz
+   */
+  personal?: boolean;
+}
+
+export function createModel(ds: Dataset, opts: ModelOptions = {}) {
+  const personal = opts.personal === true;
   const st = ds.settings;
   const ingById = new Map(ds.ingredients.map((i) => [i.id, i]));
   const catById = new Map(ds.categories.map((c) => [c.id, c]));
@@ -2833,14 +2863,18 @@ export function createModel(ds: Dataset) {
         : (pers.mealCard - pers.mealCardLafpos) * ratio + pers.mealCardLafpos;
       sections.personel += auto(MEAL_CARD_KEY, fullMeal + pers.partTime.mealCard);
       cells.get(MEAL_CARD_KEY)!.info =
-        mealCardText(pers.rows, st, scaled || pers.mealCard === pers.mealCardLafpos ? 1 : ratio, days, dim) + (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
+        mealCardText(pers.rows, st, scaled || pers.mealCard === pers.mealCardLafpos ? 1 : ratio, days, dim, { names: personal }) +
+        (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
     }
-    // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok)
+    // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok).
+    // Kişi kişi döküm yalnız maaşı görene (ModelOptions.personal); öteki rolde kişi sayısı
     if (partRows.length || overrides.has(PART_TIME_KEY)) {
       sections.personel += auto(PART_TIME_KEY, pers.partTime.wages + pers.partTime.extras);
       const cell = cells.get(PART_TIME_KEY)!;
-      cell.info = partTimeText(partRows);
-      if (pers.partTime.unlinked.length) cell.warn = partTimeUnlinkedText(pers.partTime.unlinked);
+      cell.info = personal ? partTimeText(partRows) : partTimeCountText(partRows);
+      if (pers.partTime.unlinked.length) {
+        cell.warn = personal ? partTimeUnlinkedText(pers.partTime.unlinked) : partTimeUnlinkedCountText(pers.partTime.unlinked.length);
+      }
     }
     // Şubeye yazılan giderler (Tümü'nün şube kırılımı): personel kişinin şubesine, tam zamanlı kendi şubesinin günüyle
     const byBranch: Record<string, number> = {};

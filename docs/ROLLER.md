@@ -119,7 +119,12 @@ düğmeleri gizli.
   ona karaoke oturumu, silme isteği, uygulama siparişi ve masa çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir
   şube seçiminde); panel asistanı yok.
 - Kişi verisi: kişi başı maaş (Maaşlar, bordro dökümü), avanslar ve personel belgeleri yok; gelir-gider ve vergide
-  personel giderleri toplam olarak durur. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı);
+  personel giderleri toplam olarak durur. Gelir-gider'in personel hücrelerinin ipucu ve uyarısı da (tablonun hücresi ve ay
+  görünümü; istemciye giden veri) kişisiz: part-time satırında "1 part-time kişi: günlük ücret × Vardiya'daki çalışma günü
+  + ek ödeme" (yöneticide "Ayşe: 10 gün × 1.500 ₺ + ek 2.000 ₺"), bağlantısız part-time uyarısı adsız kişi sayısıyla, yemek
+  kartını LafPOS gününe göre alanlar adsız ve günsüz ("2 kişi = 12.540 ₺"); tutarlar aynı. Metin motorda kurulur:
+  `src/lib/calc/engine.ts` › `ModelOptions.personal` (varsayılan kapalı; `loadModel`, `createModel`), Gelir-gider
+  `personal: can(rol, "maas")` ile açar. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı);
   e-postanın neden gitmediğini görmez, sabit metni görür (ham hata yalnız yöneticinin; `emailErrorFor`).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**
   (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)).
@@ -214,6 +219,10 @@ oturumları kapanır (oturum sürümü).
   rol için birkaç yol); yetki tablosu; iki adımlı ve e-posta kuralları; **kaynak taraması**: her `"use server"`
   dosyasının dışa verdiği her eylem bir kapı çağırır (`tests/helpers/action-gates.ts`) ve hiçbiri muhasebeciye yazma
   izni vermez.
+- `tests/gelir-gider-kisi-db.test.ts` (gerçek Postgres, `GELIR_GIDER_KISI_TEST_DATABASE_URL`; sayfanın kendisi oturumla):
+  muhasebecinin Gelir-gider sayfasının hiçbir prop'unda part-time'ın adı, günlük ücreti ve eki ve bağlantısız kişinin
+  adı yok, personel satırlarının tutarları yöneticininkiyle aynı; yöneticide aynı hücre kişi kişi. Motorun iki metni
+  `tests/personel-part-time.test.ts` ve `tests/personel-lafpos.test.ts`'te.
 - `tests/foto-tarama-db.test.ts` (gerçek Postgres, `FOTO_TARAMA_TEST_DATABASE_URL`): muhasebecinin köşe ipucu isteği
   uçta ve çekirdekte "salt okunur" döner; yapay zekâya istek gitmez, `ai_calls`'a satır düşmez.
 - `tests/roller-db.test.ts` (gerçek Postgres, `ROLLER_TEST_DATABASE_URL`): kısıtlar; müdür öteki şubeyi okuyamaz, öteki

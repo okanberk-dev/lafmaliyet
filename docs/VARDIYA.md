@@ -253,7 +253,9 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   gün oranıyla aynı kaynaktan: kasa raporlarının son günü; rapor yoksa elle girilen açık gün kadar (ayın başından); ay
   bilgisi yoksa 0 (`calledDaysCutoff`). "Tümü"de kişinin şubesinin raporları. Vergi bordrosu ve nakit planı ayın bütün planı.
   Gelir-gider'de "PART-TIME (GÜNLÜK ÜCRET)" satırı (ücret + ek; gün oranı yok), yemek kartı "PERSONEL YEMEK KARTI"
-  satırında. **Bağlantısız part-time** tahmin edilmez: ücreti 0, hücre, Maaşlar ve Genel bakış uyarır.
+  satırında. **Bağlantısız part-time** tahmin edilmez: ücreti 0, hücre, Maaşlar ve Genel bakış uyarır. Hücrenin ipucu
+  kişi kişi ("Ayşe: 10 gün × 1.500 ₺ + ek 2.000 ₺") ve uyarısı adıyla yalnız maaşı görende (yönetici); muhasebecide kişi
+  sayısıyla ([ROLLER.md](ROLLER.md) › Muhasebeci; `ModelOptions.personal`).
 - **Haftalık "Part-time çalışan" sabit gideri** Kasım 2026 için kalır (sahibin veri işi: son ayı 2026-11). Aynı ayda
   hem bu kalem (işletme geneli ya da kişinin şubesinin) hem de çağrıldığı günü olan günlük part-time satırı sayılıyorsa
   Genel bakış ve Maaşlar uyarır ("Part-time iki kez sayılabilir"); tutarlar kendiliğinden değişmez.
