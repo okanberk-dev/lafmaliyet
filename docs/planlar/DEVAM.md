@@ -48,6 +48,8 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   main'in #164'ten beri düşen iki testini düzeltiyor: önce o birleşir.
 - **Durum (27 Kasım gece):** P1'in 12 bulgusu ve iki ek maddesi testleriyle düzeltildi (`wip/entegre3-fix`, #163);
   ikinci bağımsız inceleme yarıda (kullanım limiti). Kasa deposunda ad değişikliği `asilpos-adi` dalında, incelemesi kaldı.
+- **AsilPOS ilerleme:** panelin ad değişikliği #166 (P1'in üstünde), kasanın ad değişikliği lafpos#187 ve çoklu şube
+  kasa tarafı lafpos#188 hazır; panel çoklu şube (B1) + Marina yalnız AsilPOS sırada; daraltma (A3) ≥ 7 gün sonra.
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
