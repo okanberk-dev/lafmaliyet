@@ -9,7 +9,6 @@ import { longDateTR } from "@/lib/reminders";
 import { removeCashOut, writeCashOut, type CashOutActor, type CashOutRow, type CashOutTx } from "@/server/cash-outs/write";
 import { schema as s } from "@/server/db";
 
-import { asilposBranchId } from "./branch";
 
 /**
  * AsilPOS'un kasa hareketleri → "Kasadan çıkanlar" (Faz 3, 23 Kasım 2026; sahibin kararı "Soru 5": AsilPOS satırların
@@ -44,9 +43,8 @@ export interface AsilposCashOutSync {
   recipients: number;
 }
 
-/** `branch`: AsilPOS'un şubesi (gün sonu verir; verilmezse asilposBranchId) */
-export async function syncAsilposCashOuts(tx: CashOutTx, date: string, moves: readonly PosCashMove[], branch?: string): Promise<AsilposCashOutSync> {
-  const branchId = branch ?? (await asilposBranchId(tx));
+/** `branchId`: kasanın şubesi (gün sonunu yazan işlem verir) */
+export async function syncAsilposCashOuts(tx: CashOutTx, date: string, moves: readonly PosCashMove[], branchId: string): Promise<AsilposCashOutSync> {
   const ids = moves.filter(isCashOutMove).map((m) => m.id);
   // Günün satırları ve (olmaması gereken) başka güne düşmüş aynı kimlikli satır: benzersiz indeks ikinci satırı açtırmaz
   const rows: CashOutRow[] = await tx
@@ -181,16 +179,15 @@ async function logCashOuts(tx: CashOutTx, date: string, parts: (string | false |
  * - `release`: sayılan günün AsilPOS kaydı silindi (admin.ts removeAsilposDay, 409'un çözümü): satırlar kalır, bağları
  *   çözülür; yeni Z gelince elle girilmiş eş olarak yeniden sahiplenilir.
  * Gün sonunun (şube, gün) danışma kilidinin altında çağrılır. `by`: işlem geçmişinde yazan (verilmezse AsilPOS);
- * `branchId`: AsilPOS'un şubesi (verilmezse asilposBranchId)
+ * `branchId`: kasanın şubesi
  */
 export async function detachAsilposCashOuts(
   tx: CashOutTx,
   date: string,
   mode: "drop" | "release",
-  opts: { by?: { id: number | null; name: string }; branchId?: string } = {},
+  opts: { by?: { id: number | null; name: string }; branchId: string },
 ): Promise<{ removed: number; released: number }> {
-  const { by } = opts;
-  const branchId = opts.branchId ?? (await asilposBranchId(tx));
+  const { by, branchId } = opts;
   const rows: CashOutRow[] = await tx
     .select()
     .from(s.cashOuts)

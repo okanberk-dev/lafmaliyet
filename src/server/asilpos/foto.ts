@@ -17,8 +17,7 @@ import { linksAnyPhoto } from "@/lib/roles";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { lockCashReport, lockLateDay, okcServerColumns, type CashActor, type CashReportRow, type CashTx } from "@/server/cash/report-store";
 import { schema as s, type DB } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { switchDayOf } from "@/server/pos/tills";
 import type { EmailAttachment } from "@/server/notify/resend";
 import { assertNotHeld } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, linkable, readPhoto } from "@/server/storage/photos";
@@ -252,13 +251,14 @@ async function refreshServerColumns(tx: CashTx, row: CashReportRow): Promise<Cas
   return next;
 }
 
-/** Personelin fotoğraf ekleyebildiği AsilPOS günü mü: AsilPOS'un şubesi, geçiş gününden itibaren, bugünden en çok 14 gün geri */
+/**
+ * Personelin fotoğraf ekleyebildiği AsilPOS günü mü: şubenin kendi kasasının AsilPOS günü (çok şube; şubenin geçiş gününden
+ * itibaren), bugünden en çok 14 gün geri
+ */
 export async function asilposPhotoDayOpen(db: Reader, date: string, branchId: string, role: "admin" | "staff", now = new Date()): Promise<boolean> {
-  // AsilPOS'un şubesi kütükten (asilposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
-  if (branchId !== (await asilposBranchId(db))) return false;
   const today = businessDate(now);
   if (date > today || (role !== "admin" && date < addDays(today, -LATE_REPORT_DAYS))) return false;
-  if (!isAsilposDay(date, await loadAsilposSwitchDay(db as DB))) return false;
+  if (!isAsilposDay(date, await switchDayOf(branchId, db))) return false;
   const [day] = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
@@ -389,10 +389,10 @@ export interface AsilposPhotoState {
  * girildiyse null (eski yol). `role` personel ise karşılaştırma dönmez
  */
 export async function asilposPhotoState(db: DB, date: string, branchId: string, role: "admin" | "staff"): Promise<AsilposPhotoState | null> {
-  if (branchId !== (await asilposBranchId(db))) return null;
+  // Şubenin kendi kasasının AsilPOS günü (çok şube): kasası ModPOS olan şubede geçiş günü yok
   const device = await asilposDayDevice(db, date, branchId);
   if (!device) return null;
-  if (!isAsilposDay(date, await loadAsilposSwitchDay(db))) return null;
+  if (!isAsilposDay(date, await switchDayOf(branchId, db))) return null;
   const [[state], [report]] = await Promise.all([
     db
       .select()
