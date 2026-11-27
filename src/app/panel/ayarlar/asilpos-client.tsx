@@ -276,6 +276,7 @@ export function AsilposKeyTest() {
           const res = await testAsilposKeys();
           if (!res.ok) return void toast.error(res.error);
           if (res.data.ok) toast.success("Anahtarlar uyumlu", { description: res.data.ozet });
+          else if (res.data.panelEski) toast.warning("Panelin anahtarı eski", { description: res.data.ozet });
           else toast.error("Anahtar uyuşmuyor", { description: res.data.ozet });
         })
       }

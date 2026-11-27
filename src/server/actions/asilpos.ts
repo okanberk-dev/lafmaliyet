@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
-import { durumMetni, ELLE_SINAMA_ARALIGI_MS, gecerliSinama, HEDEF_ADI, HEDEFLER, type Sinama } from "@/lib/asilpos/anahtar-uyumu";
+import { durumMetni, ELLE_SINAMA_ARALIGI_MS, gecerliSinama, HEDEF_ADI, HEDEFLER, hedefUyumlu, type Sinama } from "@/lib/asilpos/anahtar-uyumu";
 import { dagitilanBaglantilar } from "@/lib/asilpos/baglanti-dagitim";
 import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import type { StepUpConfirm } from "@/lib/step-up";
@@ -97,6 +97,9 @@ export async function testAsilposKeys() {
     const ozet = sinamaOzeti(sinama);
     if (sinama !== son) await logActivity(me, "AsilPOS anahtarları sınandı", ozet);
     refresh();
-    return { ok: HEDEFLER.every((h) => !sinama.sonuc[h] || sinama.sonuc[h]?.durum === "ok"), ozet };
+    const sonuclar = HEDEFLER.map((h) => sinama.sonuc[h]).filter((r) => r !== undefined);
+    // Uç panelin anahtarını yalnız önceki değer olarak kabul ediyorsa uyumlu değil: panel güncellenmeli (`_ONCEKI` silinmesin)
+    const panelEski = sonuclar.some((r) => r.durum === "ok" && r.anahtar === "onceki") && !sonuclar.some((r) => r.durum === "red" || r.durum === "kapali");
+    return { ok: sonuclar.every(hedefUyumlu), panelEski, ozet };
   });
 }

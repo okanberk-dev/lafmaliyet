@@ -1377,41 +1377,65 @@ kasanın her isteği reddedildi, Uzaktan perşembe bütün gün dondu (değerler
 Uzaktan ve site eski ve yeni anahtarı birlikte kabul eder (`_ONCEKI` değişkeni), panel en son değişir, eski anahtar
 bütün kasalar yenisini uyguladıktan sonra silinir. Gün sonu penceresinde (22:00–03:00) başlamayın.
 
+**Önce bakın:** Ayarlar › AsilPOS (kasa) › Uzaktan ve site anahtarı bölümünde iki uç da "önceki anahtarı da tanır"
+demeli (yazmıyorsa **Anahtarları sına**'ya basın). Panel bunu Uzaktan ve sitenin yanıt başlığından öğrenir: `_ONCEKI`'yi
+tanıyan sürüm imzalı isteğe verdiği yanıtta panelin anahtarının hangi değerle tuttuğunu söyler (`x-laf-anahtar:
+simdiki` ya da `onceki`; kasa ve site depolarının uyum değişikliği, [DEPLOY.md](DEPLOY.md) § 7). Demiyorsa (eski sürüm ya
+da "önceki anahtarı tanımıyor") **değişime başlamayın**: 2. ve 3. adım gün kapanmasını bekleyen kasayı hemen keser,
+panelle başlamak kasayı gece keser (26 Kasım). Önce o sürümler yayına çıkar.
+
 1. Yeni değerleri üretin (`openssl rand -base64 48`, Uzaktan ve site için ayrı; en az 32 karakter) ve saklayın: Vercel
    Sensitive değişkenin değerini sonra göstermez.
-2. **Uzaktan** (Vercel › `lafpos` projesi › Settings › Environment Variables): `LAFPOS_CLOUD_SECRET`'ın bugünkü değerini
-   `LAFPOS_CLOUD_SECRET_ONCEKI` adıyla yeni bir değişkene yazın, `LAFPOS_CLOUD_SECRET`'a yeni değeri yazın (orada
-   `ASILPOS_CLOUD_SECRET` eklendiyse onu ve `ASILPOS_CLOUD_SECRET_ONCEKI`'yi), Deployments › Redeploy.
+2. **Uzaktan** (Vercel › `lafpos` projesi › Settings › Environment Variables): `LAFPOS_CLOUD_SECRET`'ın (orada
+   `ASILPOS_CLOUD_SECRET` eklendiyse onun) bugünkü değerini `LAFPOS_CLOUD_SECRET_ONCEKI` adıyla yeni bir değişkene yazın;
+   önceki bir değişimden kalan `ASILPOS_CLOUD_SECRET_ONCEKI` varsa silin (iki ad birden olmasın: Uzaktan'ın eski sürümü
+   yeni adlısını önce okur, eski adlısı hiç okunmazdı). Asıl değişkene yeni değeri yazın, Deployments › Redeploy.
 3. **Site** (Vercel › `laffogato` projesi): sitenin kasa anahtarı `LAFPOS_SYNC_SECRET` (panelin `ASILPOS_SYNC_SECRET`'ının
    eski adıyla aynı ad, değeri ayrı). Bugünkü değerini `LAFPOS_SYNC_SECRET_ONCEKI`'ye yazın, sitenin kasa anahtarına
-   (`LAFPOS_SYNC_SECRET`; panelin `ASILPOS_SYNC_SECRET`'ı değil) yeni değeri yazın, Redeploy.
+   (`LAFPOS_SYNC_SECRET`; panelin `ASILPOS_SYNC_SECRET`'ı değil) yeni değeri yazın, Redeploy. Bu arada kart (sınanırsa)
+   turuncu "Panelin Uzaktan anahtarı eski" / "Panelin site anahtarı eski" der: uç panelin değerini yalnız önceki değer
+   olarak kabul ediyor, beklenen durum; 4. adım kaldırır.
 4. **Panel** (Vercel › `lafmaliyet` projesi): `ASILPOS_CLOUD_SECRET` ve `ASILPOS_SITE_SECRET`'a yeni değerleri yazın
    (eski adlarıyla duruyorsa onlara), Redeploy. Ayarlar › AsilPOS (kasa) › **Anahtarları sına**: iki uç da "anahtarı
-   kabul ediyor" demeli; demiyorsa uyarının adımları.
+   kabul ediyor" demeli ("yalnız önceki değer olarak" değil); demiyorsa uyarının adımları.
 5. Kasalar yeni değerleri 10 dakika içinde alır, gün kapanınca uygular; kartta "Marina güncel değerleri uyguladı"
    (günlükte `uygulanan` = `guncel`). Henüz uygulamamış kasa eski anahtarla çalışmaya devam eder (`_ONCEKI`).
-6. Bütün kasalar uyguladıktan sonra (en erken ertesi gün) Uzaktan'daki `LAFPOS_CLOUD_SECRET_ONCEKI`'yi ve sitedeki
-   `LAFPOS_SYNC_SECRET_ONCEKI`'yi silin, iki projeyi Redeploy.
+6. Bütün kasalar uyguladıktan sonra (en erken ertesi gün; kartta bekleyen kasa yok ve uyarı yok) Uzaktan'daki
+   `LAFPOS_CLOUD_SECRET_ONCEKI`'yi ve sitedeki `LAFPOS_SYNC_SECRET_ONCEKI`'yi silin, iki projeyi Redeploy. Uzaktan'da
+   unutulursa kart ve zil hatırlatır ("Uzaktan'da önceki anahtar hâlâ tanımlı", bilgi): eski anahtar silinene dek
+   geçerlidir.
 
-`_ONCEKI`'yi Uzaktan ve sitenin tanıması kasa ve site depolarının uyum değişikliğiyle gelir; o sürümler yayında değilken
-2. ve 3. adım kasayı hemen keser: o zaman önce panel (4.), kasa gece uygulayınca (5.) hemen Uzaktan ve sitede yalnız
-yeni değer; aradaki sürede uyum denetimi kırmızı uyarı verir.
+Sızan bir anahtar `_ONCEKI` olarak tutulmaz: o zaman değer üç yerde birden değişir, kasa gün kapanana dek reddedilir.
 
 **Uyum denetimi** (`src/lib/asilpos/anahtar-uyumu.ts`, `src/server/asilpos/anahtar-uyumu.ts`; testleri
 `tests/asilpos-anahtar-uyumu.test.ts`, `tests/asilpos-anahtar-uyumu-db.test.ts`): panel kendi değerinin iki uçta kabul
 edildiğini kasanın imzasıyla sınar: Uzaktan'da `GET /api/uzaktan/anahtarlar` (şubesiz sorgu boş liste döner, Redis'e
 dokunmaz), sitede `GET /api/pos/orders/version` (veri yok, yalnız işaret). Sınama günde birkaç kez: sabah işinde
 (`/api/cron/gunluk`, sonucu yanıtın `anahtar` alanında, iş adımı değil), Ayarlar › AsilPOS (kasa) › **Anahtarları sına**
-ile (yalnız yönetici; aynı değerler 15 saniye içinde yeniden sınanmaz; işlem geçmişine yalnız durumlar) ve bir kasanın
-raporu değişince (yeni değeri ilk kez gördü ya da uyguladı; aynı değerler için en çok saatte bir). 2xx kabul, 401
-anahtar eski, 503 uçta anahtar yok; başka yanıt ve ağ hatası "sınanamadı" (uyarı değil; aynı değerlerin önceki sorunu
-kalır, geçici ağ hatası uyarıyı kaldırmaz). Reddeden ya da anahtarı olmayan
-uç kartın üstündeki **Uzaktan ve site anahtarı** bölümünde ve yöneticinin zilinde (Sistem) uyarı olur, değişkenlerin
-adlarıyla adım adım: kasalardan biri güncel değeri uyguladıysa (ya da hiçbir kasa raporu yoksa) kırmızı ("Uzaktan'daki
-anahtar eski": kasa şu an reddediliyor), kasalar yalnız bekliyorsa turuncu ("Uzaktan yeni anahtarı kabul etmiyor": gün
-kapanmadan düzeltilirse hiçbir şey durmaz). Sınama geçince uyarı kalkar; panelin değerleri değişince eski sonuç sayılmaz
-(kasa sorunca yeniden sınanır). Anahtar, imza ve uçların yanıt gövdesi hiçbir yere yazılmaz; günlükte yalnız
-`[asilpos anahtar] tetik=… uzaktan=ok(200) site=red(401)`.
+ile (yalnız yönetici; aynı değerler 15 saniye içinde yeniden sınanmaz; işlem geçmişine yalnız durumlar) ve kasa
+bağlantıyı sorunca (aynı değerler için en çok saatte bir, değerler değişince hemen; kasanın raporu değişmese de: yalnız
+Uzaktan ya da site değişirse, ör. `_ONCEKI` erken silinirse, uyarı en geç bir saatte çıkar, ertesi sabahı beklemez). 2xx
+kabul, 401 anahtar eski, 503 uçta anahtar yok; başka yanıt ve ağ hatası "sınanamadı" (uyarı değil; aynı değerlerin
+önceki sorunu kalır, geçici ağ hatası uyarıyı kaldırmaz). 2xx yanıtın `x-laf-anahtar` başlığı panelin anahtarının uçta
+şimdiki (`simdiki`) mi önceki (`onceki`, `_ONCEKI`) değer mi olduğunu söyler; başlığı veren uç önceki anahtarı tanır
+(kartta "önceki anahtarı da tanır"; başlıksız 2xx "önceki anahtarı tanımıyor (eski sürüm)"; her 2xx ile yenilenir).
+Uzaktan'ın açık durum ucu (`GET /api/health`, imzasız) `onceki: true` derse kartta "önceki anahtar tanımlı".
+
+Uyarılar kartın üstündeki **Uzaktan ve site anahtarı** bölümünde ve yöneticinin zilinde (Sistem), değişkenlerin
+adlarıyla adım adım:
+- Reddeden ya da anahtarı olmayan uç: kasalardan biri güncel değeri uyguladıysa (ya da hiçbir kasa raporu yoksa) kırmızı
+  ("Uzaktan'daki anahtar eski": kasa şu an reddediliyor; uçtaki değer panelinkine geçer, eski değer `_ONCEKI`'ye),
+  kasalar yalnız bekliyorsa turuncu ("Uzaktan yeni anahtarı kabul etmiyor": gün kapanmadan düzeltilirse hiçbir şey
+  durmaz). Turuncuda uç önceki anahtarı tanımıyorsa ya da bilinmiyorsa adım uçtaki değeri **değiştirtmez** (bekleyen
+  kasayı hemen keserdi; inceleme 27 Kasım), paneli eski değerine döndürtür: kasa bekleyen değeri 10 dakika içinde bırakır.
+- Uç panelin değerini yalnız önceki değer olarak kabul ediyor: turuncu "Panelin Uzaktan anahtarı eski" (uç yeni anahtara
+  geçmiş, panel değil): önce panel güncellenir, `_ONCEKI` silinmez (silinirse kasa kesilir).
+- Bütün kasalar güncel değerleri uyguladı, Uzaktan'da önceki anahtar hâlâ tanımlı: bilgi "Uzaktan'da önceki anahtar
+  hâlâ tanımlı" (silinmeli; eski anahtar silinene dek geçerli).
+
+Sınama geçince uyarı kalkar; panelin değerleri değişince eski sonuç sayılmaz (kasa sorunca yeniden sınanır). Anahtar,
+imza ve uçların yanıt gövdesi hiçbir yere yazılmaz (açık durum ucundan yalnız `onceki` alanı); günlükte yalnız
+`[asilpos anahtar] tetik=… uzaktan=ok(200)[simdiki] site=red(401)`.
 
 **Şube başına kurulum (çok şube, 27 Kasım 2026):** her şubenin kasası kendi kurulum koduyla kurulur ve kendi anahtarını
 alır. Sıra: Şubeler'de şubenin kasa kaynağını AsilPOS yapın (ya da ModPOS'ta bırakıp önce deneyin), kurulum bağlantısı

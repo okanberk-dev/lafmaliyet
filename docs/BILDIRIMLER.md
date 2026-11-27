@@ -69,8 +69,10 @@ görünür); AsilPOS'un sayılan günü reddedilince (Z çakışması, sözleşm
 ayarlı kasa) aynı başlıkta "Marina gün sonu alınamadı: <neden>", gün ve ne yapılacağıyla, Ayarlar › AsilPOS'a götürür
 (gün ve neden başına bir satır, son 7 gün; [ASILPOS.md](ASILPOS.md) › Durum ve onarım). AsilPOS Uzaktan ya da site
 panelin kasalara dağıttığı anahtarı reddediyorsa (ya da anahtarı yoksa) aynı başlıkta "Uzaktan'daki anahtar eski" (kasa
-yeni anahtarı uyguladı: kırmızı) ya da "Uzaktan yeni anahtarı kabul etmiyor" (kasa gün kapanınca geçecek: turuncu), ne
-yapılacağı adım adım; sınama geçince kalkar ([ASILPOS.md](ASILPOS.md) › Şube kurulumu › Anahtar değişimi). Yöneticinin, müdürün ve muhasebecinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
+yeni anahtarı uyguladı: kırmızı) ya da "Uzaktan yeni anahtarı kabul etmiyor" (kasa gün kapanınca geçecek: turuncu), uç
+panelin anahtarını yalnız önceki değer olarak kabul ediyorsa "Panelin Uzaktan anahtarı eski" (turuncu), bütün kasalar
+geçtiği hâlde Uzaktan'da önceki anahtar tanımlıysa "Uzaktan'da önceki anahtar hâlâ tanımlı" (bilgi), ne yapılacağı adım
+adım; sınama geçince kalkar ([ASILPOS.md](ASILPOS.md) › Şube kurulumu › Anahtar değişimi). Yöneticinin, müdürün ve muhasebecinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
 giriş: Chrome · Windows · IP 85.105.12.x" durur, Hesabım › Oturumlar'a götürür; aynı uyarı hesabın adresine e-postayla da
 gider ([DEPLOY.md](DEPLOY.md) › 6a). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur

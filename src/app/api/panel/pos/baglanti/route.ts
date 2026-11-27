@@ -16,9 +16,9 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * `{ ok: true, surum, baglanti }`. Yalnız AsilPOS'un imzasıyla (ASILPOS_SYNC_SECRET; sorgu imzaya girer): anahtar yoksa
  * 503, imza tutmazsa 401. Günlüğe anahtarın şubesi (çok şube: kasa imzasının tuttuğu anahtardan), sorgudaki `sube` ve
  * `uygulanan` (kasanın yazdığı sürüm) düşer: anahtar değişiminden önce kasanın yenisini aldığı buradan görülür. Bağlantılar
- * şubeye göre değişmez. Yanıttan sonra (`after`) kasanın uyguladığı ve güncel sürüm şubenin satırına yazılır; değiştiyse
- * Uzaktan ve site panelin anahtarıyla sınanır (src/server/asilpos/anahtar-uyumu.ts noteBaglantiRaporu): reddeden uç
- * Ayarlar › AsilPOS'ta ve zilde uyarı olur
+ * şubeye göre değişmez. Yanıttan sonra (`after`) kasanın uyguladığı ve güncel sürüm şubenin satırına yazılır; bu değerler
+ * son bir saatte sınanmadıysa (kasanın raporu değişmese de) Uzaktan ve site panelin anahtarıyla sınanır
+ * (src/server/asilpos/anahtar-uyumu.ts noteBaglantiRaporu): reddeden uç Ayarlar › AsilPOS'ta ve zilde uyarı olur
  */
 export async function GET(request: NextRequest) {
   await connection();

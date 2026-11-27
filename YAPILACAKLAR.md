@@ -20,7 +20,11 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   Uzaktan ve site, `_ONCEKI` ile; sonra panel; kasalar uygulayınca `_ONCEKI` silinir). Fotoğraf okumasının istemleri banka
   kısmının kıyas başlığını iki adla da bilir (`PAVO - ASILPOS KARŞILAŞTIRMA`, AsilPOS #189'dan sonra; eskisi de). Kasa
   tarafı kasa deposunun uyum dalı (Uzaktan `_ONCEKI`'yi tanır), site tarafı sitenin uyum dalı: iki uçta `_ONCEKI` yayında
-  değilken yeni sıranın 2.–3. adımı kullanılmaz (belge söyler).
+  değilken yeni sıranın 2.–3. adımı kullanılmaz (belge söyler). İnceleme düzeltmeleri (aynı gün): turuncu uyarı uç
+  `_ONCEKI`'yi tanıdığını söylemedikçe uçtaki değeri değiştirtmez, paneli eskiye döndürtür (panel önce yayına çıksa da
+  perşembe tekrarlanmaz); kasa sorunca saatte bir sınanır (yalnız uç değişse de uyarı ertesi sabahı beklemez); uçların
+  `x-laf-anahtar` başlığı okunur (yalnız önceki değer olarak kabul: "Panelin Uzaktan anahtarı eski"), Uzaktan'ın
+  `/api/health` › `onceki` bayrağıyla unutulan `_ONCEKI` hatırlatılır; yayın sırası DEPLOY.md § 7.
 
 - **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (#167, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
   şubenin kendi AsilPOS kasası olabilir ("yalnız bir şube" sınırı kalktı); her kasanın kendi anahtarı, geçiş günü, gün

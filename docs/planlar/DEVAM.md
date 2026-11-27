@@ -62,7 +62,10 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   (`uyum-1`, #189'un üstünde), sitede `LAFPOS_SYNC_SECRET_ONCEKI`. Sıra: kasa ve site PR'ları yayına çıkmadan yeni
   anahtar sırası (docs/ASILPOS.md › Anahtar değişimi) kullanılmaz; panelin denetimi tek başına da güvenli (yalnız uyarır).
   Sahibe söylenecek: sonraki değişimde önce Uzaktan ve site (`_ONCEKI` ile), sonra panel, sonra Ayarlar › AsilPOS ›
-  Anahtarları sına.
+  Anahtarları sına. İnceleme düzeltmeleri aynı dalda ("Uyum: inceleme düzeltmeleri"): panelin uyarısı uç `_ONCEKI`'yi
+  tanıdığını yanıt başlığıyla (`x-laf-anahtar`) söylemedikçe uçtaki değeri değiştirtmez; kasa sorunca saatte bir sınanır;
+  Uzaktan'ın `/api/health` › `onceki` bayrağı okunur. Başlık ve bayrak kasa ve site dallarından gelir (onlarsız panel
+  "önceki anahtarı tanımıyor" der, belge değişimi başlatmaz). Yayın sırası DEPLOY.md § 7.
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 

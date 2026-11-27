@@ -6,7 +6,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
-import { durumMetni, KASA_RAPORU_GUN } from "@/lib/asilpos/anahtar-uyumu";
+import { durumMetni, hedefUyumlu, KASA_RAPORU_GUN } from "@/lib/asilpos/anahtar-uyumu";
 import { clearedText, isUnverifiedAfterOk, asilposCardSummary, rejectionText, unverifiedText } from "@/lib/asilpos/status";
 import { ASILPOS_SWITCH_MAX_AHEAD, ASILPOS_SWITCH_MIN, switchEffects } from "@/lib/asilpos/switch";
 import type { BranchRow } from "@/lib/branches";
@@ -119,9 +119,9 @@ const andList = (names: readonly string[]) => (names.length > 1 ? `${names.slice
 
 /**
  * Uzaktan ve site anahtarı (docs/ASILPOS.md › Şube kurulumu › Anahtar değişimi): panelin kasalara dağıttığı anahtarı iki
- * uç kabul ediyor mu (son sınama, sabah işi ya da kasanın raporu değişince; "Anahtarları sına" şimdi), kasalar güncel
- * değerleri uyguladı mı, ve reddeden ucun uyarısı adımlarıyla. Anahtar ve sürüm gösterilmez. Kasalar şubeye göre değil:
- * bütün kasaların bölümlerinin üstünde bir kez
+ * uç kabul ediyor mu (son sınama, sabah işi ya da kasa sorunca en çok saatte bir; "Anahtarları sına" şimdi), uç önceki
+ * anahtarı (`_ONCEKI`) tanıyor mu ve tanımlı mı, kasalar güncel değerleri uyguladı mı, ve uyarılar adımlarıyla. Anahtar
+ * ve sürüm gösterilmez. Kasalar şubeye göre değil: bütün kasaların bölümlerinin üstünde bir kez
  */
 function KeySection({ data, nameOf }: { data: AnahtarUyumuKarti; nameOf: (id: string) => string }) {
   const { uygulayan, bekleyen } = data.kasalar;
@@ -138,10 +138,11 @@ function KeySection({ data, nameOf }: { data: AnahtarUyumuKarti; nameOf: (id: st
         </div>
         {data.hedefler.map((h) => (
           <p key={h.hedef} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5">
-            <Badge tone={!h.sonuc ? "gray" : h.sonuc.durum === "ok" ? "green" : h.sonuc.durum === "hata" ? "amber" : "red"} dot>
+            <Badge tone={!h.sonuc ? "gray" : hedefUyumlu(h.sonuc) ? "green" : h.sonuc.durum === "red" || h.sonuc.durum === "kapali" ? "red" : "amber"} dot>
               {h.ad}
             </Badge>
             <span className="text-ink-soft">{durumMetni(h.sonuc)}</span>
+            {h.notlar.length ? <span className="text-ink-mute">· {h.notlar.join(" · ")}</span> : null}
           </p>
         ))}
         <p className="text-[13px] leading-5 text-pretty text-ink-mute">
@@ -150,7 +151,7 @@ function KeySection({ data, nameOf }: { data: AnahtarUyumuKarti; nameOf: (id: st
         </p>
       </div>
       {data.uyarilar.map((u) => (
-        <Notice key={u.hedef} tone={u.kind === "danger" ? "bad" : "warn"} size="sm" title={u.title} text={u.text} detailsLabel="Ne yapılmalı" defaultOpen>
+        <Notice key={u.hedef} tone={u.kind === "danger" ? "bad" : u.kind === "warning" ? "warn" : "neutral"} size="sm" title={u.title} text={u.text} detailsLabel="Ne yapılmalı" defaultOpen>
           <ol className="list-decimal space-y-1 pl-4">
             {u.steps.map((step) => (
               <li key={step}>{step}</li>
