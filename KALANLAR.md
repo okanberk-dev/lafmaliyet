@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 00:50)
+# Kalanlar ve devam (28 Kasım 2026, 01:40)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -47,33 +47,48 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
 - Her önemli adımda günlüğe saatli satır. Kullanım limiti %95'i geçerse yarım işi "ARA KAYIT (yarım)" diye commit'le,
   push'la, günlüğe yaz ve dur.
 
-## 3. Şu anki durum (28 Kasım 00:50)
+## 3. Şu anki durum (28 Kasım 01:05)
 
 **Canlıda (bu oturumda):**
-- Site **#303**: Next.js 16.4.6, zod 4.6.7, vitest 4.1.12 / vite 6.4.6 (squash, ba38bdd3). Canlı kontrol: ana sayfa, menü,
-  ödeme, mağaza, admin 200; `/api/health` db up. Kalan: Vercel çalışma zamanı hatalarına bir kez bak.
+- Site **#303**: Next.js 16.4.6, zod 4.6.7, vitest 4.1.12 / vite 6.4.6 (squash). Canlı: ana sayfa, menü, ödeme, mağaza,
+  admin 200; `/api/health` db up. Kalan: Vercel çalışma zamanı hatalarına bir kez bak.
+- Kasa **#193** müşteri ekranında Google Translate balonu çıkmaz; **#194** rayda ve Araçlar'da "Ekranı yenile" (squash).
+- Panel **#173**: bu dosya ve `docs/planlar/` tasarımları.
 
-**Kasa PR'ları (sahibin talimatı: üçü birlikte tek güncelleme olarak gönderilir):**
-- **#192** Token kablolu: sürücü sessiz kurulur ("Cihaz görünmedi; Token sürücüsü kuruluyor" adımında kalma sorunu).
-  Kök neden ve çözüm `docs/planlar/tokenx-surucu.md`. Gerçek Windows denemesi ("surucu" işi) yeşil: 77 sn, iki sürücü de
-  Windows'un sürücü deposunda. İlk CI koşusunda tarayıcı demosu açılmıyordu ("Buffer is not defined"); düzeltildi
-  (ddd8380), yerelde demo 7/7.
-- **#193** müşteri ekranında Google Translate balonu çıkmasın: **birleşti** (28 Kas 00:47).
-- **#194** rayda ve Araçlar'da "Ekranı yenile". Yerel e2e: 710 + 105 ekran 0 sorun, akışlar geçti.
-- Üçü "denetim" ve "windows" yeşil olunca arka arkaya squash ile birleştirilir; birleşmediyse sen birleştir, kanalın yeni
-  derlemeyi yayımladığını gör (`https://lafpos.laffogato.net/guncelleme/surum.json` › build ve commit), sahibe "Şimdi
-  güncelle" de.
+**Kasa (bu oturumda):**
+- **#192** Token sürücüsü sessiz kurulum: **birleşti** (56de96c, 28 Kas 01:20); kanal derleme 1795817204'ü sunuyor.
+  Sahip kasada denemedi: siteden indirilen kurulum dosyasını çalıştırdı, o da yarıda kaldı (aşağıda). Sahibe söylendi:
+  Yönetim › Ayarlar ve yedek › Güncelleme › **Şimdi güncelle**, sonra Yazarkasa POS › Token kablolu › **Kurulumu yap**.
+  Sonucunu sor.
+- **#195** (açık) kasa penceresi kapatınca kapanır (sahibin isteği: "kapattığımda kapansın, ben açınca açılsın"). Bekçi
+  (sürüm 6) kullanıcının kapattığı pencereyi yeniden açmaz, müşteri ekranını da kapatır; kısayolun açma isteği
+  (`kasa-ac.istek`) varsa sunucu gelince açar. İlk koşuda gerçek Windows işi (ci-kurulum.mjs D3, D5, D6 yeni kural)
+  **yeşil**, iki birim testi düşmüştü (eski adlı yol işaretsiz, bakım testi eski satırı arıyordu): düzeltildi, main
+  dala alındı (d9c2d66), CI yeniden koşuyor. "denetim" ve "windows" yeşilse squash ile birleştir; kanalı gör, sahibe
+  "Şimdi güncelle" de.
+- **YENİ KUSUR, siteden kurulum dosyası** (`scripts/kasa/windows/kurulum/web-kurucu.ps1`): gün açık bir kasada
+  "Çalışan AsilPOS sunucusu durduruluyor → AsilPOS kuruluyor → Kurulum yarıda kaldı: The process cannot access the file
+  because it is being used by another process." (sahibin fotoğrafı, 28 Kas 01:08). Ekranda "Eski AsilPOS sunucusu yeniden
+  başlatıldı" satırı yoktu: büyük olasılıkla `schtasks /Query` sunucu görevini (`$Gorev`) bulamadı (`$GorevVardi`
+  yanlış), sunucu durdurulmadı, çalışan node `app\` içindeki yerel modülü kilitlediği için `Rename-Item app → app.eski`
+  düştü (hiçbir şey değişmedi, eski sürüm çalışıyor). Düzeltilecekler: (1) görev bulunamasa da kurulum klasöründen
+  (`$Kur\node\node.exe`) çalışan süreçler durdurulsun ve sonra yeniden açılsın; (2) dış `catch` `app.eski` / `node.eski`'yi
+  geri koysun (bugün `node` yeniden adlandırması düşerse `app` geri gelmez, sunucu açılamaz); (3) "Kurulum yarıda kaldı"
+  iletisi ne olduğunu ve "programın içinden Şimdi güncelle"yi söylesin. `tests/web-kurucu.test.ts` ve Windows CI'daki
+  "siteden kurulum" adımına çalışan sunucuyla bir durum eklensin.
 
-**Panel dalları (PR yoksa sen aç):**
-- `denetim-kucuk-hatalar`: denetimin beş küçük hatası, her biri testli. Bitenler: satış yapıştırmada ReDoS, muhasebeciye
-  yazma düğmeleri, yüklemede yönetici sekmeleri. Kalan (dalda yoksa): kapatılan şubenin müdürüne bildirim gitmesin;
-  "Tümü"de kart komisyonu şube şube toplansın. Kod içerir: 03:00'ten sonra birleşir.
-- `whatsapp-kor-metin`: sahibin isteği "WhatsApp kopyala gitmiş, o olsun". Neden: 25 Kasım kör kasa kuralıyla personel
-  AsilPOS günlerinde (Marina) WhatsApp metnini alamıyor; metin sayılan nakdi ve farkı taşıyordu
-  (`src/app/panel/kasa/page.tsx` `whatsapp = report && !blind`, `cash-form.tsx` `staffAuto`,
-  `src/server/actions/cash-report.ts` `BLIND_TEXT.whatsapp`). Çözüm: personele kör sayıma uygun metin (açılış, sayılan,
-  teslim alanı, fark, olması gereken, devir yok) ve "WhatsApp ile gönder" / "Metni kopyala" düğmeleri geri; yönetici ve
-  ModPOS metni aynen. Kod içerir: 03:00'ten sonra birleşir.
+**Açık panel PR'ları (kod içerir: 03:00–22:00 İstanbul arasında, CI yeşilse merge commit):**
+- **#174** denetimin beş küçük hatası (ReDoS, muhasebeci salt okunur, yükleme sekmeleri, kapalı şubenin müdürüne
+  bildirim, Tümü'de kart komisyonu). Sahibe sorulacak: karışık ayda kasa kartı olmayan şube "Tümü"de de Ayarlar'daki
+  oranla sayılıyor (kendi görünümüyle aynı); "şubenin oranı geçsin" derse yön çevrilir.
+- **#175** personele kör sayımlı WhatsApp metni ("WhatsApp ile gönder" / "Metni kopyala" geri; açılış, sayılan, teslim,
+  fark, olması gereken, devir yok; yönetici ve ModPOS metni aynen).
+- İkisinde de CI, gece 00:00–05:00 arası koşunca `tests/sube-ayrimi-db.test.ts` › "Asistan › gunluk_satislar"
+  yüzünden kırmızıydı (asistan bugünü iş gününe, 05:00'e göre sayar; test takvimin dününü veriyordu). Test düzeltildi,
+  iki dala da eklendi (yerelde 264/264); CI yeniden koşuyor.
+- Sıra: önce #174'ü birleştir, sonra #175'e main'i al (YAPILACAKLAR.md, docs/planlar/DEVAM.md ve
+  `src/lib/assistant/knowledge-data.ts` çakışabilir: belgeleri elle birleştir, `npm run asistan:bilgi`), CI yeşilse
+  birleştir.
 
 **Kasada bekleyen:** #191 (masaüstü programı) 27 Kasım gecesi kurulmadı: kasa 22:28'den beri kapalıydı (bilgisayar
 gün sonunda kapatılıyor). Sabah açılışta kurulmalı: kasanın Merkez durum kaydında build 1795803043
@@ -85,8 +100,8 @@ kaydı (`api/_merkez.ts` › `SET_KEY`, `statusKey`). Yalnız zamanları ve buil
 
 Aynı anda en çok iki iş: biri panel, biri kasa ya da site.
 
-1. **Kasa #192, #193, #194** birleşmediyse birleştir (yukarıda); sahibin denemesini bekle.
-2. **Panel `denetim-kucuk-hatalar`** ve **`whatsapp-kor-metin`** (yukarıda): bitir, PR, CI yeşil, 03:00 sonrası birleştir.
+1. **Kasa #195** birleştir (yukarıda); sahibin Token denemesinin sonucunu sor; **siteden kurulum dosyası kusurunu** düzelt (yukarıda).
+2. **Panel #174 ve #175** (yukarıda): 03:00'ten sonra sırayla birleştir.
 3. **Kasa: "Kurulumu yap" fiş yazıcısını da bulsun ve denenebilsin** (sahibin isteği). Yönetim › Yazarkasa POS kurulum
    adımlarına bir "Fiş yazıcısı" adımı: `server/lib/yazici.ts` (`pickReceiptPrinter`, kasa betiğinin bildirdiği liste
    `kasa.yazicilar`), seçilen yazıcıyı göster, "Deneme fişi yazdır" düğmesi (`src/components/admin/PrinterCard.tsx`'teki
