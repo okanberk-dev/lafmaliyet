@@ -68,7 +68,9 @@ oranla 0–1000, görünüm, yöntem — `kagit` / `kenar` / `yazi` / `tam-kare`
 /api/foto/kenar` (en çok 1024 px JPEG; Ayarlar'daki ilk okuma modeli, varsayılan Claude Haiku 5.5, efor low; kod
 emin değilken sorulur: kâğıt yok ya da kareyi dolduruyor sanıldı, güven 0,6'nın altında, iki aday, kâğıda benzemiyor).
 `ai_calls`'a `tarama` olarak düşer; fotoğraf okumasının günlük sınırına sayılmaz, kendi sınırı var (günde 150,
-kişi başına saatte 30). Görüntü saklanmaz. Kurallar `src/lib/photo-scan.ts`, istem `src/lib/photo-read/scan-hint.ts`.
+kişi başına saatte 30). Görüntü saklanmaz. Yalnız yazabilen rol sorar (`kayit.yaz`): salt okuyan muhasebeciye uç ve
+çekirdek "salt okunur" döner (403; [ROLLER.md](ROLLER.md) › Muhasebeci). Kurallar `src/lib/photo-scan.ts`, istem
+`src/lib/photo-read/scan-hint.ts`.
 
 ### Canlı vizör
 

@@ -394,8 +394,9 @@ describe("muhasebeci: salt okunur", () => {
     assert.match(read("src/app/api/muhasebe/paket/route.ts"), /can\(user\.role, "muhasebe\.oku"\)/);
     // Tam dışa aktarım (kişi kişi maaş, reçeteler, ayarlar) yalnız yöneticinin
     assert.match(read("src/app/api/export/route.ts"), /user\.role !== "admin"/);
-    for (const f of ["src/app/api/foto/route.ts", "src/app/api/kontrol/foto/route.ts", "src/app/api/siparisler/route.ts"]) {
-      assert.match(read(f), /if \(!can\(me\.role, "kayit\.yaz"\)\) return Response\.json\(\{ error: READ_ONLY_TEXT \}/, f);
+    // Köşe ipucu da (ücretli istek, ortak günlük sınır); davranışı tests/foto-tarama-db.test.ts
+    for (const f of ["src/app/api/foto/route.ts", "src/app/api/foto/kenar/route.ts", "src/app/api/kontrol/foto/route.ts", "src/app/api/siparisler/route.ts"]) {
+      assert.match(read(f), /if \(!can\(me\.role, "kayit\.yaz"\)\) return Response\.json\(\{ (ok: false, )?error: READ_ONLY_TEXT \}/, f);
     }
     // Eylemde reddedilen muhasebeci yönlendirilmez, "salt okunur" hatası alır
     assert.match(read("src/server/auth/dal.ts"), /if \(user\.role === "accountant" && \(await headers\(\)\)\.has\("next-action"\)\) throw new UserError\(READ_ONLY_TEXT\);/);

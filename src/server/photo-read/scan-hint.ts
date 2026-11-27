@@ -6,8 +6,10 @@ import { sniffMime } from "@/lib/documents";
 import { normalizeHint, SCAN_HINT_SYSTEM, ScanHintRaw, scanHintTask, type ScanHint } from "@/lib/photo-read/scan-hint";
 import { imageSize, UPLOADS_PER_HOUR } from "@/lib/photo-rules";
 import { HINT_IMAGE, HINT_MAX_BYTES } from "@/lib/photo-scan";
+import { can, READ_ONLY_TEXT } from "@/lib/roles";
 import { extractImage, loadAiSettings } from "@/server/ai/claude";
 import type { AiClient, AiTimeouts } from "@/server/ai/run";
+import type { CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -16,7 +18,8 @@ import { getDb, schema as s } from "@/server/db";
  * efor "low", en çok 1024 px JPEG (~1.000 girdi tokenı, kısa yanıt). Kapılar okumayla aynı (anahtar, Ayarlar anahtarı),
  * günlük sınır ayrı (SCAN_HINT_DAILY_CAP; "tarama" okuma sınırına sayılmaz); kişi başına saatte en çok 30. Görüntü
  * saklanmaz; ai_calls'a maliyet satırı ve doğrulanmış ipucu düşer. Hiçbir hata ekrana çıkmaz: tarama kodun sonucuyla
- * sürer (docs/FOTOGRAF.md › Belge tarama).
+ * sürer (docs/FOTOGRAF.md › Belge tarama). Soran yazabilen rol olmalı (`kayit.yaz`): salt okuyan muhasebeci ücretli
+ * istek açamaz, ortak günlük sınırı tüketemez (docs/ROLLER.md › Muhasebeci).
  */
 
 /** Kısa yanıt: tek deneme 15 sn, hızlı dönen hata bir kez yeniden denenir; en çok 20 sn (yol 30 sn'de kesilir) */
@@ -45,15 +48,16 @@ async function recentHints(userId: number): Promise<number> {
 }
 
 /** Köşe ipucu; `client` yalnız testte (sahte istemci) */
-export async function scanHintFor(input: { bytes: Uint8Array; userId: number; client?: AiClient }): Promise<ScanHintOutcome> {
+export async function scanHintFor(input: { bytes: Uint8Array; me: Pick<CurrentUser, "id" | "role">; client?: AiClient }): Promise<ScanHintOutcome> {
+  if (!can(input.me.role, "kayit.yaz")) return { ok: false, status: 403, error: READ_ONLY_TEXT };
   const problem = hintImageProblem(input.bytes);
   if (problem) return { ok: false, status: 400, error: problem };
-  if ((await recentHints(input.userId)) >= UPLOADS_PER_HOUR) return { ok: false, status: 429, error: "Kısa sürede çok soruldu." };
+  if ((await recentHints(input.me.id)) >= UPLOADS_PER_HOUR) return { ok: false, status: 429, error: "Kısa sürede çok soruldu." };
   const size = imageSize(input.bytes)!;
   const settings = await loadAiSettings();
   const res = await extractImage({
     feature: "tarama",
-    userId: input.userId,
+    userId: input.me.id,
     photoId: null,
     system: SCAN_HINT_SYSTEM,
     task: scanHintTask(size.width, size.height),

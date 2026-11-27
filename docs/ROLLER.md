@@ -112,7 +112,9 @@ düğmeleri gizli.
 
 - Hiçbir kayıt değiştiremez: her sunucu eylemi reddeder. Geçenler yalnız kendi hesabının eylemleri (parola, iki
   adımlı, oturumlar, bu cihazın bildirim aboneliği) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
-  metni). Veri uçları da: fotoğraf yükleyemez, sipariş eşitleyemez, vardiya PDF'ini alamaz.
+  metni). Veri uçları da: fotoğraf yükleyemez, sipariş eşitleyemez, vardiya PDF'ini alamaz, belge taramada yapay
+  zekâya köşe ipucu soramaz (`/api/foto/kenar` ve çekirdeği `scanHintFor`: ücretli istek, `ai_calls` satırı ve
+  işletmenin ortak günlük sınırı; [FOTOGRAF.md](FOTOGRAF.md) › Belge tarama).
 - Ayar görmez; zilinde yalnız kendi hesabının güvenlik uyarısı (yeni cihazdan giriş) durur; canlı uç (`/api/canli`)
   ona karaoke oturumu, silme isteği, uygulama siparişi ve masa çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir
   şube seçiminde); panel asistanı yok.
@@ -212,6 +214,8 @@ oturumları kapanır (oturum sürümü).
   rol için birkaç yol); yetki tablosu; iki adımlı ve e-posta kuralları; **kaynak taraması**: her `"use server"`
   dosyasının dışa verdiği her eylem bir kapı çağırır (`tests/helpers/action-gates.ts`) ve hiçbiri muhasebeciye yazma
   izni vermez.
+- `tests/foto-tarama-db.test.ts` (gerçek Postgres, `FOTO_TARAMA_TEST_DATABASE_URL`): muhasebecinin köşe ipucu isteği
+  uçta ve çekirdekte "salt okunur" döner; yapay zekâya istek gitmez, `ai_calls`'a satır düşmez.
 - `tests/roller-db.test.ts` (gerçek Postgres, `ROLLER_TEST_DATABASE_URL`): kısıtlar; müdür öteki şubeyi okuyamaz, öteki
   şubenin isteğine karar veremez, öteki şubeye yazamaz, yöneticinin kategorisindeki kasadan çıkanı düzeltemez,
   taşıyamaz, silemez (`tests/kasa-cikan-istek-db.test.ts`: o satırın isteğine de karar veremez), o satırın yeri,

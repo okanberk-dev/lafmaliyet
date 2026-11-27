@@ -1,8 +1,8 @@
 // Belge tarama gerçek Postgres'te (docs/FOTOGRAF.md › Belge tarama): POST /api/foto taranmış hâli ve asıl fotoğrafı
 // ayrı dosya olarak saklar, tarama bilgisini satıra yazar; GET /api/foto/{id}?v=asil aynı görme kuralıyla verir (HEAD
 // var mı diye bakar); iki dosya birlikte silinir (deletePhoto, sabah temizliği). Yapay zekânın köşe ipucu sahte
-// istemciyle: ai_calls'a "tarama" olarak düşer, okuma sınırına sayılmaz, kendi günlük ve saatlik sınırı var. Canlı
-// yapay zekâ ve gerçek depo yok (bellek sürücüsü).
+// istemciyle: ai_calls'a "tarama" olarak düşer, okuma sınırına sayılmaz, kendi günlük ve saatlik sınırı var; salt okuyan
+// muhasebeci soramaz (docs/ROLLER.md › Muhasebeci). Canlı yapay zekâ ve gerçek depo yok (bellek sürücüsü).
 //
 // Kendi geçici veritabanını açar (FOTO_TARAMA_TEST_DATABASE_URL'in sunucusunda), sonunda siler. Değişken yoksa atlanır.
 // Çalıştırma: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/lm_tarama npm run test:db -- tests/foto-tarama-db.test.ts
@@ -18,6 +18,7 @@ import postgres from "postgres";
 
 import { businessDate } from "../src/lib/cash-report";
 import { SCAN_HINT_DAILY_CAP, type ScanInfo } from "../src/lib/photo-scan";
+import { READ_ONLY_TEXT, type Role } from "../src/lib/roles";
 import type { AiClient, AiMessage, CreateParams } from "../src/server/ai/run";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -70,8 +71,9 @@ describe("Belge tarama: asıl fotoğraf, erişim, temizlik ve köşe ipucu (veri
   let claude: typeof import("../src/server/ai/claude");
   let NextRequestCtor: typeof NextRequest;
   let driver: ReturnType<typeof memoryDriver>;
-  let who: { id: number; name: string; email: string; role: "admin" | "staff" } | null = null;
-  const users = { ali: 0, ayse: 0, mehmet: 0 };
+  let who: { id: number; name: string; email: string; role: Role } | null = null;
+  const users = { ali: 0, ayse: 0, mehmet: 0, nur: 0 };
+  const ROLE_OF: Record<keyof typeof users, Role> = { ali: "admin", ayse: "staff", mehmet: "staff", nur: "accountant" };
   const DAY = businessDate();
 
   before(async () => {
@@ -102,9 +104,10 @@ describe("Belge tarama: asıl fotoğraf, erişim, temizlik ve köşe ipucu (veri
         { email: "tarama-ali@ornek.com", name: "Ali", passwordHash: "x", role: "admin" },
         { email: "tarama-ayse@ornek.com", name: "Ayşe", passwordHash: "x", role: "staff" },
         { email: "tarama-mehmet@ornek.com", name: "Mehmet", passwordHash: "x", role: "staff" },
+        { email: "tarama-nur@ornek.com", name: "Nur", passwordHash: "x", role: "accountant" },
       ])
       .returning({ id: s.users.id });
-    [users.ali, users.ayse, users.mehmet] = rows.map((r) => r.id);
+    [users.ali, users.ayse, users.mehmet, users.nur] = rows.map((r) => r.id);
     const me = async () => who;
     stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
     photos = await import("../src/server/storage/photos");
@@ -130,8 +133,10 @@ describe("Belge tarama: asıl fotoğraf, erişim, temizlik ve köşe ipucu (veri
   });
 
   const as = (name: keyof typeof users) => {
-    who = { id: users[name], name, email: `tarama-${name}@ornek.com`, role: name === "ali" ? "admin" : "staff" };
+    who = { id: users[name], name, email: `tarama-${name}@ornek.com`, role: ROLE_OF[name] };
   };
+  /** Köşe ipucunu soran (çekirdeğe giden kişi) */
+  const asker = (name: keyof typeof users) => ({ id: users[name], role: ROLE_OF[name] });
 
   const req = (path: string, init: { method?: string; body?: FormData; headers?: Record<string, string> } = {}) =>
     new NextRequestCtor(`${ORIGIN}${path}`, { method: init.method ?? "GET", body: init.body, headers: { origin: ORIGIN, host: "panel.test", ...init.headers } });
@@ -302,7 +307,7 @@ describe("Belge tarama: asıl fotoğraf, erişim, temizlik ve köşe ipucu (veri
   test("köşe ipucu: ucuz model, efor low; ai_calls'a 'tarama' düşer, fotoğraf okumasının sınırına sayılmaz", async () => {
     const calls: CreateParams[] = [];
     const answer = { document: true, top: "right", corners: corners([[120, 80], [880, 60], [900, 940], [100, 960]]) };
-    const r = await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.ayse, client: fakeClient(answer, calls) });
+    const r = await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ayse"), client: fakeClient(answer, calls) });
     assert.deepEqual(r, {
       ok: true,
       hint: {
@@ -326,32 +331,32 @@ describe("Belge tarama: asıl fotoğraf, erişim, temizlik ve köşe ipucu (veri
 
     // Ayarlar › Fotoğraftan okuma › ilk okuma modeli değişirse köşe ipucu da onu kullanır
     await claude.saveAiSettings({ photoModels: { cheap: "claude-opus-5-5", strong: "claude-opus-5-5" } });
-    await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.ayse, client: fakeClient(answer, calls) });
+    await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ayse"), client: fakeClient(answer, calls) });
     assert.equal(calls[1].model, "claude-opus-5-5");
   });
 
   test("köşe ipucu: kendi günlük sınırı, kişi başına saatte 30, okuma kapalıyken istek gitmez; görüntü denetlenir", async () => {
     const calls: CreateParams[] = [];
     const client = fakeClient({ document: false, top: "up", corners: null }, calls);
-    assert.deepEqual(await hint.scanHintFor({ bytes: png(768, 1024), userId: users.ali, client }), { ok: false, status: 400, error: "Yalnız JPEG." });
-    assert.equal((await hint.scanHintFor({ bytes: jpeg(2000, 1500), userId: users.ali, client })).ok, false, "1024 px'ten büyük");
+    assert.deepEqual(await hint.scanHintFor({ bytes: png(768, 1024), me: asker("ali"), client }), { ok: false, status: 400, error: "Yalnız JPEG." });
+    assert.equal((await hint.scanHintFor({ bytes: jpeg(2000, 1500), me: asker("ali"), client })).ok, false, "1024 px'ten büyük");
     // Okuma kapalı: istek gitmez
     await claude.saveAiSettings({ enabled: false });
-    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.ali, client }), { ok: false, status: 503, error: "off" });
+    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ali"), client }), { ok: false, status: 503, error: "off" });
     await claude.saveAiSettings({ enabled: true, dailyCap: 1 });
     // Fotoğraf okumasının sınırı (1) dolu olsa da köşe ipucu sorulur (kendi havuzu)
     await db.insert(s.aiCalls).values({ feature: "kasa-z", model: "claude-opus-5-5", status: "ok", userId: users.ali });
     assert.equal((await claude.aiStatus()).state, "cap");
-    assert.equal((await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.ali, client })).ok, true);
+    assert.equal((await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ali"), client })).ok, true);
     // Kişi başına saatte 30
     await db.insert(s.aiCalls).values(Array.from({ length: 29 }, () => ({ feature: "tarama", model: "claude-haiku-5-5", status: "ok" as const, userId: users.mehmet })));
-    assert.equal((await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.mehmet, client })).ok, true);
-    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.mehmet, client }), { ok: false, status: 429, error: "Kısa sürede çok soruldu." });
+    assert.equal((await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("mehmet"), client })).ok, true);
+    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("mehmet"), client }), { ok: false, status: 429, error: "Kısa sürede çok soruldu." });
     // Günlük sınır (herkes birlikte)
     const used = (await db.select().from(s.aiCalls).where(eq(s.aiCalls.feature, "tarama"))).length;
     await db.insert(s.aiCalls).values(Array.from({ length: SCAN_HINT_DAILY_CAP - used }, () => ({ feature: "tarama", model: "claude-haiku-5-5", status: "ok" as const, userId: null })));
     const before = calls.length;
-    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), userId: users.ayse, client }), { ok: false, status: 503, error: "cap" });
+    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ayse"), client }), { ok: false, status: 503, error: "cap" });
     assert.equal(calls.length, before, "sınır dolunca istek gitmez");
   });
 
@@ -368,5 +373,26 @@ describe("Belge tarama: asıl fotoğraf, erişim, temizlik ve köşe ipucu (veri
     assert.equal(res.status, 400);
     assert.equal(((await res.json()) as { ok: boolean }).ok, false);
     assert.equal((await db.select().from(s.aiCalls)).length, 0, "denetime takılan istek yapay zekâya gitmez");
+  });
+
+  test("muhasebeci salt okur: köşe ipucu soramaz (uçta ve çekirdekte); ücretli istek gitmez, ai_calls'a satır düşmez, ortak sınır tükenmez", async () => {
+    const calls: CreateParams[] = [];
+    const client = fakeClient({ document: false, top: "up", corners: null }, calls);
+    // Çekirdek: görüntü ve sınırlardan önce reddeder
+    assert.deepEqual(await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("nur"), client }), { ok: false, status: 403, error: READ_ONLY_TEXT });
+    assert.deepEqual(await hint.scanHintFor({ bytes: png(768, 1024), me: asker("nur"), client }), { ok: false, status: 403, error: READ_ONLY_TEXT });
+    assert.equal(calls.length, 0, "yapay zekâya istek gitmedi");
+    // Uç: oturumu olan muhasebecinin aynı kökenden isteği 403, gövde okunmadan
+    as("nur");
+    const f = new FormData();
+    f.append("dosya", new Blob([new Uint8Array(jpeg(768, 1024))]), "kenar.jpg");
+    const res = await kenar.POST(req("/api/foto/kenar", { method: "POST", body: f }));
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { ok: false, error: READ_ONLY_TEXT });
+    assert.equal((await db.select().from(s.aiCalls)).length, 0, "ai_calls'a satır düşmedi");
+    // Personel ve yönetici aynı istekle sorar
+    assert.equal((await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ayse"), client })).ok, true, "personel");
+    assert.equal((await hint.scanHintFor({ bytes: jpeg(768, 1024), me: asker("ali"), client })).ok, true, "yönetici");
+    assert.equal(calls.length, 2);
   });
 });
