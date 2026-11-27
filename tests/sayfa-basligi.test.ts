@@ -156,7 +156,8 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
     "/panel/vergi/kurallar": ["src/app/panel/vergi/kurallar/page.tsx", /<HashScroll \/>/],
     "/panel/gelir-gider": ["src/app/panel/gelir-gider/page.tsx", /<HashScroll key=\{`capa-\$\{year\}`\} \/>/],
     "/panel/personel": ["src/app/panel/personel/staff-editor.tsx", /window\.addEventListener\("hashchange", fromHash\)/],
-    "/panel/ayarlar": ["src/app/panel/ayarlar/section-card.tsx", /window\.location\.hash !== `#\$\{id\}`/],
+    // Bölümün eski adlı çapası da (HASH_ALIASES) aynı bölüme iner
+    "/panel/ayarlar": ["src/app/panel/ayarlar/section-card.tsx", /\[id, \.\.\.\(HASH_ALIASES\[id\] \?\? \[\]\)\]\.some\(\(h\) => window\.location\.hash === `#\$\{h\}`\)/],
     "/panel/parasut": ["src/app/panel/parasut/page.tsx", /<HashScroll \/>/],
   };
   assert.deepEqual([...new Set(hashed.map((h) => h.split("#")[0]))].sort(), Object.keys(LANDS).sort());
