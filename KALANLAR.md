@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 01:05)
+# Kalanlar ve devam (28 Kasım 2026, 01:15)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -55,12 +55,16 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
 - Kasa **#193** müşteri ekranında Google Translate balonu çıkmaz; **#194** rayda ve Araçlar'da "Ekranı yenile" (squash).
 - Panel **#173**: bu dosya ve `docs/planlar/` tasarımları.
 
-**Kasa #192 (Token sürücüsü; sahibin talimatı: hemen gönderilsin):** "Cihaz görünmedi; Token sürücüsü kuruluyor" adımında
-kalma sorunu. Kök neden ve çözüm `docs/planlar/tokenx-surucu.md`. Gerçek Windows denemesi ("surucu" işi) iki kez yeşil
-(77 sn, iki sürücü de Windows'un sürücü deposunda). İlk CI'da tarayıcı demosu açılmıyordu ("Buffer is not defined");
-düzeltildi (ddd8380), yerelde demo 7/7. **Birleşmediyse:** "denetim" ve "windows" yeşilse squash ile birleştir, kanalın
-yeni derlemeyi yayımladığını gör (`https://lafpos.laffogato.net/guncelleme/surum.json` › commit), sahibe "Şimdi güncelle,
-sonra Yazarkasa POS › Token kablolu › Kurulumu yap" de.
+**Açık kasa PR'ları (sahibin talimatı: hepsi gönderilsin; squash ile, "denetim" ve "windows" yeşilse):**
+- **#192** Token sürücüsü: "Cihaz görünmedi; Token sürücüsü kuruluyor" adımında kalma sorunu (kök neden
+  `docs/planlar/tokenx-surucu.md`). Gerçek Windows sürücü denemesi ve "windows" yeşil; ilk CI'da tarayıcı demosu
+  açılmıyordu ("Buffer is not defined"), düzeltildi (ddd8380, yerelde demo 7/7); "denetim" son bakışta sürüyordu.
+- **#195** kasa penceresi kapatınca kapanır (sahibin isteği: "kapattığımda kapansın, ben açınca açılsın"). Bekçi
+  (sürüm 6) kullanıcının kapattığı pencereyi yeniden açmaz, müşteri ekranını da kapatır; kısayolun açma isteği
+  (`kasa-ac.istek`) varsa sunucu gelince açar. Windows CI adımları (ci-kurulum.mjs D3, D5, D6) buna göre güncellendi.
+  "windows" işi gerçek Windows'ta yeni kuralı dener: düşerse günlüğe bak (`mcp__github__get_job_logs`), düzelt.
+- Birleşince kanalı gör (`https://lafpos.laffogato.net/guncelleme/surum.json` › commit) ve sahibe söyle: "Şimdi
+  güncelle; sonra Yazarkasa POS › Token kablolu › Kurulumu yap. Pencereyi kapatınca artık kapalı kalır."
 
 **Açık panel PR'ları (kod içerir: 03:00–22:00 İstanbul arasında, CI yeşilse merge commit):**
 - **#174** denetimin beş küçük hatası (ReDoS, muhasebeci salt okunur, yükleme sekmeleri, kapalı şubenin müdürüne
@@ -81,7 +85,7 @@ kaydı (`api/_merkez.ts` › `SET_KEY`, `statusKey`). Yalnız zamanları ve buil
 
 Aynı anda en çok iki iş: biri panel, biri kasa ya da site.
 
-1. **Kasa #192** birleşmediyse birleştir (yukarıda); sahibin denemesini bekle.
+1. **Kasa #192 ve #195** birleşmediyse birleştir (yukarıda); sahibin denemesini bekle.
 2. **Panel #174 ve #175** (yukarıda): 03:00'ten sonra sırayla birleştir.
 3. **Kasa: "Kurulumu yap" fiş yazıcısını da bulsun ve denenebilsin** (sahibin isteği). Yönetim › Yazarkasa POS kurulum
    adımlarına bir "Fiş yazıcısı" adımı: `server/lib/yazici.ts` (`pickReceiptPrinter`, kasa betiğinin bildirdiği liste
