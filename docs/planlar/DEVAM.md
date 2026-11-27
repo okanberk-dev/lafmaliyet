@@ -73,6 +73,32 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   Uzaktan'ın `/api/health` › `onceki` bayrağı okunur. Başlık ve bayrak kasa ve site dallarından gelir (onlarsız panel
   "önceki anahtarı tanımıyor" der, belge değişimi başlatmaz). Yayın sırası DEPLOY.md § 7.
 
+## 27 Kasım gece: durum ve sıra (bu PR)
+
+Bugün main'e girenler (hepsi canlıda): #163 roller, #165 başlangıç verisi, #166 AsilPOS adı (0098), #167 çok şubeli kasa ve
+Marina yalnız AsilPOS (0099), #168 hata kaydı (0100), #169 anahtar değişimi uyumu, #170 şube ayrımı (0101), #171 Vergi bölümü
+kaldırıldı (muhasebeci yürütüyor; veriler silinmedi). Kasa deposunda #187–#191 (ad, çok şube, bağımlılıklar, iki anahtar,
+masaüstü programı); sitede #302.
+
+Sıra:
+1. ACİL site: Next.js 16.4.6'ya (açıklı 16.3.8), zod ≥ 4.6.6.
+2. ACİL 10 Aralık'tan önce: sitenin e-Arşiv'i Paraşüt'e eski şifreli girişle bağlanıyor; panelin OAuth girişi siteye taşınır
+   (sahip Paraşüt'te bir kez onay verir). Sitenin Vercel'indeki PARASUT_USERNAME / PASSWORD o zamana dek silinmez.
+3. Denetimin küçük hataları (tek PR): satış yapıştırmada ReDoS, muhasebeciye yazma düğmeleri, yüklemede yönetici sekmeleri,
+   kapalı şubenin müdürüne bildirim, "Tümü"de kart komisyonu.
+4. Özel günler bölümü panelden kaldırılır (sahibin isteği; veriler silinmez). Dikkat: "kafe kapalı" günleri
+   `special_days` tablosunda `kind = 'kapali'` satırıdır ve komisyon, eksik rapor, kontrol listesi, Z sürekliliği bunu okur.
+   Kapalı gün akışı (Kasa raporu › Kafe kapalıydı, Onaylar, yöneticinin ileri tarihli kapalı günü) başka ekranda yaşamaya
+   devam eder; yalnız maç, AVM etkinliği ve kampanya notları ve menüdeki üç giriş kalkar.
+5. Basitleştirme: kullanan için ve satılacak işletmeler için sade ekranlar (az kullanılan alanlar gizlenir ya da ayara taşınır,
+   metinler kısalır, ilk kurulum kolaylaşır).
+6. P5 (dal p5-ay-ayarlari, yarım): ay bazlı ayarlar + 2027 bordro ve stopaj değerleri; bordro ayarları Ayarlar › Personel'e.
+7. ModPOS API anahtarı girme ekranları kalkar (Tuzla'nın otomatik çekimi kalır).
+8. Ürün görselleri: siteden alınır, kasada ortalı, ladmin'den yüklenip kasaya anında gider.
+9. Kasa: Giderler "Günü kapat" içinde; kasaya hata kaydı.
+10. P8 fotoğraf okuma (+ banka POS Z ÖZET'inde Toplam KDV), P7 dönem kapanışı, P6 sabit listeler (ortağın adı koddan çıkar),
+    P4 CI, P9 temizlik, A3 eski adlar (en erken 4 Aralık), asil-platform satışa hazırlık.
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)
