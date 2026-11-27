@@ -82,7 +82,7 @@ export function zamItem(i: ZamIn): WeeklyItem | null {
   };
 }
 
-// ---------------------------------------------------------------- Nakit planı (insight; KDV satırları planın içinde)
+// ---------------------------------------------------------------- Nakit planı (insight)
 
 export interface CashIn {
   today: string;

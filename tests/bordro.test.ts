@@ -22,12 +22,14 @@ import {
 } from "../src/lib/bordro/payroll";
 import { allRules, findRule, PAYROLL_RULES, r2, RULES_COMPILED_AT, rulesFor } from "../src/lib/bordro/rules";
 import { DEFAULT_PAYROLL_SETTINGS, parsePayrollSettings, PAYROLL_SETTINGS_KEY } from "../src/lib/bordro/settings";
-import { isForeignWithholding, paidFixedRates, paidWithholdingRate, withholdingRate } from "../src/lib/bordro/stopaj";
+import { isForeignWithholding, paidFixedRates, paidWithholdingRate, WITHHOLDING_OPTIONS, WITHHOLDINGS, withholdingRate } from "../src/lib/bordro/stopaj";
 import { createModel, rentWithholdingRate, staffCost } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
+import * as schema from "../src/server/db/schema";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
+const read = (path: string) => readFileSync(join(root, path), "utf8");
 const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const R = rulesFor(2026).rules;
@@ -153,6 +155,20 @@ test("stopaj: profilin oranı; ödemeden kesilen yalnız Türkiye'de şahsa; yur
   assert.deepEqual(paidFixedRates({ taxWithholding: null, vatRate: 0.2 }, 2026), { taxWithholding: null, vatRate: 0.2, withholdingRate: 0 });
   assert.equal(rentWithholdingRate("2026-10"), 0.2);
   assert.equal(rentWithholdingRate("2027-01"), 0.2);
+});
+
+test("stopaj profili Giderler'de seçilir: sütunun bütün değerleri, pencerede \"yok\" dışındakiler; sabit gider kaydı alanı yazar", () => {
+  assert.deepEqual([...WITHHOLDINGS], [...schema.fixedExpenses.taxWithholding.enumValues]);
+  assert.deepEqual(
+    WITHHOLDING_OPTIONS.map((o) => o.value),
+    WITHHOLDINGS.filter((w) => w !== "yok"),
+  );
+  // Vergi › sınıflandırma kalktı (27 Kasım 2026): alanı sabit gider kaydı yazar, verilmezse değişmez, null kaldırır
+  const costs = read("src/server/actions/costs.ts");
+  assert.match(costs, /taxWithholding: z\.enum\(WITHHOLDINGS\)\.nullable\(\)\.optional\(\)/);
+  assert.match(costs, /data\.taxWithholding !== undefined \? \{ taxWithholding: data\.taxWithholding \}/);
+  const dialog = read("src/app/panel/giderler/expenses-client.tsx");
+  assert.match(dialog, /label="Ödemeden kesilen stopaj"/);
 });
 
 // ---------------------------------------------------------------- Bordro

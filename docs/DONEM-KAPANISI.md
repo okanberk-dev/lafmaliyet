@@ -9,7 +9,7 @@ Muhasebeci bir ayın beyannamesini verdikten sonra o aya tarihli yeni bir fatura
 da harcama gelirse panelin o ayki rakamı beyandan ayrılırdı. Dönem kapanışıyla yönetici beyan edilmiş ayı **kapatır**:
 
 - Kapalı aya kapanıştan **sonra** düşen fatura ve harcama **reddedilmez** (Paraşüt eşitlemesi de kayıt açar) ama
-  **hiçbir hesaba girmez**: Genel bakış, Gelir-gider, Vergi, stok değerlemesi (FIFO partileri), dışa aktarım. Kayıt
+  **hiçbir hesaba girmez**: Genel bakış, Gelir-gider, stok değerlemesi (FIFO partileri), dışa aktarım, muhasebeci paketi. Kayıt
   Ayarlar › Dönem kapanışı'ndaki **"Kapalı döneme düşenler"** kutusunda kararı bekler; zil ("Kapalı döneme düşen kayıt
   var") oraya götürür.
 - Kapalı ayda sayılan kaydın **tarihi, tutarları ve kategorisi düzeltilemez, kaydın kendisi silinemez**; başka bir
@@ -40,8 +40,8 @@ da harcama gelirse panelin o ayki rakamı beyandan ayrılırdı. Dönem kapanı�
 ## 3. Hesaplar nerede okur
 
 `src/server/data/dataset.ts` faturaları ve harcamaları `countedRecords` ile okur (bekleyen çıkar, alınan karar gününe
-taşınır), FIFO partilerini `redateLots` ile. Modeli okuyan her ekran (Genel bakış, Gelir-gider, Vergi, Analiz, Nakit
-planının mal tahmini, dışa aktarım, muhasebeci paketi) aynı kuralı görür. **Ödemeler** (vade, nakit planının fatura
+taşınır), FIFO partilerini `redateLots` ile. Modeli okuyan her ekran (Genel bakış, Gelir-gider, Analiz, Nakit planının
+mal tahmini, dışa aktarım, muhasebeci paketi) aynı kuralı görür. **Ödemeler** (vade, nakit planının fatura
 satırları, Tedarikçiler'in kalan borcu) faturayı kendi tablosundan okur: bekleyen faturanın borcu ödeme listesinden
 kaybolmaz. Faturalar listesi faturayı belgenin tarihiyle gösterir.
 

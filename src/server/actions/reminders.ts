@@ -414,7 +414,7 @@ export async function postponeReminder(id: number, by: "week" | "month") {
     const prev = snapshot(r);
     let createdId: number | null = null;
     if (!next) {
-      // Tek seferlik de asıl gününü notunda taşır (nakit planı KDV-2'nin dönemini ondan bulur)
+      // Tek seferlik de asıl gününü notunda taşır (nakit planı ertelenen vergi hatırlatıcısının ayını ondan bulur)
       await db.update(s.reminders).set({ dueDate: target, anchorDate: target, note: postponeNote(r.note, r.dueDate) }).where(eq(s.reminders.id, rid));
     } else {
       createdId = await db.transaction(async (tx) => {

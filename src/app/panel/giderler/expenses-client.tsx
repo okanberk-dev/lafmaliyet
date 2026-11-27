@@ -25,7 +25,8 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import { SHARED_COSTS_NOTE } from "@/lib/branch-view";
 import { shiftMonth, type FixedHistoryEntry, type RangeStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
-import type { FixedPeriod, FixedSection, LandlordType } from "@/lib/calc/types";
+import { isForeignWithholding, paidWithholdingRate, WITHHOLDING_OPTIONS } from "@/lib/bordro/stopaj";
+import type { FixedPeriod, FixedSection, LandlordType, Withholding } from "@/lib/calc/types";
 import { FIXED_PERIODS, FIXED_SECTION_VAT, FIXED_SECTIONS, FIXED_VAT_RATES, fixedVatRate, LANDLORD_TYPES } from "@/lib/constants";
 
 /** Kira stopajı oranı (formun önizlemesi; hesap yılın kuralından: engine.ts rentWithholdingRate, src/lib/bordro/rules.ts) */
@@ -385,6 +386,8 @@ export type FixedRow = {
   officialBasis: "brut" | "net" | null;
   /** Kira: ev sahibi şahıs mı şirket mi (Faz 5; boş = seçilmedi) */
   landlordType: LandlordType | null;
+  /** Ödemeden kesilen stopaj ya da yurt dışı hizmet (yalnız nakit planı ve Ödemeler; src/lib/bordro/stopaj.ts) */
+  taxWithholding: Withholding | null;
   /** Açık güne göre oranla (false: biten ayda tam ay) */
   prorate: boolean;
   monthly: number;
@@ -1086,6 +1089,11 @@ function FixedCard({
   );
 }
 
+/** Pencerenin stopaj seçimi: kayıtlı profil; boş ya da eski "yok" → "" */
+function initialWithholding(row: FixedRow | null): Withholding | "" {
+  return row?.taxWithholding && row.taxWithholding !== "yok" ? row.taxWithholding : "";
+}
+
 function FixedDialog({
   row,
   branches,
@@ -1139,6 +1147,8 @@ function FixedDialog({
     basis: (row?.officialBasis ?? "brut") as "brut" | "net",
     // Kira: ev sahibi türü ("" = seçilmedi; Faz 5)
     landlord: (row?.landlordType ?? "") as LandlordType | "",
+    // Ödemeden kesilen stopaj ("" = yok; eski kaydın "yok"u da boş görünür, değiştirilmedikçe yerinde kalır)
+    withholding: initialWithholding(row),
     // Yeni kira kalemi tam ay (sahibin kararı); öteki kalemler açık güne göre
     prorate: row ? row.prorate : null,
     // Şube: "" = işletme geneli (yeni kalemde seçili şube, Tümü'nde işletme geneli)
@@ -1149,7 +1159,12 @@ function FixedDialog({
   const officialError = official !== null && official < 0 ? "Geçerli bir tutar yazın" : f.official.trim() !== "" && official === null ? "Geçerli bir tutar yazın, ör. 100.000" : null;
   const officialGross = official && official > 0 ? (f.basis === "net" ? official / (1 - KIRA_STOPAJ) : official) : null;
   const landlordType = f.section === "kira" && f.landlord ? f.landlord : null;
-  const vatRate = fixedVatRate({ section: f.section, vatRate: f.vatRate, landlordType });
+  // Stopaj profili kirada ev sahibi türü ya da resmi kira yoksa geçerli (cash-plan.ts paidWithholdingOf): öyleyse sorulur
+  const withholdingAsked = !(f.section === "kira" && (landlordType !== null || officialGross !== null)) && (f.section !== "faturalar" || f.withholding !== "");
+  const withholding = withholdingAsked && f.withholding ? f.withholding : null;
+  const foreign = isForeignWithholding(withholding);
+  const withheldRate = paidWithholdingRate(withholding, Number(currentMonth.slice(0, 4)));
+  const vatRate = foreign ? 0 : fixedVatRate({ section: f.section, vatRate: f.vatRate, landlordType });
   // Biten kalemde tutar değişikliği kalemin kendi ayları için anlamlı: varsayılan olarak son ayı
   const [choice, setChoice] = useState<MonthChoice>(() =>
     row?.status === "ended" ? { mode: "month", month: row.valueMonth } : { mode: "current", month: row?.status === "upcoming" ? row.valueMonth : currentMonth },
@@ -1196,6 +1211,8 @@ function FixedDialog({
         // Kira alanları (rentSaveFields): resmi kira yalnız kira bölümünde (başka bölüme taşınınca silinir); ev sahibi türü
         // kalemin KDV seçimini ve kayıtlı resmi kirayı ezmez (şirkette motor resmi kirayı saymaz)
         ...rentSaveFields({ section: f.section, landlord: f.landlord, vatRate: f.vatRate, official, basis: f.basis }),
+        // Stopaj yalnız değiştiyse gider (eski kaydın "yok"u yerinde kalır)
+        ...(f.withholding !== initialWithholding(row) ? { taxWithholding: f.withholding || null } : {}),
         prorate,
         // Seçim yoksa (tek şube) şube değişmez
         ...(branches.options.length > 1 ? { branchId: f.branch || null } : {}),
@@ -1215,7 +1232,7 @@ function FixedDialog({
     });
     if (!again) return onClose();
     // Bölüm, dönem ve başlangıç ayı korunur: aynı türden kalemler arka arkaya girilir
-    setF((x) => ({ ...x, name: "", amount: "", note: "", vatRate: null, official: "" }));
+    setF((x) => ({ ...x, name: "", amount: "", note: "", vatRate: null, official: "", withholding: "" }));
     setTried(false);
     setAdded((n) => n + 1);
     nameRef.current?.focus();
@@ -1371,7 +1388,7 @@ function FixedDialog({
           <Field
             label="Ev sahibi"
             htmlFor="fx-landlord"
-            tip="Şahsa kira: KDV yok, stopaj %20 resmi kiradan (muhtasarla ödenir; resmi kira yoksa tutardan, ödemeden kesilir). Şirkete kira: faturalı, %20 KDV, stopaj yok. Seçilmezse KDV aşağıdaki seçimden, stopaj kayıtlı stopaj profilinden."
+            tip="Şahsa kira: KDV yok, stopaj %20 resmi kiradan (muhtasarla ödenir; resmi kira yoksa tutardan, ödemeden kesilir). Şirkete kira: faturalı, %20 KDV, stopaj yok. Seçilmezse KDV ve stopaj aşağıdaki seçimlerden."
             hint={`${LANDLORD_TYPES.find((t) => t.value === f.landlord)?.hint ?? "Seçilmedi: KDV ve stopaj eski kuralla."}${
               landlordType === "sirket" && officialGross ? ` Kayıtlı resmi kira (${money(official ?? 0)}) saklanır; şirkette stopaja girmez, şahsa dönülünce yine kullanılır.` : ""
             }`}
@@ -1394,12 +1411,14 @@ function FixedDialog({
           hint={
             landlordType
               ? `Ev sahibi ${landlordType === "sahis" ? "şahıs: KDV yok" : "şirket: %20 KDV"}. Nakit planı aylık ${money(monthly * (1 + vatRate))} öder.`
-              : vatRate
-                ? `Nakit planı aylık ${money(monthly * (1 + vatRate))} öder (KDV dahil).`
-                : "Nakit planı KDV eklemeden öder."
+              : foreign
+                ? "Yurt dışına ödenen: yabancı firma Türk KDV'si kesmez, nakit planı KDV eklemeden öder."
+                : vatRate
+                  ? `Nakit planı aylık ${money(monthly * (1 + vatRate - withheldRate))} öder (KDV dahil${withheldRate ? ", stopaj düşülmüş" : ""}).`
+                  : "Nakit planı KDV eklemeden öder."
           }
         >
-          <Select id="fx-v" value={String(vatRate)} disabled={landlordType !== null} onChange={(e) => setF({ ...f, vatRate: Number(e.target.value) })}>
+          <Select id="fx-v" value={String(vatRate)} disabled={landlordType !== null || foreign} onChange={(e) => setF({ ...f, vatRate: Number(e.target.value) })}>
             {FIXED_VAT_RATES.map((r) => (
               <option key={r.value} value={String(r.value)}>
                 {r.label}
@@ -1408,6 +1427,30 @@ function FixedDialog({
             ))}
           </Select>
         </Field>
+
+        {withholdingAsked ? (
+          <Field
+            label="Ödemeden kesilen stopaj"
+            htmlFor="fx-w"
+            tip="Şahsa ödenen kira, serbest meslek makbuzu ve şahsa internet reklamında stopaj ödemeden kesilir, muhasebeci muhtasarla öder: bankadan net çıkar. Doğrudan yurt dışına ödenende KDV yok. Yalnız nakit planı ve Ödemeler kullanır; Gelir-gider değişmez."
+            hint={
+              foreign
+                ? "Stopaj ödemeden kesilmez; nakit planı tutarı KDV eklemeden öder."
+                : withheldRate
+                  ? `Stopaj %${num(withheldRate * 100)} ödemeden kesilir: nakit planı aylık ${money(monthly * (1 + vatRate - withheldRate))} öder.`
+                  : "Ödemeden stopaj kesilmez."
+            }
+          >
+            <Select id="fx-w" value={f.withholding} onChange={(e) => setF({ ...f, withholding: e.target.value as Withholding | "" })}>
+              <option value="">Yok</option>
+              {WITHHOLDING_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
 
         {f.period !== "gunluk" ? (
           <ToggleRow

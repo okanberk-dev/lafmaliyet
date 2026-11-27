@@ -107,13 +107,14 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   `tests/kenar-cubugu.test.ts` iki ağacı, tek tıkla açılan ekranları, `src/app/panel` altındaki her ekranın menüden
   açıldığını ve paletin her ekranının rolünün ağacında da olduğunu sabitler.
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar, Belgeler, Avanslar
-  (Sabit giderler dışındakilerin menüde ayrı öğesi yok; Belgeler ve Avanslar docs/PERSONEL-BELGE.md); Ödeme → Ödemeler, Nakit planı; Vergi → Özet, Vergi kârı, Demirbaş, Muhasebeci
-  (ağaçtan); Raporlar → Şubeler, İşçilik, Kaçak, Kayıp önleme (ağaçtan, kısaltılmış adla); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
+  (Sabit giderler dışındakilerin menüde ayrı öğesi yok; Belgeler ve Avanslar docs/PERSONEL-BELGE.md); Ödeme → Ödemeler, Nakit planı;
+  Raporlar → Şubeler, İşçilik, Kaçak, Kayıp önleme (ağaçtan, kısaltılmış adla); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
   (aynı sıra, aynı roller; denetim E-56), üç sayfada da çizilir, personel Sayım ve Zayi & ikram'ı görür (`sectionTabsFor`,
   tek sekme kalırsa çubuk çizilmez; sayfa yüklenirken iki rolün ortak sekmeleri, yükleme başlığı yüklenen başlıkla aynı
   boyda: açıklama ve ay seçicinin yeri iskeletle tutulur, sekme satırı içerik gelince kaymaz). Kaldırılan ekranların eski adresleri
   (`/panel/hizli-sayim/**`, `/panel/mal-siparisi/**`) Stok sayımı'na yönlenir (`src/lib/roles.ts` › `retiredRedirect`,
-  proxy). Kontrol listeleri bölüm
+  proxy); Vergi bölümünün adresleri (`/panel/vergi/**`, bölüm 27 Kasım 2026'da kalktı) kısa bir notla
+  `/panel?kaldirildi=vergi`'ye (muhasebeci `/panel/muhasebe?kaldirildi=vergi`'ye) gider, 404 vermez. Kontrol listeleri bölüm
   sekmesi yerine kendi sekmelerini taşır (`SegmentedLinks`: Bugün · Geçmiş · Listeler, yalnız yönetici). Personel
   yalnız kendi ekranlarını görür
   (`src/lib/roles.ts` STAFF_PATHS); ağacının ilk öğesi Bugün, girişte o açılır.

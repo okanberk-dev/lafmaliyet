@@ -57,7 +57,7 @@ export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
  * (Ödemeler ve faturalar alanının şube kipi, `areaScope("odemeler")`; docs/SUBE.md › Şube ayrımı) hatırlatıcılar o
  * şubenin ve işletme genelinin, faturalar şubenin ve işletme genelinin (şubesi seçilmemişler `unassigned` sayısında),
  * faturasız borçlar (cari) firmanın "İşletme geneli" bölümünde (`shared`; src/lib/upcoming-scope.ts). Mahsup firmanın
- * hesabıyla yapılır: liste bütün faturalarla kurulur, sonra süzülür. Verilmezse (sabah e-postası, vergi, haftalık özet)
+ * hesabıyla yapılır: liste bütün faturalarla kurulur, sonra süzülür. Verilmezse (sabah e-postası, haftalık özet)
  * bütün ödemeler. "Tümü"nde şubeye ait hatırlatıcının başlığına şubesi eklenir ("Kira · Marina").
  */
 export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchScope } = {}) {

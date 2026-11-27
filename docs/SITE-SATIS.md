@@ -90,7 +90,7 @@ siteden çekildiyse:
   ödenemeyip kasada nakit ya da kasadaki kart cihazıyla ödenirse (sitede "Ödendi olarak işaretle", `manual:nakit` /
   `manual:kart`) fişi ModPOS'ta çalınır: ciro kasadadır. Site bu siparişleri kafe ve mağaza toplamlarından ve
   satırlarından ayırıp `counter` olarak gönderir (sitede `cafe` / `shop` ile aynı sekiz alan; panel `orders`,
-  `grossMinor`, `netMinor`'ı okur); panel ciroya, KDV tahminine ve
+  `grossMinor`, `netMinor`'ı okur); panel ciroya ve
   tüketime eklemez (elle girilen `manual` gibi), kartta bilgi olarak yazar. Eski site bloğu göndermez: sıfır sayılır.
 - Telefonda ay özeti "+ online X (laffogato.net)" der.
 - **Karaoke box ile karaoke odası ayrı işlerdir:** Faturalar'daki "Karaoke box" kategorisi MaviBahçe AVM'deki karaoke

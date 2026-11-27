@@ -716,6 +716,24 @@ export function isMuhtasarReminder(r: Pick<ReminderRow, "kind" | "title">): bool
   return !isVatReminder(r) && !isVatWithholdingReminder(r) && reminderCategory(r.kind, r.title) !== "sgk";
 }
 
+/**
+ * Kira stopajı hatırlatıcısı ("Kira stopajı"): muhtasar hatırlatıcısı, başlıkta "kira" ve "stopaj" var, "muhtasar" yok.
+ * Tutarı muhtasarın içindeki kira stopajıdır: aynı ayda tutarlı bir muhtasar hatırlatıcısı da varsa nakit planı
+ * stopajı muhtasarın satırından düşer (src/lib/cash-plan.ts)
+ */
+export function isRentWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  const t = foldTR(r.title);
+  return isMuhtasarReminder(r) && /kira/.test(t) && /stopaj/.test(t) && !/muhtasar/.test(t);
+}
+
+/**
+ * Muhtasarın tamamının hatırlatıcısı (başlıkta "muhtasar"; muhasebecinin tahakkuk fişindeki toplam, kira stopajı dahil).
+ * Yalnız damga vergisi değil
+ */
+export function isMuhtasarTotalReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  return isMuhtasarReminder(r) && /muhtasar/.test(foldTR(r.title));
+}
+
 /** Geçici vergi hatırlatıcısı: başlıkta "geçici vergi" */
 export function isProvisionalTaxReminder(r: Pick<ReminderRow, "title">): boolean {
   return /gecici\s+vergi/.test(foldTR(r.title));

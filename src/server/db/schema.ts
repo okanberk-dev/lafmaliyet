@@ -945,7 +945,7 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   taxDoc: text("tax_doc", { enum: ["fatura", "belgeli", "yok", "bordro"] }),
   /**
    * Stopaj profili: ödemeden kesilen stopaj ya da yurt dışı hizmet (boş = seçilmedi). Nakit planı ve Ödemeler okur
-   * (src/lib/bordro/stopaj.ts); seçildiği ekran (Vergi › sınıflandırma) 27 Kasım 2026'da kaldırıldı, değer yerinde
+   * (src/lib/bordro/stopaj.ts); Giderler'in sabit gider penceresinde seçilir (27 Kasım 2026'ya kadar Vergi › sınıflandırma)
    */
   taxWithholding: text("tax_withholding", {
     enum: ["yok", "kira", "serbest_meslek", "internet_reklam", "internet_reklam_yurtdisi", "yurt_disi_hizmet"],

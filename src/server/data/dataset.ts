@@ -52,8 +52,8 @@ export async function loadSettings(): Promise<Settings> {
 /** Veri kümesinin şube kapsamı: verilmezse seçicinin seçimi (docs/SUBE.md › Seçici) */
 export interface DatasetOptions {
   /**
-   * "hepsi" seçiciden bağımsız işletme geneli okur (vergi, ödemeler ve nakit planı, tutarlılık: para ve beyan
-   * işletmenindir); bir şube kimliği o şubeyi okur (stok sayımı yazdığı şubeyi gösterir)
+   * "hepsi" seçiciden bağımsız işletme geneli okur (firma geneli ödemeler ve nakit planı, muhasebeci paketi: para ve
+   * beyan işletmenindir); bir şube kimliği o şubeyi okur (stok sayımı yazdığı şubeyi gösterir)
    */
   scope?: BranchScope;
 }
@@ -118,7 +118,7 @@ async function readDataset(): Promise<Dataset> {
     db.select().from(s.months).where(branchWhere(s.months.branchId, scope)).orderBy(asc(s.months.month)),
     db.select().from(s.salesLines).where(branchWhere(s.salesLines.branchId, scope)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
     // Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): tek şube seçiliyken o şubenin ve bilinçli işletme geneli
-    // faturalar; öbür şubenin ve şubesi seçilmemiş faturalar okunmaz. Vergi ve Nakit "Tümü"yle okur
+    // faturalar; öbür şubenin ve şubesi seçilmemiş faturalar okunmaz. Firma geneli Nakit "Tümü"yle okur
     db.select().from(s.invoices).where(invoiceScopeWhere(scope)).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),

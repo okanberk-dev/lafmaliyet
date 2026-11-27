@@ -15,7 +15,9 @@ import {
   isCalendarDate,
   isLocalTaxReminder,
   isMuhtasarReminder,
+  isMuhtasarTotalReminder,
   isProvisionalTaxReminder,
+  isRentWithholdingReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
@@ -422,6 +424,16 @@ test("Vergi hatırlatıcıları başlıktan: muhtasar, geçici vergi ve yerel ve
   assert.equal(isMuhtasarReminder(r("KDV beyannamesi ve ödemesi")), false);
   assert.equal(isMuhtasarReminder(r("Muhtasar damga vergisi")), false);
   assert.equal(isMuhtasarReminder(r("Geçici vergi beyanı ve ödemesi")), false);
+  // Kira stopajı muhtasarın içindedir; muhtasarın tamamı başlıkta "muhtasar" geçen (nakit planı stopajı ondan düşer)
+  assert.equal(isRentWithholdingReminder(r("Kira stopajı", "kira")), true);
+  assert.equal(isRentWithholdingReminder(r("İşyeri kirası stopaj")), true);
+  assert.equal(isRentWithholdingReminder(r("Muhtasar (kira stopajı dahil)")), false);
+  assert.equal(isRentWithholdingReminder(r("Serbest meslek stopajı")), false);
+  assert.equal(isRentWithholdingReminder(r("Kira")), false);
+  assert.equal(isMuhtasarTotalReminder(r("Muhtasar ve prim hizmet beyannamesi")), true);
+  assert.equal(isMuhtasarTotalReminder(r("Muhtasar (kira stopajı dahil)")), true);
+  assert.equal(isMuhtasarTotalReminder(r("Kira stopajı")), false);
+  assert.equal(isMuhtasarTotalReminder(r("Muhtasar damga vergisi")), false);
   assert.equal(isProvisionalTaxReminder(r("Geçici vergi beyanı ve ödemesi")), true);
   assert.equal(isProvisionalTaxReminder(r("GEÇİCİ VERGİ 2026/3")), true);
   assert.equal(isProvisionalTaxReminder(r("Kurumlar vergisi")), false);

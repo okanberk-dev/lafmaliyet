@@ -346,9 +346,9 @@ dışı", fişsiz) Kasadan çıkanlar'da ve Aylık harcamalar'da bir kez, yenide
 Geçiş günü (aşağıda) seçilince AsilPOS'un günlük satırları aylık maliyet modeline girer (denetim E-08;
 `src/lib/asilpos/sales.ts`, okuyucu `src/server/data/asilpos-sales.ts`): `pos_daily_sales` sayılan günlerden (ay, POS adı,
 ürün, hizmet) başına ay toplamına çevrilir, Satışlar'a yüklenen ModPOS listesinin yanına konur. Motor (`engine.ts`)
-değişmez: Satışlar, Tutarlılık (reçeteye göre beklenen tüketim), Ürünler, Analiz, Genel bakış, Claude aracı ve KDV
-tahmininin karaoke payı (hizmet satırları %20) aynı satırları okur. **Geçiş günü boşken AsilPOS hiç okunmaz**: veri
-kümesi, satış tahmini ve tatlı payı bayt bayt bugünkü gibidir (`tests/asilpos-satis-db.test.ts`).
+değişmez: Satışlar, Tutarlılık (reçeteye göre beklenen tüketim), Ürünler, Analiz, Genel bakış ve asistan aynı satırları
+okur. **Geçiş günü boşken AsilPOS hiç okunmaz**: veri kümesi, satış tahmini ve tatlı payı bayt bayt bugünkü gibidir
+(`tests/asilpos-satis-db.test.ts`).
 
 **Her gün tek kaynak.** ModPOS'un listesi aylık toplamdır, gün gün bölünemez; bu yüzden kapsamı (Marina'nın listesinin
 son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:

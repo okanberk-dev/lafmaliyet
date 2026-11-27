@@ -438,8 +438,8 @@ export interface FixedExpense extends MonthRange {
   /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (constants.ts fixedVatRate). Yalnız nakit planı kullanır */
   vatRate?: number | null;
   /**
-   * Stopaj profili (saklı `tax_withholding`; eski Vergi › sınıflandırma, ekranı 27 Kasım 2026'da kaldırıldı): nakit
-   * planı ve Ödemeler'in ödemeden kesilen stopajı (src/lib/bordro/stopaj.ts); boş = stopaj yok
+   * Stopaj profili (`tax_withholding`; Giderler'in sabit gider penceresinde "Ödemeden kesilen stopaj"): nakit planı ve
+   * Ödemeler'in ödemeden kesilen stopajı (src/lib/bordro/stopaj.ts); boş = stopaj yok
    */
   taxWithholding?: Withholding | null;
   /**
@@ -453,7 +453,7 @@ export interface FixedExpense extends MonthRange {
   /**
    * Kira: ev sahibi şahıs mı şirket mi (Faz 5; boş = bugünkü kural). Şahıs: KDV yok, stopaj %20 resmi kiradan (resmi
    * kira yoksa tutardan, ödemeden kesilir). Şirket: %20 KDV, stopaj yok, belgesi fatura (src/lib/constants.ts
-   * fixedVatRate, engine.ts officialRentGross, cash-plan.ts, tax/muhtasar.ts)
+   * fixedVatRate, engine.ts officialRentGross, cash-plan.ts paidWithholdingOf)
    */
   landlordType?: LandlordType | null;
   /** Açık güne göre oranla (varsayılan); false: biten ayda tam ay (süren ayda bugüne kadarki pay) */

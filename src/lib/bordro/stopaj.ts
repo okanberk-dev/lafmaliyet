@@ -1,15 +1,30 @@
 /**
  * Sabit giderin ödemeden kesilen stopajı (nakit planı, Ödemeler'in "Sabit giderlerden ekle"si ve tutar karşılaştırması;
- * Gelir-gider'in "Kira stopajı" maliyeti). Profil (`Withholding`) sabit giderin saklı sütunudur (`tax_withholding`; eski
- * Vergi › sınıflandırma, ekranı 27 Kasım 2026'da kaldırıldı, değerler yerinde). Türkiye'deki şahsa ödenen kira, serbest
- * meslek ve internet reklamında bankadan net çıkar (kira 160.000 brüt → 128.000); stopajı muhasebeci muhtasarla öder,
- * nakit planı vergi tahmini yapmaz. Doğrudan yurt dışına ödenen reklam ve hizmette yabancı firma Türk KDV'si kesmez:
- * tutar olduğu gibi gider (KDV oranı 0). Saf modül; tests/bordro.test.ts.
+ * Gelir-gider'in "Kira stopajı" maliyeti). Profil (`Withholding`) sabit giderin sütunudur (`tax_withholding`), Giderler'in
+ * sabit gider penceresinde "Ödemeden kesilen stopaj" alanı (27 Kasım 2026'ya kadar Vergi › sınıflandırma). Türkiye'deki
+ * şahsa ödenen kira, serbest meslek ve internet reklamında bankadan net çıkar (kira 160.000 brüt → 128.000); stopajı
+ * muhasebeci muhtasarla öder, nakit planı vergi tahmini yapmaz. Doğrudan yurt dışına ödenen reklam ve hizmette yabancı
+ * firma Türk KDV'si kesmez: tutar olduğu gibi gider (KDV oranı 0). Saf modül; tests/bordro.test.ts.
  */
 
 import type { Withholding } from "../calc/types";
 
 import { type PayrollYearRules, rulesFor } from "./rules";
+
+/** Saklı profil değerleri (`fixed_expenses.tax_withholding`); "yok" eski sınıflandırmanın "stopaj yok"u */
+export const WITHHOLDINGS = ["yok", "kira", "serbest_meslek", "internet_reklam", "internet_reklam_yurtdisi", "yurt_disi_hizmet"] as const satisfies readonly Withholding[];
+
+/**
+ * Giderler'in sabit gider penceresindeki seçenekler ("Ödemeden kesilen stopaj"; boş = yok). "yok" seçenek değildir:
+ * eski kayıtta boşla aynı sonuç, değiştirilmedikçe yerinde kalır
+ */
+export const WITHHOLDING_OPTIONS: readonly { value: Exclude<Withholding, "yok">; label: string }[] = [
+  { value: "kira", label: "Şahsa işyeri kirası" },
+  { value: "serbest_meslek", label: "Serbest meslek makbuzu" },
+  { value: "internet_reklam", label: "İnternet reklamı, şahsa" },
+  { value: "internet_reklam_yurtdisi", label: "İnternet reklamı, doğrudan yurt dışına" },
+  { value: "yurt_disi_hizmet", label: "Yurt dışı hizmet" },
+];
 
 /** Profilin gelir vergisi stopajı oranı */
 export function withholdingRate(w: Withholding | null | undefined, rules: PayrollYearRules): number {

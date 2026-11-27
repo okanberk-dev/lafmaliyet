@@ -28,8 +28,8 @@ const REVEAL_FOLLOW_MS = 1000;
 const REVEAL_RELEASE = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
 
 /**
- * Etkin sayfanın satırı kaydırma kutusunun dışında kalmasın (Vergi grubu listenin sonunda; 900 px yüksek dizüstünde
- * Muhasebeci kutunun altındaydı, telefonun çekmecesinde Nakit planı da). Adres değişince, çekmece açılınca ve kutu
+ * Etkin sayfanın satırı kaydırma kutusunun dışında kalmasın (listenin sonundaki grubun satırı 900 px yüksek dizüstünde
+ * kutunun altında kalabilir, telefonun çekmecesinde Nakit planı da). Adres değişince, çekmece açılınca ve kutu
  * görünür olunca (masaüstü genişliğine geçince) kutu yalnız gereken kadar kaydırılır. Grup açılırken kutunun kaydırma
  * payı içerik büyüdükçe artar: açılış sürerken her boyut değişiminde yeniden bakılır. Yalnız kutu kaydırılır
  * (scrollIntoView sayfayı da kaydırabilirdi); kullanıcı listeye dokunur, kaydırır ya da tuşa basarsa bırakılır.

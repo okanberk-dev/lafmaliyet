@@ -583,7 +583,8 @@ test("hatırlatıcı sınıfı: sabit gider adı önce; SGK prim ödemesi SGK; K
     rem({ title: "Geçici vergi beyanı ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-11-17", repeat: "quarterly" }),
     rem({ title: "KDV damga vergisi", kind: "vergi", amount: null, dueDate: "2026-10-28" }),
   ];
-  // Tutarlı vergi hatırlatıcısı her dönemi yazılı tutarıyla, düz hatırlatıcı olarak (sahibin elle yazdığı ödeme)
+  // Tutarlı vergi hatırlatıcısı yazılı tutarıyla, düz hatırlatıcı olarak (sahibin elle yazdığı ödeme). Tekrarlı
+  // muhtasarın tutarı yalnız kayıtlı dönemine aittir (taxAmountTravels): Kasım'ı tutarsız
   const typed = rem({ title: "Muhtasar", kind: "vergi", amount: 3_000, dueDate: "2026-10-26" });
   const p = buildCashPlan(input({ months: monthsWith(fixed), fixedNames: fixed, reminders: [kdvFixed, sgk, ...open, typed] }));
   assert.deepEqual(
@@ -600,19 +601,67 @@ test("hatırlatıcı sınıfı: sabit gider adı önce; SGK prim ödemesi SGK; K
   assert.equal(p.basis.sgkMode, "carrier");
   assert.deepEqual(
     p.unknownAmounts.map((u) => u.reminderId).sort((x, y) => (x ?? 0) - (y ?? 0)),
-    open.map((r) => r.id),
+    [...open, typed].map((r) => r.id),
   );
   assert.deepEqual(
     lineAt(p, `reminder:${typed.id}@`).map((l) => [l.kind, l.date, l.amount, l.estimated]),
-    [
-      ["reminder", "2026-10-26", 3_000, false],
-      ["reminder", "2026-11-26", 3_000, false],
-    ],
+    [["reminder", "2026-10-26", 3_000, false]],
   );
+  assert.equal(p.unknownAmounts.find((u) => u.reminderId === typed.id)?.date, "2026-11-26");
   // Vergi satırı ve tahmini hiç yok
   assert.ok(lines(p).every((l) => !l.key.startsWith("kdv") && !l.key.startsWith("vergi") && !l.key.startsWith("damga")));
   assert.ok(p.estimates.every((e) => e.key !== "kdv" && e.key !== "vergi"));
   assert.equal("vat" in p, false);
+});
+
+test("vergi hatırlatıcısının tutarı kendi dönemine ait: KDV ve KDV-2'nin Kasım'ı tutarsız; tutar seride kalan kira stopajı her ay", () => {
+  const kdv = rem({ title: "KDV", kind: "vergi", amount: 45_000, dueDate: "2026-10-28" });
+  const kdv2 = rem({ title: "KDV2", kind: "vergi", amount: 1_800, dueDate: "2026-10-27" });
+  const rent = rem({ title: "Kira stopajı", kind: "vergi", amount: 8_000, dueDate: "2026-10-26" });
+  const p = buildCashPlan(input({ reminders: [kdv, kdv2, rent] }));
+  assert.deepEqual(lineAt(p, `reminder:${kdv.id}@`).map((l) => [l.date, l.amount, l.estimated]), [["2026-10-28", 45_000, false]]);
+  assert.deepEqual(lineAt(p, `reminder:${kdv2.id}@`).map((l) => [l.date, l.amount, l.estimated]), [["2026-10-27", 1_800, false]]);
+  assert.deepEqual(
+    p.unknownAmounts.filter((u) => u.reminderId === kdv.id || u.reminderId === kdv2.id).map((u) => [u.reminderId, u.date]),
+    [
+      [kdv2.id, "2026-11-27"],
+      [kdv.id, "2026-11-28"],
+    ],
+  );
+  // Sabit tutarlı "Kira stopajı" (muhtasar yok): her ay yazılı tutarıyla
+  assert.deepEqual(lineAt(p, `reminder:${rent.id}@`).map((l) => [l.date, l.amount]), [
+    ["2026-10-26", 8_000],
+    ["2026-11-26", 8_000],
+  ]);
+  // Ödendi tutarı seriden sildiyse (sıradaki dönem tutarsız) kesin satır yok
+  const paid = buildCashPlan(input({ reminders: [{ ...kdv, amount: null, dueDate: "2026-11-28", anchorDate: "2026-11-28" }] }));
+  assert.equal(lineAt(paid, `reminder:${kdv.id}@`).length, 0);
+});
+
+test("muhtasar ve kira stopajı aynı ayda: stopaj muhtasarın satırından düşülür, iki kez sayılmaz", () => {
+  const muhtasar = rem({ title: "Muhtasar", kind: "vergi", amount: 30_000, dueDate: "2026-10-26" });
+  const rent = rem({ title: "Kira stopajı", kind: "vergi", amount: 8_000, dueDate: "2026-10-26" });
+  const p = buildCashPlan(input({ reminders: [muhtasar, rent] }));
+  assert.deepEqual(lineAt(p, `reminder:${muhtasar.id}@`).map((l) => [l.date, l.amount, l.estimated]), [["2026-10-26", 22_000, false]]);
+  assert.match(lineAt(p, `reminder:${muhtasar.id}@`)[0].detail ?? "", /Kira stopajı \(8\.000\s₺\) Ödemeler'de ayrı satırda; burada düşüldü \(hatırlatıcıdaki tutar 30\.000\s₺\)/);
+  // Kira stopajı kendi satırında her ay; Kasım'ın muhtasarı tutarsız (tutarı Ekim'indi)
+  assert.deepEqual(lineAt(p, `reminder:${rent.id}@`).map((l) => [l.date, l.amount]), [
+    ["2026-10-26", 8_000],
+    ["2026-11-26", 8_000],
+  ]);
+  assert.deepEqual(p.unknownAmounts.map((u) => [u.reminderId, u.date]), [[muhtasar.id, "2026-11-26"]]);
+  const out = lines(p).filter((l) => l.direction === "out").reduce((a, l) => a + l.amount, 0);
+  assert.equal(out, 38_000);
+  // Tek seferlik muhtasar da (tutarı seride kalmaz) aynı kuralla; stopaj muhtasardan büyükse satır yok
+  const once = rem({ title: "Muhtasar ve prim hizmet beyannamesi", kind: "vergi", amount: 5_000, dueDate: "2026-11-26", repeat: "none" });
+  const big = rem({ title: "Kira stopajı", kind: "vergi", amount: 8_000, dueDate: "2026-11-26", repeat: "none" });
+  const q = buildCashPlan(input({ reminders: [once, big] }));
+  assert.equal(lineAt(q, `reminder:${once.id}@`).length, 0);
+  assert.deepEqual(lineAt(q, `reminder:${big.id}@`).map((l) => l.amount), [8_000]);
+  // Başka ayda kira stopajı yoksa muhtasar tam tutarıyla; "Serbest meslek stopajı" muhtasarın tamamı değildir
+  const other = rem({ title: "Serbest meslek stopajı", kind: "vergi", amount: 2_000, dueDate: "2026-10-26", repeat: "none" });
+  const r = buildCashPlan(input({ reminders: [other, { ...rent, id: nextId++, repeat: "none" }] }));
+  assert.deepEqual(lineAt(r, `reminder:${other.id}@`).map((l) => l.amount), [2_000]);
 });
 
 // ---------------------------------------------------------------- Excel verisinden girdiler ve metinler

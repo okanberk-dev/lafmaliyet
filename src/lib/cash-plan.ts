@@ -33,9 +33,13 @@ import {
   FIXED_REMINDER_NOTE,
   fixedReminderAt,
   fixedReminderFollows,
+  isMuhtasarTotalReminder,
+  isRentWithholdingReminder,
   monthEnd,
   nextOccurrence,
+  postponedFrom,
   reminderCategory,
+  taxAmountTravels,
   todayTR,
   type ReminderRow,
   type UpcomingItem,
@@ -542,8 +546,8 @@ function onlineBasis(model: Model, today: string): CashPlanInput["online"] {
 
 /**
  * Sabit giderin ödemesinden kesilen stopaj profili (nakit planı): resmi kiralı kalemde yok (stopaj resmi brütten, ev
- * sahibine kesintisiz); ev sahibi şahıs ve resmi kira yoksa kira stopajı; şirkete kirada yok; öteki kalemlerde saklı
- * profil (eski Vergi › sınıflandırma; ekranı kaldırıldı, değer yerinde)
+ * sahibine kesintisiz); ev sahibi şahıs ve resmi kira yoksa kira stopajı; şirkete kirada yok; öteki kalemlerde kalemin
+ * profili (Giderler'in sabit gider penceresinde "Ödemeden kesilen stopaj")
  */
 type PaidFixedInput = Pick<FixedExpense, "section" | "officialAmount" | "officialBasis" | "landlordType"> & {
   taxWithholding?: Withholding | null;
@@ -857,7 +861,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     if (cat === "maas") return { kind: "salary" };
     if (cat === "sgk") return { kind: "sgk" };
     // Vergi hatırlatıcıları (KDV, KDV-2, muhtasar, geçici vergi, damga) diğerdir: vergi tahmini yok (27 Kasım 2026),
-    // her dönem yazılı tutarıyla girer; tutarsızı "Tutarı girilmemiş ödemeler"de
+    // yazılı tutarıyla girer (tutarı tek döneme ait olanda yalnız o dönemde); tutarsızı "Tutarı girilmemiş ödemeler"de
     return { kind: "other" };
   };
   const active = input.reminders.filter((r) => r.active).sort((a, b) => a.id - b.id);
@@ -874,6 +878,21 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     const left = Math.max(0, x.amount - x.paid);
     return r.repeat === "none" || r.repeat === "monthly" ? left : left * REPEAT_PER_MONTH[r.repeat];
   };
+  // Vergi hatırlatıcısının ayı: ertelenmiş tek seferlik kopyada asıl gününden (31 Ekim'den 2 Kasım'a ertelenen muhtasar
+  // Ekim'indir)
+  const monthOfDue = (r: ReminderRow, due: string) => ((r.repeat === "none" ? postponedFrom(r.note) : null) ?? due).slice(0, 7);
+  // Muhtasarın tamamı (tahakkuk fişi) kira stopajını içerir: aynı ayda tutarlı "Kira stopajı" hatırlatıcısı da varsa
+  // stopaj muhtasarın satırından düşülür, iki kez sayılmaz; kira stopajı kendi satırında kalır. Ayın kira stopajları toplanır
+  const rentWithholding = new Map<string, number>();
+  for (const r of active) {
+    if (!hasAmount(r) || !isRentWithholdingReminder(r) || classify(r).kind !== "other") continue;
+    // Tutarı her dönemde kalır (taxAmountTravels değil): her ayda sayılır
+    for (const o of reminderOccurrences(r, today, end)) {
+      const m = monthOfDue(r, o.due);
+      rentWithholding.set(m, r2((rentWithholding.get(m) ?? 0) + r.amount!));
+    }
+  }
+  const rentTaken = new Set<string>();
   for (const r of active) {
     const c = classify(r);
     // Adı her ay girilen bir harcamayla aynı hatırlatıcı (sabit gideri bitmiş olsa da) o harcamayı karşılar: yayılmaz
@@ -947,9 +966,27 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         }
       }
     } else {
+      // Tekrarlı KDV, KDV-2, muhtasar ve geçici vergi hatırlatıcısının tutarı yalnız kayıtlı dönemine aittir
+      // (taxAmountTravels; Ödendi ve Ertele seriden siler): sonraki dönemleri tutarsızdır, "Tutarı girilmemiş ödemeler"de.
+      // Eylül'ün muhtasarı Kasım'da kesin görünmez
+      const own = taxAmountTravels(r);
+      const total = isMuhtasarTotalReminder(r);
       for (const o of reminderOccurrences(r, today, end)) {
-        if (hasAmount(r)) reminderLine(r, o);
-        else if (r.amount === null) addUnknown(r, o.date);
+        if (r.amount === null || (own && o.due !== r.dueDate)) {
+          addUnknown(r, o.date);
+          continue;
+        }
+        if (!hasAmount(r)) continue;
+        const m = monthOfDue(r, o.due);
+        const rent = total && !rentTaken.has(m) ? rentWithholding.get(m) : undefined;
+        if (rent === undefined) {
+          reminderLine(r, o);
+          continue;
+        }
+        rentTaken.add(m);
+        const amount = Math.max(0, r2(r.amount! - rent));
+        const detail = `Kira stopajı (${tl(rent)}) Ödemeler'de ayrı satırda; burada düşüldü (hatırlatıcıdaki tutar ${tl(r.amount!)}).`;
+        if (amount > 0) reminderLine(r, o, { amount, detail });
       }
     }
   }
