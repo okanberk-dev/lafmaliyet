@@ -11,7 +11,7 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
 
-- **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (bu PR, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
+- **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (#167, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
   şubenin kendi AsilPOS kasası olabilir ("yalnız bir şube" sınırı kalktı); her kasanın kendi anahtarı, geçiş günü, gün
   sonu, kasa e-postası, komisyonu ve durumu var, panel şubeyi anahtardan tanır (başka şube bildiren kasa 409). Bir günün
   sayılma kuralı tek: şubenin kasası AsilPOS ve gün o şubenin geçiş gününden önce değil; "Tümü"de her kasa kendi
