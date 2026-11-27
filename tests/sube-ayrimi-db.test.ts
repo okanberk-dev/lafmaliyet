@@ -40,6 +40,7 @@ import type { BranchViewPrefs, ViewArea } from "../src/lib/branch-view";
 import { VIEW_AREA_KEYS } from "../src/lib/branch-view";
 import { ALL_BRANCHES, BRANCH_COOKIE } from "../src/lib/branches";
 import { addDays, todayTR } from "../src/lib/reminders";
+import { businessDate } from "../src/lib/cash-report";
 import * as s from "../src/server/db/schema";
 
 import { deleteBranchRows, seedSubeAyrimi, type SubeTohum, tzLeaks, tzTextLeak } from "./helpers/sube-ayrimi-tohum";
@@ -541,7 +542,9 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     { name: "Asistan › bugun_ozeti", run: () => assistant("bugun_ozeti", {}) },
     { name: "Asistan › bekleyen_isler", run: () => assistant("bekleyen_isler", {}) },
     { name: "Asistan › gun_sonu", run: () => assistant("gun_sonu", { baslangic: seed.d1 }) },
-    { name: "Asistan › gunluk_satislar", run: () => assistant("gunluk_satislar", { baslangic: seed.d2, bitis: seed.d1 }) },
+    // Asistan bugünü iş gününe göre sayar (05:00'te başlar): gece 00:00–05:00 arası takvimin dünü (d1) asistanın
+    // "bugün"üdür ve reddedilir. Bitiş iş gününden önceki son tohum günü (CI gece de koşar)
+    { name: "Asistan › gunluk_satislar", run: () => assistant("gunluk_satislar", { baslangic: seed.d2, bitis: seed.d1 < businessDate() ? seed.d1 : seed.d2 }) },
     { name: "Asistan › vardiya", run: () => assistant("vardiya", {}) },
     { name: "Asistan › menu_durumu", run: () => assistant("menu_durumu", {}) },
     { name: "Asistan › stok_tahmini", run: () => assistant("stok_tahmini", { hepsi: true }) },
