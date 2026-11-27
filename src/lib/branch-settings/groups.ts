@@ -18,7 +18,7 @@ import { CASH_EVENING_HOUR, defaultCashRecipients } from "@/lib/cash-report";
 import type { ChannelKey } from "@/lib/commission/channels";
 import { effectiveSettings, parseCommissionSettings, type ChannelSettings } from "@/lib/commission/report";
 import { DEFAULT_SETTINGS, readAsilposSwitchDay } from "@/lib/constants";
-import { ASILPOS_BRANCH_ID } from "@/lib/asilpos/switch";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import { GECIS_GUNU_AYARI, SUBE_AYAR_GRUBU } from "@/lib/asilpos/eski-adlar";
 import { clockSuffixTR } from "@/lib/reminders";
 import { PRESET_KEYS, PRESET_LABELS, presetText, shiftPresetsError, validPresetMinutes, type SavedShiftPreset } from "@/lib/vardiya";
@@ -164,9 +164,9 @@ export interface AsilposSetting extends Record<string, unknown> {
 }
 
 /**
- * AsilPOS bağlantısı ve geçiş günü (docs/ASILPOS.md › Şubeler). Değeri yalnız AsilPOS'un şubesinin (kütükte kasa kaynağı
- * AsilPOS olan şube, en çok bir) değeri okunur. "Diğer şubeyle aynı" sunulmaz: geçiş günü şubenin kendi kasasının
- * günüdür, AsilPOS da en çok bir şubenin kasasıdır; kaynak başka şubeye geçerse o şube kendi gününü ve anahtarını alır.
+ * AsilPOS bağlantısı ve geçiş günü (docs/ASILPOS.md › Şubeler; çok şube, 27 Kasım 2026): her AsilPOS kasasının kendi
+ * geçiş günü ve imza anahtarı. "Diğer şubeyle aynı" sunulmaz: geçiş günü şubenin kendi kasasının günüdür, anahtar da
+ * şubeyi tanıtır (iki şubenin anahtarı aynı olamaz).
  * Eski kayıt (settings › GECIS_GUNU_AYARI) Marina'nın (geçildiği gün AsilPOS'un şubesi); anahtar yoksa ortamınki. Grubun
  * adı ve eski kaydın anahtarı eski adla yazılır (satırlar, kilit; src/lib/asilpos/eski-adlar.ts), yeni adlar önce okunur
  */
@@ -174,7 +174,7 @@ export const ASILPOS_GROUP: BranchSettingGroup<AsilposSetting> = {
   id: SUBE_AYAR_GRUBU,
   readIds: ["pos.asilpos"],
   label: "AsilPOS bağlantısı ve geçiş günü",
-  description: "Kasası AsilPOS olan şubenin geçiş günü ve AsilPOS'un imza anahtarı.",
+  description: "Şubenin AsilPOS kasasının geçiş günü ve imza anahtarı (her kasanın kendi anahtarı; panel şubeyi anahtardan tanır).",
   linkable: false,
   legacy: "asilpos",
   legacyKey: null,
@@ -401,11 +401,11 @@ export const SHARED_FOR_NOW: readonly { id: string; label: string }[] = [
 
 /**
  * Eski genel kaydın sahibi şubenin kimliği. Tarihsel bir gerçek: eski kayıt şube başına ayarlara geçildiği gün AsilPOS'un
- * şubesinindi (Marina, `ASILPOS_BRANCH_ID`). Bu yüzden kütükten türetilen AsilPOS şubesine (asilposBranchOf) bağlanmaz;
- * kasa kaynağı sonradan değişse de eski kaydı okuyan şube değişmez
+ * şubesinindi (Marina, `LEGACY_POS_BRANCH_ID`). Bu yüzden kütükteki AsilPOS kasalarına bağlanmaz; kasa kaynağı sonradan
+ * değişse de eski kaydı okuyan şube değişmez
  */
 export function legacyOwnerId(group: Pick<BranchSettingGroup, "legacy">): string {
-  return group.legacy === "asilpos" ? ASILPOS_BRANCH_ID : DEFAULT_BRANCH_ID;
+  return group.legacy === "asilpos" ? LEGACY_POS_BRANCH_ID : DEFAULT_BRANCH_ID;
 }
 
 /** Grubun okunan adları, öncelik sırasıyla: yeni adlar (`readIds`), sonra yazılan ad (`id`) */
