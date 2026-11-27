@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 01:25)
+# Kalanlar ve devam (28 Kasım 2026, 01:40)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -62,9 +62,10 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
   Sonucunu sor.
 - **#195** (açık) kasa penceresi kapatınca kapanır (sahibin isteği: "kapattığımda kapansın, ben açınca açılsın"). Bekçi
   (sürüm 6) kullanıcının kapattığı pencereyi yeniden açmaz, müşteri ekranını da kapatır; kısayolun açma isteği
-  (`kasa-ac.istek`) varsa sunucu gelince açar. İlk CI'da iki test düştü (eski adlı yol işaretsizdi, bakım testi eski
-  satırı arıyordu), düzeltildi (c230a2c; yerelde ilgili 24 dosya 298 test geçti). "denetim" ve "windows" yeşilse squash
-  ile birleştir; "windows" gerçek Windows'ta yeni kuralı dener (ci-kurulum.mjs D3, D5, D6), düşerse günlüğe bak.
+  (`kasa-ac.istek`) varsa sunucu gelince açar. İlk koşuda gerçek Windows işi (ci-kurulum.mjs D3, D5, D6 yeni kural)
+  **yeşil**, iki birim testi düşmüştü (eski adlı yol işaretsiz, bakım testi eski satırı arıyordu): düzeltildi, main
+  dala alındı (d9c2d66), CI yeniden koşuyor. "denetim" ve "windows" yeşilse squash ile birleştir; kanalı gör, sahibe
+  "Şimdi güncelle" de.
 - **YENİ KUSUR, siteden kurulum dosyası** (`scripts/kasa/windows/kurulum/web-kurucu.ps1`): gün açık bir kasada
   "Çalışan AsilPOS sunucusu durduruluyor → AsilPOS kuruluyor → Kurulum yarıda kaldı: The process cannot access the file
   because it is being used by another process." (sahibin fotoğrafı, 28 Kas 01:08). Ekranda "Eski AsilPOS sunucusu yeniden
@@ -82,8 +83,12 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
   oranla sayılıyor (kendi görünümüyle aynı); "şubenin oranı geçsin" derse yön çevrilir.
 - **#175** personele kör sayımlı WhatsApp metni ("WhatsApp ile gönder" / "Metni kopyala" geri; açılış, sayılan, teslim,
   fark, olması gereken, devir yok; yönetici ve ModPOS metni aynen).
-- İkisi YAPILACAKLAR.md, docs/planlar/DEVAM.md ve `src/lib/assistant/knowledge-data.ts`'te çakışabilir: önce #174'ü
-  birleştir, sonra #175'e main'i al, belgeleri birleştir, `npm run asistan:bilgi`, CI yeşilse birleştir.
+- İkisinde de CI, gece 00:00–05:00 arası koşunca `tests/sube-ayrimi-db.test.ts` › "Asistan › gunluk_satislar"
+  yüzünden kırmızıydı (asistan bugünü iş gününe, 05:00'e göre sayar; test takvimin dününü veriyordu). Test düzeltildi,
+  iki dala da eklendi (yerelde 264/264); CI yeniden koşuyor.
+- Sıra: önce #174'ü birleştir, sonra #175'e main'i al (YAPILACAKLAR.md, docs/planlar/DEVAM.md ve
+  `src/lib/assistant/knowledge-data.ts` çakışabilir: belgeleri elle birleştir, `npm run asistan:bilgi`), CI yeşilse
+  birleştir.
 
 **Kasada bekleyen:** #191 (masaüstü programı) 27 Kasım gecesi kurulmadı: kasa 22:28'den beri kapalıydı (bilgisayar
 gün sonunda kapatılıyor). Sabah açılışta kurulmalı: kasanın Merkez durum kaydında build 1795803043
