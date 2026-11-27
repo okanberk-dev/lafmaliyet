@@ -183,7 +183,7 @@ test("canlı uyarıda Ayrıntı canlı bölgenin dışında: açıp kapamak uyar
 test("telefonda eylem ve Ayrıntı aynı satırda, eylemin dokunma alanı önde; başlık ve eylem ortalı (inceleme B2-V5, V6, V8)", async () => {
   const { createElement } = await import("react");
   const { NoticeLink } = await import("../src/components/ui/notice");
-  const action = createElement(NoticeLink, { href: "/panel/vergi/kurallar#sorular", children: "Muhasebeciye sor" });
+  const action = createElement(NoticeLink, { href: "/panel/ayarlar#oranlar", children: "Oranları düzeltin" });
   const both = await renderNotice({ tone: "warn", risk: "para", title: "SGK oranı farklı", action, children: "neden" });
   // Eylem telefonda Ayrıntı'nın sağına (order-1), Ayrıntı satırı telefonda dar, açılınca tam genişlik (özet yerinde)
   assert.match(both, /class="no-print relative z-\[1\] ml-auto shrink-0 self-center max-sm:order-1"/);

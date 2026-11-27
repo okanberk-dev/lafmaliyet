@@ -128,15 +128,11 @@ test("veri yükleyici: şube süzgeci her tabloda, giderde işletme geneli de; o
   assert.match(oku("src/server/data/cash-reports.ts"), /lte\(s\.posDayReports\.date, to\) : undefined, await currentBranchWhere\(s\.posDayReports\.branchId\)/);
 });
 
-test("işletme geneli ekranlar şube seçiminden bağımsız: vergi, nakit planı, tutarlılık, dışa aktarım", () => {
-  for (const p of ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx", "src/app/api/export/route.ts"]) {
-    const s = oku(p);
-    assert.match(s, /withBranchScope\(ALL_BRANCHES,/, p);
-  }
+test("işletme geneli okumalar şube seçiminden bağımsız: nakit planının firması, tutarlılık (Vergi 27 Kasım 2026'da kaldırıldı)", () => {
   // Nakit planı şube ayrımı parça 4'ten beri kişinin şube görünümüyle (areaScope("nakit")); firmanın planı yine "Tümü"yle
   assert.match(oku("src/app/panel/hatirlaticilar/nakit/page.tsx"), /areaScope\("nakit"\)/);
   assert.match(oku("src/server/data/cash-plan.ts"), /withBranchScope\(ALL_BRANCHES,/);
-  // Tutarlılık şube ayrımı parça 5'ten beri kişinin şube görünümüyle (areaScope("tutarlilik")); Vergi'nin beyanı "Tümü"yle
+  // Tutarlılık şube ayrımı parça 5'ten beri kişinin şube görünümüyle (areaScope("tutarlilik"))
   assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /const scope = await areaScope\("tutarlilik"\);/);
   // Seçimi geçersiz kılan kapsam isteğin seçiminden önce gelir
   const kapsam = oku("src/server/branch-scope.ts");

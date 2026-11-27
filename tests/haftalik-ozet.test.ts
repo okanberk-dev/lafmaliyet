@@ -55,7 +55,6 @@ import { failedText, headlineOf, recipientsText, subjectOf, trendText, weeklyLog
 import { APP_URL } from "../src/server/notify/digest-template";
 import { renderWeekly, WEEKLY_FOOTER } from "../src/server/notify/weekly-template";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
-import type { TaxPlanFeed } from "../src/lib/tax/view";
 import { esc } from "../src/lib/email-kit";
 
 const NB = " ";
@@ -747,14 +746,9 @@ test("Son gönderimler: haftalık özetin gidemeyen kaydı adıyla, iç işarets
 
 
 
-test("nakit: ilk eksi gün vergi satırlarını sayar (muhtasar, yasal oranlı SGK); tutarı bilinmeyen geçici vergiyi saymaz (docs/VERGI.md)", () => {
+test("nakit: ilk eksi gün yasal oranlı SGK'yı sayar; vergi tahmini yok (muhtasar satırı yok, 27 Kasım 2026)", () => {
   const today = "2026-10-22";
-  const feed: TaxPlanFeed = {
-    items: [{ kind: "muhtasar", period: "2026-09", nominal: "2026-10-26", legalDue: "2026-10-26", amount: 974.38, atLeast: true, source: "estimate", detail: "Ücret GV 0 + DV 34,68 + damga 939,70" }],
-    pending: [{ kind: "gecici", period: "2026-Q3", nominal: "2026-11-17", legalDue: "2026-11-17", note: "Geçici vergi 2026/3: şirketin beyannamesi; tutarı muhasebecinizden isteyin (son gün 17.11)" }],
-    stamps: { kdv: 791, kdv2: 791 },
-  };
-  // Eylül'ün SGK'sı Vergi'nin bordrosuyla (25.956,18); öteki ayların bordrosu yok
+  // Eylül'ün SGK'sı yasal bordroyla (25.956,18; src/lib/bordro/payroll.ts); öteki ayların bordrosu yok
   const months: CashPlanInput["months"] = Object.fromEntries(
     ["2026-08", "2026-09", "2026-10", "2026-11", "2026-12"].map((m) => [m, { payroll: { net: 0, sgk: m === "2026-09" ? 25_956.18 : 0, people: 2 }, fixed: [] }]),
   );
@@ -763,7 +757,7 @@ test("nakit: ilk eksi gün vergi satırlarını sayar (muhtasar, yasal oranlı S
       today,
       opening: { amount, date: today },
       excluded: [],
-      settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30, kdv: 0.1, kdvHizmet: 0.2 },
+      settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30 },
       invoiceTermDays: 30,
       cashReports: [],
       posMonth: null,
@@ -774,28 +768,21 @@ test("nakit: ilk eksi gün vergi satırlarını sayar (muhtasar, yasal oranlı S
       goodsSpanDays: 0,
       months,
       fixedNames: [],
-      vat: { months: [], firstSalesMonth: null, hasSite: false },
-      vatAnchor: null,
-      tax: feed,
     });
   // collect.ts'in eşlemesi: satırın etiketi ve tutarı
   const item = (p: CashPlan) => {
     const n = p.firstNegative;
     return cashItem({ today, opening: { staleDays: 0 }, firstNegative: n ? { date: n.date, balance: n.balance, top: n.top.map((l) => ({ title: lineLabel(l), amount: l.amount })) } : null });
   };
-  // 26.000 ₺: muhtasar (974,38) olmasa 31 Ekim'de 43,82 ₺ artıda kalırdı
-  const c = item(plan(26_000))!;
+  const c = item(plan(25_000))!;
   assert.equal(c.key, "nakit:2026-10-31");
-  assert.equal(c.title, `31 Ekim Cumartesi para yetmeyebilir: tahmini −931${NB}₺`);
+  assert.equal(c.title, `31 Ekim Cumartesi para yetmeyebilir: tahmini −956${NB}₺`);
   assert.equal(c.detail, `O gün: SGK primi (Eylül, tahmini) 25.956${NB}₺`);
-  const early = item(plan(500))!;
-  assert.equal(early.key, "nakit:2026-10-26");
-  assert.equal(early.detail, `O gün: Muhtasar (Eylül, tahmini) 974${NB}₺`);
-  // Geçici vergi tutarı bilinmiyor: plana girmez, 27.000 ₺ ufuk boyunca yeter
-  const enough = plan(27_000);
+  // 26.000 ₺ yeter: muhtasar tahmini (eskiden 26 Ekim'de 974 ₺) planda yok
+  const enough = plan(26_000);
   assert.equal(enough.firstNegative, null);
   assert.equal(item(enough), null);
-  assert.ok(enough.unknownAmounts.some((u) => u.key === "vergi:gecici:2026-Q3"));
+  assert.ok(enough.weeks.flatMap((w) => w.lines).every((l) => !/^(vergi|damga|kdv)/.test(l.key)));
 });
 
 

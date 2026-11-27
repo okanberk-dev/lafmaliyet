@@ -267,7 +267,7 @@ test("nakit planı: fatura kalemleri aynı olduğu için bütün toplamlar aynı
       today,
       opening: { amount: 50_000, date: today },
       excluded: [],
-      settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30, kdv: 0.1, kdvHizmet: 0.2 },
+      settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30 },
       invoiceTermDays: 30,
       cashReports: [],
       posMonth: { month: "2026-09", posRevenue: 300_000, openDays: 30 },
@@ -278,8 +278,6 @@ test("nakit planı: fatura kalemleri aynı olduğu için bütün toplamlar aynı
       goodsSpanDays: 0,
       months: {},
       fixedNames: [],
-      vat: { months: [], firstSalesMonth: null, hasSite: false },
-      vatAnchor: null,
     });
     const a = buildCashPlan(input(items));
     const b = buildCashPlan(input(legacy));

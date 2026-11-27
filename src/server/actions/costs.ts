@@ -4,6 +4,7 @@ import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { WITHHOLDING_OPTIONS, WITHHOLDINGS } from "@/lib/bordro/stopaj";
 import { BRANCH_REQUIRED } from "@/lib/branches";
 import { activeFromRange, currentMonthTR, inRange, mealCardCarry, planVersionChange, shiftMonth } from "@/lib/calc/engine";
 import { resolveMonths, tillMonths } from "@/lib/cash-month";
@@ -542,11 +543,22 @@ const fixedSchema = z.object({
    * kiradan; şirket: %20 KDV, stopaj yok
    */
   landlordType: z.enum(["sahis", "sirket"]).nullable().optional(),
+  /**
+   * Ödemeden kesilen stopaj ya da yurt dışı hizmet (yalnız nakit planı ve Ödemeler; src/lib/bordro/stopaj.ts). Verilmezse
+   * değişmez; null kaldırır
+   */
+  taxWithholding: z.enum(WITHHOLDINGS).nullable().optional(),
   /** Açık güne göre oranla (verilmezse değişmez; yeni kalemde kira tam ay, ötekiler oranlı) */
   prorate: z.boolean().optional(),
   /** Şube (docs/SUBE.md): null = işletme geneli (bütün şubelerde görünür); verilmezse değişmez, yeni kalemde işletme geneli */
   branchId: z.string().max(24).nullable().optional(),
 });
+
+/** Günlüğün stopaj notu: " · stopaj: Serbest meslek makbuzu", kaldırılınca " · stopaj yok"; verilmediyse boş */
+function withholdingLog(w: z.infer<typeof fixedSchema>["taxWithholding"]): string {
+  if (w === undefined) return "";
+  return w === null || w === "yok" ? " · stopaj yok" : ` · stopaj: ${WITHHOLDING_OPTIONS.find((o) => o.value === w)?.label ?? w}`;
+}
 
 /**
  * Sabit gideri kaydeder. Tutar ya da dönem değişirse varsayılan olarak bu aydan itibaren geçerlidir:
@@ -612,6 +624,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
         section: data.section,
         note: data.note,
         ...(data.vatRate !== undefined ? { vatRate: data.vatRate } : {}),
+        ...(data.taxWithholding !== undefined ? { taxWithholding: data.taxWithholding } : {}),
         ...official,
         ...landlord,
         ...prorateSet,
@@ -698,7 +711,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
     await logActivity(
       me,
       id ? "Sabit gider düzenlendi" : "Sabit gider eklendi",
-      `${data.name}: ${tl(data.amount)} (${data.period})${data.vatRate ? ` + %${Math.round(data.vatRate * 100)} KDV` : ""}${landlordType ? ` · ev sahibi ${landlordType === "sahis" ? "şahıs" : "şirket"}` : ""}${mode === "version" && fromMonth ? ` · ${monthLabel(fromMonth)} itibarıyla` : mode === "base" && id ? " · bütün aylar" : ""}`,
+      `${data.name}: ${tl(data.amount)} (${data.period})${data.vatRate ? ` + %${Math.round(data.vatRate * 100)} KDV` : ""}${landlordType ? ` · ev sahibi ${landlordType === "sahis" ? "şahıs" : "şirket"}` : ""}${withholdingLog(data.taxWithholding)}${mode === "version" && fromMonth ? ` · ${monthLabel(fromMonth)} itibarıyla` : mode === "base" && id ? " · bütün aylar" : ""}`,
     );
     refresh();
     // Kimlik döner: istemci yeni ya da düzenlenen satırı listede vurgulayabilsin

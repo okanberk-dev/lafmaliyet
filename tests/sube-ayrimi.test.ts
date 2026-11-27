@@ -137,7 +137,8 @@ test("(a) parça 6'dan sonra kayıt son hâlinde: bekleyen yok, her ayarlı alan
     "bekleyen kayıt kalmadı",
   );
   // İşletme geneli giderler okumayı değiştirmez (kip veri kümesinin bayrağı); öteki sekiz alanın her birinin areaScope
-  // kaydı var. Vergi'nin alanı yok (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez), okumaları vergi.beyan
+  // kaydı var. Vergi'nin alanı yok (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez); Vergi bölümü aynı gün
+  // kaldırıldı, okuma kaydı (vergi.beyan) da
   const areas = new Set(COMPANY_WIDE_READS.filter((r) => r.kind === "alan").map((r) => r.area));
   assert.deepEqual(
     VIEW_AREA_KEYS.filter((a) => a !== "ortak_gider" && !areas.has(a)),
@@ -145,7 +146,7 @@ test("(a) parça 6'dan sonra kayıt son hâlinde: bekleyen yok, her ayarlı alan
   );
   assert.equal(areas.has("ortak_gider"), false);
   assert.equal(COMPANY_WIDE_READS.some((r) => r.id === "alan.vergi" || (r.area as string | undefined) === "vergi"), false);
-  assert.equal(COMPANY_WIDE_READS.find((r) => r.id === "vergi.beyan")?.kind, "yalniz-firma");
+  assert.equal(COMPANY_WIDE_READS.find((r) => r.id === "vergi.beyan"), undefined);
 });
 
 // ---------------------------------------------------------------- (b) şubesi olan tablolar
@@ -274,10 +275,10 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
  */
 const BEKLEYEN_ALANLAR: readonly ViewArea[] = [];
 /**
- * Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır. Vergi'nin üç
- * sekmesi: vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026)
+ * Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlardaydı (Vergi'nin üç
+ * sekmesi). Vergi bölümü 27 Kasım 2026'da kaldırıldı; not ve bileşeni de: boş
  */
-const YALNIZ_FIRMA_SAYFALARI: readonly string[] = ["src/app/panel/vergi/page.tsx", "src/app/panel/vergi/gelir-gider/page.tsx", "src/app/panel/vergi/demirbas/page.tsx"];
+const YALNIZ_FIRMA_SAYFALARI: readonly string[] = [];
 /** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme parça 2'de kapsamla okumaya geçti; boş) */
 const BEKLEYEN_NOT: string[] = [];
 
@@ -306,8 +307,7 @@ test("(c) “bu ekran firma geneli” notu yalnız hep firma geneli ve henüz ç
     ...YALNIZ_FIRMA_SAYFALARI,
     ...BEKLEYEN_NOT,
     ...BEKLEYEN_ALANLAR.flatMap((a) => VIEW_AREAS[a].screens.map(pageOf)),
-    // Bileşenin kendisi ve sayfanın istemci parçası (notu sayfadan alır)
-    "src/components/panel/company-wide-notice.tsx",
+    // Sayfanın istemci parçası (notu sayfadan alırdı)
     "src/app/panel/hatirlaticilar/nakit/cash-plan-client.tsx",
   ]);
   const wrong = walk("src")
@@ -316,11 +316,9 @@ test("(c) “bu ekran firma geneli” notu yalnız hep firma geneli ve henüz ç
     .filter((f) => !allowed.has(f));
   assert.deepEqual(wrong, []);
   for (const f of BEKLEYEN_NOT) assert.match(read(f), /<CompanyWideNotice\b/, `${f}: not kalktıysa BEKLEYEN_NOT'tan düşürün`);
-  // Hep firma geneli ekranlar notu çizer, çipi çizmez
-  for (const f of YALNIZ_FIRMA_SAYFALARI) {
-    assert.match(read(f), /<CompanyWideNotice screen="vergi" \/>/, f);
-    assert.doesNotMatch(read(f), /<BranchViewChip\b/, f);
-  }
+  // Bileşen ve kuralı Vergi'yle birlikte kalktı
+  assert.equal(existsSync(join(ROOT, "src/components/panel/company-wide-notice.tsx")), false);
+  assert.doesNotMatch(read("src/lib/branches.ts"), /companyWideNote|CompanyWideScreen/);
 });
 
 // ---------------------------------------------------------------- (d) saf kurallar

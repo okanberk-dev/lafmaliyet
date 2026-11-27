@@ -59,6 +59,7 @@ import { longDateTR } from "@/lib/reminders";
 import { sameBranchBasis } from "@/lib/same-branches";
 import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
+import { removedNotice } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { areaScope, currentBranchScope } from "@/server/branch-scope";
@@ -201,6 +202,7 @@ async function loadParasut(): Promise<ParasutFacts | null> {
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
+  const removed = removedNotice(sp.kaldirildi);
   const scope = await currentBranchScope();
   // "Yaklaşan ödemeler" kartı, ayın işlerinin ödeme olguları ve cari uyarıları Ödemeler ve faturalar alanının kapsamıyla
   // (Bugün, zil ve Ödemeler gibi; denetim 21 Kasım #27, şube ayrımı parça 4): şube kipinde o şubenin ve işletme genelinin
@@ -517,6 +519,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
       />
 
       <div className="space-y-4">
+        {/* Kaldırılan bölümün eski adresinden gelindi (/panel/vergi → ?kaldirildi=vergi; src/lib/roles.ts RETIRED_PATHS) */}
+        {removed ? <Notice tone="neutral" size="sm" live="polite" title={removed.title} text={removed.text} /> : null}
         {/* Günlük işler çalışmadıysa ya da hata verdiyse kırmızı şerit (yalnız canlıda; kendi başına yüklenir) */}
         <Suspense fallback={null}>
           <SystemBanner />

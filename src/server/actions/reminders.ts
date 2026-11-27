@@ -16,9 +16,6 @@ import {
   fixedReminderAt,
   fixedReminderNextAmount,
   isLastDayOfMonth,
-  isProvisionalTaxReminder,
-  isVatReminder,
-  isVatWithholdingReminder,
   nextOccurrence,
   postponeDate,
   postponedFrom,
@@ -36,13 +33,11 @@ import { digestItemBranch } from "@/lib/upcoming-scope";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
 import { reminderUnchanged } from "@/lib/recent-paid";
 import { unreachable } from "@/lib/unreachable";
-import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
 import { deleteRecentPayment, NeedsPastConfirm } from "@/server/cari/entries";
 import { undoConversion, type ConvertSnapshot } from "@/server/cari/kasa";
 import { dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
-import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
 import { currentBranchScope, currentExpenseBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -146,10 +141,7 @@ export async function setReminderActive(id: number, active: boolean) {
     await db.update(s.reminders).set({ active: on, dueDate }).where(eq(s.reminders.id, rid));
     // Kapalı tek seferliği yeniden açmak Ödendi'sini geri alır (dönemi yeniden beklenir); sonra yeniden kapatmak onu
     // ödemiş saymaz (kapatma ödeme değildir)
-    if (on && !r.active && r.repeat === "none") {
-      await forgetVatPaid(rid, r.dueDate);
-      await forgetPaid("reminder", [rid]);
-    }
+    if (on && !r.active && r.repeat === "none") await forgetPaid("reminder", [rid]);
     refresh();
     return null;
   });
@@ -165,11 +157,9 @@ function addDaysBack(day: string) {
 /**
  * Ödendi: tekrar edenler bir sonraki döneme ilerler, tek seferlikler kapanır. `through` verilirse (gecikmiş
  * dönemden sonraki öngörülen dönem ödendiğinde) o tarihe kadarki bütün dönemler kapanır. Tekrarlı KDV, KDV-2,
- * muhtasar ve geçici vergi hatırlatıcısının tutarı o döneme aittir (her dönem başka; taxAmountTravels, K26): sıradaki
+ * muhtasar ve geçici vergi hatırlatıcısının tutarı o döneme aittir (her dönem başka; taxAmountTravels): sıradaki
  * döneme geçerken silinir (`amountCleared`, türü `clearedKind`), geri al geri yazar; yoksa nakit planı Eylül'ün
- * tutarını Kasım'da da kesin sayardı (docs/NAKIT-PLANI.md, docs/VERGI.md). Sabit tutarlı "Kira stopajı"nın tutarı kalır.
- * KDV, KDV-2 ve geçici vergide "Ödendi" kalıcı kayda da yazılır (payments.vat-paid; geçici vergide dönem çeyrektir,
- * kurumlar vergisi yalnız ödenmiş geçici vergiyi mahsup eder).
+ * tutarını Kasım'da da kesin sayardı (docs/NAKIT-PLANI.md). Sabit tutarlı "Kira stopajı"nın tutarı kalır.
  */
 export async function markReminderDone(id: number, through?: string) {
   return attempt(async () => {
@@ -190,13 +180,6 @@ export async function markReminderDone(id: number, through?: string) {
       .set(next ? { dueDate: next, lastDoneAt: new Date(), ...(clear ? { amount: null } : follow !== null ? { amount: follow } : {}) } : { active: false, lastDoneAt: new Date() })
       .where(eq(s.reminders.id, rid));
     await rememberPaid([{ kind: "reminder", id: rid, title: r.title, amount: r.amount, dueDate: r.dueDate, prev: snapshot(r), next }]);
-    // KDV, KDV-2 ve geçici vergi: nakit planının ve Vergi'nin kalıcı kaydı (son ödenenler 30 günde düşer, bir sonraki
-    // KDV gününden önce; kurumlar vergisi yalnız "Ödendi" işaretli geçici vergiyi mahsup eder)
-    const vatKind = isVatWithholdingReminder(r) ? "kdv2" : isVatReminder(r) ? "kdv" : isProvisionalTaxReminder(r) ? "gecici" : null;
-    if (vatKind) {
-      const row = { note: r.note, repeat: r.repeat as ReminderRepeat, anchorDate: r.anchorDate };
-      await rememberVatPaid({ id: rid, kind: vatKind, dueDate: r.dueDate, next, periods: paidPeriodsOf(row, r.dueDate, next, vatKind), amount: r.amount });
-    }
     await logActivity(
       me,
       "Ödeme yapıldı",
@@ -223,7 +206,7 @@ async function followedAmount(r: ReminderDbRow, nextDue: string): Promise<number
     .from(s.fixedExpenseVersions)
     .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
   if (f.endMonth && nextDue.slice(0, 7) > f.endMonth) return null;
-  // Stopajlı kalemde tutar bankadan çıkan nettir (stopaj muhtasarda); yurt dışı hizmette KDV yok (KDV-2'de; docs/VERGI.md)
+  // Stopajlı kalemde tutar bankadan çıkan nettir (stopajı muhasebeci muhtasarla öder); yurt dışı hizmette KDV yok
   const rated = paidFixedRatesOf(f, Number(nextDue.slice(0, 4)));
   return fixedReminderNextAmount({ note: r.note, amount: r.amount, dueDate: r.dueDate, repeat: r.repeat as ReminderRepeat }, rated, versions, nextDue);
 }
@@ -280,8 +263,6 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
     // "Ödendi"nin geri alınması Son ödenenler kaydını siler; ödemeden sonraki "Ertele"nin geri alınması ise
     // hatırlatıcıyı ödendikten sonraki hâline döndürür, o kayıt geri alınabilir kalır
     await forgetChangedReminder({ id: rid, dueDate: snap.dueDate, anchorDate: snap.anchorDate, active: snap.active });
-    // Hatırlatıcı o güne döndü: o günden itibaren "Ödendi"si kalmaz (KDV'nin kalıcı kaydı)
-    await forgetVatPaid(rid, snap.dueDate);
     await logActivity(me, "Hatırlatıcı geri alındı", `${title} · ${dateTR(snap.dueDate)}`);
     refresh();
     return null;
@@ -358,7 +339,6 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
           throw new UserError("Hatırlatıcı bu arada değişti; sayfa yenilendi, yeniden deneyin");
         }
         await forgetPaid("reminder", [rid]);
-        await forgetVatPaid(rid, prev.dueDate);
         await logActivity(me, "Hatırlatıcı geri alındı", `${cur.title} · ${dateTR(prev.dueDate)} · son ödenenlerden`);
         break;
       }
@@ -434,7 +414,7 @@ export async function postponeReminder(id: number, by: "week" | "month") {
     const prev = snapshot(r);
     let createdId: number | null = null;
     if (!next) {
-      // Tek seferlik de asıl gününü notunda taşır (nakit planı KDV-2'nin dönemini ondan bulur)
+      // Tek seferlik de asıl gününü notunda taşır (nakit planı ertelenen vergi hatırlatıcısının ayını ondan bulur)
       await db.update(s.reminders).set({ dueDate: target, anchorDate: target, note: postponeNote(r.note, r.dueDate) }).where(eq(s.reminders.id, rid));
     } else {
       createdId = await db.transaction(async (tx) => {
@@ -527,8 +507,8 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
       .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
     // İlk ödeme ayındaki sürüm, KDV dahil (nakit planı hatırlatıcının tutarını olduğu gibi öder); sonraki bir aydan
     // değişiklik girilmişse tutarsız (plan her ayın sürümünü taşır)
-    // Stopajlı kalemde stopaj düşülür: bankadan çıkan net (stopaj muhtasarda); yurt dışı hizmette KDV yok (KDV-2'de;
-    // docs/VERGI.md)
+    // Stopajlı kalemde stopaj düşülür: bankadan çıkan net (stopajı muhasebeci muhtasarla öder); yurt dışı hizmette KDV
+    // yok
     const at = fixedReminderAt(paidFixedRatesOf(f, Number(dueDate.slice(0, 4))), versions, dueDate.slice(0, 7));
     if (at.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
     const repeat = at.period === "yillik" ? "yearly" : at.period === "haftalik" ? "weekly" : "monthly";

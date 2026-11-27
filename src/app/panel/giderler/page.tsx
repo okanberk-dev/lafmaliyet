@@ -101,6 +101,7 @@ async function ExpensesContent() {
     officialAmount: f.officialAmount ?? null,
     officialBasis: f.officialBasis ?? null,
     landlordType: f.landlordType ?? null,
+    taxWithholding: f.taxWithholding ?? null,
     prorate: f.prorate !== false,
     monthly: f.monthly,
     startMonth: f.startMonth ?? null,

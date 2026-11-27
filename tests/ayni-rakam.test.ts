@@ -279,7 +279,7 @@ test("E-12: online brüt kâr senaryoda ayrı satır; kaydırıcılar değiştir
 
 // ---------------------------------------------------------------- E-41: kapalı günler
 
-test("E-41: süren ayda kapalı işaretli gün ay sonu öngörüsünü orantılı düşürür; Genel bakış ve KDV tahmini aynı kural", async () => {
+test("E-41: süren ayda kapalı işaretli gün ay sonu öngörüsünü orantılı düşürür (Genel bakış)", () => {
   const plain = dashboard(createModel(base), "2026-10");
   // Ekim 2026: 16 açık gün girildi (Excel); 30 ve 31 Ekim kapalı işaretli (ileri tarihli)
   const closedModel = createModel({ ...base, closedDays: ["2026-10-30", "2026-10-31", "2026-11-02"] });
@@ -290,26 +290,6 @@ test("E-41: süren ayda kapalı işaretli gün ay sonu öngörüsünü orantıl�
   close(f.projectedRevenue, (293_909 / 16) * 29, "29 açık gün");
   close(plain.forecast!.projectedRevenue, (293_909 / 16) * 31, "kapalı gün yokken 31");
   close(f.projectedProfit, f.projectedRevenue * d.grossRatio - d.breakEven.fixed, "tahmini kâr aynı tabanla");
-  // KDV tahmini: süren ayın kasa KDV'si aynı gün sayısıyla tamamlanır
-  const { vatMonthInputs, vatEstimates } = await import("../src/lib/kdv");
-  const est = (m: ReturnType<typeof createModel>) => {
-    const inp = vatMonthInputs(m, "2026-10-20");
-    return vatEstimates({ today: "2026-10-20", months: inp.months, firstSalesMonth: inp.firstSalesMonth, anchor: null, known: new Map(), periods: ["2026-10"], hasSite: false }).get("2026-10")!;
-  };
-  const a = est(createModel(base));
-  const b = est(closedModel);
-  close(b.basis.posRevenue, (a.basis.posRevenue! / 31) * 29, "KDV tahmininin cirosu 29 günle");
-  assert.ok(b.pos < a.pos, "KDV tahmini düştü");
-  // Cirosu henüz girilmemiş ay (ilk kasa raporundan önce): önceki ayın günlük ortalaması × açık gün (kapalılar hariç)
-  const fallback = (closed: string[]) => {
-    const m = createModel({ ...base, currentMonth: "2026-11", closedDays: closed });
-    const inp = vatMonthInputs(m, "2026-11-03");
-    return vatEstimates({ today: "2026-11-03", months: inp.months, firstSalesMonth: inp.firstSalesMonth, anchor: null, known: new Map(), periods: ["2026-11"], hasSite: false }).get("2026-11")!;
-  };
-  const open30 = fallback([]);
-  const open27 = fallback(["2026-11-01", "2026-11-02", "2026-11-03"]);
-  assert.ok(open30.basis.posFrom, "önceki ayın ortalaması");
-  close(open27.basis.posRevenue, (open30.basis.posRevenue! / 30) * 27, "kapalı 3 gün düşüldü");
 });
 
 // ---------------------------------------------------------------- Nakit planı (E-13, E-41, E-46)
@@ -321,7 +301,7 @@ function planInput(over: Partial<CashPlanInput> = {}): CashPlanInput {
     today: TODAY,
     opening: null,
     excluded: [],
-    settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30, kdv: 0.1, kdvHizmet: 0.2 },
+    settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30 },
     invoiceTermDays: 30,
     cashReports: [],
     posMonth: null,
@@ -332,8 +312,6 @@ function planInput(over: Partial<CashPlanInput> = {}): CashPlanInput {
     goodsSpanDays: 0,
     months: Object.fromEntries(["2026-08", "2026-09", "2026-10", "2026-11", "2026-12"].map((m) => [m, { payroll: PAYROLL0, fixed: [] }])),
     fixedNames: [],
-    vat: { months: [], firstSalesMonth: null, hasSite: false },
-    vatAnchor: null,
     ...over,
   };
 }

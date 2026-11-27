@@ -185,7 +185,7 @@ export function Notice({
   const textNode = present(text) ? <div className="pl-6 text-ink-soft">{text}</div> : null;
 
   // 2. Eylemsiz ve ayrıntılı: bütün kutu tek <details>; özet = ikon · başlık · (text) · sağda "Ayrıntı ⌄".
-  // Özette etkileşimli öğe yok (vergi takviminin kuralı).
+  // Özette etkileşimli öğe yok.
   if (!hasAction && hasDetails && !liveInner) {
     return (
       <div ref={ref} id={id} role={role} data-notice={tone} data-risk={risk} className={cn(root, "flex flex-col gap-1")}>

@@ -153,8 +153,8 @@ export async function currentBranchScope(): Promise<BranchScope> {
 
 /**
  * Seçiciden bağımsız okuma: `fn` içindeki bütün okumalar (kasa raporu, ay, satış, ModPOS föyü, AsilPOS) verilen kapsamı
- * görür. İşletme geneli ekranlar (vergi, ödemeler ve nakit planı, tutarlılık) "Tümü" ile, şube başına ekranlar (stok
- * sayımı) yazdıkları şubeyle okur; okuma işlevlerinin imzası değişmez.
+ * görür. İşletme geneli okumalar (firma geneli ödemeler ve nakit planı, muhasebeci paketi) "Tümü" ile, şube başına
+ * ekranlar (stok sayımı) yazdıkları şubeyle okur; okuma işlevlerinin imzası değişmez.
  */
 export function withBranchScope<T>(scope: BranchScope, fn: () => Promise<T>): Promise<T> {
   return scopeOverride.run(scope, fn);

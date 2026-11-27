@@ -374,7 +374,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Ay sonu stoğu ve kâr-zararın mal maliyeti ilk giren ilk çıkar (FIFO) ile: rafta kalan mal en son alınandır, sayılan miktar en yeni Paraşüt faturasından geriye
             doğru dağıtılır ve her parça kendi faturasının birim fiyatıyla (KDV hariç) değerlenir. Faturası olmayan alım (elle girilen fatura, nakit alım, bağlanmamış
             ürün) havuzda görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu fiyatıyla. Tedarikçiye iade
-            yalnız elle girilmiş eksi fatura olarak geldiyse (kalemsiz) partiden düşülmez. Mal maliyeti = açılış + alınan − bu kapanış. Sayım girilmeyen ayda Gelir-gider tahmin eder: iki sayım arasındaki aylarda aralığın mal maliyeti ayların reçeteye göre tüketimi oranında dağıtılır; son sayımdan sonraki ayda reçeteye göre tüketim (fire bir kez) ve ödenmezlerin malzeme maliyeti düşülür. Ayın yöntemi mal maliyeti satırının altında yazar; vergi hesabı yalnız sayımı kullanır. <Path href="/panel/sayim" /> ekranında toplamın yanında FIFO rozeti,
+            yalnız elle girilmiş eksi fatura olarak geldiyse (kalemsiz) partiden düşülmez. Mal maliyeti = açılış + alınan − bu kapanış. Sayım girilmeyen ayda Gelir-gider tahmin eder: iki sayım arasındaki aylarda aralığın mal maliyeti ayların reçeteye göre tüketimi oranında dağıtılır; son sayımdan sonraki ayda reçeteye göre tüketim (fire bir kez) ve ödenmezlerin malzeme maliyeti düşülür. Ayın yöntemi mal maliyeti satırının altında yazar. <Path href="/panel/sayim" /> ekranında toplamın yanında FIFO rozeti,
             faturadan gelen payı ve satırın ⓘ işaretinde hangi faturalardan geldiği görünür. Yöntem <Path href="/panel/ayarlar" /> › Stok değerleme&apos;de: başlangıç ayı
             (Ekim 2026) ve önceki aylar ay sonu fiyatıyla kalır; başlangıcı geriye almak kapanmış ayların kârını değiştirir, önizleme farkı gösterir. Reçete ve menü maliyeti
             ise son alış fiyatıyla (yenileme maliyeti): fiyat kararı için. Resmi defterlerdeki yöntem muhasebecinizindir; vergi kanunu FIFO&apos;yu ve ağırlıklı ortalamayı
@@ -601,7 +601,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın günlük
-            satışı, laffogato.net online) ve ödenecekler (vadesi gelen faturalar, hatırlatıcılar, maaş, SGK, KDV, sabit giderler). Önce Bakiyeyi gir ile bankadaki
+            satışı, laffogato.net online) ve ödenecekler (vadesi gelen faturalar, hatırlatıcılar, maaş, SGK, sabit giderler; vergiler yalnız Ödemeler&apos;e tutarıyla yazıldıysa). Önce Bakiyeyi gir ile bankadaki
             ve kasadaki parayı yazın; plan en sıkışık günü ve para yetmeyecekse hangi gün yetmeyeceğini söyler. Tutarı belli olanlar kesin, ötekiler “tahmini”
             yazar: kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin. Faturası ayrıca gelen sabit gideri Tahmine katılanlar&apos;dan kapatın.
             Varsayımların hepsi ekrandaki Nasıl hesaplandı kartında.
@@ -611,41 +611,18 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         links: [{ href: "/panel/hatirlaticilar/nakit", label: "Nakit planı" }],
       },
       {
-        id: "kdv-tahmini",
-        q: "Bu ay ne kadar KDV ödeyeceğim?",
+        // Vergi bölümü 27 Kasım 2026'da kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor)
+        id: "vergi",
+        q: "Vergi ve KDV hesabı nerede?",
         a: (
           <>
-            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Döküm Nakit planındaki KDV tahmini kartında (şube seçiliyken: Tümü ya da Firma geneli):
-            önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV düşülür; sonuç ayın 28&apos;inde plana girer.
-            Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin beyannamesindedir. Muhasebeciniz tutarı
-            söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın, plan onu kullanır.
+            Panelde vergi bölümü yok: KDV, muhtasar, geçici ve kurumlar vergisini muhasebeciniz yürütür, panel vergi tahmini yapmaz. Bir vergi ödemesinin gününü ve
+            tutarını <Path href="/panel/hatirlaticilar" /> ekranına hatırlatıcı olarak yazarsanız Nakit planına girer. Ürün ve fatura KDV&apos;si (oranlar, KDV dahil
+            fiyatlar, faturaların KDV&apos;si) yerinde; aylık muhasebeci paketi faturaları KDV&apos;leriyle ve yazarkasa Z&apos;lerinin KDV dökümüyle gönderir.
           </>
         ),
         icon: Percent,
-        links: [
-          { href: "/panel/vergi#kdv", label: "KDV" },
-          { href: "/panel/hatirlaticilar/nakit#kdv", label: "KDV tahmini" },
-        ],
-      },
-      {
-        // Vergi bölümü (dalga 12, docs/VERGI.md): tahmin, beyanname değil
-        id: "vergi",
-        q: "Vergi sayfasındaki rakamlar beyanname mi?",
-        a: (
-          <>
-            Hayır, tahmindir.{" "}
-            <Path href="/panel/vergi" /> sayfası satışlardan, faturalardan ve bordrodan muhtasarı, SGK&apos;yı, damga vergisini ve kafenin geçici ve kurumlar
-            vergisine katkısını Türkiye&apos;nin 2026 kurallarıyla tahmin eder; her rakamın yanında nasıl hesaplandığı ve dayanağı yazar. Geçici ve kurumlar
-            vergisi şirketin tamamının beyannamesidir: tutarı muhasebecinizden isteyin ve Vergi&apos;ye girin. Muhasebeci sekmesindeki &apos;Muhasebeciye
-            sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin. Günü geçmiş bir vergi ya da SGK ödemesi Özet&apos;in başında turuncu satır olur;
-            Ödemeler&apos;de &quot;Ödedim&quot; ile kapanır.
-          </>
-        ),
-        icon: Landmark,
-        links: [
-          { href: "/panel/vergi", label: "Vergi, KDV, SGK" },
-          { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar" },
-        ],
+        links: [{ href: "/panel/hatirlaticilar", label: "Ödemeler" }],
       },
       {
         id: "zam-etkisi",
@@ -688,8 +665,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle, rol <strong className="font-semibold text-ink">Müdür</strong>: şubesini seçmek zorunludur, hesap
             o şubeye kilitlidir. Personelin her ekranına ek olarak kasa raporlarını rakamlarıyla görür ve onaysız düzeltir, şubesinin isteklerini Onaylar&apos;da
-            karara bağlar, vardiyayı yazar, Teslim defterini ve İşçilik / ciro&apos;yu görür; maaş, vergi, Paraşüt, ayarlar ve öteki şubeler yok. Rol{" "}
-            <strong className="font-semibold text-ink">Muhasebeci</strong>: salt okunur; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve
+            karara bağlar, vardiyayı yazar, Teslim defterini ve İşçilik / ciro&apos;yu görür; maaş, Paraşüt, ayarlar ve öteki şubeler yok. Rol{" "}
+            <strong className="font-semibold text-ink">Muhasebeci</strong>: salt okunur; faturalar, gelir-gider, aylık harcamalar, kasa raporları ve
             muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş görmez. İki adımlı doğrulama isteğe bağlıdır; zorunluluk açıksa
             (ADMIN_2FA_REQUIRED=1) ikisi de yönetici gibi kurmadan paneli kullanamaz. Yeni bir cihazdan girişleri bildirilir.
           </>

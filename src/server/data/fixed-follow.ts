@@ -9,8 +9,8 @@ import { schema as s, type DB } from "@/server/db";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
-// Sabit gideri izleyen hatırlatıcılar (denetim E-46): Giderler'de tutar, dönem, KDV ya da stopaj değişince (costs.ts
-// saveFixedExpense, Vergi › sınıflandırma tax.ts saveTaxClassifications) aynı kuralla güncellenir.
+// Sabit gideri izleyen hatırlatıcılar (denetim E-46): Giderler'de tutar, dönem, KDV ya da ev sahibi türü değişince (costs.ts
+// saveFixedExpense) aynı kuralla güncellenir.
 
 /**
  * Sabit gider değişince "Sabit giderlerden ekle" ile açılmış (notu FIXED_REMINDER_NOTE), adı eski ya da yeni adla aynı
@@ -35,8 +35,8 @@ export async function followFixedReminders(
   if (!rems.length) return out;
   const afterVersions = await tx.select().from(s.fixedExpenseVersions).where(eq(s.fixedExpenseVersions.fixedExpenseId, before.id));
   for (const r of rems) {
-    // Stopajlı kalemde hatırlatıcının tutarı bankadan çıkan nettir (stopaj muhtasarda); yurt dışı hizmette KDV yok
-    // (KDV-2'de; docs/VERGI.md)
+    // Stopajlı kalemde hatırlatıcının tutarı bankadan çıkan nettir (stopajı muhasebeci muhtasarla öder); yurt dışı
+    // hizmette KDV yok
     const year = Number(r.dueDate.slice(0, 4));
     const rated = (x: typeof before) => paidFixedRatesOf(x, year);
     const f = fixedReminderFollow(r, rated(before), beforeVersions, rated(after), afterVersions);

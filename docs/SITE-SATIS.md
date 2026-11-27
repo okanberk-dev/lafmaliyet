@@ -7,8 +7,8 @@ laffogato.net** (bağlantının durumu).
 
 **Kullananlar** (sözleşmeye dokunan bir değişiklik bunların hepsine bakar): kâr-zarar, Genel bakış ve tüketim (hesap
 motoru, `src/lib/calc/engine.ts`), kasa raporunun günlük bilgi satırı (`src/server/site-sales/sync.ts`),
-**Nakit planı › KDV tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sales/calc.ts`, okuyan
-`src/lib/kdv.ts`; [NAKIT-PLANI.md](NAKIT-PLANI.md)), **Marina'nın tahmini stoğu** (şubenin ayrı ay kaydı; aşağıda
+Gelir-gider'in KDV hariç online geliri (`siteRevenue` ve içindeki KDV `siteVat`, `src/lib/site-sales/calc.ts`; nakit
+planının KDV tahmini de okuyordu, 27 Kasım 2026'da Vergi bölümüyle kalktı), **Marina'nın tahmini stoğu** (şubenin ayrı ay kaydı; aşağıda
 Saklama, [STOK-TAHMINI.md](STOK-TAHMINI.md) § 2). Sözleşmenin sitedeki kopyası: laffogato deposunda
 `docs/PANEL-SALES.md` (uç, alanlar, KDV kuralı, hata kodları; sitenin kuralı `src/lib/panel/sales-export-core.ts`).
 
@@ -90,7 +90,7 @@ siteden çekildiyse:
   ödenemeyip kasada nakit ya da kasadaki kart cihazıyla ödenirse (sitede "Ödendi olarak işaretle", `manual:nakit` /
   `manual:kart`) fişi ModPOS'ta çalınır: ciro kasadadır. Site bu siparişleri kafe ve mağaza toplamlarından ve
   satırlarından ayırıp `counter` olarak gönderir (sitede `cafe` / `shop` ile aynı sekiz alan; panel `orders`,
-  `grossMinor`, `netMinor`'ı okur); panel ciroya, KDV tahminine ve
+  `grossMinor`, `netMinor`'ı okur); panel ciroya ve
   tüketime eklemez (elle girilen `manual` gibi), kartta bilgi olarak yazar. Eski site bloğu göndermez: sıfır sayılır.
 - Telefonda ay özeti "+ online X (laffogato.net)" der.
 - **Karaoke box ile karaoke odası ayrı işlerdir:** Faturalar'daki "Karaoke box" kategorisi MaviBahçe AVM'deki karaoke

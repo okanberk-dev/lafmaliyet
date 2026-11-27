@@ -350,8 +350,6 @@ function planInput(over: Partial<CashPlanInput>): CashPlanInput {
       komisyon: 0.025,
       kartOrani: 0.8,
       acikGun: 30,
-      kdv: 0.1,
-      kdvHizmet: 0.2,
     },
     invoiceTermDays: 30,
     cashReports: [],
@@ -363,8 +361,6 @@ function planInput(over: Partial<CashPlanInput>): CashPlanInput {
     goodsSpanDays: 0,
     months: {},
     fixedNames: [],
-    vat: { months: [], firstSalesMonth: null, hasSite: false },
-    vatAnchor: null,
     ...over,
   };
 }

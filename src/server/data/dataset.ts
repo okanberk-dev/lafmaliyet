@@ -52,8 +52,8 @@ export async function loadSettings(): Promise<Settings> {
 /** Veri kümesinin şube kapsamı: verilmezse seçicinin seçimi (docs/SUBE.md › Seçici) */
 export interface DatasetOptions {
   /**
-   * "hepsi" seçiciden bağımsız işletme geneli okur (vergi, ödemeler ve nakit planı, tutarlılık: para ve beyan
-   * işletmenindir); bir şube kimliği o şubeyi okur (stok sayımı yazdığı şubeyi gösterir)
+   * "hepsi" seçiciden bağımsız işletme geneli okur (firma geneli ödemeler ve nakit planı, muhasebeci paketi: para ve
+   * beyan işletmenindir); bir şube kimliği o şubeyi okur (stok sayımı yazdığı şubeyi gösterir)
    */
   scope?: BranchScope;
 }
@@ -118,7 +118,7 @@ async function readDataset(): Promise<Dataset> {
     db.select().from(s.months).where(branchWhere(s.months.branchId, scope)).orderBy(asc(s.months.month)),
     db.select().from(s.salesLines).where(branchWhere(s.salesLines.branchId, scope)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
     // Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): tek şube seçiliyken o şubenin ve bilinçli işletme geneli
-    // faturalar; öbür şubenin ve şubesi seçilmemiş faturalar okunmaz. Vergi ve Nakit "Tümü"yle okur
+    // faturalar; öbür şubenin ve şubesi seçilmemiş faturalar okunmaz. Firma geneli Nakit "Tümü"yle okur
     db.select().from(s.invoices).where(invoiceScopeWhere(scope)).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
@@ -151,7 +151,7 @@ async function readDataset(): Promise<Dataset> {
     db.select().from(s.stockExtras).where(branchWhere(s.stockExtras.branchId, scope)).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
-    // Kasadan çıkan satırın belgesi (fiş / e-Arşiv / fatura / yok) vergide kaydın belgesidir (docs/VERGI.md)
+    // Kasadan çıkan satırın belgesi (fiş / e-Arşiv / fatura / yok)
     db
       .select({ entry: s.expenseEntries, docType: s.cashOuts.docType })
       .from(s.expenseEntries)
@@ -443,7 +443,6 @@ async function readDataset(): Promise<Dataset> {
       needsReview: i.needsReview,
       paidAt: i.paidAt,
       paymentRequestedAt: i.paymentRequestedAt,
-      taxNotAsset: i.taxNotAsset,
       supplierTaxNumber: i.supplierTaxNumber,
       eInvoiceUuid: i.eInvoiceUuid,
       branchId: i.branchId,
@@ -482,7 +481,6 @@ async function readDataset(): Promise<Dataset> {
       startMonth: f.startMonth,
       endMonth: f.endMonth,
       sortOrder: f.sortOrder,
-      taxDoc: f.taxDoc,
       taxWithholding: f.taxWithholding,
       officialAmount: f.officialAmount,
       officialBasis: f.officialBasis,
@@ -526,7 +524,6 @@ async function readDataset(): Promise<Dataset> {
       monthly: c.monthly,
       active: c.active,
       sortOrder: c.sortOrder,
-      taxDoc: c.taxDoc,
     })),
     wasteEntries,
     siteSales,

@@ -21,7 +21,7 @@ import { blindReport, staffBlindDay } from "@/lib/asilpos/kor-kasa";
 import { isAsilposDay } from "@/lib/asilpos/switch";
 import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
 import { foyZ } from "@/lib/modpos/z";
-import { okcDayVat, type OkcPrev, type OkcRow, type OkcVatLine } from "@/lib/okc-z";
+import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { addDays } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
@@ -387,19 +387,12 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
         cash: s.cashReports.cash,
         online: s.cashReports.online,
         other: s.cashReports.other,
-        // Yazarkasa Z'sinin toplamı ve KDV'si: KDV tahmini bu günün KDV'sini Z'den alır (cash-month.ts vatDaysOf)
-        okcTotal: s.cashReports.okcTotal,
-        okcVatTotal: s.cashReports.okcVatTotal,
-        okcVat: s.cashReports.okcVat,
       })
       .from(s.cashReports)
       .where(await subeKosulu())
       .orderBy(asc(s.cashReports.date))
       .then((rows) =>
-        rows.map(({ cash, online, other, okcTotal, okcVatTotal, okcVat, ...r }): TillRow => {
-          const okc = okcDayVat({ okcTotal, okcVatTotal, okcVat });
-          return { ...r, payments: Math.round((cash + r.card + r.mealCard + online + other) * 100) / 100, ...(okc ? { okc } : {}) };
-        }),
+        rows.map(({ cash, online, other, ...r }): TillRow => ({ ...r, payments: Math.round((cash + r.card + r.mealCard + online + other) * 100) / 100 })),
       ),
     asilposTillRows(db),
     modposTillRows(db),

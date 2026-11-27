@@ -9,12 +9,12 @@
  * - Yönetici (admin): her şey.
  * - Müdür (manager): şubesinin günlük işletmesi; şubesine KİLİTLİ (hesabında şube zorunlu). Personelin her ekranı, kasa
  *   raporlarının rakamları ve onaysız düzeltme, Onaylar (şubesinin istekleri), vardiya yazma, Teslim defteri, şubesinin
- *   günü ve İşçilik / ciro. Maaş ve kişisel ücret, vergi, Paraşüt, ayarlar, kullanıcılar, yedek, anahtarlar ve öteki
+ *   günü ve İşçilik / ciro. Maaş ve kişisel ücret, Paraşüt, ayarlar, kullanıcılar, yedek, anahtarlar ve öteki
  *   şubeler yok.
  * - Personel (staff): günün işleri (değişmedi).
- * - Muhasebeci (accountant): SALT OKUNUR; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları (rakamlarıyla),
- *   muhasebeci paketi. Hiçbir kayıt değiştiremez (her sunucu eylemi reddeder), ayar görmez; kişi başı maaş (bordro
- *   dökümü, Maaşlar) ve personel belgeleri yok.
+ * - Muhasebeci (accountant): SALT OKUNUR; faturalar, gelir-gider, aylık harcamalar, kasa raporları (rakamlarıyla),
+ *   muhasebeci paketi. Hiçbir kayıt değiştiremez (her sunucu eylemi reddeder), ayar görmez; kişi başı maaş (Maaşlar) ve
+ *   personel belgeleri yok. Vergi bölümü 27 Kasım 2026'da kaldırıldı (vergiyi muhasebeci yürütüyor).
  * Varsayılan KAPALI: tabloda olmayan her şey yalnız yöneticinin.
  */
 
@@ -48,7 +48,7 @@ export const CAPABILITIES = {
   "vardiya.yaz": ["admin", "manager"],
   /** Şubenin işletme raporları: Bugün'ün şube günü (ciro, kasa farkı, geçen hafta), İşçilik / ciro */
   "rapor.sube": ["admin", "manager"],
-  /** Muhasebe ekranları (salt okunur): faturalar, gelir-gider, vergi, aylık harcamalar, muhasebeci paketi */
+  /** Muhasebe ekranları (salt okunur): faturalar, gelir-gider, aylık harcamalar, muhasebeci paketi */
   "muhasebe.oku": ["admin", "accountant"],
   /**
    * Kasadan çıkanın bütün gider kategorileri (maaş, kira, reklam): seçmek ve satırda adını görmek. Müdür personelin
@@ -56,7 +56,7 @@ export const CAPABILITIES = {
    * satırın metnini görmez (kasadan ödenen maaş ve avans kişisel ücrettir; `ownerRowAmountOnly`)
    */
   "kategori.tum": ["admin", "accountant"],
-  /** Maaşlar ve kişisel ücretler: Maaşlar, avanslar, bordro dökümü (kişi kişi), personel belgeleri */
+  /** Maaşlar ve kişisel ücretler: Maaşlar, avanslar, personel belgeleri */
   maas: ["admin"],
   /** Yönetim: ayarlar, kullanıcılar, Paraşüt, yedek, anahtarlar, şube ayarları, Claude bağlantısı, tam dışa aktarım */
   yonetim: ["admin"],
@@ -216,14 +216,13 @@ export const MANAGER_CLOSED_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/d
 
 /**
  * Muhasebecinin ekranları (salt okunur): kendi ana ekranı (muhasebe ekranlarının listesi ve muhasebeci paketi), faturalar,
- * gelir-gider, vergi (alt sayfalarıyla), aylık harcamalar, kasa raporları, Hesabım. Ekranlardaki yazma düğmeleri gizlidir;
+ * gelir-gider, aylık harcamalar, kasa raporları, Hesabım. Ekranlardaki yazma düğmeleri gizlidir;
  * sunucu eylemlerinin hepsi muhasebeciyi reddeder (tests/roller.test.ts).
  */
 export const ACCOUNTANT_PATHS = [
   "/panel/muhasebe",
   "/panel/faturalar",
   "/panel/gelir-gider",
-  "/panel/vergi",
   "/panel/harcamalar",
   "/panel/kasa",
   "/panel/hesap",
@@ -266,17 +265,41 @@ function under(pathname: string, base: string): boolean {
 }
 
 /**
- * Kaldırılan ekranların eski adresleri (26 Eki 2026, sahibin isteği: "Hızlı sayım ile mal siparişi kısmını kaldır,
- * normal sayım olsun"): yer iminden, eski bildirimden ya da e-postadan gelen istek 404 yerine aylık Stok sayımı'na gider.
- * proxy.ts oturumdan önce yönlendirir (geçici, 307); sorgu ve çapa düşer (eski süzgeçler sayımda anlamsız).
+ * Kaldırılan ekranların eski adresleri ve gidecekleri ekran: yer iminden, eski bildirimden ya da e-postadan gelen istek
+ * 404 yerine yaşayan bir ekrana gider. proxy.ts oturumdan önce yönlendirir (geçici, 307); eski sorgu ve çapa düşer.
+ * - Hızlı sayım ve Mal siparişi (26 Eki 2026, sahibin isteği: "Hızlı sayım ile mal siparişi kısmını kaldır, normal sayım
+ *   olsun"): aylık Stok sayımı.
+ * - Vergi, KDV, SGK bölümü ve alt sayfaları (27 Kasım 2026, sahibin kararı: vergiyi muhasebeci yürütüyor; kayıtlı
+ *   veriler silinmedi): Genel bakış, kısa notla (`?kaldirildi=vergi`; REMOVED_NOTICES). Muhasebeci Genel bakış'ı
+ *   açamaz: proxy notu onun ana ekranına (Muhasebe) taşır.
  */
-export const RETIRED_PATHS = ["/panel/hizli-sayim", "/panel/mal-siparisi"] as const;
-export const RETIRED_TARGET = "/panel/sayim";
+export const RETIRED_PATHS: readonly { path: string; target: string }[] = [
+  { path: "/panel/hizli-sayim", target: "/panel/sayim" },
+  { path: "/panel/mal-siparisi", target: "/panel/sayim" },
+  { path: "/panel/vergi", target: "/panel?kaldirildi=vergi" },
+];
 
-/** Kaldırılan bir ekranın (ya da alt sayfasının) adresiyse gidilecek ekran, değilse null */
+/** Kaldırılan bir ekranın (ya da alt sayfasının) adresiyse gidilecek ekran (sorgusuyla), değilse null */
 export function retiredRedirect(pathname: string): string | null {
-  return RETIRED_PATHS.some((p) => under(pathname, p)) ? RETIRED_TARGET : null;
+  return RETIRED_PATHS.find((r) => under(pathname, r.path))?.target ?? null;
 }
+
+/** Kaldırılan bölümün notu (`?kaldirildi=`): yönlendirilen ekranın başındaki kısa açıklama */
+export const REMOVED_NOTICES: Readonly<Record<string, { title: string; text: string }>> = {
+  vergi: {
+    title: "Vergi bölümü kaldırıldı",
+    text: "Vergiyi ve beyannameleri muhasebeciniz yürütüyor; panel vergi tahmini yapmıyor. Kayıtlı veriler silinmedi. Vergi ödemelerini isterseniz Ödemeler'e tutarıyla yazın.",
+  },
+};
+
+/** Sorgudaki `kaldirildi` değerinin notu; bilinmeyen değerde null */
+export function removedNotice(value: string | string[] | null | undefined): { title: string; text: string } | null {
+  const key = Array.isArray(value) ? value[0] : value;
+  return key && Object.hasOwn(REMOVED_NOTICES, key) ? REMOVED_NOTICES[key] : null;
+}
+
+/** Kaldırılan ekranın notunun sorgu adı (yönlendirmede rolün ana ekranına taşınır) */
+export const REMOVED_PARAM = "kaldirildi";
 
 /**
  * Bu rol bu panel adresini açabilir mi (panel dışı adreslere karışmaz). Tanınmayan rol hiçbir panel adresini açamaz
@@ -310,11 +333,11 @@ export const STAFF_ROLE_HINT =
 
 /** Müdürün rolü tek cümlede (rol seçicinin açıklaması) */
 export const MANAGER_ROLE_HINT =
-  "Şubesinin günlük işletmesi: personelin her ekranı, kasa raporlarının rakamları ve onaysız düzeltme, personelin isteklerini onaylama, vardiya yazma, teslim defteri, şubesinin günü ve işçilik / ciro; şubesine kilitli (şube zorunlu); maaş, vergi, Paraşüt, ayarlar ve kullanıcılar yok";
+  "Şubesinin günlük işletmesi: personelin her ekranı, kasa raporlarının rakamları ve onaysız düzeltme, personelin isteklerini onaylama, vardiya yazma, teslim defteri, şubesinin günü ve işçilik / ciro; şubesine kilitli (şube zorunlu); maaş, Paraşüt, ayarlar ve kullanıcılar yok";
 
 /** Muhasebecinin rolü tek cümlede (rol seçicinin açıklaması) */
 export const ACCOUNTANT_ROLE_HINT =
-  "Salt okunur: faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş (bordro dökümü, personel belgeleri) görmez";
+  "Salt okunur: faturalar, gelir-gider, aylık harcamalar, kasa raporları ve muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş (Maaşlar, personel belgeleri) görmez";
 
 /** Yöneticinin rolü tek cümlede */
 export const ADMIN_ROLE_HINT = "Her şey (maliyet, kâr, ayarlar, reçete onayı dahil)";
@@ -368,7 +391,6 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; manager
   { label: "Teslim defteri: ayın teslimleri ve kimin aldığı (müdür şubesinin)", admin: true, manager: true, staff: false, accountant: false },
   { label: "Şubenin günü (ciro, kasa farkı, geçen hafta) ve İşçilik / ciro (müdür yalnız şubesinin; kişi başı ücret yok)", admin: true, manager: true, staff: false, accountant: false },
   { label: "Faturalar, gelir-gider, aylık harcamalar ve muhasebeci paketi (muhasebecide salt okunur)", admin: true, manager: false, staff: false, accountant: true },
-  { label: "Vergi, KDV, SGK: tahmini vergi takvimi, vergi kârı, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı (muhasebecide salt okunur, kişi kişi bordro dökümü yok)", admin: true, manager: false, staff: false, accountant: true },
   { label: "Bütün şubeler (müdür şubesine kilitli)", admin: true, manager: false, staff: false, accountant: true },
   { label: "Reçeteyi doğrudan düzenleme; reçete önerilerini onaylama", admin: true, manager: false, staff: false, accountant: false },
   { label: "Genel bakış, şube karşılaştırma, kaçak ve kayıp önleme raporları", admin: true, manager: false, staff: false, accountant: false },

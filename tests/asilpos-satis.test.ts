@@ -1,7 +1,7 @@
 // AsilPOS satışlarının aylık maliyet modeline girmesi (docs/ASILPOS.md › Günlük satış; denetim B08, E-08): her gün tek
 // kaynak (geçiş ayında ModPOS listesi kendi son gününe kadar, AsilPOS ondan sonra; sonraki aylarda yalnız AsilPOS), geçiş
 // günü yokken hiçbir şey değişmez, AsilPOS ay toplamları modelde ModPOS satırları gibi sayılır (Tutarlılık, Ürünler,
-// Analiz, Genel bakış, KDV tahmininin karaoke payı), Satışlar'ın bandı ve uyarıları, ModPOS listesi yükleme kuralı.
+// Analiz, Genel bakış, Gelir-gider'in karaoke KDV payı), Satışlar'ın bandı ve uyarıları, ModPOS listesi yükleme kuralı.
 // Veritabanı tarafı (veri kümesi, sonradan eşleştirme, tahmin, silme engeli) tests/asilpos-satis-db.test.ts'te.
 // Çalıştırma: npx tsx --test tests/asilpos-satis.test.ts
 
@@ -12,7 +12,6 @@ import { test } from "node:test";
 
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, SalesLine } from "../src/lib/calc/types";
-import { posVat, vatMonthInputs } from "../src/lib/kdv";
 import {
   commonListCuts,
   commonListText,
@@ -338,11 +337,11 @@ test("model: yalnız AsilPOS olan ayda satır, reçeteye göre tüketim ve karao
   assert.deepEqual([...model.ingredientUsage("2026-11")].sort(), [...model.ingredientUsage("2026-09")].sort(), "reçeteye göre tüketim");
   assert.ok(model.ingredientUsage("2026-11").size > 0);
   assert.equal(nov.serviceRevenue, 2050, "karaoke satırları hizmet");
-  // KDV tahmini: karaoke payı hizmet oranıyla (%20), kalanı satış KDV'siyle (%10)
-  const inp = vatMonthInputs(model, "2026-11-20").months.find((m) => m.month === "2026-11");
-  assert.equal(inp?.pos?.serviceRevenue, 2050);
-  assert.equal(inp?.pos?.vat, posVat(429_698, 2050, 0.1, 0.2));
-  assert.ok(posVat(429_698, 2050, 0.1, 0.2) > posVat(429_698, 0, 0.1, 0.2), "karaoke payı %20'yle");
+  // Gelir-gider'in KDV hariç cirosu: karaoke payı hizmet oranıyla (%20), kalanı satış KDV'siyle (%10)
+  const pos = model.posNet("2026-11")!;
+  assert.equal(pos.byDay, false);
+  assert.ok(Math.abs(pos.vat - (((429_698 - 2050) * 0.1) / 1.1 + (2050 * 0.2) / 1.2)) < 0.005, `KDV ${pos.vat}`);
+  assert.ok(pos.vat > (429_698 * 0.1) / 1.1, "karaoke payı %20'yle");
 });
 
 test("Satışlar bandı: geçiş ayı, eksik günler, sayılmayan AsilPOS günleri, sayılmayan liste, liste ↔ Z farkı", () => {

@@ -40,12 +40,12 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
   daha tanınır. GitHub deposunun adı `lafpos` kalır.
 - **Marina yalnız AsilPOS:** Marina'da ModPOS tamamen bitti (kütükte kaynak AsilPOS, föy çekilmez).
 - **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "AsilPOS yalnız bir şubenin kasası" sınırı kalkar).
-- **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Vergi, Nakit
+- **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Nakit
   planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
   **Durum (27 Kasım):** `sube-ayrimi` dalında hazır (#167'nin üstünde; göçler 0100, 0101): altı parça, bağımsız doğrulama
   testi (`tests/sube-ayrimi-db.test.ts`) ve doğrulamanın sekiz sızıntısının düzeltmesi. Dal gönderilmedi, PR açılmadı:
   açıklaması `~/Downloads/lafmaliyet-ekler/sube-ayrimi-pr.md`; #167'den sonra birleşir. Sahibin kararına kalanlar
-  (nakit planının işletme geneli satırı, Vergi beyanının personel dökümü, "Ciroya göre pay et") YAPILACAKLAR.md ›
+  (nakit planının işletme geneli satırı, "Ciroya göre pay et"; Vergi'ninkiler bölüm kaldırılınca düştü) YAPILACAKLAR.md ›
   Bitenler'de ve docs/SUBE.md › Doğrulama düzeltmeleri'nde. Tam yedek ayarsız firma geneli kaldı (geri yüklenebilir
   yedek bütün veritabanını ister).
 - **P8'e ek:** banka POS Z'sinin ÖZET bölümündeki "Toplam KDV" okunmadı ("fotoğrafta yok"), fiş yanlışlıkla "farklı"
@@ -98,17 +98,22 @@ kapı kaynak başına (CSP yağmuru sunucu hatasını düşürmez), NUL ve uzun 
   muhasebeci için maliyet / maaş sızıntısı).
 - Kaynak metnine bakan kırılgan testleri (assert.match(src, /…/)) yeni işlerde davranış testleriyle değiştir.
 
-### P5. Ayarlar ay bazlı + 2027 vergi kuralları (yüksek; 2027 kuralları Ocak'tan önce)
+### P5. Ayarlar ay bazlı + 2027 bordro ve stopaj değerleri (yüksek; 2027 değerleri Ocak'tan önce)
 SGK oranları, yemek kartı, şube POS oranı değişince geçmiş aylar yeniden hesaplanıyor (Excel'den kalan "tek ayar"
-modeli). Ayarlar geçerlilik başlangıcıyla (ay) saklansın; hesap her ayı kendi ayarıyla yapsın. `src/lib/tax/rules.ts`'e
-2027 kuralları (docs/planlar/vergi.md § 19), kodda gömülü "2026"lar yıldan türesin. SGK işveren oranı kodda %15,75
-(Excel'den); 2026 yasal oranı %19,75 — sahip/muhasebeci kararı bekliyor, ayar olarak sorulsun.
+modeli). Ayarlar geçerlilik başlangıcıyla (ay) saklansın; hesap her ayı kendi ayarıyla yapsın. **Daraltıldı (27 Kasım
+2026, Vergi bölümü kaldırıldı):** kaldırılan modülün 2027 vergi kuralları (kurumlar ve geçici vergi, damga tutarları,
+vergi takvimi) artık yok. Kalan iş yalnız hâlâ kullanılan sabitlerin 2027'si: `src/lib/bordro/rules-2027.ts` (asgari
+ücret, ücretin gelir vergisi tarifesi ve damga oranı, SGK oranları ve PEK sınırları, asgari ücret desteği: nakit planının
+maaş ve SGK satırı; kira, serbest meslek ve internet reklamı stopajı: Gelir-gider'in "Kira stopajı" ve stopajlı sabit
+giderin net ödemesi), `PAYROLL_RULES`'a eklenir. Eklenmezse 2027 2026 değerleriyle hesaplanır (tahmini). Kodda gömülü
+öteki "2026"lar yıldan türesin. SGK işveren oranı Ayarlar'da %15,75 (Excel'den; Gelir-gider ve Maaşlar); nakit planının
+bordrosu yasal %19,75 — sahip/muhasebeci kararı bekliyor, ayar olarak sorulsun.
 
 ### P6. Excel'den kalan sabit listeler ekrandan düzenlenebilsin (orta)
 Fatura kategorileri (mal / kafe dışı / demirbaş… rolüyle), hammadde kategorileri ve sayım grupları `src/lib/constants.ts`'te
 sabit (eski tablonun sütunları). `invoice_categories` gibi tablolar + Ayarlar'da düzenleme; mevcut değerler göçle
 tohumlanır. Sabit giderin "Para nereye gitti?" grubu ve stopaj tahmini kalemin adından bulunuyor: kalem kartında
-seçilsin. Muhasebeciye sorulacaklar listesindeki sabit tutar/tarihler (`src/lib/tax/checks.ts`) yıldan türesin.
+seçilsin. (Muhasebeciye sorulacaklar listesi Vergi bölümüyle 27 Kasım 2026'da kalktı.)
 Kafe dışı faturaların ortağın adını taşıyan kategorisi (koddaki sabit liste, `SEPARATE_CATEGORIES`, belgeler ve testler)
 bir kişi adıdır: kategoriler tabloya taşınınca kod ve belgeler adı değil rolü ("ortak hesabı", kafe dışı) kullansın; ad
 yalnız veritabanında, sahibin yazdığı kategori adı olarak kalsın (P2 denetimi, 26 Kasım).

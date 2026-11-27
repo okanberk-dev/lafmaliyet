@@ -10,7 +10,8 @@ import { BranchViewChipClient } from "./branch-view-chip-client";
  * "Marina görünümü · Firma geneline geç" ya da "Firma geneli · Marina seçili · Yalnız Marina'yı göster". Düğme kişinin
  * Hesabım'daki tercihini o alan için değiştirir (`saveBranchView`), sayfa yeniden çizilir. Bütün ekranlar için bağlantı
  * Hesabım › Şube görünümü. "Tümü"de, tek şube açıkken, bütün şubeleri görmeyen rolde ve şubesine kilitli hesapta yok
- * (`showViewChip`). Alan ekranlarında CompanyWideNotice'in yerini alır; o yalnız hep firma geneli kalan ekranlarda kalır.
+ * (`showViewChip`). "Bu ekran firma geneli" notu (CompanyWideNotice) yalnız Vergi'nin sekmelerinde kalmıştı; Vergi bölümü
+ * 27 Kasım 2026'da kaldırılınca not da kalktı.
  * Sunucu bileşeni: seçimi ve tercihi kendisi okur (sayfanın okuması başka kapsamla sarılı olsa da).
  */
 export async function BranchViewChip({ area, className }: { area: ViewArea; className?: string }) {

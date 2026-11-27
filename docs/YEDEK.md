@@ -68,6 +68,14 @@ soyadını yazmış olabilir) dosyada **kalır**: panelin kendi kaydıdır, geç
 Tedarikçilerin IBAN ve vergi numaraları, personelin maaşları, ciro ve kasa raporları da dosyadadır; bu yüzden dosya
 paylaşılmaz.
 
+**Kullanılmayan ama yedeklenen tablolar ve kayıtlar:** Vergi bölümü 27 Kasım 2026'da kaldırıldı (sahibin kararı:
+vergiyi muhasebeci yürütüyor, "veriler silinmesin"; [arsiv/VERGI.md](arsiv/VERGI.md)). Tabloları `tax_assets`,
+`tax_filings`, `tax_adjustments`, sütunları `invoices.tax_not_asset`, `fixed_expenses.tax_doc`,
+`expense_categories.tax_doc` ve `integration_state`'teki `payments.vat-paid` kaydı ile nakit planı ayarındaki eski
+devreden KDV artık okunmaz ve yazılmaz; silinmedikleri için dosyaya girer ve geri yüklenir. `fixed_expenses.tax_withholding`
+(stopaj profili; Giderler'in sabit gider penceresinde "Ödemeden kesilen stopaj") ve `tax.settings` (bordronun hesap
+dönemi, asgari ücret desteği, SGK işveren payının elle değeri) nakit planında hâlâ okunur (`src/lib/bordro/`).
+
 Adı parola, anahtar, belirteç, özet gibi görünen yeni bir sütun ya da durum anahtarı eklenirse `tests/yedek.test.ts`
 düşer: ya `TABLE_RULES` / `EXCLUDED_STATE_KEYS`'e eklenir ya da testte gizli olmadığı nedeniyle yazılır.
 

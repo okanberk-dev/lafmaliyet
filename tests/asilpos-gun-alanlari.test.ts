@@ -18,7 +18,6 @@ import type { Dataset } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
 import { reportChecks } from "../src/lib/cash-report-checks";
-import { vatMonthInputs } from "../src/lib/kdv";
 import { pavoView } from "../src/lib/asilpos/bank-pos";
 import { parsePosDay, posZSchema, type PosDayZ } from "../src/lib/asilpos/day";
 import { asilposDayDetail } from "../src/lib/asilpos/gun-ayrinti";
@@ -460,9 +459,6 @@ test("KDV hariç ciro: AsilPOS gününün KDV'si AsilPOS'un dökümünden, ModPO
   const pm = model.pnlMonth("2026-11");
   assert.equal(pm.revenueNet, 30576.15, "gün gün (ay toplamından 30.576,14 olurdu)");
   assert.deepEqual(model.posNet("2026-11"), { net: 30576.15, vat: 3057.6, byDay: true });
-  // KDV tahmini aynı kuralla: ciro − KDV hariç
-  const v = vatMonthInputs(model, "2026-12-10").months.find((m) => m.month === "2026-11");
-  assert.equal(v?.pos?.vat, 3057.6);
 });
 
 test("KDV hariç ciro: AsilPOS'un dökümü günün cirosunu tutmuyorsa (rapor elle düzeltildi) o gün de oranla ayrılır; dökümsüz AsilPOS günü de", () => {

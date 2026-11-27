@@ -13,7 +13,7 @@ import { sharedCariLine, sharedTotals } from "../src/app/panel/tedarikciler/shar
 import { areaKapsam, modeOfScope, VIEW_AREAS } from "../src/lib/branch-view";
 import { ALL_BRANCHES } from "../src/lib/branches";
 import { branchAccountOf, branchCariNote, branchPayments, sharedCariOf, sharedCariParts } from "../src/lib/cari/branch-account";
-import { BRANCH_VAT_NOTE, branchCashFlow, branchFlowNote, branchPlanWithoutTax, isSharedPlanLine, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf } from "../src/lib/cash-plan-branch";
+import { BRANCH_PLAN_EXCLUDED, branchCashFlow, branchFlowNote, branchPlanWithoutTax, isSharedPlanLine, isTaxPlanReminder, ownPlanInvoice, sharedPlanIdsOf } from "../src/lib/cash-plan-branch";
 import { FIRM_TAX_NOTE, type PlanLine } from "../src/lib/cash-plan";
 import { hasBranchSales, scopeCommissionReport, type ChannelMonth, type CommissionReport } from "../src/lib/commission/report";
 import { sharedPaymentsAnswer } from "../src/lib/mcp/answers/payments";
@@ -128,9 +128,7 @@ test("nakit planı şube kipi: İşletme geneli satırı şubesiz hatırlatıcı
   });
   assert.deepEqual([...ids.reminders], [10]);
   assert.deepEqual([...ids.invoices], [3], "şubesi seçilmemiş fatura işletme geneli değil");
-  assert.equal(isSharedPlanLine(line("kdv@2026-11-28", "kdv", 1), ids), false, "KDV firmanın, şubeye bölünmez");
   assert.equal(isSharedPlanLine(line("sgk@2026-11-30", "sgk", 1), ids), false, "SGK firmanın");
-  assert.equal(isSharedPlanLine(line("vergi:muhtasar@2026-12-26", "vergi", 1), ids), false, "muhtasar firmanın");
   assert.equal(isSharedPlanLine(line("reminder:10@2026-12-01", "reminder", 1), ids), true);
   assert.equal(isSharedPlanLine(line("reminder:11@2026-12-01", "reminder", 1), ids), false);
   assert.equal(isSharedPlanLine(line("reminder:12@2026-12-28", "reminder", 1), ids), false, "tutarlı KDV hatırlatıcısı da");
@@ -147,7 +145,7 @@ test("nakit planı şube kipi: İşletme geneli satırı şubesiz hatırlatıcı
   const flow = branchCashFlow(
     {
       weeks: [
-        week(0, [line("kdv@2026-11-28", "kdv", 42000), line("invoice:1", "invoice", 500), line("reminder:10@2026-12-01", "reminder", 1000), line("cari:7", "invoice", 300), line("sgk@2026-11-30", "sgk", 9000), line("reminder:12@2026-11-28", "reminder", 7000)]),
+        week(0, [line("invoice:1", "invoice", 500), line("reminder:10@2026-12-01", "reminder", 1000), line("cari:7", "invoice", 300), line("sgk@2026-11-30", "sgk", 9000), line("reminder:12@2026-11-28", "reminder", 7000)]),
         week(1, []),
       ],
       opening: { amount: 250000, date: "2026-11-26" } as import("../src/lib/cash-plan").CashPlan["opening"],
@@ -155,7 +153,7 @@ test("nakit planı şube kipi: İşletme geneli satırı şubesiz hatırlatıcı
     ids,
     "Marina",
   );
-  assert.equal(flow.shared[0].amount, 1300, "yalnız muhasebe ücreti ve cari: KDV, SGK ve KDV hatırlatıcısı yok");
+  assert.equal(flow.shared[0].amount, 1300, "yalnız muhasebe ücreti ve cari: SGK ve KDV hatırlatıcısı yok");
   assert.equal(flow.shared[0].count, 2);
   assert.deepEqual(
     flow.shared[0].top.map((t) => t.amount),
@@ -170,7 +168,7 @@ test("nakit planı şube kipi: İşletme geneli satırı şubesiz hatırlatıcı
   assert.doesNotMatch(note.text, /Vergi, KDV, SGK, işletme geneli ödemeler/);
 });
 
-test("nakit planı şube kipi: vergi ve SGK hatırlatıcısı tanınır; şubenin planında KDV kartı, vergi ve SGK tahmini yok, tek not", () => {
+test("nakit planı şube kipi: vergi ve SGK hatırlatıcısı tanınır; şubenin planında SGK tahmini yok (vergi tahmini hiç yok), tek not", () => {
   const tax = (title: string, kind: import("../src/lib/reminders").ReminderKind = "odeme") => isTaxPlanReminder({ title, kind });
   for (const [title, kind] of [
     ["KDV beyannamesi ve ödemesi", "vergi"],
@@ -197,28 +195,21 @@ test("nakit planı şube kipi: vergi ve SGK hatırlatıcısı tanınır; şubeni
 
   const est = (key: string) => ({ key, title: key, monthly: 1, status: "on", note: "", direction: "out" }) as import("../src/lib/cash-plan").EstimateRow;
   const plan = {
-    vat: { mode: "excluded" },
-    estimates: [est("sales"), est("salary"), est("sgk"), est("goods"), est("kdv"), est("vergi"), est("fixed:4")],
+    estimates: [est("sales"), est("salary"), est("sgk"), est("goods"), est("fixed:4")],
     excluded: [],
   } as unknown as import("../src/lib/cash-plan").CashPlan;
   const own = branchPlanWithoutTax(plan);
-  assert.equal(own.vat, null, "şubenin KDV tahmini yok");
   assert.deepEqual(own.estimates.map((e) => e.key), ["sales", "salary", "goods", "fixed:4"]);
+  assert.deepEqual([...BRANCH_PLAN_EXCLUDED], ["sgk"], "KDV ve vergi tahmini 27 Kasım 2026'da kalktı");
   assert.equal(own.taxFirmWide, true);
   assert.equal(FIRM_TAX_NOTE, "Vergi ve SGK ödemeleri firma geneli: Tümü'de görünür");
 });
 
-test("nakit planı şube kipi: KDV kartının yerinde #kdv notu, Firma geneline geç düğmesiyle (Vergi takviminin ve rehberin bağlantısı boşa inmez)", () => {
-  assert.deepEqual(BRANCH_VAT_NOTE, {
-    title: "KDV tahmini, devreden KDV ve Ödendi kayıtları firma geneli",
-    text: "Tümü'de ya da Firma geneli görünümde; vergi şubeye bölünmez.",
-    action: "Firma geneline geç",
-  });
-  const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
-  assert.match(card, /export function FirmVatNotice\(\)[\s\S]*?saveBranchView\(\{ area: "nakit", mode: "firma" \}\)[\s\S]*?id="kdv"/);
-  assert.match(read("src/app/panel/hatirlaticilar/nakit/cash-plan-client.tsx"), /plan\.vat \? <VatCard [^>]*\/> : plan\.taxFirmWide \? <FirmVatNotice \/> : null/);
-  // Bağlantıların hedefi
-  assert.match(read("src/lib/assistant/guides.ts"), /path: "\/panel\/hatirlaticilar\/nakit#kdv"/);
+test("nakit planı: KDV kartı ve şube kipindeki #kdv notu Vergi bölümüyle kalktı (27 Kasım 2026); bağlantı kalmadı", () => {
+  for (const f of ["src/app/panel/hatirlaticilar/nakit/vat-card.tsx", "src/app/panel/hatirlaticilar/nakit/vat-carry-dialog.tsx"]) assert.throws(() => read(f), f);
+  const client = read("src/app/panel/hatirlaticilar/nakit/cash-plan-client.tsx");
+  assert.doesNotMatch(client, /VatCard|FirmVatNotice|plan\.vat/);
+  for (const f of ["src/lib/assistant/guides.ts", "src/app/panel/yardim/page.tsx"]) assert.doesNotMatch(read(f), /nakit#kdv/, f);
 });
 
 // ---------------------------------------------------------------- Tedarikçi bakiyeleri

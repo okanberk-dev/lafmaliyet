@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { canOpen, homeFor, retiredRedirect } from "@/lib/roles";
+import { canOpen, homeFor, REMOVED_PARAM, retiredRedirect } from "@/lib/roles";
 import { COOKIE_BASE, LEGACY_COOKIES, readCookie, SESSION_COOKIE, sessionMark, verifySession } from "@/server/auth/session";
 
 // İyimser kontrol: imzası geçerli oturum çerezi yoksa panel sayfalarına girilmez.
@@ -9,8 +9,8 @@ import { COOKIE_BASE, LEGACY_COOKIES, readCookie, SESSION_COOKIE, sessionMark, v
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  // Kaldırılan ekranların eski adresleri (Hızlı sayım, Mal siparişi): 404 yerine Stok sayımı'na, sorgusuz (oturum
-  // yoksa oradan girişe)
+  // Kaldırılan ekranların eski adresleri (Hızlı sayım, Mal siparişi → Stok sayımı; Vergi → Genel bakış, notuyla): 404
+  // yerine yaşayan ekrana, eski sorgusuz (oturum yoksa oradan girişe)
   const retired = retiredRedirect(pathname);
   if (retired) return NextResponse.redirect(new URL(retired, request.url));
   const token = readCookie(request.cookies, SESSION_COOKIE, LEGACY_COOKIES.session.name);
@@ -44,7 +44,12 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!canOpen(session.role, pathname)) {
-    return NextResponse.redirect(new URL(homeFor(session.role), request.url));
+    const home = new URL(homeFor(session.role), request.url);
+    // Kaldırılan ekranın notu (?kaldirildi=vergi) rolün ana ekranına taşınır: muhasebeci Genel bakış'ı açamaz, not
+    // Muhasebe'de çıkar
+    const removed = request.nextUrl.searchParams.get(REMOVED_PARAM);
+    if (removed) home.searchParams.set(REMOVED_PARAM, removed);
+    return NextResponse.redirect(home);
   }
   return NextResponse.next();
 }

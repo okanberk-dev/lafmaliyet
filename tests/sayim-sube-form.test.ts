@@ -93,8 +93,6 @@ test("secici-uyari şube seçici kaydedilmemiş sayımda önce sorar; 'Kaydetmed
   assert.match(guard, /export const BRANCH_LEAVE = "panel:sube";/);
   assert.match(guard, /for \(const name of names\) window\.addEventListener\(name, onEvent\);/);
   assert.match(guard, /for \(const name of names\) window\.removeEventListener\(name, onEvent\);/);
-  // Şube değişince baştan kurulmayan form (vergi sınıflandırması) seçiciyi durdurmaz
-  assert.match(read("src/app/panel/vergi/gelir-gider/classify-list.tsx"), /useLeaveGuard\(dirty\.length > 0\);/);
   // Onay penceresinin adresi seçimi yapar: seçici ?sube='yi çereze benimsetir ve adresten düşürür (ay kalır)
   const step = branchLinkStep({ pathname: "/panel/sayim", search: "ay=2026-11&sube=marina", scope: "tuzla", branches: BRANCHES, locked: false, adopted: null });
   assert.deepEqual(step.adopt, { scope: "marina", href: "/panel/sayim?ay=2026-11" });

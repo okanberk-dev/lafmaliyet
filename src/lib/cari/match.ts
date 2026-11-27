@@ -44,7 +44,7 @@ export const linkableInvoice = (i: { payable: number; category: string }) => i.p
 /**
  * Faturasız alımı bağlı faturanın yeni hâli (kategori, Ödenecek) onu bağlanamaz yapıyorsa neden (denetim E-45), yoksa
  * null. Bağlama borcun gider kaydını sildi: fatura kafe dışına (karaoke box, Alp Koç), komisyona ya da iadeye dönerse
- * bağlı alım gelir-giderden, mal maliyetinden ve KDV tahmininden sessizce düşerdi. Yalnız değişen alan sorulur: eski
+ * bağlı alım gelir-giderden ve mal maliyetinden sessizce düşerdi. Yalnız değişen alan sorulur: eski
  * bir bağın faturası bugünkü kuralı tutmasa da notu ya da vadesi düzeltilebilsin.
  */
 export function linkedInvoiceProblem(cur: { payable: number; category: string }, next: { payable: number; category: string }): string | null {

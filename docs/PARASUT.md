@@ -282,7 +282,7 @@ iki yol da panelin okuduğu listelere değer:
   bir malın iadesidir (sitenin e-Fatura kestiği şirket müşterisi). Daha önce gider olarak alınmış böyle bir kayıt
   eşitlemede kalkar (elle girilmiş ya da içe aktarılmış kayda bağlıysa bağı çözülür, notuna "Paraşüt'te satış iadesi — kontrol
   edin" düşer). Online satış sitenin dökümünde zaten iadesi düşülmüş gelir; iade bir de gider sayılsaydı iki kez
-  düşerdi, müşterinin tam adı tedarikçi olur, KDV tahmini kayardı.
+  düşerdi, müşterinin tam adı tedarikçi olur, faturaların KDV toplamı kayardı.
 - Müşteri kartıyla girilmiş **normal** (iade türünde olmayan) gider faturası sessizce atılmaz: gerçek bir alış da
   olabilir. Kayıt kontrol bekleyen açılır, notunda "Paraşüt'te müşteri kartıyla girilmiş: satış iadesiyse silin" yazar.
 - Tedarikçi kartlı iade faturası (işaretlerden hiçbiri yok) eskisi gibi **eksi gider** yazılır, kalemleri alınan
@@ -320,7 +320,7 @@ Bağlanan kaydın **kategorisi, tedarikçi adı ve ödeme durumu korunur**; tuta
 Paraşüt'te vade yoksa paneldeki vade korunur. Paraşüt'te **iptal edilen ya da silinen** fatura, panelde Paraşüt'ten açılmışsa
 kaldırılır; elle girilmiş ya da içe aktarılmış bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol
 edin" düşülür. Bağı çözülen kaydın tutarları yeniden düzenlenebilir; tutar, iskonto ya da ödenecek değişince
-eşitlemeden kalan KDV toplamı silinir, KDV tahmini ödenecek − net'i sayar ([NAKIT-PLANI.md](NAKIT-PLANI.md)).
+eşitlemeden kalan KDV toplamı silinir, indirilecek KDV ödenecek − net'i sayar (`src/lib/kdv.ts` `purchaseVat`).
 Kayıt **gelen bir e-faturaya da bağlıysa** silinmez (e-fatura duruyor, borç da): yalnız gider
 faturasının bağı ve kalemleri kalkar; ödeme durumu, kategori, vade ve not kalır, kalemler e-fatura belgesinden yeniden
 okunur. E-fatura Paraşüt'te **yeniden içeri alınırsa** (eski gider faturası silinip yenisi açılır) aynı kayıt yeni gider
@@ -462,7 +462,7 @@ kalemleri listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet fat
   seçtikleriniz ve yüksek güvenli öneriler işaretli gelir.
 - Hammadde olmayan kalemler (kargo, nakliye, hizmet bedeli, klişe, pompa, ekipman) bağlanmaz: **Hammadde değil**
   denince önce **nereye yazılacağı** sorulur (25 Kasım 2026): **Sarf** (Temizlik & Sarf gideri), **Demirbaş** (Kuruluş &
-  Demirbaş; Vergi › Demirbaş'ta "Demirbaş denen kalemler" önerisi, sahip listeye ekler), **Hizmet** (Hizmet gideri) ya da
+  Demirbaş), **Hizmet** (Hizmet gideri) ya da
   **Deneme** (numune, denemelik gıda: mal alışı). Kalem bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki
   "Hammadde değil" bölümünden **Geri al** ile bekleyenlere döner. Liste `integration_state`'te (`parasut.productIgnore`,
   nedeniyle) durur. Nedeni olmayan eski işaretler faturanın kategorisinde kalır (rakam değişmez). Pencerede **"Bu
@@ -765,15 +765,14 @@ kuralın sonucu main'in kendi motoruyla birebir denendi (424 rakam, fark yok). Y
 `DATABASE_URL=postgres://localhost/<yerel> npx tsx scripts/fatura-kalem-karsilastir.ts [--ornek]` (canlıya bağlanmaz;
 gerçek veri için yedek yerel veritabanına geri yüklenir). Sonuç:
 
-- **Başlangıç verisi** (`npm run db:seed`; kalemi olmayan faturalar): Tümü'de, Vergi'de hiçbir rakam değişmez. Şube seçiliyken faturaların
+- **Başlangıç verisi** (`npm run db:seed`; kalemi olmayan faturalar): Tümü'de hiçbir rakam değişmez. Şube seçiliyken faturaların
   hepsi "şubesi seçilmemiş" olduğu için şubenin mal alışı (bilgi) 0'a, "İşletme geneli payı" komisyon faturaları kadar
   iner; şubenin kârı değişmez ([SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026)).
 - **Örnek faturalar** (`--ornek`; Tümü): hizmet faturasındaki bağlı süt (Ağustos +200 mal alışı, kâr −200); Diğer
   faturasında bağlı çay 360 mal, "Sarf" çöp torbası 315 sarf (100 ₺ iskonto oranla düştü), mal faturasında "Demirbaş"
   ısıtıcı 10.000 ve "Sarf" deterjan 500 mal alışından çıkar (Eylül mal alışı −10.140, sarf +815, kâr +9.325); kuralı açık
   tedarikçinin bağlı sodası 500 sarftan mal alışına (Ekim; gider toplamı aynı). Sarf payları faturanın şubesine yazılır
-  (Tümü'nün şube kırılımı). Vergi'de yalnız SMM alışı ile fatura giderleri arasında yer değiştirir; gider toplamı ve
-  sonuç aynı. Her rakam testte kilitli.
+  (Tümü'nün şube kırılımı). Her rakam testte kilitli (Vergi'nin karşılaştırması 27 Kasım 2026'da bölümle kalktı).
 - Karşılaştırmanın yakaladığı ve düzeltilenler: Faturalar'ın mal alımı dökümü kartı tutmuyordu (kategoriyle topluyordu),
   Ayarlar önizlemesinin başabaşı kalemleri görmüyordu, Vergi köprüsü dönem öncesindeki karışık faturada tutmuyordu.
 

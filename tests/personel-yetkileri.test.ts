@@ -42,8 +42,8 @@ test("yetki tablosu: personelin her ekranı personele açık bir satırda; satı
     assert.ok(`${staffText} | ${STAFF_ROLE_HINT}`.toLocaleLowerCase("tr-TR").includes(word.toLocaleLowerCase("tr-TR")), word);
   }
   assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /Onaylar/.test(p.label)));
-  // Vergi (dalga 12): yalnız yönetici
-  assert.ok(ROLE_PERMISSIONS.some((p) => p.admin && !p.staff && /^Vergi, KDV, SGK: tahmini vergi takvimi/.test(p.label) && !p.paths));
+  // Vergi bölümü 27 Kasım 2026'da kaldırıldı: tabloda satırı yok
+  assert.ok(!ROLE_PERMISSIONS.some((p) => /^Vergi, KDV, SGK/.test(p.label)));
   // Hızlı sayım ve mal siparişi 26 Eki 2026'da kaldırıldı: tabloda ve rol açıklamasında yok
   assert.doesNotMatch(`${ROLE_PERMISSIONS.map((p) => p.label).join(" | ")} | ${STAFF_ROLE_HINT}`, /hızlı sayım|mal siparişi|sipariş taslağı/i);
   // Personel maliyet, maaş ve kâr görmez: yalnız yöneticinin satırlarında

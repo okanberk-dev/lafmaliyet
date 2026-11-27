@@ -5,7 +5,7 @@
 // Çalıştırma: npx tsx --test tests/roller.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 
@@ -103,11 +103,9 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.equal(canOpen("staff", "/panel/yardim/personelx"), false);
   assert.equal(canOpen("staff", "/panel/onaylar"), false);
   assert.ok(canOpen("admin", "/panel/yardim/personel"));
-  // Vergi (dalga 12) ve üç alt sayfası personele kapalı; personelin ağacında Vergi yok (proxy Bugün'e gönderir)
-  for (const p of ["/panel/vergi", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) {
-    assert.equal(canOpen("staff", p), false, p);
-    assert.ok(canOpen("admin", p), p);
-  }
+  // Vergi bölümü 27 Kasım 2026'da kaldırıldı: eski adresleri proxy oturumdan önce Genel bakış'a yönlendirir
+  // (tests/vergi-kaldirildi.test.ts); personele zaten kapalıydı
+  for (const p of ["/panel/vergi", "/panel/vergi/kurallar"]) assert.equal(canOpen("staff", p), false, p);
   // Raporlar (docs/RAPORLAR.md) personele kapalı; İşçilik / ciro müdüre de açık, öbürleri yalnız yöneticinin
   for (const p of ["/panel/raporlar", "/panel/raporlar/kacak", "/panel/raporlar/kayip"]) {
     assert.equal(canOpen("staff", p), false, p);
@@ -118,7 +116,7 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.match(read("src/app/panel/raporlar/iscilik/page.tsx"), /await requireCan\("rapor\.sube"\)/);
   const staffIds = navTreeFor("staff").flatMap((n) => [n.id, ...(n.children ?? []).map((c) => c.id)]);
   assert.ok(!staffIds.includes("vergi") && !staffIds.includes("finans") && !staffIds.includes("raporlar"));
-  assert.ok(navTreeFor("admin").find((n) => n.id === "vergi")?.children?.some((c) => c.href === "/panel/vergi"));
+  assert.equal(navTreeFor("admin").find((n) => n.id === "vergi"), undefined, "Vergi grubu kaldırıldı");
 });
 
 test("personel yolunun altındaki yönetici ekranları (Karaoke › Doluluk, Kontrol › Listeler) personele kapalı", () => {
@@ -169,7 +167,7 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.equal(homeFor("manager"), STAFF_HOME);
   });
 
-  test("yetenekleri: işletmeyi yönetir, maaş, vergi, yönetim ve öteki şubeler yok", () => {
+  test("yetenekleri: işletmeyi yönetir, maaş, yönetim ve öteki şubeler yok", () => {
     for (const cap of ["kayit.yaz", "isletme.yonet", "kasa.rakam", "onay", "vardiya.yaz", "rapor.sube"] as const) assert.ok(can("manager", cap), cap);
     for (const cap of ["maas", "yonetim", "muhasebe.oku", "sube.tumu", "kategori.tum"] as const) assert.equal(can("manager", cap), false, cap);
     // Kasadan çıkanda maaş, kira gibi kategorileri seçemez ve adını görmez; sunucu da reddeder. Kural yazım yolunda
@@ -352,7 +350,8 @@ test("müdür başkasının fotoğrafını bağlayamaz ('admin' düzeyi değil g
 describe("muhasebeci: salt okunur", () => {
   test("yalnız muhasebe ekranları ve kasa raporları; yazan ve kişisel ekranlar kapalı", () => {
     for (const p of ACCOUNTANT_PATHS) assert.ok(canOpen("accountant", p), p);
-    for (const p of ["/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) assert.ok(canOpen("accountant", p), p);
+    // Vergi bölümü 27 Kasım 2026'da kaldırıldı: muhasebecinin ekranlarında yok
+    for (const p of ["/panel/vergi", "/panel/vergi/demirbas"]) assert.equal(canOpen("accountant", p), false, p);
     for (const p of ACCOUNTANT_CLOSED_PATHS) assert.equal(canOpen("accountant", p), false, p);
     for (const p of [
       "/panel",
@@ -386,8 +385,8 @@ describe("muhasebeci: salt okunur", () => {
     assert.equal(canEditShifts("accountant"), false);
   });
 
-  test("vergide kişi kişi bordro dökümü yalnız maaşı görene; fatura belgesi ve paket muhasebeciye açık, yükleme kapalı", () => {
-    assert.match(read("src/app/panel/vergi/page.tsx"), /const payroll = can\(viewer\.role, "maas"\) \?/);
+  test("fatura belgesi ve paket muhasebeciye açık, yükleme kapalı (kişi kişi bordro dökümü Vergi bölümüyle kalktı)", () => {
+    assert.equal(existsSync(join(process.cwd(), "src/app/panel/vergi")), false);
     const belge = read("src/app/api/faturalar/[id]/belge/route.ts");
     assert.match(belge, /if \(!\(await reader\(\)\)\) return Response\.json/);
     assert.match(belge, /const me = await admin\(\);/, "yükleme yalnız yöneticinin");
@@ -444,7 +443,7 @@ test("menüdeki her öğenin rolü erişim kuralıyla aynı (her rol menüde gö
     const tree = navTreeFor(role).flatMap((n) => (n.children ? n.children.map((c) => c.href) : [n.href!]));
     for (const href of tree) assert.ok(canOpen(role, href), `${role}: ${href}`);
     for (const item of [...BOTTOM_NAV[role], ...BOTTOM_SPARES[role]]) if (item.href) assert.ok(canOpen(role, item.href), `${role} alt menü: ${item.href}`);
-    for (const section of ["giderler", "stok", "vergi", "odeme", "raporlar"] as const) {
+    for (const section of ["giderler", "stok", "odeme", "raporlar"] as const) {
       for (const t of sectionTabsFor(section, role)) assert.ok(canOpen(role, t.href), `${role} sekme: ${t.href}`);
     }
   }
@@ -456,7 +455,8 @@ test("menüdeki her öğenin rolü erişim kuralıyla aynı (her rol menüde gö
   for (const p of [...STAFF_PATHS.filter((x) => x !== "/panel/hesap"), ...MANAGER_EXTRA_PATHS]) assert.ok(managerTree.includes(p), `${p} müdür menüsünde yok`);
   const accountantTree = navTreeFor("accountant").flatMap((n) => (n.children ? n.children.map((c) => c.href) : [n.href!]));
   for (const p of ACCOUNTANT_PATHS.filter((x) => x !== "/panel/hesap")) assert.ok(accountantTree.includes(p), `${p} muhasebeci menüsünde yok`);
-  assert.deepEqual(BOTTOM_NAV.accountant.map((i) => i.href), ["/panel/muhasebe", "/panel/faturalar", "/panel/gelir-gider", "/panel/vergi", "/panel/kasa"]);
+  // Vergi'nin yerinde Aylık harcamalar (27 Kasım 2026; Vergi bölümü kaldırıldı)
+  assert.deepEqual(BOTTOM_NAV.accountant.map((i) => i.href), ["/panel/muhasebe", "/panel/faturalar", "/panel/gelir-gider", "/panel/harcamalar", "/panel/kasa"]);
   // Personelin ağacı aynı kaldı (müdürün öğeleri ona eklenmez)
   assert.equal(staffTree.includes("/panel/onaylar"), false);
 });
@@ -475,7 +475,7 @@ test("yetki tablosu (Kullanıcılar & roller) ekran ve yetenek kuralıyla aynı;
   assert.ok(row(/^Paraşüt, ayarlar/).admin && !row(/^Paraşüt, ayarlar/).manager && !row(/^Paraşüt, ayarlar/).accountant);
   assert.ok(row(/^Kasa raporlarının rakamları/).accountant && row(/^Kasa raporlarının rakamları/).manager);
   assert.ok(!row(/^Kasa raporunu onaysız düzeltme/).accountant && row(/^Kasa raporunu onaysız düzeltme/).manager);
-  assert.ok(row(/^Vergi, KDV, SGK/).accountant && !row(/^Vergi, KDV, SGK/).manager);
+  assert.equal(ROLE_PERMISSIONS.find((p) => /^Vergi, KDV, SGK/.test(p.label)), undefined, "Vergi satırı kaldırıldı");
   for (const r of ROLE_ORDER) assert.ok(ROLE_HINTS[r].length > 20, r);
   assert.deepEqual(Object.keys(ROLES).sort(), [...ROLE_ORDER].sort());
   const users = read("src/app/panel/kullanicilar/users-client.tsx");
@@ -558,7 +558,6 @@ describe("proxy yönlendirmesi: her rol izinsiz adresten kendi ana ekranına", (
     ["manager", "/panel/raporlar", "/panel/bugun"],
     ["manager", "/panel/kontrol/duzenle", "/panel/bugun"],
     ["accountant", "/panel/faturalar", null],
-    ["accountant", "/panel/vergi/demirbas", null],
     ["accountant", "/panel/kasa", null],
     ["accountant", "/panel/kasa/fiyatlar", "/panel/muhasebe"],
     ["accountant", "/panel/bugun", "/panel/muhasebe"],
@@ -574,6 +573,15 @@ describe("proxy yönlendirmesi: her rol izinsiz adresten kendi ana ekranına", (
       else assert.equal(new URL(where(res)!).pathname, to, `${role} ${path}`);
     });
   }
+  test("kaldırılan Vergi'nin eski adresi: oturumdan önce Genel bakış'a notla; muhasebecide not Muhasebe'ye taşınır", async () => {
+    for (const r of ROLE_ORDER) assert.equal(where(await req(r, "/panel/vergi/demirbas")), "http://localhost:3000/panel?kaldirildi=vergi", r);
+    assert.equal(where(await proxy(new NextRequest("http://localhost:3000/panel/vergi/kurallar"))), "http://localhost:3000/panel?kaldirildi=vergi", "oturumsuz da");
+    assert.equal(where(await req("admin", "/panel?kaldirildi=vergi")), null, "yönetici Genel bakış'ta notu görür");
+    assert.equal(where(await req("accountant", "/panel?kaldirildi=vergi")), "http://localhost:3000/panel/muhasebe?kaldirildi=vergi");
+    assert.equal(where(await req("staff", "/panel?kaldirildi=vergi")), "http://localhost:3000/panel/bugun?kaldirildi=vergi");
+    // Not yalnız kaldırılan ekranın parametresiyle taşınır; öteki sorgular düşer
+    assert.equal(where(await req("accountant", "/panel?ay=2026-10")), "http://localhost:3000/panel/muhasebe");
+  });
   test("giriş sayfası oturumlu rolü ana ekranına gönderir", async () => {
     for (const r of ROLE_ORDER) assert.equal(new URL(where(await req(r, "/giris"))!).pathname, homeFor(r), r);
   });

@@ -47,9 +47,8 @@ async function main(): Promise<number> {
   const { getDb, schema: s } = await import("../src/server/db");
   const { loadModel } = await import("../src/server/data/dataset");
   const { createModel } = await import("../src/lib/calc/engine");
-  const { monthNumbers, numberChanges, oldRuleDataset, taxNumbers } = await import("../src/lib/invoice-split-compare");
+  const { monthNumbers, numberChanges, oldRuleDataset } = await import("../src/lib/invoice-split-compare");
   const { DEFAULT_PARASUT_ACCOUNT } = await import("../src/lib/parasut/accounts");
-  const { todayTR } = await import("../src/lib/reminders");
   const db = getDb();
   try {
     if (SAMPLE) await addSample(db, s);
@@ -67,17 +66,10 @@ async function main(): Promise<number> {
     const months = [...new Set(all.map((i) => i.date.slice(0, 7)))].sort();
     const labels = new Map<string, string>();
     const changes = [];
-    const today = todayTR();
     for (const scope of ["hepsi", ...branches.map((b) => b.id)]) {
       const after = scope === "hepsi" ? whole : await loadModel({ scope });
       const before = createModel(oldRuleDataset(after.ds, { all, scope, oldBranchOf: (i) => oldBranch.get(i.id) ?? null }));
       for (const m of months) changes.push(...numberChanges(scope, m, monthNumbers(before, m, labels), monthNumbers(after, m, labels), labels));
-      if (scope !== "hepsi") continue;
-      // Vergi firma genelidir: yalnız Tümü'yle
-      const years = [...new Set(months.map((m) => Number(m.slice(0, 4))))];
-      const tb = taxNumbers(before, years, today, undefined, labels);
-      const ta = taxNumbers(after, years, today, undefined, labels);
-      for (const m of months) changes.push(...numberChanges("hepsi", m, tb.get(m) ?? new Map(), ta.get(m) ?? new Map(), labels));
     }
 
     const name = (scope: string) => (scope === "hepsi" ? "Tümü" : (branches.find((b) => b.id === scope)?.name ?? scope));

@@ -146,8 +146,6 @@ const ORTAK = {
   invoiceBranches: /\.invoiceBranches$/,
   /** Mutabakat: eşleşme firmanın bütün kayıtlarıyla, öbür şubenin kaydı adsız (parça 5) */
   recon: /\.(summary|branch\.shared|branch\.otherMissing)$|\.rows\[\d+\]\.(status|candidate|basis)$/,
-  /** Dışa aktarımın Vergi sekmesi: beyan firmanın (vergi.beyan) */
-  exportTax: /^\.Vergi$/,
   /** Tedarikçi kütüğü (ortak veri) ve cari takibi (firmanın tek hesabı) */
   cariIndex: /^\.(cards|tracked|credit|entries|refs)$/,
 } as const;
@@ -564,7 +562,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     { name: "Bağlantı › urun_karliligi (sube=marina)", run: () => mcp("urun_karliligi", { ay: month(), sube: "marina" }) },
     { name: "Bağlantı › zam_etkisi (sube=marina)", run: () => mcp("zam_etkisi", { sube: "marina" }) },
     // Dışa aktarım, muhasebeci paketi, sabah e-postasının önizlemesi
-    { name: "Dışa aktarım (?sube=marina)", run: () => exportBook("&sube=marina"), shared: [ORTAK.exportTax] },
+    { name: "Dışa aktarım (?sube=marina)", run: () => exportBook("&sube=marina") },
     { name: "Muhasebeci paketi (Marina)", run: async () => (await import("../src/server/muhasebe/paket")).loadPackageData(month(), new Date(), "marina") },
     {
       name: "Sabah e-postasının önizlemesi (previewDigest)",
@@ -725,40 +723,14 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       assert.deepEqual(await scope.userBranchView(), { nakit: "firma" });
     });
 
-    test("Vergi'nin okuması Marina seçiliyken de Tümü'yle aynı (Tuzla'nın satışı, faturası, personeli dahil)", async () => {
-      const { loadModel } = await import("../src/server/data/dataset");
-      const { loadTaxView } = await import("../src/server/data/tax");
-      // Vergi sayfalarının okuması (src/app/panel/vergi/page.tsx › TaxContent): seçimden ve şube görünümünden bağımsız
-      const taxRead = async () =>
-        norm(
-          await scope.withBranchScope(ALL_BRANCHES, async () => {
-            const model = await loadModel();
-            const { view, inputs } = await loadTaxView(model, { today });
-            return { view, assets: inputs.assets };
-          }),
-        );
+    test("Vergi bölümü kaldırıldı (27 Kasım 2026): dışa aktarımın Vergi sekmesi Tümü ve Marina dosyasında yok", async () => {
       await signIn(seed.users.admin, ALL_BRANCHES);
-      const all = await taxRead();
-      assert.ok(tzLeaks(all), "Tümü'de Tuzla'nın verisi");
-      for (const prefs of [{}, FIRMA, { vergi: "sube" } as unknown as BranchViewPrefs]) {
-        await signIn(seed.users.admin, "marina", prefs);
-        assert.deepEqual(await taxRead(), all, `Marina seçili, tercih ${JSON.stringify(prefs)}`);
-      }
-      assert.equal("loadBranchTaxView" in (await import("../src/server/data/tax")), false, "şubenin payı kalktı");
-    });
-
-    test("dışa aktarım: Marina dosyasının Vergi sekmesi Tümü dosyasınınkiyle aynı, yalnız \"Firma geneli · beyan\" satırı", async () => {
-      await signIn(seed.users.admin, ALL_BRANCHES);
-      const all = (await exportBook(""))["Vergi"];
-      assert.ok(all, "Vergi sekmesi var");
+      assert.equal((await exportBook(""))["Vergi"], undefined);
       await signIn(seed.users.admin, "marina");
-      const marina = (await exportBook("&sube=marina"))["Vergi"];
-      assert.match(marina, /Firma geneli · beyan: bütün şubelerin satışı, faturaları ve giderleri \(tek vergi numarası; vergi şubeye bölünmez\)\./);
-      assert.doesNotMatch(marina, /ŞUBENİN PAYI|Şubeye seçilmiş faturaların KDV'si/);
-      assert.equal(marina.replace(/\nFirma geneli · beyan:[^\n]*/, ""), all);
+      assert.equal((await exportBook("&sube=marina"))["Vergi"], undefined);
     });
 
-    test("nakit planı şube kipinde: vergi ve SGK yok (hatırlatıcıları da), KDV kartı yok, tek not; Tümü'de hepsi", async () => {
+    test("nakit planı şube kipinde: vergi ve SGK hatırlatıcıları ve SGK tahmini yok, tek not; Tümü'de hepsi", async () => {
       const { loadAreaCashPlan } = await import("../src/server/data/cash-plan");
       const { planNotes, FIRM_TAX_NOTE } = await import("../src/lib/cash-plan");
       const soon = addDays(today, 3);
@@ -775,9 +747,8 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         const branch = await loadAreaCashPlan(await area("nakit"));
         assert.ok(branch.flow, "şube kipi");
         const lines = branch.view.plan.weeks.flatMap((w) => w.lines);
-        assert.deepEqual(lines.filter((l) => ["kdv", "vergi", "sgk"].includes(l.kind) || rems.some((r) => l.key.startsWith(`reminder:${r.id}@`))), []);
+        assert.deepEqual(lines.filter((l) => l.kind === "sgk" || /^(kdv|vergi|damga)/.test(l.key) || rems.some((r) => l.key.startsWith(`reminder:${r.id}@`))), []);
         assert.equal(tzLeaks(branch.flow), null, "İşletme geneli satırında KDV ve SGK hatırlatıcısı yok (tutarları 919xx)");
-        assert.equal(branch.view.plan.vat, null);
         assert.deepEqual(branch.view.plan.estimates.filter((e) => ["kdv", "vergi", "sgk"].includes(e.key)), []);
         const notes = planNotes(branch.view.plan, { komisyon: 0.02, acikGun: 30, invoiceTermDays: 30 });
         assert.ok(notes.some((n) => n.text === `${FIRM_TAX_NOTE}.`));
@@ -799,9 +770,9 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       }
     });
 
-    test("nakit planı şube kipinde: bordro Vergi › Kurallar'daki ayarlarla (hesap dönemi), varsayılanla değil", async () => {
+    test("nakit planı şube kipinde: bordro saklı bordro ayarıyla (eski Vergi ayarları; hesap dönemi), varsayılanla değil", async () => {
       const { loadAreaCashPlan } = await import("../src/server/data/cash-plan");
-      const { TAX_SETTINGS_KEY } = await import("../src/lib/tax/settings");
+      const { PAYROLL_SETTINGS_KEY: TAX_SETTINGS_KEY } = await import("../src/lib/bordro/settings");
       const salary = async () => (await loadAreaCashPlan(await area("nakit"))).view.plan.estimates.find((e) => e.key === "salary")?.monthly ?? null;
       await signIn(seed.users.admin, "marina");
       const before = await salary();
@@ -810,7 +781,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       const value = { periodStart: "2099-01-01" };
       await db.insert(s.integrationState).values({ key: TAX_SETTINGS_KEY, value }).onConflictDoUpdate({ target: s.integrationState.key, set: { value } });
       try {
-        assert.equal(await salary(), null, "hesap dönemi başlamadan bordro yok: şubenin akışı Kurallar'daki ayarı okur");
+        assert.equal(await salary(), null, "hesap dönemi başlamadan bordro yok: şubenin akışı saklı bordro ayarını okur");
       } finally {
         if (old) await db.update(s.integrationState).set({ value: old.value }).where(eq(s.integrationState.key, TAX_SETTINGS_KEY));
         else await db.delete(s.integrationState).where(eq(s.integrationState.key, TAX_SETTINGS_KEY));

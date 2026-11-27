@@ -186,10 +186,12 @@ test("Hesabım: kartın başlığı, açıklaması, çapası ve hep firma geneli
   assert.ok(ALWAYS_COMPANY_WIDE.length >= 10);
   for (const a of ALWAYS_COMPANY_WIDE) assert.ok(a.title && a.reason.endsWith("."), a.title);
   assert.ok(ALWAYS_COMPANY_WIDE.some((a) => a.title === "Tam yedek"));
-  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): listede gerekçesiyle
+  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): listede gerekçesiyle; Vergi bölümü aynı gün kaldırıldı, satır
+  // Ödemeler'deki vergi hatırlatıcılarını ve SGK'yı söyler
   const tax = ALWAYS_COMPANY_WIDE.find((a) => a.title.startsWith("Vergi ve SGK"));
-  assert.equal(tax?.reason, "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez.");
-  assert.match(tax?.title ?? "", /Vergi'nin bütün sekmeleri/);
+  assert.equal(tax?.reason, "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez (vergiyi muhasebeci yürütür).");
+  assert.match(tax?.title ?? "", /Ödemeler'deki vergi hatırlatıcıları ve SGK/);
+  assert.doesNotMatch(tax?.title ?? "", /Vergi'nin bütün sekmeleri|Vergi sekmesi/);
 
   const page = read("src/app/panel/hesap/page.tsx");
   assert.match(page, /<Card id="sube-gorunumu"/);

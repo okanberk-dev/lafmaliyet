@@ -163,7 +163,7 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
 VUK m.274: emtia maliyet bedeliyle değerlenir; maliyet bedelinin tespitinde **ilk giren ilk çıkar (FIFO)** ve
 **ağırlıklı ortalama** kabul edilir, **son giren ilk çıkar (LIFO) kabul edilmez**. Bu panelin hesabı yönetim
 amaçlıdır: **resmi defterler muhasebecinin yöntemini izler**. Muhasebeci ağırlıklı ortalama kullanıyorsa iki rakam
-ayrışabilir; Vergi bölümünün SMM'si (docs/planlar/vergi.md K15) bu ayarı izler. Yöntem bir kez seçilince tutarlı
+ayrışabilir (Vergi bölümünün SMM'si bu ayarı izliyordu; bölüm 27 Kasım 2026'da kaldırıldı). Yöntem bir kez seçilince tutarlı
 uygulanmalıdır; değiştirmeden önce muhasebeciye danışın.
 
 ## 7. Kod
@@ -202,6 +202,5 @@ Kâr-zararın (Gelir-gider) mal maliyeti sayımsız ayda artık "kapanış 0" de
 - **Gösterim**: Gelir-gider'de mal maliyeti satırının altında ayın yöntemi ("sayım", "sayım aralığına dağıtıldı
   (tahmini)", "reçeteye göre tahmini"), hücrenin ipucunda hesabı; devreden malın altında "sayım" ya da "tahmini". Uyarı
   metinleri yönteme göre (`uncountedCogsText`).
-- **Vergi** (/panel/vergi) yalnız sayımı kullanır (`countOpening`, `countClosing`; sayım yoksa 0); Gelir-gider'deki
-  tahmini devirle farkı vergi köprüsünde "Mal maliyetinin tahmini devri" satırıdır.
+- Vergi bölümü (yalnız sayımı kullanan vergi köprüsü) 27 Kasım 2026'da kaldırıldı ([arsiv/VERGI.md](arsiv/VERGI.md)).
 

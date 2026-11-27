@@ -1,8 +1,11 @@
 # Dalga 12: Vergi bölümü (`/panel/vergi`)
 
+> **Geçersiz (tarihçe): Vergi bölümü 27 Kasım 2026'da kaldırıldı; muhasebeci yürütüyor.** Bu plan uygulanmıştı; ekranları
+> ve vergi modülü silindi, tablolar ve kayıtlar yerinde. Kullanım belgesi arşivde: [../arsiv/VERGI.md](../arsiv/VERGI.md).
+
 Grup: **vergi** · Dal: `claude/dalga-12-vergi` · Taban: `origin/main` @ 950dbdb. Durum: plan, iki eleştiri turu
 işlendi (sonda "Eleştiri kaydı"); **uygulandı** (28 Ekim 2026, `main` @ c199b4e üstünde, migration `0045_vergi`;
-kullanım belgesi [../VERGI.md](../VERGI.md)). Tabanın değiştiği yerler (Dalga 10, 11, 13–15, denetim partileri)
+kullanım belgesi [../arsiv/VERGI.md](../arsiv/VERGI.md)). Tabanın değiştiği yerler (Dalga 10, 11, 13–15, denetim partileri)
 planın ilgili maddelerine işlendi; aşağıdaki birleştirme sırası ve "R2" notu tarihçedir.
 
 **Birleştirme sırası 10 → 11 → 12** (dalga 13 ile sıra R2'ye göre). Dalga 10 (personel yetkileri) `nav.ts`,

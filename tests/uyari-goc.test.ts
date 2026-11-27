@@ -84,11 +84,9 @@ const D_EXPR_ALLOW: readonly [string, string][] = [
   ["src/app/panel/kasa/okc-card.tsx", "flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5"], // "Ayrıntılar" açma düğmesi
   ["src/app/panel/kasa/fold.tsx", "flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5"], // Z'nin katlı alanlarının açma düğmesi (Ayrıntılar'la aynı)
   ["src/app/panel/satislar/sales-client.tsx", "flex items-start gap-2 py-2 pr-1.5 pl-3"], // şüpheli önizleme satırı
-  ["src/app/panel/vergi/gelir-gider/classify-list.tsx", "grid gap-2 px-4 py-3 md:grid-cols"], // kaydedilmemiş liste satırı
   ["src/app/panel/faturalar/invoices-client.tsx", "h-7 max-w-full cursor-pointer appearance-none truncate rounded-full"], // kategori hapı (PILL_TONE)
   ["src/app/panel/hammaddeler/ingredients-client.tsx", "relative rounded-xl px-3 py-3.5 transition-colors"], // tahmini fiyatlı satır (ESTIMATE_ROW)
   ["src/app/panel/satislar/sales-client.tsx", "inline-flex h-8 max-w-40 cursor-pointer items-center gap-1.5 rounded-[10px]"], // eşleşme düğmesi (MATCH_TONE)
-  ["src/app/panel/vergi/ui.tsx", "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-2.5 py-1"], // bandın "sorular" çipi (CHIP)
 ];
 
 const allowed = (file: string, text: string, list: readonly [string, string][]) => list.some(([f, part]) => f === file && text.includes(part));
@@ -421,7 +419,6 @@ const NOTICE_FILES = [
   "faturalar/invoices-client.tsx",
   "faturalar/review-notice.tsx",
   "gelir-gider/page.tsx",
-  "gelir-gider/sgk-rate-notice.tsx",
   "gelir-gider/site-sales-card.tsx",
   "hammaddeler/ingredients-client.tsx",
   "hammaddeler/price-holds.tsx",
@@ -493,9 +490,6 @@ const NOTICE_FILES = [
   "urunler/site-link-dialog.tsx",
   "urunler/site/site-menu-matching.tsx",
   "urunler/site/site-new-product.tsx",
-  "vergi/adjustment-dialog.tsx",
-  "vergi/gelir-gider/classify-list.tsx",
-  "vergi/page.tsx",
   "zayi/page.tsx",
   "zayi/waste-board.tsx",
 ].map((p) => (p.startsWith("c/") ? `src/components/panel/${p.slice(2)}` : `src/app/panel/${p}`));
@@ -511,7 +505,9 @@ const ROLE_ALLOW: readonly [string, string][] = [
 ];
 
 test("her uyarı yeni bileşende: Ek A'nın N ve E dosyaları Notice'i içe aktarır, rolü elle yazmaz", () => {
-  assert.equal(NOTICE_FILES.length, 90); // Satış tahmini 4 Kas 2026'da kaldırıldı; Siparişler ekranı 6 Kas 2026'da geldi
+  // Satış tahmini 4 Kas 2026'da kaldırıldı; Siparişler ekranı 6 Kas 2026'da geldi; Vergi'nin üç dosyası ve Gelir-gider'in
+  // SGK oranı uyarısı 27 Kas 2026'da gitti
+  assert.equal(NOTICE_FILES.length, 86);
   const bad: string[] = [];
   for (const f of NOTICE_FILES) {
     const raw = read(f);
@@ -531,8 +527,6 @@ test("yerel uyarı yardımcıları kalktı: Warn, Note, Strip ve NoteList'in ton
   assert.doesNotMatch(read("src/app/panel/tedarikciler/[cari]/debt-dialog.tsx"), /function Warn\b/);
   assert.doesNotMatch(read("src/app/panel/kasa/okc-card.tsx"), /function Note\b/);
   assert.doesNotMatch(read("src/app/panel/tedarikciler/[cari]/cari-strips.tsx"), /function Strip\b/);
-  const vergi = read("src/app/panel/vergi/ui.tsx");
-  assert.match(vergi, /export function NoteList\(\{ notes, className \}: \{ notes: readonly string\[\]; className\?: string \}\)/);
   for (const f of scopeFiles()) assert.doesNotMatch(read(f), /<NoteList\b[^>]*\btone=/, f);
   // İki yerin aynı fotoğraf denetimi listesi tek bileşende
   for (const f of ["src/app/panel/kasa/cash-photos.tsx", "src/app/panel/kasa/cash-out-dialog.tsx"]) assert.match(read(f), /<CheckNotices\b/, f);

@@ -4,7 +4,6 @@ import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChartNoAxesColumn, ChevronD
 import Link from "next/link";
 import { type ReactNode, useEffect, useId, useState } from "react";
 
-import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { DateTile } from "../payment-ui";
 import { BalanceDialog } from "./balance-dialog";
 import { EstimatesSheet } from "./estimates-sheet";
-import { FirmVatNotice, VatCard } from "./vat-card";
 
 /** Haftanın kesin ödemelerinden ilk bu kadarı listelenir (kalanı "ve N ödeme daha") */
 const MAX_KNOWN = 8;
@@ -39,8 +37,8 @@ const SPREAD_NOTE: Partial<Record<PlanLine["kind"], string>> = {
 };
 
 /**
- * Nakit planı ekranı: karolar, uyarı şeridi, 6 haftanın listesi (aç / kapa), KDV tahmini, "Nasıl hesaplandı" ve tutarı
- * girilmemiş ödemeler. Bakiye penceresi Genel bakış'tan ?bakiye=1 ile açılır (parametre silinir).
+ * Nakit planı ekranı: karolar, uyarı şeridi, 6 haftanın listesi (aç / kapa), "Nasıl hesaplandı" ve tutarı girilmemiş
+ * ödemeler. Bakiye penceresi Genel bakış'tan ?bakiye=1 ile açılır (parametre silinir).
  */
 export function CashPlanClient({
   title,
@@ -97,8 +95,6 @@ export function CashPlanClient({
         actions={balanceButton}
         tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar/nakit" role="admin" />}
       />
-      {/* Yardım'ın ve Vergi'nin "KDV tahmini" bağlantısı (#kdv) içerik akınca iner */}
-      <HashScroll />
       {scopeChip}
 
       {!plan.hasData ? (
@@ -214,8 +210,6 @@ export function CashPlanClient({
           <div className="grid gap-4 xl:grid-cols-12 xl:items-start">
             <Weeks plan={plan} shared={flow?.shared ?? null} className="xl:col-span-8" />
             <div className="space-y-4 xl:col-span-4">
-              {/* Şube kipinde KDV kartı yok (vergi şubeye bölünmez); #kdv bağlantısı boşa inmesin diye yerinde not */}
-              {plan.vat ? <VatCard vat={plan.vat} carry={state.vatCarry} today={plan.today} /> : plan.taxFirmWide ? <FirmVatNotice /> : null}
               <Card>
                 <CardHeader icon={<Layers />} title="Nasıl hesaplandı" description="Her varsayım rakamlarıyla. Tahminler gerçek ödemeyle kesinleşir." />
                 <CardContent>
@@ -267,10 +261,7 @@ export function CashPlanClient({
                     <ul className="divide-y divide-line rounded-2xl bg-surface px-3 text-sm">
                       {plan.unknownAmounts.map((u) => (
                         <li key={u.key} className="flex items-baseline justify-between gap-3 py-2.5">
-                          <span className="min-w-0 break-words text-ink">
-                            {u.title}
-                            {u.note ? <span className="block text-xs text-ink-mute">{u.note}</span> : null}
-                          </span>
+                          <span className="min-w-0 break-words text-ink">{u.title}</span>
                           <span className="shrink-0 text-ink-mute tabular">{shortDate(u.date)}</span>
                         </li>
                       ))}
@@ -474,7 +465,6 @@ function PlanLineRow({ line: l, today }: { line: PlanLine; today: string }) {
             </Badge>
           ) : null}
           {l.estimated ? <Badge tone="gray">tahmini</Badge> : null}
-          {l.badge ? <Badge tone="blue">{l.badge}</Badge> : null}
           {shownDetail ? <span className="wrap-anywhere">{shownDetail}</span> : null}
           {!l.date && SPREAD_NOTE[l.kind] ? <span>{SPREAD_NOTE[l.kind]}</span> : null}
         </p>

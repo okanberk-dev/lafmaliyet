@@ -660,7 +660,7 @@ function ReturnsNotice({ returns }: { returns: NonNullable<Parameters<typeof Par
             ))}
             {returns.supplier.length > shown.length ? <li>ve {num(returns.supplier.length - shown.length)} iade daha</li> : null}
           </ul>
-          <p className="break-words">Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz; eksi tutarlı fatura maliyet ve KDV tahminini düzeltir.</p>
+          <p className="break-words">Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz; eksi tutarlı fatura maliyeti düzeltir.</p>
         </Notice>
       ) : null}
       {returns.sales.count ? (

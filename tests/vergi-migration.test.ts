@@ -121,5 +121,5 @@ test("db:reset (K32): demirbaş listesi faturalarla gider ve söylenir; vergi ka
   assert.ok(run.indexOf("cariResetBlock(entries, wipeCari, file)") < run.indexOf("from(s.taxAssets)"));
   assert.ok(run.indexOf("from(s.taxAssets)") < run.indexOf("`TRUNCATE "), "silmeden önce sayılır");
   assert.equal(taxAssetsResetNote(0), null);
-  assert.equal(taxAssetsResetNote(3), "Vergi demirbaş listesi de silinecek (3 varlık; yedekte duruyor, Vergi › Demirbaş'tan yeniden girilir).");
+  assert.equal(taxAssetsResetNote(3), "Vergi demirbaş listesi de silinecek (3 varlık; yedekte duruyor, yedekten geri yüklenir; Vergi bölümü kaldırıldı).");
 });

@@ -35,7 +35,7 @@ export const REASON_TARGET: Record<NotIngredientReason, string> = {
 };
 export const REASON_HINT: Record<NotIngredientReason, string> = {
   sarf: "Temizlik ve sarf malzemesi (çöp torbası, deterjan, eldiven): sarf giderine yazılır",
-  demirbas: "Bir kez alınan, yıllarca kullanılan (ısıtıcı, makine): demirbaşa yazılır, Vergi › Demirbaş'a eklenmesi önerilir",
+  demirbas: "Bir kez alınan, yıllarca kullanılan (ısıtıcı, makine): demirbaşa yazılır",
   hizmet: "Kargo, nakliye, servis bedeli: hizmet giderine yazılır",
   deneme: "Denemelik ya da numune ürün (listede yok): mal alışına yazılır",
 };

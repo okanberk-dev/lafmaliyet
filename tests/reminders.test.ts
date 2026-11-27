@@ -15,7 +15,9 @@ import {
   isCalendarDate,
   isLocalTaxReminder,
   isMuhtasarReminder,
+  isMuhtasarTotalReminder,
   isProvisionalTaxReminder,
+  isRentWithholdingReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
@@ -322,9 +324,9 @@ test("KDV, muhtasar ve geçici vergi tutarı Ödendi ve ertelemede seriden silin
   assert.match(done, /amountCleared: clear, clearedKind: clear \? travelingAmountKind\(r\) : null/);
   assert.match(done, / · tutar silindi \(vergi\)/);
   assert.doesNotMatch(src, /vatAmountTravels/);
-  // Geçici vergi "Ödendi"si kalıcı kayda çeyrek dönemiyle (kurumlar vergisi yalnız ödenmiş geçici vergiyi mahsup eder)
-  assert.match(done, /isProvisionalTaxReminder\(r\) \? "gecici" : null/);
-  assert.match(done, /rememberVatPaid\(\{ id: rid, kind: vatKind, dueDate: r\.dueDate, next, periods: paidPeriodsOf\(row, r\.dueDate, next, vatKind\), amount: r\.amount \}\)/);
+  // KDV'nin ve geçici verginin kalıcı Ödendi kaydı (payments.vat-paid) Vergi bölümüyle 27 Kasım 2026'da kalktı: yazan ve
+  // silen yok (kayıt yerinde)
+  assert.doesNotMatch(src, /rememberVatPaid|forgetVatPaid|paidPeriodsOf|vat-paid/);
   const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
   assert.match(postpone, /taxAmountTravels\(r\)/);
   // Ertelenen dönemin kopyası tutarı taşır
@@ -414,7 +416,7 @@ test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutars�
   assert.equal(fixedReminderText({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11"), "40.000\u00a0₺ · aylık");
 });
 
-test("Vergi: muhtasar, geçici vergi ve yerel vergi hatırlatıcıları başlıktan (docs/VERGI.md)", () => {
+test("Vergi hatırlatıcıları başlıktan: muhtasar, geçici vergi ve yerel vergi (şubenin nakit akışının dışı)", () => {
   const r = (title: string, kind: ReminderRow["kind"] = "vergi") => ({ title, kind });
   assert.equal(isMuhtasarReminder(r("Muhtasar ve prim hizmet beyannamesi")), true);
   assert.equal(isMuhtasarReminder(r("Kira stopajı", "kira")), true);
@@ -422,6 +424,16 @@ test("Vergi: muhtasar, geçici vergi ve yerel vergi hatırlatıcıları başlık
   assert.equal(isMuhtasarReminder(r("KDV beyannamesi ve ödemesi")), false);
   assert.equal(isMuhtasarReminder(r("Muhtasar damga vergisi")), false);
   assert.equal(isMuhtasarReminder(r("Geçici vergi beyanı ve ödemesi")), false);
+  // Kira stopajı muhtasarın içindedir; muhtasarın tamamı başlıkta "muhtasar" geçen (nakit planı stopajı ondan düşer)
+  assert.equal(isRentWithholdingReminder(r("Kira stopajı", "kira")), true);
+  assert.equal(isRentWithholdingReminder(r("İşyeri kirası stopaj")), true);
+  assert.equal(isRentWithholdingReminder(r("Muhtasar (kira stopajı dahil)")), false);
+  assert.equal(isRentWithholdingReminder(r("Serbest meslek stopajı")), false);
+  assert.equal(isRentWithholdingReminder(r("Kira")), false);
+  assert.equal(isMuhtasarTotalReminder(r("Muhtasar ve prim hizmet beyannamesi")), true);
+  assert.equal(isMuhtasarTotalReminder(r("Muhtasar (kira stopajı dahil)")), true);
+  assert.equal(isMuhtasarTotalReminder(r("Kira stopajı")), false);
+  assert.equal(isMuhtasarTotalReminder(r("Muhtasar damga vergisi")), false);
   assert.equal(isProvisionalTaxReminder(r("Geçici vergi beyanı ve ödemesi")), true);
   assert.equal(isProvisionalTaxReminder(r("GEÇİCİ VERGİ 2026/3")), true);
   assert.equal(isProvisionalTaxReminder(r("Kurumlar vergisi")), false);

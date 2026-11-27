@@ -49,24 +49,24 @@ test("Faturası geldi önizlemesi (§5.2 metni aynen)", () => {
     plain(
       linkPreview({
         removed: [{ date: "2026-10-21", amount: 600, categoryName: "Nakit malzeme alımı" }],
-        invoice: { date: "2026-11-03", net: 545.45, vat: 54.55, payable: 600, goods: true },
+        invoice: { date: "2026-11-03", net: 545.45, payable: 600, goods: true },
         debtTotal: 600,
         today: "2026-11-05",
       }),
     ),
-    "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Kasım mal alışı faturada 545,45 ₺ (KDV hariç; zaten sayılıyor) · KDV tahmini Kasım +54,55 ₺ · fark faturada +0,00 ₺",
+    "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Kasım mal alışı faturada 545,45 ₺ (KDV hariç; zaten sayılıyor) · fark faturada +0,00 ₺",
   );
   // Faturası gelecek borç: silinen gider yok; fatura tutarı farklı
   assert.equal(
     plain(
       linkPreview({
         removed: [],
-        invoice: { date: "2026-10-28", net: 1136.36, vat: 113.64, payable: 1250, goods: true },
+        invoice: { date: "2026-10-28", net: 1136.36, payable: 1250, goods: true },
         debtTotal: 1260,
         today: "2026-10-28",
       }),
     ),
-    "Ekim mal alışı faturada 1.136,36 ₺ (KDV hariç; zaten sayılıyor) · KDV tahmini Ekim +113,64 ₺ · fark faturada −10,00 ₺",
+    "Ekim mal alışı faturada 1.136,36 ₺ (KDV hariç; zaten sayılıyor) · fark faturada −10,00 ₺",
   );
   // Başka yılın ayı yılıyla; aynı ay ve kategorinin giderleri tek parça
   assert.equal(
@@ -76,37 +76,37 @@ test("Faturası geldi önizlemesi (§5.2 metni aynen)", () => {
           { date: "2025-12-02", amount: 100, categoryName: "Nakit malzeme alımı" },
           { date: "2025-12-20", amount: 50, categoryName: "Nakit malzeme alımı" },
         ],
-        invoice: { date: "2026-01-04", net: 136.36, vat: 13.64, payable: 150, goods: false },
+        invoice: { date: "2026-01-04", net: 136.36, payable: 150, goods: false },
         debtTotal: 150,
         today: "2026-01-10",
       }),
     ),
-    "Aralık 2025 gideri −150,00 ₺ (Nakit malzeme alımı), Ocak gideri faturada 136,36 ₺ (KDV hariç; zaten sayılıyor) · KDV tahmini Ocak +13,64 ₺ · fark faturada +0,00 ₺",
+    "Aralık 2025 gideri −150,00 ₺ (Nakit malzeme alımı), Ocak gideri faturada 136,36 ₺ (KDV hariç; zaten sayılıyor) · fark faturada +0,00 ₺",
   );
 });
 
-test("Faturası geldi önizlemesi: KDV tahmininin saydığı KDV (tevkifatlı faturada) ve giderde sayılmayan kategori", () => {
+test("Faturası geldi önizlemesi: tevkifatlı fatura ve giderde sayılmayan kategori (KDV tahmini yok)", () => {
   // Hizmet faturası: net 1.000, KDV 200, 5/10 tevkifat, Ödenecek 1.100
   assert.equal(
     plain(
       linkPreview({
         removed: [],
-        invoice: { date: "2026-10-28", net: 1000, vat: 200, withheld: 100, payable: 1100, goods: false, counted: true },
+        invoice: { date: "2026-10-28", net: 1000, payable: 1100, goods: false, counted: true },
         debtTotal: 1100,
         today: "2026-10-28",
       }),
     ),
-    "Ekim gideri faturada 1.000,00 ₺ (KDV hariç; zaten sayılıyor) · KDV tahmini Ekim +200,00 ₺ (tevkifat 100,00 ₺, 2 No.lu beyannamede) · fark faturada +0,00 ₺",
+    "Ekim gideri faturada 1.000,00 ₺ (KDV hariç; zaten sayılıyor) · fark faturada +0,00 ₺",
   );
   assert.equal(
     plain(
       linkPreview({
         removed: [{ date: "2026-10-05", amount: 600, categoryName: "Nakit malzeme alımı" }],
-        invoice: { date: "2026-10-20", net: 545.45, vat: 54.55, payable: 600, goods: false, counted: false },
+        invoice: { date: "2026-10-20", net: 545.45, payable: 600, goods: false, counted: false },
         debtTotal: 600,
         today: "2026-10-28",
       }),
     ),
-    "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Ekim faturası 545,45 ₺ (KDV hariç) Gelir-gider'de hiçbir kalemde sayılmıyor; bağlarsanız bu alımın gideri düşer · KDV tahmini Ekim +54,55 ₺ · fark faturada +0,00 ₺",
+    "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Ekim faturası 545,45 ₺ (KDV hariç) Gelir-gider'de hiçbir kalemde sayılmıyor; bağlarsanız bu alımın gideri düşer · fark faturada +0,00 ₺",
   );
 });

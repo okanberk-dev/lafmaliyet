@@ -10,7 +10,7 @@ import { test } from "node:test";
 
 import type ExcelJS from "exceljs";
 
-import { BRANCH_INVOICE_VAT_NOTE, buildWorkbook, exportScopeText, GUIDE_SHEET, TAX_SHEET, type CariExportRow, type ExportExtras } from "../src/app/api/export/workbook";
+import { BRANCH_INVOICE_VAT_NOTE, buildWorkbook, exportScopeText, GUIDE_SHEET, type CariExportRow, type ExportExtras } from "../src/app/api/export/workbook";
 import { packageHref } from "../src/app/panel/muhasebe/package-download";
 import {
   ALWAYS_COMPANY_WIDE,
@@ -31,9 +31,6 @@ import type { Dataset, ExpenseCategory, ExpenseEntry, FixedExpense } from "../sr
 import { purchaseVat } from "../src/lib/kdv";
 import { packageFileName } from "../src/lib/muhasebe/paket";
 import { digestPreviewGroup, previewGroupText, weeklyPreviewNote } from "../src/lib/notify-recipients";
-import { taxViewInputFromModel, type TaxInputs } from "../src/lib/tax/inputs";
-import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { buildTaxView } from "../src/lib/tax/view";
 import { datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 const ROOT = process.cwd();
@@ -207,13 +204,12 @@ test("dışa aktarım: kapsam satırı alanların kipini yazar; Tümü dosyası 
   assert.match(sube, /tutarları bu dosyada yok/);
   assert.match(sube, /Tutarlılık Marina şubesinin/);
   assert.match(sube, /Cari hareketleri: Marina şubesinin ödemeleri; faturasız borç İşletme geneli/);
-  // Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): her kipte firmanın, şubenin payı yok
-  assert.match(sube, /Vergi firma geneli: vergi beyanı firmanın tek vergi numarasıyla, şubeye bölünmez\./);
-  assert.doesNotMatch(sube, /şubenin payı/);
+  // Vergi sekmesi Vergi bölümüyle 27 Kasım 2026'da kalktı: kapsam satırı vergiyi anmaz
+  assert.doesNotMatch(sube, /Vergi firma geneli|şubenin payı/);
   assert.match(sube, /Tutarlılık bulguları ve Alım Miktarları firma geneli/);
   const firma = exportScopeText({ label: "Marina", branch: true, areas: { tutarlilik: "firma", tedarikciler: "firma", sharedHidden: false } });
   assert.match(firma, /"İşletme geneli payı" olarak bilgi/);
-  assert.match(firma, /Tutarlılık firma geneli\. Cari hareketleri firma geneli\. Vergi firma geneli: vergi beyanı firmanın tek vergi numarasıyla, şubeye bölünmez\./);
+  assert.match(firma, /Tutarlılık firma geneli\. Cari hareketleri firma geneli\. Tutarlılık bulguları/);
 });
 
 test("dışa aktarım: şube dosyasında Tutarlılık alanın etiketiyle, Bulgular ve Alım Miktarları Firma geneli", () => {
@@ -223,7 +219,6 @@ test("dışa aktarım: şube dosyasında Tutarlılık alanın etiketiyle, Bulgul
     extras({
       scope: { label: "Marina", branch: true, areas: { tutarlilik: "sube", tedarikciler: "sube", sharedHidden: true } },
       consistency: { model, label: "Marina", note: "Alınan yalnız Marina şubesine seçilmiş faturalardan; 2 şubesiz fatura dahil değil." },
-      tax: null,
     }),
   );
   const t = wb.worksheets.find((w) => w.name.startsWith("Tutarlılık "))!;
@@ -245,20 +240,11 @@ test("dışa aktarım: şube dosyasında Tutarlılık alanın etiketiyle, Bulgul
   assert.equal(all.getWorksheet("Cari hareketleri")!.getRow(1).getCell(3).note, undefined);
 });
 
-test("dışa aktarım: Vergi sekmesi şube dosyasında da firmanın (Firma geneli · beyan), şubenin payı yok; rakamlar Tümü dosyasıyla aynı", () => {
-  // Vergi sekmesinin girdisi (tests/vergi-kaynak.test.ts'teki gibi Vergi sayfasının görünümü)
-  const inputs: TaxInputs = { settings: DEFAULT_TAX_SETTINGS, filings: [], adjustments: [], assets: [], zMonths: new Map(), invoicedCashOuts: new Set(), vatPaid: [] };
-  const view = buildTaxView(taxViewInputFromModel(model, inputs, { today: "2026-10-20", year: 2026, quarter: "2026-Q3" }));
-  const tax = { view, settings: DEFAULT_TAX_SETTINGS };
-  const wb = buildWorkbook(model, "2026-09", extras({ tax, scope: { label: "Marina", branch: true } }));
-  const text = cellsOf(wb.getWorksheet(TAX_SHEET)!);
-  assert.match(text, /Firma geneli · beyan: bütün şubelerin satışı, faturaları ve giderleri \(tek vergi numarası; vergi şubeye bölünmez\)\./);
-  assert.doesNotMatch(text, /ŞUBENİN PAYI|Şubeye seçilmiş faturaların KDV'si|^6\. /m);
-  const all = cellsOf(buildWorkbook(model, "2026-09", extras({ tax })).getWorksheet(TAX_SHEET)!);
-  assert.doesNotMatch(all, /Firma geneli · beyan/);
-  assert.doesNotMatch(all, /ŞUBENİN PAYI/);
-  // Şube dosyasının Vergi sekmesi Tümü dosyasınınkinden yalnız "Firma geneli · beyan" satırıyla ayrılır
-  assert.equal(text.replace(/\nFirma geneli · beyan:[^\n]*/, ""), all);
+test("dışa aktarım: Vergi sekmesi yok (Vergi bölümü 27 Kasım 2026'da kaldırıldı); Tümü ve şube dosyasında", () => {
+  for (const wb of [buildWorkbook(model, "2026-09", extras()), buildWorkbook(model, "2026-09", extras({ scope: { label: "Marina", branch: true } }))]) {
+    assert.equal(wb.getWorksheet("Vergi"), undefined);
+    assert.doesNotMatch(cellsOf(wb.getWorksheet(GUIDE_SHEET)!), /Vergi: Tahmin, beyanname değil/);
+  }
 });
 
 test("dışa aktarım: şube dosyasının Faturalar TOPLAM'ında KDV, KDV-2 ve ödenen KDV toplamı Tümü dosyasındaki gibi; altında tek gri satır (KDV beyanı firma geneli)", () => {
@@ -346,9 +332,8 @@ test("kaynak: dışa aktarımın sekmeleri alanlarının kipiyle; Ayarlar'ın d�
     assert.match(route, new RegExp(`// şube-ayrımı: ${id.replace(".", "\\.")}\\n\\s+const \\w+ = await areaScope\\("${area}"\\);`), area);
   }
   assert.match(route, /loadCariExport\(cariScope\)/);
-  // Vergi şubeye bölünmez: Vergi sekmesi her dosyada "Tümü"yle, şubenin payı yok
-  assert.match(route, /\/\/ şube-ayrımı: vergi\.beyan\n\s+const tax = await withBranchScope\(ALL_BRANCHES, async \(\) => loadTaxView\(/);
-  assert.doesNotMatch(route, /areaScope\("vergi"\)|loadBranchTaxView|taxShare|alan\.vergi/);
+  // Vergi sekmesi 27 Kasım 2026'da kalktı
+  assert.doesNotMatch(route, /loadTaxView|vergi\.beyan|areaScope\("vergi"\)|loadBranchTaxView|taxShare|alan\.vergi/);
   assert.match(route, /const consistency = whole \? undefined : await consistencyOf\(consistencyScope, model, month, branches\);/);
   assert.match(read("src/app/panel/ayarlar/page.tsx"), /Dışa aktar · \{exportBranch\.name\} \(\.xlsx\)/);
   const page = read("src/app/panel/siparisler/page.tsx");

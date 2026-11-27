@@ -42,7 +42,7 @@ export function siteRevenue(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdv
 /**
  * Ayın online satışındaki KDV (TL), sözleşmenin formülüyle: `kdvMinor + unknownKdvNetMinor × r / (1 + r)` (= net − KDV
  * hariç); kafe ve mağaza satış oranıyla, karaoke hizmet oranıyla. Panelden elle girilen siparişler (`manual`) kasada
- * olduğu için girmez. Nakit planının KDV tahmini kullanır (src/lib/kdv.ts).
+ * olduğu için girmez.
  */
 export function siteVat(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdvRate: number, serviceRate = kdvRate): number {
   const vat = (t: { netMinor: number; kdvMinor: number; unknownKdvNetMinor: number }, r: number) => t.netMinor - exVatMinor(t, r);

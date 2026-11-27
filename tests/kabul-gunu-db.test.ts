@@ -26,7 +26,6 @@ import { TEL_KART_ALANI } from "../src/lib/asilpos/eski-adlar";
 import { computeCash } from "../src/lib/cash-report";
 import { money } from "../src/lib/format";
 import { signedHeaders } from "../src/lib/karaoke/signature";
-import { vatMonthInputs } from "../src/lib/kdv";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
@@ -165,7 +164,6 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + AsilPOS 22 Kasım)", { ski
       const pm = model.pnlMonth("2026-11");
       assert.equal(pm.revenueNet, 30_576.15, `${scope}: KDV hariç (ay toplamından 30.576,14 olurdu)`);
       assert.deepEqual(model.posNet("2026-11"), { net: 30_576.15, vat: 3_057.6, byDay: true }, scope);
-      assert.equal(vatMonthInputs(model, "2026-12-10").months.find((m) => m.month === "2026-11")?.pos?.vat, 3_057.6, `${scope}: KDV tahmini`);
       assert.equal(pm.cells.get("commission:pos")?.value, 495.49, `${scope}: Gelir-gider`);
       assert.equal(r2(model.monthSales("2026-11").commission), 495.49, `${scope}: Satışlar`);
     }

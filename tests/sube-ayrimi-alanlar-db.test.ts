@@ -243,13 +243,12 @@ describe("şube ayrımı parça 4: alanlar veritabanında", { skip: !SERVER_URL 
     const lines = branch.view.plan.weeks.flatMap((w) => w.lines);
     assert.ok(lines.some((l) => l.key.startsWith("invoice:")), "Marina'nın faturası akışta");
     assert.equal(lines.some((l) => l.key.startsWith("cari:")), false, "faturasız borç akışta değil");
-    assert.equal(lines.some((l) => l.kind === "kdv" || l.kind === "vergi" || l.kind === "sgk"), false);
+    assert.equal(lines.some((l) => l.kind === "sgk" || /^(kdv|vergi|damga)/.test(l.key)), false);
     const taxKeys = new Set(taxRems.map((r) => r.id));
     const isTaxLine = (l: { key: string }) => taxKeys.has(Number(/^reminder:(\d+)@/.exec(l.key)?.[1]));
     assert.equal(lines.some(isTaxLine), false, "Marina'nın SGK hatırlatıcısı şubenin akışında değil");
     assert.equal(JSON.stringify(branch.flow).includes("5.555") || JSON.stringify(branch.flow).includes("5555"), false, "şubesiz KDV hatırlatıcısı İşletme geneli satırında değil");
     assert.equal(branch.flow.shared.some((w) => w.top.some((t) => /KDV|SGK/.test(t.title))), false);
-    assert.equal(branch.view.plan.vat, null, "şubenin KDV tahmini yok");
     assert.deepEqual(branch.view.plan.estimates.filter((e) => ["kdv", "vergi", "sgk"].includes(e.key)), [], "Tahmine katılanlar'da vergi ve SGK yok");
     assert.equal(branch.view.plan.taxFirmWide, true);
     const notes = planNotes(branch.view.plan, { komisyon: 0.02, acikGun: 30, invoiceTermDays: 30 });

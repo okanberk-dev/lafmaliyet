@@ -12,10 +12,9 @@ import { schema as s, type DB } from "@/server/db";
  * kategorilerinin adları; "Sabit giderlerden ekle"
  * adayları bitiş ayına göre süzülür (saklı `active` sütunu bayatlayabilir: aylık girişe çevirme ya da ileri tarihli bitiş
  * ayı onu güncellemez). Bütün kalemler ve sürümler hatırlatıcı tutarının sabit giderle karşılaştırılmasına gider
- * (src/lib/cash-plan.ts fixedReminderDrifts). Stopajlı kalemin (Vergi › sınıflandırma) `withholdingRate`'i bu yılın
- * kuralından: hatırlatıcının tutarı bankadan çıkan nettir, stopaj muhtasarda; yurt dışı hizmette KDV oranı 0, KDV'si
- * KDV-2'de; kira kaleminde ev sahibi türü KDV'yi ve stopajı belirler (paidFixedRatesOf, nakit planıyla aynı kural;
- * docs/VERGI.md). `scope`: "Sabit giderlerden ekle" adayları tek şube seçiliyken o şubenin ve işletme genelinin kalemleri
+ * (src/lib/cash-plan.ts fixedReminderDrifts). Stopajlı kalemin (saklı stopaj profili) `withholdingRate`'i bu yılın
+ * kuralından: hatırlatıcının tutarı bankadan çıkan nettir (stopajı muhasebeci muhtasarla öder); yurt dışı hizmette KDV
+ * oranı 0; kira kaleminde ev sahibi türü KDV'yi ve stopajı belirler (paidFixedRatesOf, nakit planıyla aynı kural). `scope`: "Sabit giderlerden ekle" adayları tek şube seçiliyken o şubenin ve işletme genelinin kalemleri
  * (şube kapsamı C P1-3; öbür şubenin kirası Marina'nın ödemelerine önerilmez); tutar karşılaştırması bütün kalemlerle.
  */
 export async function loadFixedForReminders(db: DB, currentMonth: string, scope: BranchScope = ALL_BRANCHES) {

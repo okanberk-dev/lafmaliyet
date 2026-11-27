@@ -12,7 +12,6 @@ import { loadCariExport } from "@/server/data/cari";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadInvestments } from "@/server/data/investments";
 import { loadBranchPurchases } from "@/server/data/purchase-lots";
-import { loadTaxView } from "@/server/data/tax";
 import { getDb, schema as s } from "@/server/db";
 
 import { buildWorkbook, type ExportExtras } from "./workbook";
@@ -22,14 +21,12 @@ import { buildWorkbook, type ExportExtras } from "./workbook";
  * ?ay=YYYY-MM seçili ayın sekmelerini (Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler) belirler;
  * verilmezse satış verisi olan son ay. Gelir-Gider o ayın yılının 12 ayını, Faturalar bütün faturaları içerir;
  * gri yedek sekmeleri (Satış / Gelir-Gider / Sayım Kayıtları, Ay Bilgileri, Alım Miktarları) bütün ayları taşır.
- * Vergi sekmesi Vergi sayfasının yılını yazar (tahmin; geliri mali belgeden gelmeyen çeyrek yazılmaz).
- * Sekme düzeni ve testleri: ./workbook.ts, tests/export-workbook.test.ts.
+ * Vergi sekmesi yok (Vergi bölümü 27 Kasım 2026'da kaldırıldı; vergiyi muhasebeci yürütüyor). Sekme düzeni ve testleri: ./workbook.ts, tests/export-workbook.test.ts.
  *
  * Kapsam (docs/SUBE.md › Şube ayrımı › parça 6): `?sube=` verilirse (Genel bakış'ın ve Ayarlar'ın düğmesi şube seçiliyken
  * seçimi gönderir) satış, kasa, personel ve giderler o şubenin; öbür sekmeler kendi alanının kipiyle (kişinin Şube
  * görünümü): Tutarlılık (Tutarlılık alanı), Cari hareketleri (Tedarikçi bakiyeleri), stok değeri (veri kümesi), işletme
- * geneli giderlerin tutarı (İşletme geneli giderler). Vergi her dosyada firmanın: şubeye bölünmez (sahibin kararı 27 Kasım
- * 2026). Bulgular ve Alım Miktarları firma geneli (şube sütunu yok). Verilmezse bütün şubeler. Dosyanın ilk sayfası
+ * geneli giderlerin tutarı (İşletme geneli giderler). Bulgular ve Alım Miktarları firma geneli (şube sütunu yok). Verilmezse bütün şubeler. Dosyanın ilk sayfası
  * kapsamı yazar.
  */
 export async function GET(request: NextRequest) {
@@ -61,16 +58,6 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
       loadCariExport(cariScope),
     ]);
     const month = resolveMonth(request.nextUrl.searchParams.get("ay") ?? undefined, model);
-    // "Vergi" sekmesi (dalga 12, docs/VERGI.md): Vergi sayfasının varsayılan yılı (30 Nisan'a kadar geçen yıl), takvimi
-    // nakit planıyla. Okunamazsa sekme yok, dosyanın geri kalanı iner. Vergi şubeye bölünmez: şube dosyasında da bütün
-    // şubelerin modeliyle, şubenin payı yok (Vergi sayfası gibi)
-    // şube-ayrımı: vergi.beyan
-    const tax = await withBranchScope(ALL_BRANCHES, async () => loadTaxView(whole ? model : await loadModel({ scope: ALL_BRANCHES })))
-      .then((d) => ({ view: d.view, settings: d.inputs.settings }))
-      .catch((e) => {
-        console.error("[export] Vergi sekmesi hazırlanamadı", e);
-        return null;
-      });
     // Tutarlılık sekmesi alanının kipiyle: firma kipinde bütün şubeler, şube kipinde şubenin satışı ve sayımı, alınan
     // yalnız şubeye seçilmiş faturalardan (Tutarlılık sayfası gibi)
     const consistency = whole ? undefined : await consistencyOf(consistencyScope, model, month, branches);
@@ -81,7 +68,6 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
       findings,
       // Faturanın kalan borcu faturanın kendisinden (Paraşüt'ün kalanı ve panelde sayılan ödemeler; openBalance)
       cari,
-      tax,
       consistency,
       scope: {
         label: branchScopeLabel(scope, branches),

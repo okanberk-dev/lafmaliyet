@@ -10,7 +10,8 @@
 // seçilmeden açılınca böyle) hedef izlenir, asıl sayfa taranır: önceden yalnız yönlendirme kabuğu taranıp "✓" basılıyordu
 // (denetim KA-03). Dinamik personel ekranı (kontrol/[id]) taranan sayfalardaki ilk bağlantısıyla denenir. Personelin
 // açamadığı her adres (yönetici ekranları, personel yolunun altındaki ADMIN_ONLY_PATHS dahil) personel çereziyle Bugün'e
-// dönmelidir. Canlı uç (/api/canli) da taranır: COST_KEYS hiç, karaoke tutarı (totalMinor, refundMinor) yalnız null
+// dönmelidir. Kaldırılan ekranların eski adresleri (src/lib/roles.ts › RETIRED_PATHS; Vergi bölümü 27 Kasım 2026'da
+// kaldırıldı) oturumdan önce yeni hedefine yönlenmelidir. Canlı uç (/api/canli) da taranır: COST_KEYS hiç, karaoke tutarı (totalMinor, refundMinor) yalnız null
 // olarak. Bir şey tutmazsa çıkış kodu 1.
 //
 // Çalıştırma:
@@ -27,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { businessDate } from "../src/lib/cash-report";
 import { addDays } from "../src/lib/reminders";
-import { canOpen, STAFF_HOME } from "../src/lib/roles";
+import { canOpen, RETIRED_PATHS, STAFF_HOME } from "../src/lib/roles";
 import { COST_KEYS, MODPOS_ADMIN_KEYS, OKC_ADMIN_KEYS } from "../tests/helpers/leak-scan";
 
 const PANEL_DIR = fileURLToPath(new URL("../src/app/panel", import.meta.url));
@@ -78,8 +79,7 @@ export function staffPages(routes: PanelRoute[], today: string): { path: string;
 
 /**
  * Personel çereziyle Bugün'e dönmesi gereken adresler: personelin açamadığı her sayfa (yönetici ekranları ve personel
- * yolunun altındaki ADMIN_ONLY_PATHS: karaoke doluluğu, kontrol listelerini düzenleme). Vergi'nin dört ekranı da
- * (dalga 12, docs/VERGI.md): RSC isteği de Bugün'e döner, yükte vergi verisi olmaz.
+ * yolunun altındaki ADMIN_ONLY_PATHS: karaoke doluluğu, kontrol listelerini düzenleme): RSC isteği de Bugün'e döner.
  */
 export function adminPages(routes: PanelRoute[]): string[] {
   return routes.filter((r) => !canOpen("staff", r.path)).map((r) => r.path);
@@ -228,6 +228,20 @@ export async function scanStaffLeaks({ base: rawBase, cookie, today = businessDa
       const label = `${path} (${rsc ? "RSC" : "HTML"})`;
       if (!ok) failures.push(`${label}: personel Bugün'e dönmedi (${res.status} ${to})`);
       log(`${ok ? "✓" : "✗"} ${label} → ${res.status} ${to}`);
+    }
+  }
+
+  // Kaldırılan ekranların eski adresleri (Hızlı sayım, Mal siparişi, Vergi ve alt sayfaları): sayfa dosyası yok, proxy
+  // oturumdan önce RETIRED_PATHS'in hedefine yönlendirir (gövdesiz); 404 ya da sayfa dönmemeli
+  for (const r of RETIRED_PATHS) {
+    for (const path of [r.path, `${r.path}/eski-alt-sayfa`]) {
+      const res = await fetchOnce(path, false);
+      const to = res.headers.get("location") ?? "";
+      const want = new URL(r.target, base);
+      const got = new URL(to || "/", base);
+      const ok = res.status >= 300 && res.status < 400 && got.pathname === want.pathname && got.search === want.search;
+      if (!ok) failures.push(`${path}: kaldırılan ekran ${r.target} adresine yönlenmedi (${res.status} ${to})`);
+      log(`${ok ? "✓" : "✗"} ${path} (kaldırıldı) → ${res.status} ${to}`);
     }
   }
 

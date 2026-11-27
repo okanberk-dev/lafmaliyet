@@ -17,7 +17,6 @@ import {
   FileArchive,
   FileBadge,
   FileText,
-  FileWarning,
   Gift,
   Globe,
   Grid3x3,
@@ -25,7 +24,6 @@ import {
   HardDriveDownload,
   HelpCircle,
   History,
-  Landmark,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
@@ -67,8 +65,10 @@ export interface NavItem {
  * Komut paletinin ve Yardım'ın ekran listesi. Başlıklar kenar çubuğu ağacının (NAV_TREE) başlıklarıyla aynı sırada;
  * birbirine yakın ekranlar aynı öğenin altında sekme: Giderler & maaşlar = Sabit giderler + Aylık harcamalar + Maaşlar.
  * Bir ekran bir ad (29 Eki 2026, docs/planlar/ux-sade.md §3.6): etiket kenar çubuğundaki ve başlıktaki adla aynı; eski
- * ad `keywords`'te kalır, alışkanlıkla yazılan da bulunur. Kare adresli kayıtlar (ör. "KDV" → /panel/vergi#kdv) bir
- * ekranın bölümünü adıyla açar; kenar çubuğuna ve telefon başlığına girmez. Adresler değişmedi.
+ * ad `keywords`'te kalır, alışkanlıkla yazılan da bulunur. Kare adresli kayıtlar (ör. "Fatura kalemini hammaddeye bağla"
+ * → /panel/parasut#urun-baglantilari) bir ekranın bölümünü adıyla açar; kenar çubuğuna ve telefon başlığına girmez.
+ * Adresler değişmedi. Vergi, KDV, SGK grubu 27 Kasım 2026'da kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor;
+ * eski adresler Genel bakış'a yönlenir, src/lib/roles.ts RETIRED_PATHS).
  */
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
@@ -258,7 +258,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         label: "Nakit planı",
         icon: ChartNoAxesColumn,
         roles: ["admin"],
-        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden kdv hesabı devreden kdv param yeter mi",
+        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık param yeter mi",
       },
       // Banka ve tedarikçi ekstresi ile panel kayıtları, kart satışı ile bankaya gelen POS hakedişi (docs/MUTABAKAT.md)
       {
@@ -278,55 +278,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/panel/raporlar/iscilik", label: "İşçilik / ciro", icon: BarChart3, roles: ["admin", "manager"], keywords: "rapor işçilik maliyeti personel oranı günlük haftalık şube maaş vardiya" },
       { href: "/panel/raporlar/kacak", label: "Kaçak raporu", icon: BarChart3, roles: ["admin"], keywords: "rapor kaçak ay sonu tahmini stok sayım farkı marina fire kayıp" },
       { href: "/panel/raporlar/kayip", label: "Kayıp önleme", icon: BarChart3, roles: ["admin"], keywords: "rapor kayıp önleme kişi bazında kasa farkı iptal ikram indirim sapma" },
-    ],
-  },
-  {
-    // Devlete ödemeler (dalga 12, docs/VERGI.md): tahmin, beyanname değil. Takvimin satırları (KDV, SGK, muhtasar) ve kâr
-    // vergisi kartı kare adresle adıyla bulunur
-    title: "Vergi, KDV, SGK",
-    items: [
-      {
-        href: "/panel/vergi",
-        label: "Vergi, KDV, SGK",
-        icon: Landmark,
-        roles: ["admin", "accountant"],
-        keywords:
-          "vergi kurumlar vergisi geçici vergi muhtasar stopaj damga vergisi sgk prim bordro gelir vergisi kdv beyanname tahakkuk muhasebeci amortisman demirbaş çevre temizlik ilan reklam vergi takvimi vergi özet vergi takvimi devlete ödemeler",
-      },
-      {
-        href: "/panel/vergi#kdv",
-        label: "KDV",
-        icon: Percent,
-        roles: ["admin"],
-        keywords: "kdv katma değer bu ay ne kadar devreden indirilecek hesaplanan beyanname damga",
-      },
-      { href: "/panel/vergi#sgk", label: "SGK primi", icon: Users, roles: ["admin"], keywords: "sgk prim işveren sigorta tahakkuk" },
-      { href: "/panel/vergi#muhtasar", label: "Maaş vergileri (muhtasar)", icon: Receipt, roles: ["admin"], keywords: "muhtasar stopaj ücret gelir vergisi prim hizmet" },
-      { href: "/panel/vergi#kar-vergisi", label: "Kâr vergisi (geçici, kurumlar)", icon: Landmark, roles: ["admin"], keywords: "geçici vergi kurumlar vergisi peşin mahsup matrah" },
-      {
-        href: "/panel/vergi/gelir-gider",
-        label: "Vergi kârı",
-        icon: Receipt,
-        roles: ["admin", "accountant"],
-        keywords:
-          "vergi matrah gider sınıflandırma belgesi muhasebecide kdv beyannamesi satışları çeyrek vergiye göre gelir-gider vergiye göre kâr kurum kazancı matrah çeyrek",
-      },
-      {
-        href: "/panel/vergi/gelir-gider#siniflandir",
-        label: "Eksik belgeler",
-        icon: FileWarning,
-        roles: ["admin"],
-        keywords: "belgesi seçilmemiş sınıflandır stopaj vergi kesintisi",
-      },
-      { href: "/panel/vergi/demirbas", label: "Demirbaş", icon: Package, roles: ["admin", "accountant"], keywords: "vergi demirbaş amortisman faydalı ömür varlık doğrudan gider demirbaş & amortisman varlık" },
-      {
-        href: "/panel/vergi/kurallar",
-        label: "Muhasebeci",
-        icon: BookOpen,
-        roles: ["admin", "accountant"],
-        keywords: "vergi oran dayanak kaynak 2026 elle değer ayarlar vergi kuralları vergi ayarları şirket nasıl kuruldu",
-      },
-      { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar", icon: ListChecks, roles: ["admin"], keywords: "vergi muhasebeci soru konuştum gözden geçir" },
     ],
   },
 ];
@@ -377,9 +328,9 @@ export interface NavNode {
 /**
  * Ağaç (26 Eki 2026, docs/TASARIM.md "Menü ağacı"): yöneticide en sık açılan dört ekran (Genel bakış, Bugün, Onaylar,
  * Kasa raporu) tek tıkla üst düzeyde, gerisi konu başlıkları altında: işletme (Kafe, Menü, Stok), para (Satış, Alış &
- * gider, Kâr & ödemeler), devlete ödemeler (Vergi, KDV, SGK), Ayarlar. 29 Eki 2026 (docs/planlar/ux-sade.md §3.1):
- * "Finans" → "Kâr & ödemeler" (Gelir-gider, Ödemeler, Nakit planı); Vergi kendi grubunda, adı KDV ve SGK'yı da söyler,
- * kapalı kenar çubuğunda görünür; Menü'ye Fiyatlar, Kâr & ödemeler'e Nakit planı girdi. Başlık satırı yalnız grubu
+ * gider, Kâr & ödemeler), Ayarlar. 29 Eki 2026 (docs/planlar/ux-sade.md §3.1): "Finans" → "Kâr & ödemeler" (Gelir-gider,
+ * Ödemeler, Nakit planı); Menü'ye Fiyatlar, Kâr & ödemeler'e Nakit planı girdi. 27 Kas 2026: Vergi, KDV, SGK grubu
+ * kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor). Başlık satırı yalnız grubu
  * açıp kapatır; etkin sayfanın grubu kendiliğinden açık (sidebar-nav.tsx). Personelin ağacı aynı kalır: üst düzey
  * öğeleri (Siparişler, Karaoke, Kontrol listeleri, Hatırlatıcılarım) yalnız personelde, yönetici aynı ekranları Kafe
  * altında görür. 6 Kas 2026: Siparişler (uygulama siparişleri ve masa çağrıları) personelde Bugün'ün altına, yönetici
@@ -503,19 +454,6 @@ export const NAV_TREE: NavNode[] = [
       { id: "rapor-kayip", label: "Kayıp önleme", href: "/panel/raporlar/kayip", roles: ["admin"] },
     ],
   },
-  {
-    // Devlete ödemeler (dalga 12, docs/VERGI.md): dört ekran, sekmeleri bu gruptan türer (SECTION_TABS.vergi)
-    id: "vergi",
-    label: "Vergi, KDV, SGK",
-    icon: Landmark,
-    roles: ["admin", "accountant"],
-    children: [
-      { id: "vergi-ozet", label: "Özet", href: "/panel/vergi", roles: ["admin", "accountant"] },
-      { id: "vergi-kari", label: "Vergi kârı", href: "/panel/vergi/gelir-gider", roles: ["admin", "accountant"] },
-      { id: "demirbas", label: "Demirbaş", href: "/panel/vergi/demirbas", roles: ["admin", "accountant"] },
-      { id: "muhasebeci", label: "Muhasebeci", href: "/panel/vergi/kurallar", roles: ["admin", "accountant"] },
-    ],
-  },
   // Personelde üst düzeyde; yönetici Kafe altında görür
   { id: "hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, href: "/panel/hatirlaticilarim", roles: ["manager", "staff"] },
   {
@@ -557,13 +495,12 @@ function treeTabs(id: string): SectionTab[] {
 }
 
 /**
- * Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar. Stok ve Vergi sekmeleri kenar çubuğunun grubundan türer
- * (denetim E-56, 27 Eki 2026; Vergi 29 Eki 2026'dan beri kendi grubu "Vergi, KDV, SGK"): menüye eklenen ya da çıkan
- * sayfa sekmelerde de aynı sırayla görünür; telefonda (kenar çubuğu gizli) sayfalar arasında hamburger menü açmadan
+ * Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar. Stok ve Raporlar sekmeleri kenar çubuğunun grubundan türer
+ * (denetim E-56, 27 Eki 2026): menüye eklenen ya da çıkan sayfa sekmelerde de aynı sırayla görünür; telefonda (kenar çubuğu gizli) sayfalar arasında hamburger menü açmadan
  * geçilir. Giderler'in sekmeleri kenar çubuğunda tek öğedir (Giderler & maaşlar), o yüzden elle. Ödemeler ile Nakit
  * planı kenar çubuğunda iki ayrı satır, sekmeyle de birbirine bağlı (docs/planlar/ux-sade.md K7).
  */
-export const SECTION_TABS: Record<"giderler" | "stok" | "vergi" | "odeme" | "raporlar", readonly SectionTab[]> = {
+export const SECTION_TABS: Record<"giderler" | "stok" | "odeme" | "raporlar", readonly SectionTab[]> = {
   giderler: [
     { href: "/panel/giderler", label: "Sabit giderler", roles: ["admin"] },
     { href: "/panel/harcamalar", label: "Aylık harcamalar", roles: ["admin"] },
@@ -572,8 +509,6 @@ export const SECTION_TABS: Record<"giderler" | "stok" | "vergi" | "odeme" | "rap
     { href: "/panel/personel/avans", label: "Avanslar", roles: ["admin"] },
   ],
   stok: treeTabs("stok"),
-  // Özet · Vergi kârı · Demirbaş · Muhasebeci (390 px'te kaydırmasız)
-  vergi: treeTabs("vergi"),
   // Şubeler · İşçilik · Kaçak · Kayıp önleme (docs/RAPORLAR.md)
   raporlar: treeTabs("raporlar"),
   odeme: [
@@ -643,8 +578,8 @@ export function groupLabelOf(pathname: string, role: Role): string | undefined {
 }
 
 /**
- * Başlığın üstündeki bağlam satırı (page-header.tsx): grubun adı. Grubun giriş ekranı grubun adını taşıyorsa ("Vergi,
- * KDV, SGK" Özet'te, "Ayarlar") satır yok: başlığı bir kez daha yazmaz.
+ * Başlığın üstündeki bağlam satırı (page-header.tsx): grubun adı. Grubun giriş ekranı grubun adını taşıyorsa
+ * ("Ayarlar") satır yok: başlığı bir kez daha yazmaz.
  */
 export function contextLineOf(pathname: string, role: Role, title: string): string | undefined {
   const group = groupLabelOf(pathname, role);
@@ -654,7 +589,7 @@ export function contextLineOf(pathname: string, role: Role, title: string): stri
 /**
  * Kenar çubuğunun kaydırma kutusunda etkin sayfanın satırı görünmüyorsa kutunun ne kadar kaydırılacağı (artı: aşağı),
  * görünüyorsa 0 (sidebar-nav.tsx). Satır kenara yapışmasın diye `pad` kadar pay kalır; kutudan uzun satırda üst kenar
- * esastır. Vergi grubu listenin sonunda: 900 px yüksek dizüstünde Muhasebeci kutunun altında kalıyordu.
+ * esastır. Listenin sonundaki grupların satırları 900 px yüksek dizüstünde kutunun altında kalabilir.
  */
 export function revealDelta(box: { top: number; bottom: number }, item: { top: number; bottom: number }, pad = 8): number {
   const up = item.top - (box.top + pad);
@@ -753,7 +688,7 @@ export const BOTTOM_NAV: Record<Role, BottomNavItem[]> = {
     { id: "muhasebe", label: "Muhasebe", icon: FileArchive, href: "/panel/muhasebe" },
     { id: "faturalar", label: "Faturalar", icon: FileText, href: "/panel/faturalar" },
     { id: "gelir-gider", label: "Gelir-gider", icon: CalendarRange, href: "/panel/gelir-gider" },
-    { id: "vergi", label: "Vergi", icon: Landmark, href: "/panel/vergi" },
+    { id: "harcamalar", label: "Harcamalar", icon: Wallet, href: "/panel/harcamalar" },
     { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
   ],
 };
@@ -860,10 +795,6 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",
-  "/panel/vergi": "Vergi, KDV, SGK",
-  "/panel/vergi/gelir-gider": "Vergi kârı",
-  "/panel/vergi/demirbas": "Demirbaş",
-  "/panel/vergi/kurallar": "Muhasebeci",
   "/panel/muhasebe": "Muhasebe",
 };
 
