@@ -156,7 +156,7 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
     "/panel/vergi/kurallar": ["src/app/panel/vergi/kurallar/page.tsx", /<HashScroll \/>/],
     "/panel/gelir-gider": ["src/app/panel/gelir-gider/page.tsx", /<HashScroll key=\{`capa-\$\{year\}`\} \/>/],
     "/panel/personel": ["src/app/panel/personel/staff-editor.tsx", /window\.addEventListener\("hashchange", fromHash\)/],
-    // Bölümün eski adlı çapası da (HASH_ALIASES: #lafpos → AsilPOS bölümü) aynı bölüme iner
+    // Bölümün eski adlı çapası da (HASH_ALIASES) aynı bölüme iner
     "/panel/ayarlar": ["src/app/panel/ayarlar/section-card.tsx", /\[id, \.\.\.\(HASH_ALIASES\[id\] \?\? \[\]\)\]\.some\(\(h\) => window\.location\.hash === `#\$\{h\}`\)/],
     "/panel/parasut": ["src/app/panel/parasut/page.tsx", /<HashScroll \/>/],
   };
