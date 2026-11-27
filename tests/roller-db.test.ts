@@ -354,8 +354,8 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
-    test("Kasa ay görünümü: pencereye giden kasadan çıkanda maaş kategorisinin adı yok, tutarı var; öteki şubenin satırı yok (bulgu 8)", async () => {
-      const { cashOutsBetween } = await import("../src/server/data/cash-outs");
+    test("Kasa ay görünümü: pencereye giden kasadan çıkanda maaş kategorisinin adı ve metni yok, tutarı var; öteki şubenin satırı yok (bulgu 8)", async () => {
+      const { cashOutsBetween, cashOutsShownTo } = await import("../src/server/data/cash-outs");
       const { sheetCashOutsByDate } = await import("../src/lib/cash-outs");
       const [cat] = await db.insert(s.expenseCategories).values({ name: "Maaş (roller testi)", section: "personel", panelGroup: "personel" }).returning({ id: s.expenseCategories.id });
       const outs = await db
@@ -378,13 +378,147 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
           [[outs[0].id, "Maaş (roller testi)"]],
           "müdürün okuması şubesine daralır",
         );
-        const sent = sheetCashOutsByDate(rows);
-        assert.deepEqual(sent, { [DAY]: [{ id: outs[0].id, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: null }] });
-        assert.doesNotMatch(JSON.stringify(sent), /Maaş|categoryName|categoryId|expenseEntryId|createdBy|Marina/);
+        // Sayfa satırları okuyanın rolüyle süzer (cashOutsShownTo): müdüre maaş satırının yalnız tutarı
+        const sent = sheetCashOutsByDate(await cashOutsShownTo("manager", rows));
+        assert.deepEqual(sent, { [DAY]: [{ id: outs[0].id, kind: "harcama", amount: 15_000, store: null, description: null, photoId: null }] });
+        assert.doesNotMatch(JSON.stringify(sent), /Maaş|Kasım ödemesi|categoryName|categoryId|expenseEntryId|createdBy|Marina/);
       } finally {
         await db.delete(s.expenseEntries).where(eq(s.expenseEntries.id, entry.id));
         for (const o of outs) await db.delete(s.cashOuts).where(eq(s.cashOuts.id, o.id));
         await db.delete(s.expenseCategories).where(eq(s.expenseCategories.id, cat.id));
+      }
+    });
+
+    test("yöneticinin kategorisindeki satırın yeri, açıklaması ve fişi müdüre gitmez: Kasa'nın gün ve ay görünümü, WhatsApp metni, fiş fotoğrafı", async () => {
+      const { cashOutsOn, cashOutsShownTo } = await import("../src/server/data/cash-outs");
+      const { sheetCashOutsByDate } = await import("../src/lib/cash-outs");
+      const { cashReportExtras, extrasFrom } = await import("../src/server/data/cash-photos");
+      const { canViewPhoto } = await import("../src/server/storage/photo-access");
+      const { getPhoto } = await import("../src/server/storage/photos");
+      const store = await import("../src/server/cash/report-store");
+      const reportActions = await import("../src/server/actions/cash-report");
+      const date = "2026-01-09";
+      // Serbest metin kişinin adını ve ücretini taşır: müdüre hiçbir yoldan gitmemeli
+      const SECRETS = /Selin Yıldız|Kasım avansı|AV-0042/;
+      const cats = await db
+        .insert(s.expenseCategories)
+        .values([
+          { name: "Avans (metin testi)", section: "personel", panelGroup: "personel" },
+          { name: "Market (metin testi)", section: "mal", panelGroup: "diger" },
+        ])
+        .returning({ id: s.expenseCategories.id });
+      const [salaryCat, staffCat] = cats.map((c) => c.id);
+      const photos = await db
+        .insert(s.photos)
+        .values(
+          ["avans", "market"].map((k) => ({
+            kind: "fis" as const,
+            storageKey: `fis/2026/metin-${k}.jpg`,
+            contentType: "image/jpeg",
+            sizeBytes: 100,
+            createdBy: ids.ali,
+            createdByName: "Ali",
+            linkedAt: new Date(),
+          })),
+        )
+        .returning({ id: s.photos.id });
+      const [salaryPhoto, staffPhoto] = photos.map((p) => p.id);
+      const rows = await db
+        .insert(s.cashOuts)
+        .values([
+          { date, kind: "harcama", amount: 5_000, store: "Selin Yıldız", description: "Kasım avansı", receiptNo: "AV-0042", docType: "fis", photoId: salaryPhoto, branchId: "tuzla", createdBy: ids.ali, createdByName: "Ali" },
+          { date, kind: "harcama", amount: 40, store: "Bim", description: "buz", docType: "fis", photoId: staffPhoto, branchId: "tuzla", createdBy: ids.ali, createdByName: "Ali" },
+        ])
+        .returning({ id: s.cashOuts.id });
+      const [salary, plain] = rows.map((r) => r.id);
+      await db.insert(s.expenseEntries).values([
+        { branchId: "tuzla", date, categoryId: salaryCat, description: "Kasım avansı", amount: 5_000, cashOutId: salary },
+        { branchId: "tuzla", date, categoryId: staffCat, description: "Bim", amount: 40, cashOutId: plain },
+      ]);
+      const fields: CashReportFields & { discounts: number | null } = {
+        date,
+        zNo: null,
+        receipts: null,
+        zTotal: 10_000,
+        cash: 3_000,
+        card: 7_000,
+        mealCard: 0,
+        online: 0,
+        other: 0,
+        openingCash: 5_540,
+        cashIn: 0,
+        cashOut: 5_040,
+        cashOutNote: null,
+        countedCash: 3_500,
+        handedOver: 2_400,
+        bankPos: null,
+        offRevenue: null,
+        note: null,
+        discounts: null,
+      };
+      let reportId = 0;
+      try {
+        await signIn("ali");
+        const saved = await scope.withBranchScope("tuzla", () => store.saveCashReport(db, { id: ids.ali, name: "Ali", role: "admin" }, { ...fields, countedBy: null, revision: 0, photos: [] }));
+        assert.equal(saved.kind, "saved");
+        const report = saved.kind === "saved" ? saved.row : (null as never);
+        reportId = report.id;
+
+        // Gün ve ay görünümünün satırları (sayfa cashOutsShownTo ile kurar): maaş satırı yalnız türü ve tutarıyla
+        await signIn("mehmet");
+        const day = await cashOutsShownTo("manager", await cashOutsOn(date, "tuzla"));
+        const shown = (id: number) => day.find((o) => o.id === id)!;
+        assert.deepEqual(
+          [shown(salary).kind, shown(salary).amount, shown(salary).store, shown(salary).description, shown(salary).receiptNo, shown(salary).photoId, shown(salary).categoryName],
+          ["harcama", 5_000, null, null, null, null, null],
+        );
+        assert.deepEqual([shown(plain).store, shown(plain).description, shown(plain).photoId, shown(plain).categoryName], ["Bim", "buz", staffPhoto, "Market (metin testi)"], "personelin kategorisindeki satır olduğu gibi");
+        const sheet = sheetCashOutsByDate(day);
+        const extras = extrasFrom(undefined, day, report);
+        assert.deepEqual(extras.cashOuts, [
+          { kind: "harcama", amount: 5_000, store: null, description: null, photo: false },
+          { kind: "harcama", amount: 40, store: "Bim", description: "buz", photo: true },
+        ]);
+        assert.doesNotMatch(JSON.stringify([day, sheet, extras]), SECRETS, "tarayıcıya giden satırlarda metin yok");
+        // Yönetici ve muhasebeci bütün satırı görür; personel değişmedi (metnini düzeltme isteği açar)
+        for (const role of ["admin", "accountant", "staff"] as const) {
+          assert.match(JSON.stringify(await cashOutsShownTo(role, await cashOutsOn(date, "tuzla"))), /Selin Yıldız/, role);
+        }
+
+        // WhatsApp metni (eylem): müdüre "Harcama 5.000 ₺", yöneticiye satırın adıyla; e-postanın ekleri bütün satırla
+        asAction();
+        const mine = await reportActions.cashReportWhatsapp(date, "tuzla");
+        assert.ok(mine.ok, mine.ok ? "" : mine.error);
+        assert.doesNotMatch(mine.data.text, SECRETS);
+        assert.match(mine.data.text, /Harcama 5\.000\s₺/);
+        assert.match(mine.data.text, /Bim \(buz\) 40\s₺ 📷/);
+        await signIn("ali");
+        asAction();
+        const owner = await reportActions.cashReportWhatsapp(date, "tuzla");
+        assert.ok(owner.ok, owner.ok ? "" : owner.error);
+        assert.match(owner.data.text, /Selin Yıldız \(Kasım avansı\) 5\.000\s₺ 📷/);
+        assert.match(JSON.stringify((await cashReportExtras(report)).cashOuts), /Selin Yıldız/, "e-posta (yönetici ve muhasebe) bütün satırla");
+        assert.doesNotMatch(JSON.stringify((await cashReportExtras(report, "manager")).cashOuts), SECRETS);
+
+        // Fiş fotoğrafı (/api/foto'nun kuralı): müdür şubesinin personel satırının fişini görür, maaş satırınınkini görmez
+        const userOf = async (k: Key) => {
+          await signIn(k);
+          return (await dal.getCurrentUser())!;
+        };
+        const [p1, p2] = [(await getPhoto(salaryPhoto))!, (await getPhoto(staffPhoto))!];
+        const mehmet = await userOf("mehmet");
+        assert.equal(await canViewPhoto(mehmet, p1), false, "müdür maaş satırının fişini görmez");
+        assert.equal(await canViewPhoto(mehmet, p2), true, "müdür şubesinin personel satırının fişini görür");
+        const ali = await userOf("ali");
+        assert.equal(await canViewPhoto(ali, p1), true, "yönetici görür");
+        const zeynep = await userOf("zeynep");
+        assert.equal(await canViewPhoto(zeynep, p1), true, "muhasebeci görür (muhasebe kaydı)");
+      } finally {
+        await db.delete(s.expenseEntries).where(inArray(s.expenseEntries.cashOutId, [salary, plain]));
+        await db.delete(s.cashOuts).where(inArray(s.cashOuts.id, [salary, plain]));
+        if (reportId) await db.delete(s.cashReports).where(eq(s.cashReports.id, reportId));
+        await db.delete(s.photos).where(inArray(s.photos.id, [salaryPhoto, staffPhoto]));
+        await db.delete(s.expenseCategories).where(inArray(s.expenseCategories.id, [salaryCat, staffCat]));
       }
     });
 

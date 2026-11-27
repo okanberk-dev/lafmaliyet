@@ -3,12 +3,13 @@ import "server-only";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import type { CashReportExtras, CashReportFields } from "@/lib/cash-report";
+import type { Role } from "@/lib/constants";
 import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoKind, type CashReading } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcReadFigures, toStaffReading, type OkcReadFigures } from "@/lib/photo-read/okc";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
 import { lafposMovesPending, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
-import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
+import { cashOutsOn, cashOutsShownTo, type CashOutDTO } from "@/server/data/cash-outs";
 import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
 
@@ -183,9 +184,13 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
   };
 }
 
-/** Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da) */
-export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields): Promise<CashReportExtras> {
+/**
+ * Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da). `viewer`: metni ekranda
+ * alan kişinin rolü (WhatsApp); müdüre yöneticinin kategorisindeki satır yalnız tutarıyla (cashOutsShownTo). E-posta
+ * (alıcıları yönetici ve muhasebe) verilmeden bütün satırla
+ */
+export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields, viewer?: Role): Promise<CashReportExtras> {
   // Raporun kendi kasası: kasadan çıkanlar ve LafPOS günü raporun şubesinin
   const [info, outs, lafpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date, report.branchId), loadKasaLafpos(report.date, undefined, report.branchId)]);
-  return extrasFrom(info.get(report.id), outs, report, lafpos);
+  return extrasFrom(info.get(report.id), viewer ? await cashOutsShownTo(viewer, outs) : outs, report, lafpos);
 }

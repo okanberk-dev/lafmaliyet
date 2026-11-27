@@ -2,8 +2,10 @@ import "server-only";
 
 import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 
-import { staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
+import { ownerRowsAmountOnly, staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
+import type { Role } from "@/lib/constants";
 import { lafposAwaitingCategory, lafposInsertedRow } from "@/lib/lafpos/cash-moves";
+import { ownerRowAmountOnly } from "@/lib/roles";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { lafposBranchId } from "@/server/lafpos/branch";
@@ -135,4 +137,20 @@ export interface CashOutCategory {
 export async function cashOutCategories(role: "admin" | "staff"): Promise<CashOutCategory[]> {
   const rows = await getDb().select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id));
   return rows.filter((c) => (role === "admin" ? c.active : staffCategory(c))).map((c) => ({ id: c.id, name: c.name, section: c.section }));
+}
+
+/** Personelin seçebildiği kategorilerin kimlikleri (staffCategory): dışındaki kategori yöneticinin (maaş, kira, kapatılmış) */
+export async function staffCategoryIds(): Promise<Set<number>> {
+  return new Set((await cashOutCategories("staff")).map((c) => c.id));
+}
+
+/**
+ * Okuyana giden satırlar (docs/ROLLER.md › Kararlar): müdürde (`ownerRowAmountOnly`) yöneticinin kategorisindeki satır
+ * yalnız türü ve tutarıyla (yer, açıklama, fiş ve fotoğrafı, kategori adı null; src/lib/cash-outs.ts › amountOnlyRow);
+ * öbür rollerde olduğu gibi. Kasa'nın gün ve ay görünümü (satırlar, formun özeti, rapor penceresi) ve WhatsApp metni
+ * (sayfa ve eylemler) bundan geçer
+ */
+export async function cashOutsShownTo<T extends { categoryId: number | null }>(role: Role, rows: T[]): Promise<T[]> {
+  if (!ownerRowAmountOnly(role) || rows.every((o) => o.categoryId === null)) return rows;
+  return ownerRowsAmountOnly(rows, await staffCategoryIds());
 }

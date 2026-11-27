@@ -175,7 +175,8 @@ test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı
   assert.equal(row.locked, true);
   // Sayfa personelde yalnız staffCashOutRow'dan geçen satırı verir; yöneticinin ipucu personele hiç okunmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? allCategories\s+\? outs\.map\(lockRow\)\s+: outs\.map\(\(o\) => lockRow\(hideName\(o\)\)\)\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
+  // (müdürün satırları cashOutsShownTo'dan: yöneticinin kategorisindeki satırın yalnız tutarı; docs/ROLLER.md)
+  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? allCategories\s+\? outs\.map\(lockRow\)\s+: shownOuts\.map\(\(o\) => lockRow\(hideName\(o\)\)\)\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
   // Bağlı satır müdüre de kilitli görünür (yalnız yönetici bağlı satırı düzeltir); müdüre yöneticinin kategorisindeki
   // satır da (docs/ROLLER.md › Kararlar)
   assert.match(page, /owner \? Promise\.resolve\(new Set<number>\(\)\) : loadLinkedCashOuts\(ids\)/);

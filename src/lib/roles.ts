@@ -52,8 +52,8 @@ export const CAPABILITIES = {
   "muhasebe.oku": ["admin", "accountant"],
   /**
    * Kasadan çıkanın bütün gider kategorileri (maaş, kira, reklam): seçmek ve satırda adını görmek. Müdür personelin
-   * kategorilerini seçer (malzeme, bakım, temizlik); öbür satırın tutarını görür, kategori adını görmez (kasadan ödenen
-   * maaş ve avans kişisel ücrettir)
+   * kategorilerini seçer (malzeme, bakım, temizlik); öbür satırın yalnız türünü ve tutarını görür, kategori adını ve
+   * satırın metnini görmez (kasadan ödenen maaş ve avans kişisel ücrettir; `ownerRowAmountOnly`)
    */
   "kategori.tum": ["admin", "accountant"],
   /** Maaşlar ve kişisel ücretler: Maaşlar, avanslar, bordro dökümü (kişi kişi), personel belgeleri */
@@ -137,6 +137,16 @@ export function realRoleOf(actor: { role: Role; realRole?: Role }): Role {
  */
 export function linksAnyPhoto(actor: { role: Role; realRole?: Role }, held = false): boolean {
   return realRoleOf(actor) === "admin" || (actor.role === "admin" && held);
+}
+
+/**
+ * Yöneticinin kategorisindeki (maaş, kira, avans) kasadan çıkan satırını yalnız türü ve tutarıyla mı görür: kasanın
+ * rakamlarını okuyan ama bütün kategorileri görmeyen rol (müdür). Satırın yeri, açıklaması, fişin bilgileri ve
+ * fotoğrafı gitmez: serbest metin kişinin adını ve ücretini taşır ("Ayşe · Kasım avansı"; docs/ROLLER.md › Kararlar).
+ * Personel değişmedi: o satırın metnini düzeltme isteği açar (docs/KASA-RAPORU.md); yönetici ve muhasebeci tümünü görür
+ */
+export function ownerRowAmountOnly(role: Role): boolean {
+  return can(role, "kasa.rakam") && !can(role, "kategori.tum");
 }
 
 /** Müdürün personel gibi kullandığı ekranların eylemleri: yalnız yönetici "admin" düzeyinde (`adminLevel`) */

@@ -74,7 +74,8 @@ test("#14 kasa ve fiş fotoğrafı: başka şubenin fotoğrafı kilitli personel
   const rules = read("src/server/photo-read/rules.ts");
   for (const name of ["cashPhotoRules", "receiptPhotoRules"]) {
     const fn = body(rules, `export const ${name}: PhotoKindRules = {`);
-    assert.match(fn, /select\(\{ date: s\.\w+\.date, branchId: s\.\w+\.branchId \}\)/, name);
+    // (fişin satırında ayrıca bağlı kaydın kategorisi: müdür yöneticinin kategorisindeki satırın fişini görmez, docs/ROLLER.md)
+    assert.match(fn, /select\(\{\s*date: s\.\w+\.date,\s*branchId: s\.\w+\.branchId,?\s*(\/\/[^\n]*\s*)?(\w+: s\.\w+\.\w+,\s*)*\}\)/, name);
     assert.match(fn, /return Boolean\(row && !\(await staffBranchRefusal\(me, row\.branchId\)\) && \(await staffDayOpen\(row\.date, undefined, undefined, row\.branchId\)\)\);/, name);
   }
   // Yazarkasa Z'si kasanın kuralını paylaşır

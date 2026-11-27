@@ -317,7 +317,8 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından her oku
   // Kasa formu da aynı özetle; kör kasada (bulgu 0) yalnız açılış ve sayım alanları süzülür, kart ekleri aynı kalır
   assert.match(page, /lafpos=\{blind && lafposState\.day \? blindLafposDay\(lafposState\.day\) : lafposState\.day\}/, "kasa formu");
   // WhatsApp aynı özetle (LafPOS'un otomatik gününde personelden yalnız fotoğraf farkı süzülür: staffPhotoDiffs)
-  assert.match(page, /const extras = extrasFrom\(photoInfo, outs, report, lafposState\);[\s\S]*\.\.\.extras,/, "WhatsApp aynı özetle");
+  // (satırlar okuyanın rolüyle: müdüre yöneticinin kategorisindeki satırın yalnız tutarı, cashOutsShownTo)
+  assert.match(page, /const extras = extrasFrom\(photoInfo, shownOuts, report, lafposState\);[\s\S]*\.\.\.extras,/, "WhatsApp aynı özetle");
   // WhatsApp metni de (personel): kart aynı, tutar yok, düşüldüğü yazar
   const wa = whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: 520 });
   // LafPOS gününde karşılaştırma LafPOS'un adıyla (denetim E-39)

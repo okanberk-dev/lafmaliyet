@@ -3,9 +3,10 @@ import "server-only";
 import { and, asc, eq, gte } from "drizzle-orm";
 
 import { businessDate, staffCanReport, staffDayEditable, staffLateDay } from "@/lib/cash-report";
+import { staffExpenseLocked } from "@/lib/cash-outs";
 import { KEEP_DAYS, uploadRule, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
-import { can, opsLevel } from "@/lib/roles";
+import { can, opsLevel, ownerRowAmountOnly } from "@/lib/roles";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
@@ -61,12 +62,31 @@ export const cashPhotoRules: PhotoKindRules = {
 /** Yazarkasa Z'si: personel kuralı kasanınki, saklama kendi süresi (400 gün, docs/planlar/okc-z.md D12) */
 export const okcPhotoRules: PhotoKindRules = { ...cashPhotoRules, keepDays: KEEP_DAYS["kasa-okc"] };
 
-/** Fiş fotoğrafı: kasadan çıkan satırının günü açıksa; yalnız harcamaya bağlı fiş yöneticinin */
+/**
+ * Fiş fotoğrafı: kasadan çıkan satırının günü açıksa; yalnız harcamaya bağlı fiş yöneticinin. Müdür (rakamları görür,
+ * bütün kategorileri görmez; ownerRowAmountOnly) şubesinin her gününün fişini görür, yöneticinin kategorisindeki (maaş,
+ * kira, avans) satırınkini görmez: o satırın yalnız tutarı ona gider (docs/ROLLER.md › Kararlar)
+ */
 export const receiptPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.fis,
   async canView(me, photo) {
     if (me.role === "admin") return true;
-    const [row] = await getDb().select({ date: s.cashOuts.date, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(eq(s.cashOuts.photoId, photo.id)).limit(1);
+    const [row] = await getDb()
+      .select({
+        date: s.cashOuts.date,
+        branchId: s.cashOuts.branchId,
+        // Bağlı harcama kaydının kategorisi (kayıt yoksa null)
+        section: s.expenseCategories.section,
+        panelGroup: s.expenseCategories.panelGroup,
+        active: s.expenseCategories.active,
+      })
+      .from(s.cashOuts)
+      .leftJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, s.cashOuts.id))
+      .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+      .where(eq(s.cashOuts.photoId, photo.id))
+      .limit(1);
+    const category = row && row.section !== null && row.panelGroup !== null && row.active !== null ? { section: row.section, panelGroup: row.panelGroup, active: row.active } : null;
+    if (ownerRowAmountOnly(me.role) && staffExpenseLocked(category)) return false;
     if (can(me.role, "kasa.rakam")) return Boolean(row && !(await staffBranchRefusal(me, row.branchId)));
     return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
   },

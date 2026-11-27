@@ -723,6 +723,72 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     }
   });
 
+  test("Onaylar kartı müdüre yöneticinin kategorisindeki satırın yalnız tutarını taşır: yeri, açıklaması, fişi, önerisi ve notu yok (günün satırlarında ve olası tekrarda da)", async () => {
+    const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
+    // Serbest metin kişinin adını ve ücretini taşır ("Selin · Kasım avansı")
+    const SECRETS = [`Selin ${tag}`, `Kasım avansı ${tag}`, `Aralık avansı ${tag}`, `AV-${tag}`, `avansı yanlış ${tag}`];
+    const receipt = await photo(users.ali);
+    const salary = await db.transaction((tx) =>
+      write.writeCashOut(tx, users.ali, {
+        id: null,
+        date: YESTERDAY,
+        kind: "harcama",
+        amount: 3_333,
+        store: `Selin ${tag}`,
+        description: `Kasım avansı ${tag}`,
+        receiptDate: null,
+        receiptNo: `AV-${tag}`,
+        vat: null,
+        docType: "fis",
+        categoryId: cats.admin,
+        toExpenses: true,
+        photoId: receipt,
+      }),
+    );
+    outIds.push(salary.id);
+    // Personel maaş satırının metnini ve tutarını düzeltmek ister (onaya gider); aynı tutarda bir ekleme ister (olası tekrar)
+    const fix = await propose(users.fatma, {
+      op: "duzelt",
+      cashOutId: salary.id,
+      line: line({ amount: 3_400, store: `Selin ${tag}`, description: `Aralık avansı ${tag}`, receiptNo: `AV-${tag}`, docType: "fis", categoryId: null, photoId: receipt }),
+      message: `avansı yanlış ${tag}`,
+      clientKey: key(),
+    });
+    const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 3_333, store: "Bim", description: "buz" }), clientKey: key() });
+    try {
+      const cardIn = (cards: Awaited<ReturnType<typeof loadCashRequestQueue>>, id: number) => {
+        const c = cards.find((x) => x.id === id);
+        assert.ok(c && c.kind === "kasa-cikan", `kart ${id}`);
+        return c;
+      };
+      const m = await loadCashRequestQueue(NOW, "tuzla", true, false);
+      const card = cardIn(m, fix.row.id);
+      assert.equal(card.ownerDecides, true);
+      assert.deepEqual(
+        [card.line?.amount, card.line?.store, card.line?.description, card.line?.receiptNo, card.line?.photoId],
+        [3_400, null, null, null, null],
+        "öneri yalnız tutarıyla",
+      );
+      assert.deepEqual([card.before?.amount, card.before?.store, card.before?.description, card.before?.receiptNo, card.before?.photoId], [3_333, null, null, null, null], "satır yalnız tutarıyla");
+      assert.deepEqual(card.changes, ["Tutar: 3.333\u00a0₺ → 3.400\u00a0₺"], "değişikliklerde yalnız tutar");
+      assert.deepEqual([card.photoId, card.message], [null, null], "fiş ve personelin notu yok");
+      const row = card.context.lines.find((l) => l.id === salary.id);
+      assert.deepEqual([row?.label, row?.amount, row?.photo], ["Harcama", 3_333, false], "günün satırlarında adsız ve fişsiz");
+      // Tarayıcıya giden kartların hiçbirinde (olası tekrar dahil) satırın metni yok
+      const sent = JSON.stringify(m);
+      for (const secret of SECRETS) assert.ok(!sent.includes(secret), `müdürün kartlarında yok: ${secret}`);
+      // Yönetici bütün satırı, öneriyi, fişi, notu ve olası tekrarı görür
+      const a = await loadCashRequestQueue(NOW);
+      const full = cardIn(a, fix.row.id);
+      assert.deepEqual([full.before?.store, full.line?.description, full.photoId, full.message], [`Selin ${tag}`, `Aralık avansı ${tag}`, receipt, `avansı yanlış ${tag}`]);
+      assert.ok(full.changes.some((c) => c.includes(`Aralık avansı ${tag}`)), full.changes.join(" | "));
+      assert.equal(full.context.lines.find((l) => l.id === salary.id)?.label, `Selin ${tag} · Kasım avansı ${tag}`);
+      assert.ok(cardIn(a, add.row.id).context.duplicates.some((d) => d.startsWith(`Selin ${tag}`)), cardIn(a, add.row.id).context.duplicates.join(" | "));
+    } finally {
+      for (const x of [fix, add]) await review(users.ali, x.row.id, x.row.version, "reject");
+    }
+  });
+
   test("müdür ('admin' düzeyinde) başkasının bağsız fişini kendi satırına bağlayamaz (öteki şubenin fotoğrafı); onayladığı isteğin fişini bağlar", async () => {
     const gone = /Fotoğraf bulunamadı/;
     const foreign = await photo(users.fatma);

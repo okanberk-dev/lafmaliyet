@@ -84,7 +84,8 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
     const [settings, waste, extras, integrity, nextReport, branches] = await Promise.all([
       loadCashSettings(saved.branchId),
       dayWaste(data.date, saved.branchId),
-      cashReportExtras(dto),
+      // Yanıttaki WhatsApp metni gönderene: müdüre yöneticinin kategorisindeki satır yalnız tutarıyla (docs/ROLLER.md)
+      cashReportExtras(dto, me.role),
       cashReportIntegrity(dto),
       nextReportAfter(data.date, saved.branchId),
       listBranches(),
@@ -372,7 +373,7 @@ export async function cashReportWhatsapp(date: string, branchId?: string | null)
     const [settings, waste, extras, integrity, branches] = await Promise.all([
       loadCashSettings(r.branchId),
       dayWaste(d, r.branchId),
-      cashReportExtras(r),
+      cashReportExtras(r, me.role),
       cashReportIntegrity(r),
       listBranches(),
     ]);

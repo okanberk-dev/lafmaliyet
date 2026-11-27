@@ -14,7 +14,7 @@ import { NextRequest } from "next/server";
 import { BOTTOM_NAV, BOTTOM_SPARES, NAV_FOOTER, NAV_GROUPS, NAV_TREE, navTreeFor, sectionTabsFor } from "../src/components/panel/nav";
 import { adminTwoFactorRequired, alertsNewDevice, needsTwoFactorSetup, twoFactorRequiredFor } from "../src/lib/admin-security";
 import { featureAudience } from "../src/lib/branch-features";
-import { sheetCashOutsByDate } from "../src/lib/cash-outs";
+import { amountOnlyRow, ownerRowsAmountOnly, sheetCashOutsByDate } from "../src/lib/cash-outs";
 import { alertRecipients } from "../src/lib/checklist-alerts";
 import { ROLE_ORDER, ROLES, type Role } from "../src/lib/constants";
 import { karaokeAudience } from "../src/lib/karaoke/staff-mail";
@@ -39,6 +39,7 @@ import {
   MANAGER_EXTRA_PATHS,
   openableHref,
   opsLevel,
+  ownerRowAmountOnly,
   realRoleOf,
   ROLE_HINTS,
   ROLE_PERMISSIONS,
@@ -188,6 +189,26 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.equal(opsLevel("manager"), "admin");
     assert.equal(adminLevel("manager"), "staff");
     assert.equal(cashAudience("manager"), "admin");
+    // Yöneticinin kategorisindeki kasadan çıkan satırını yalnız türü ve tutarıyla görür (yönetici ve muhasebeci tümünü;
+    // personel değişmedi: satırın metnini düzeltme isteği açar)
+    assert.deepEqual(
+      ROLE_ORDER.filter((r) => ownerRowAmountOnly(r)),
+      ["manager"],
+    );
+    assert.deepEqual(amountOnlyRow({ id: 1, kind: "harcama", amount: 5_000, store: "Ayşe", description: "Kasım avansı", receiptNo: "12", receiptDate: "2026-11-03", vat: 0, photoId: 9, categoryId: 4, categoryName: "Avans", docType: "fis" }), {
+      id: 1,
+      kind: "harcama",
+      amount: 5_000,
+      store: null,
+      description: null,
+      receiptNo: null,
+      receiptDate: null,
+      vat: null,
+      photoId: null,
+      categoryId: 4,
+      categoryName: null,
+      docType: "fis",
+    });
     assert.ok(canEditShifts("manager"));
     assert.equal(canEditShifts("staff"), false);
     // Şube zorunlu ve kilitli
@@ -248,10 +269,21 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.deepEqual(byDate["2026-11-04"], [{ id: 8, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: 5 }]);
     // Tarayıcıya giden prop (RSC yükü): kategorinin adı ve kimliği, harcama kaydı, yazanı yok
     assert.doesNotMatch(JSON.stringify(byDate), /Maaş|Kira|categoryName|categoryId|expenseEntryId|createdBy|lafposId/);
-    // Sayfa pencereye bütün satırı değil beyaz listeden geçeni verir (gün görünümündeki hideName kuralının ay karşılığı)
+    // Müdürün satırları önce ownerRowsAmountOnly'den geçer: yöneticinin kategorisindeki (12 maaş; 13 personelin) satırın
+    // yalnız türü ve tutarı, açıklaması ve fişi gitmez (davranışı tests/roller-db.test.ts)
+    const manager = sheetCashOutsByDate(ownerRowsAmountOnly(rows, new Set([13])));
+    assert.deepEqual(manager["2026-11-03"], [{ id: 7, kind: "harcama", amount: 15_000, store: null, description: null, photoId: null }]);
+    assert.deepEqual(manager["2026-11-04"], byDate["2026-11-04"], "personelin kategorisindeki satır olduğu gibi");
+    // Sayfa pencereye bütün satırı değil beyaz listeden geçeni verir; satırlar okuyanın rolüne göre (cashOutsShownTo)
     const page = read("src/app/panel/kasa/page.tsx");
-    assert.match(page, /cashOuts=\{sheetCashOutsByDate\(monthOuts\)\}/);
+    assert.match(page, /const shownMonthOuts = await cashOutsShownTo\(user\.role, monthOuts\);/);
+    assert.match(page, /cashOuts=\{sheetCashOutsByDate\(shownMonthOuts\)\}/);
+    assert.match(page, /for \(const o of shownMonthOuts\) \(outsByDate\[o\.date\] \?\?= \[\]\)\.push\(o\);/);
     assert.doesNotMatch(page, /cashOuts=\{outsByDate\}/);
+    // Gün görünümü: müdürün satırları, formun özeti ve WhatsApp metni de aynı süzgeçten
+    assert.match(page, /const shownOuts = await cashOutsShownTo\(user\.role, outs\);/);
+    assert.match(page, /: shownOuts\.map\(\(o\) => lockRow\(hideName\(o\)\)\)/);
+    assert.match(page, /extrasFrom\(photoInfo, shownOuts, report, lafposState\)/);
     // İstemci bileşeni sunucunun satır tipini almaz
     assert.doesNotMatch(read("src/app/panel/kasa/cash-history.tsx"), /CashOutDTO/);
   });

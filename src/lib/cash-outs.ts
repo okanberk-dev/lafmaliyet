@@ -294,13 +294,38 @@ export function staffCashOutRow<T extends Record<StaffCashOutField, unknown>>(ro
   return { ...(out as Pick<T, StaffCashOutField>), locked };
 }
 
+/**
+ * Yöneticinin kategorisindeki satırdan müdüre gitmeyen alanlar (src/lib/roles.ts › ownerRowAmountOnly): serbest metin
+ * (yer ya da kime, açıklama), fişin bilgileri ve fotoğrafı, kategorinin adı. Tür, tutar ve kimlikler kalır (kasanın
+ * hesabı ve satırın kilidi onlarla)
+ */
+export const OWNER_ROW_HIDDEN_FIELDS = ["store", "description", "receiptDate", "receiptNo", "vat", "photoId", "categoryName"] as const;
+
+/** Satırın yalnız türü ve tutarıyla hâli: OWNER_ROW_HIDDEN_FIELDS'ten satırda olanlar null */
+export function amountOnlyRow<T extends object>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const k of OWNER_ROW_HIDDEN_FIELDS) if (k in out) out[k] = null;
+  return out as T;
+}
+
+/** Satır yöneticinin kategorisinde mi: bağlı harcama kaydının kategorisi personelin kategorileri (staffCategory) arasında değil */
+export function ownerCategoryRow(o: { categoryId: number | null }, staffCategoryIds: ReadonlySet<number>): boolean {
+  return o.categoryId !== null && !staffCategoryIds.has(o.categoryId);
+}
+
+/** Müdüre giden satırlar: yöneticinin kategorisindekiler yalnız türü ve tutarıyla (amountOnlyRow), öbürleri olduğu gibi */
+export function ownerRowsAmountOnly<T extends { categoryId: number | null }>(rows: readonly T[], staffCategoryIds: ReadonlySet<number>): T[] {
+  return rows.map((o) => (ownerCategoryRow(o, staffCategoryIds) ? amountOnlyRow(o) : o));
+}
+
 /** Kasa ay görünümünün rapor penceresindeki satır (ReportSheet): adı, tutarı, fişi; kategori ve kayıt bağı yok */
 export type SheetCashOutRow = CashOutLine & { id: number; photoId: number | null };
 
 /**
  * Ay görünümünün (Günden güne) tarayıcıya giden kasadan çıkanları, güne göre (beyaz liste): pencere yalnız adı, tutarı ve
- * fiş simgesini yazar; kategori adı ve kimliği, harcama kaydı, yazanın kimliği gitmez. Müdür maaş, kira gibi kategorinin
- * adını görmez (`kategori.tum` yok; gün görünümünde hideName), pencere de kimseye kategori yazmaz (docs/ROLLER.md › Kararlar)
+ * fiş simgesini yazar; kategori adı ve kimliği, harcama kaydı, yazanın kimliği gitmez. Pencere kimseye kategori yazmaz;
+ * müdürün satırları buraya ownerRowsAmountOnly'den geçmiş gelir: maaş, kira gibi kategorideki satırın yalnız tutarı
+ * (docs/ROLLER.md › Kararlar)
  */
 export function sheetCashOutsByDate(rows: readonly (SheetCashOutRow & { date: string })[]): Record<string, SheetCashOutRow[]> {
   const out: Record<string, SheetCashOutRow[]> = {};

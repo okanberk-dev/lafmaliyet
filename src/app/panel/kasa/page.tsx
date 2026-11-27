@@ -74,7 +74,7 @@ import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/close
 import { loadKasaCariHints, loadLinkedCashOuts, loadSupplierNames } from "@/server/data/cari";
 import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
 import { photoRemovalStates, staffCashOutRequests, staffOldCashOutDays } from "@/server/data/cash-out-requests";
-import { cashOutCategories, cashOutsBetween, cashOutsOn, type CashOutView } from "@/server/data/cash-outs";
+import { cashOutCategories, cashOutsBetween, cashOutsOn, cashOutsShownTo, type CashOutView } from "@/server/data/cash-outs";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
 import { myCashRequests, pendingCashForDay, pendingCashForDayAdmin, proposedByForReports } from "@/server/data/cash-requests";
 import {
@@ -430,6 +430,10 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     : [new Set<number>(), [], {}];
   const adminCategoryRow = (o: (typeof outs)[number]) => o.categoryId !== null && !staffCats.has(o.categoryId);
   const hideName = (o: (typeof outs)[number]) => (adminCategoryRow(o) ? { ...o, categoryName: null } : o);
+  // Müdür (ownerRowAmountOnly): yöneticinin kategorisindeki (maaş, kira, avans) satır yalnız türü ve tutarıyla; yeri,
+  // açıklaması, fişi ve fotoğrafı da gitmez (kişinin adı ve ücreti serbest metinde). Satırlar, formun özeti ve WhatsApp
+  // metni bundan kurulur (docs/ROLLER.md › Kararlar). Öbür rollerde olduğu gibi
+  const shownOuts = await cashOutsShownTo(user.role, outs);
   // Tedarikçi ödemesine bağlı satır yöneticiden başkasına kilitli görünür (cari yalnız yöneticinin; sunucu da reddeder:
   // persist › lockCashOutLink, deleteCashOut › assertCashOutDeletable gerçek role bakar). Müdüre yöneticinin
   // kategorisindeki (maaş, kira) satır da kilitli: düzeltmesi ve silinmesi yöneticinin (writeCashOut, assertOwnerRowOpen)
@@ -437,7 +441,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const dayOuts: CashOutView[] = admin
     ? allCategories
       ? outs.map(lockRow)
-      : outs.map((o) => lockRow(hideName(o)))
+      : shownOuts.map((o) => lockRow(hideName(o)))
     : outs.map((o) => staffCashOutRow(hideName(o), linked.has(o.id)));
   // Raporun fotoğraf bilgisi: WhatsApp metninin "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı yazılan" satırları
   // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların
@@ -458,7 +462,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   });
   const whatsapp = report && !blind
     ? (() => {
-        const extras = extrasFrom(photoInfo, outs, report, lafposState);
+        const extras = extrasFrom(photoInfo, shownOuts, report, lafposState);
         const shown = staffLafposAuto ? { ...report, note: staffAutoNote(report.note, report) } : report;
         const text = whatsappText(shown, {
           by: report.submittedByName,
@@ -782,9 +786,11 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin", undefined, user.role));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const [infos, photoBadges] = await Promise.all([cashReportPhotoInfo(monthReports, "admin"), lafposPhotoBadges(getDb(), monthReports.map((r) => r.id)).catch(() => new Map())]);
-  // Sunucuda kalır (extrasFrom): tarayıcıya giden pencere satırı sheetCashOutsByDate'ten (kategori adı gitmez)
+  // Tarayıcıya giden pencere satırı sheetCashOutsByDate'ten (kategori adı gitmez), günün WhatsApp metni extrasFrom'dan;
+  // ikisi de müdürde yöneticinin kategorisindeki satırın yalnız tutarıyla (cashOutsShownTo; docs/ROLLER.md › Kararlar)
+  const shownMonthOuts = await cashOutsShownTo(user.role, monthOuts);
   const outsByDate: Record<string, typeof monthOuts> = {};
-  for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
+  for (const o of shownMonthOuts) (outsByDate[o.date] ??= []).push(o);
   // Yöneticinin kayıtlı rapordaki kümülatif satırı: zincir ayın içinde eskiden yeniye son saklanan kümülatife bağlanır
   const okcAdmin: Record<number, OkcAdminView> = {};
   let lastCum = okcBefore.cum ?? null;
@@ -854,8 +860,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
             totals={totalsOf(days)}
             whatsappPhone={settings.whatsapp}
             photos={historyPhotos}
-            // Pencereye yalnız satırın adı, tutarı ve fişi (beyaz liste): müdüre maaş, kira gibi kategorinin adı gitmez
-            cashOuts={sheetCashOutsByDate(monthOuts)}
+            // Pencereye yalnız satırın adı, tutarı ve fişi (beyaz liste): müdüre maaş, kira gibi kategorideki satırın yalnız tutarı
+            cashOuts={sheetCashOutsByDate(shownMonthOuts)}
             carry={carryByDate}
             revisions={revisionsById}
             proposedBy={Object.fromEntries([...monthProposed].map(([id, m]) => [id, Object.fromEntries(m)]))}
