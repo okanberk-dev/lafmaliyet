@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 13:50)
+# Kalanlar ve devam (28 Kasım 2026, 14:35)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -48,105 +48,78 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
 - Her önemli adımda günlüğe saatli satır. Kullanım limiti %95'i geçerse yarım işi "ARA KAYIT (yarım)" diye commit'le,
   push'la, günlüğe yaz ve dur.
 
-## 3. Şu anki durum (28 Kasım 03:10)
+## 3. Şu anki durum (28 Kasım 14:35)
 
-**Yeni istek (28 Kasım 02:20):** `docs/planlar/istek-28-kasim.md` (sahibin sözü ve geliştirilmiş prompt; sahip beş
-varsayımı 02:40'ta onayladı). Öncelik: Windows'ta sorusuz ve kusursuz kurulum ile güncelleme, eski kasa programı
-sorularının kalkması, "AsilPOS bilgisayarı", ladmin'de "Şube ekleme" sekmesi, kasada gerçek açılışta ladmin girişi ve
-şube seçimi; sonra §4'teki kalanlar. Bu oturum Mac'te çalışıyor (`~/Downloads` altında lafmaliyet ve `lafpos` klasörleri; çalışma
-ağaçları `~/Downloads/asilpos-worktrees/`). Dokuz ön inceleme raporu Mac'te: `~/Downloads/lafmaliyet-ekler/harita-28-kasim/`
-(kurulum ve güncelleme, masaüstü deneyimi, açılış ve personel, Merkez ve yayın, şube ve asıl yönetici, iki deponun
-kalanları, altyapı, sözleşme koruma listesi). Yeni işe başlamadan ilgili raporu oku.
+**İstek ve tasarımlar:** `docs/planlar/istek-28-kasim.md` (sahibin 28 Kasım isteği ve geliştirilmiş prompt),
+`docs/planlar/yonetim-konsolu.md` (yönetim konsolu; iki bağımsız incelemeden geçti, görevlere bölündü),
+`docs/planlar/kasa-acilis-ve-asil-yonetici.md` (P-B1 ve P-B2 bitti, K5 kaldı). Bu oturum Mac'te çalışıyor (`~/Downloads`
+altında lafmaliyet ve `lafpos` klasörleri; çalışma ağaçları `~/Downloads/asilpos-worktrees/`). Mac'teki ekler
+`~/Downloads/lafmaliyet-ekler/`: `DURUM.md` (saatli günlük), `harita-28-kasim/` (dokuz ön inceleme raporu),
+`konsol-inceleme/` (konsol tasarımının iki incelemesi). Yeni işe başlamadan ilgili raporu oku.
 
-**Bu oturumda birleşenler:**
-- Kasa **#195** kasa penceresi kapatınca kapanır (squash 6ef5858, 28 Kas 02:27); kanal derleme 1795822029'u sunuyor.
-- Panel **#174** denetimin beş küçük hatası (merge commit 308b2ad1, 03:01). Gece 00:00–05:00 düşen
-  `tests/sube-ayrimi-db.test.ts` düzeltmesi bununla main'e girdi. PR'daki kırmızı "CodeQL" denetimi testin karşılaştırma
-  için bilerek tuttuğu eski desendi (`tests/satis-ozet-redos.test.ts`); engel değildi.
+**28 Kasım'da main'e girenler:**
+- Kasa: #195 pencere kapatınca kapanır; #197 siteden kurulum çalışan kasada da tamamlanır; #196 eski kasa programı
+  sorusu çıkmaz; #198 kurulum hiçbir şey sormaz, yeni sürümü de kendisi alır; #199 hızlı ve markalı açılış, kasa programı
+  günlüğü, çöken pencere geri gelir; #200 panel adresi yerine yönetim konsolu adresi yazılamaz (ve şube kurucusunun iki
+  boş satırını sabitleyen test, `AGENTS.md` dal kuralı).
+- Panel: #174 denetimin küçük hataları; #175 kör sayımlı WhatsApp metni; #181 P-B1 (asıl yönetici, hesap koruması,
+  `/panel/sube-ekleme`); #183 P-B2 (kasa açılışı uçları `/api/asilpos/acilis/giris`, `bagla`, `teslim`; ilk personel;
+  "Kasayı serbest bırak"); #185 CI süre sınırı 25 dakika; belge PR'ları #180, #182, #184.
+- Canlı: site, ladmin ve Uzaktan 200; #183'ün ucu canlıda yanıt veriyor. Marina Merkez'de "Otomatik"; 28 Kas 09:44'te
+  #196 derlemesini kurdu. #198, #199 ve #200 gün sonunda ya da 29 Kas sabah açılışta kurulur.
 
-**28 Kasım gündüz birleşenler:** panel #175 (kör sayımlı WhatsApp metni), #180 (belge), #181 (P-B1: asıl yönetici,
-hesap koruması, `/panel/sube-ekleme`); kasa #197 (siteden kurulum çalışan kasada da tamamlanır), #196 (eski kasa programı
-sorusu çıkmaz), #198 (kurulum hiçbir şey sormaz, yeni sürümü de kendisi alır). Marina Merkez'de "Otomatik"; 28 Kas
-09:44'te #196 derlemesini kurdu. Sahip: asıl yönetici hesabı canlıda açık.
+**Yarım iş (dal `yonetim-konsolu-oturum`, çalışma ağacı `asilpos-worktrees/panel-konsol-a1`):** yönetim konsolunun ilk
+PR'ı (tasarımdaki K-A'nın ilk yarısı). Gönderilmiş ara kayıtlar: `src/lib/yonetim-host.ts`, konsol belirteci ve çerezi
+(`session.ts`), `requireYonetim` (`dal.ts`), konsol giriş eylemi ve sayfası, alan adı kuralı (`proxy.ts`,
+`next.config.ts`), Şube ekleme bileşeninin ortak klasöre taşınması. Kalan: konsol kabuğu ve sekmeleri (Şubeler ve
+kasalar, Lisans ve güncelleme), `requireAnaAdmin`'in konsol oturumunu da kabul etmesi, testler, belgeler, PR. 28 Kas
+14:15'te ağ kesintisiyle durdu; 16:20 limit sıfırlanmasından sonra kaldığı yerden sürer.
 
-**Sürüyor (28 Kas 13:10):** panel dalı `kasa-acilis-uclari` (P-B2), kasa dalı `hizli-markali-acilis` (açılış sırası,
-markalı açılış penceresi, günlük, çöken pencere geri gelir). Aşağıdaki "Açık" listesi 03:10'a aittir; hepsi birleşti.
+**Kararlar (sahip onayladı):** kasadan devralma yok (kurulu şube kasada seçilemez; değişiklik yalnız asıl yöneticinin
+"Kasayı serbest bırak" işlemiyle); yeni açılış akışı yalnız yeni kasada (Marina'da hiçbir şey çıkmaz); kurulum hiçbir şey
+sormaz; yönetici hesaplarını yalnız asıl yönetici yönetir (konsol çıkınca); P5 sırada kalır (konsol ve açılış akışından
+sonra, gündüz ve provayla); "Kasa bilgisayarı modu" yeni kurulumda açık, Marina'da tek dokunuşla.
 
-**Açık:**
-- Panel **#175** personele kör sayımlı WhatsApp metni: main alındı (`docs/planlar/DEVAM.md` çakışması iki bölüm de
-  korunarak çözüldü, asistan bilgisi yeniden üretildi; yerelde tip ve 3787 test yeşil), CI koşuyor. Yeşilse merge commit.
-- Kasa dalı `siteden-kurulum-calisan-kasa`: siteden kurulum çalışan kasada da tamamlanır (görev sorgusuna güvenmez,
-  kurulum klasöründen çalışan süreçleri durdurur, taşımalar yeniden denenir ve tek yerde geri alınır, ileti ne
-  yapılacağını söyler, tek kopya kilidi, eski sürüm yeniyi ezmez; Windows CI'da çalışan kurulumun üstüne kurulum adımı).
-- Kasa dalı `eski-kasa-sorusu`: haftalık "eski kasa programı açılışta başlıyor" kutusu ve Kasa hazırlığı'ndaki uyarı
-  kalkar; "15 saniyede yeniden açılır" ve "yarım saatte bir" yazan bayat metinler düzelir; ModPOS'un veri çekimi, geçmiş
-  günleri ve raporlardaki etiketi kalır.
-- İkisi de CI yeşil ("denetim" ve "windows") ve kodu yazmayan bir inceleme geçince squash ile birleşir.
+**Limit ve süreklilik:** büyük ajan dalgaları 5 saatlik limiti hızla yer; iş küçük PR'larla, aynı anda en çok iki
+uygulayıcıyla sürer. Limit artı tahmini maliyet %90'ı geçecekse yeni iş başlatılmaz; ajanlar her adımda push eder; yarım
+iş çalışma ağacında durur ve "ARA KAYIT (yarım)" diye gönderilir. Kalıcı zamanlanmış görevler: `asilpos-limit-sonrasi-devam`
+(sıfırlanmadan sonra oturumu dürter) ve `asilpos-bekci` (üç saatte bir).
 
-**Kararlar (bu istekle; tasarım `docs/planlar/kasa-acilis-ve-asil-yonetici.md`'yi şu yönde değiştirir):**
-- Kasadan devralma YOK: kasası kurulu şube kasada seçilemez. Bilgisayar değişikliği yalnız ladmin'den, asıl yöneticinin
-  "Kasayı serbest bırak" işlemiyle (anahtar döner, bekleyen kodlar iptal olur).
-- Yeni akış yalnız yeni kasada devreye girer: gerçek kullanıma geçmiş, şubesi kilitli ya da gerçek günü olan kasada
-  (Marina) hiçbir yeni soru, şerit ya da ağ çağrısı çıkmaz. Panelin açılış ucu yoksa kasa bugünkü gibi davranır.
-- "Kurulu" sayılma ölçütü tek bir eski deneme günü değildir (Tuzla'nın eski deneme günü onu kilitlemesin): kullanılabilir
-  anahtar ve kullanılmış kurulum kodu ya da yakın tarihte kabul edilmiş gün.
-- Tuzla kasası deneme modundayken panelde kasa programı ModPOS kalır (çekim durmasın); "Bilgisayara kur" denen şube
-  kasada seçilebilir olur. AsilPOS'a geçiş ayrı adımdır.
-- İlk personel (patron, müdür, barista: ad ve PIN) şube eklenirken girilir; panelde şifreli durur, kasa bağlanınca
-  kasanın açık anahtarıyla şifrelenip teslim edilir, kasa onaylayınca silinir. Düz PIN hiçbir kayda yazılmaz. Kasada
-  "Denemeyi bitir" işleminin içinde örnek hesapların yerine geçer.
-- Kurulum hiçbir seçenek sormaz (masaüstü kısayolu, açılışta kasa ekranı, uyku ayarı hep açık). Gün açıkken "yine de
-  kurulsun mu" sorusu ve hata kutuları kalır.
-- "Kasa bilgisayarı modu" (duvar kâğıdı, güç, bildirim vb.) yeni kurulumda açık gelir; canlıdaki Marina'da kendiliğinden
-  görünüm değiştirmez, Yönetim › Ayarlar ve yedek'ten tek dokunuşla açılır. Hepsi geri alınabilir.
-
-**Yayın ve Merkez (doğrulandı):** kasa main'e girince Vercel kanalı birkaç dakikada yeni derlemeyi sunar; "Otomatik"
-kipteki dükkân açık gün yokken kendiliğinden kurar (bilgisayar gece kapalı olduğu için sabah açılışta). "Ben gönderince"
-kipindeki dükkâna gönderim Merkez'de sahibin oturumuyla yapılır; ajan sahibin parolasını giremez. Yeni kaydolan dükkân
-"Ben gönderince" ile başlar. Marina'nın kipi ve kurulu derlemesi sabah açılıştan sonra Merkez durum kaydından okunacak.
-
-**Kasada bekleyen:** sabah açılışta Marina'nın derlemesi en az 1795822029 olmalı (bakma yolu: Vercel'deki kasa projesinin
-`KV_REST_API_URL` ve `KV_REST_API_READ_ONLY_TOKEN` değişkenleriyle Upstash; kasa deposu `api/uzaktan.ts` › `VERSIONS_KEY`,
-`api/_merkez.ts` › `SET_KEY`, `statusKey`; yalnız zaman ve derleme numarası yazdırılır). Sahibin Token denemesinin sonucu sorulacak.
+**Sahibe sorulacak / hatırlatılacak:** Token denemesinin sonucu; 29 Kas sabah ilk fişte yazıcı (açılış sırası değişti);
+asıl yönetici hesabında iki adımlı doğrulama kapalı (açması önerildi); üç depo GitHub'da herkese açık ve main korumasız.
 
 ## 4. Sıradaki işler, bu sırayla
 
-Aynı anda en çok iki iş: biri panel, biri kasa. Kullanım limiti dar: büyük ajan dalgası yerine tek tek, küçük PR'lar.
+Aynı anda en çok iki iş: biri panel, biri kasa.
 
-1. **Kasa:** `siteden-kurulum-calisan-kasa` ve `eski-kasa-sorusu` PR'larını incele, CI yeşilse squash ile birleştir; kanalı gör.
-2. **Panel #175:** CI yeşilse merge commit.
-3. **Kasa: sorusuz kurulum.** Kurulum dosyasının Hoş geldiniz, Bileşenler ve bitiş kutuları kalkar (sessiz kurulum ve CI
-   aynı kalır); kurulum biter bitmez kanaldaki yeni sürümü ister (iki dakika beklemez); tek kopya kilidi; eski kurulum
-   dosyası yeni kurulumu ezmez; kurulum yarıda kesilirse (elektrik) açılışta kendini onaran tek seferlik görev. Windows
-   CI'a gün açık, eski dosya ve "Şimdi güncelle" adımları. `baslat.cmd` baytlarına dokunulmaz.
-4. **Panel P-B1:** asıl yönetici (şube açma, kapatma, silme, kasa kaynağı, kasa anahtarı ve geçiş günü yalnız onda;
-   hesabı öteki yöneticilere karşı korunur; kapanan şubenin kodu iptal) ve yeni **"Şube ekleme"** sayfası
-   (`/panel/sube-ekleme`, yalnız asıl yöneticiye; yeni şube, şube listesi ve durumu, "Bilgisayara kur"). Göç yok.
-4b. **Yönetim konsolu (sahibin isteği, 28 Kas):** `yonetim.laffogato.net`, yalnız asıl yönetici. Tasarım iki bağımsız
-   incelemeden geçti ve görevlere bölündü: `docs/planlar/yonetim-konsolu.md` › Görevler. Sıra: P-B2 → **K-A** (konsol
-   oturumu, alan adı kuralı, kabuk, Şubeler ve kasalar, Lisans bağlantısı; ladmin değişmez) → canlı adım (alan adını
-   Vercel'e ekle, dene) → **K-B** (yönetici hesapları yalnız asıl yöneticide, Yöneticiler sekmesi, kurtarma betiği) →
-   **K-C** (ladmin'den ayırma). Kasada: panel adresi olarak konsol adresinin reddi (K5 ile).
-5. **Panel P-B2:** kasa açılışı uçları (`/api/asilpos/acilis/giris`, `bagla`, `teslim`), kasa durumu, ilk personel,
-   "Kasayı serbest bırak". Var olan uçların yolu, gövdesi ve imzası değişmez; Marina'nın anahtarı dönmez. Göç yok.
-6. **Kasa K5:** "Denemeyi bitir"de ladmin girişi ve şube seçimi (P-B2 canlıya girdikten sonra).
-7. **Kasa: AsilPOS bilgisayarı.** (a) açılış hızı ve markalı açılış ekranı, kasa programı günlüğü, çöken pencerenin geri
-   gelmesi; (b) "Kasa bilgisayarı modu" (yeni betik, Yönetim kartı, kaldırınca geri alma, Windows CI adımları);
-   (c) Uygulamalar listesinde sürüm, simge ve kurulum görselleri.
-8. **Kasa: "Kurulumu yap" fiş yazıcısını da bulsun ve denenebilsin** (Yazarkasa POS kurulum adımlarına "Fiş yazıcısı"
-   adımı ve "Deneme fişi yazdır"; yazıcı yoksa uyarı verir, kurulum düşmez).
-9. Panel: **Özel günler bölümünü kaldır.** Dikkat: ileri tarihli kapalı gün, kapalı işaretini kaldırma ve personelin
+1. **Panel K-A (konsolun ilk PR'ı):** yukarıdaki yarım işi bitir; bağımsız incele (oturum ve giriş kodu satır satır);
+   CI yeşilse merge commit. ladmin ekranları bu PR'da değişmez.
+2. **Canlı adım:** K-A canlıya çıkınca `yonetim.laffogato.net` alan adını Vercel'deki panel projesine ekle, `YONETIM_URL`
+   tanımla; konsolda giriş, yanlış hesap, çıkış, sekmeler ve `/api/pos/gun` 404 denenir; Marina'nın bağlantı sorgusu 200
+   kalmalı. Önce kod, sonra alan adı.
+3. **Panel K-B:** yönetici hesapları kuralı ve Yöneticiler sekmesi; şube kapatma / silme / tür / kasa programı / geçiş
+   günü / kasa anahtarı düğmelerinin konsola gelmesi; kurtarma betiği.
+4. **Panel K-C:** ladmin'den ayırma (düğmeler yerine not, `/panel/sube-ekleme` yönlendirmesi, asıl yönetici eylemleri
+   yalnız konsol oturumuyla). Konsol canlıda denenmeden birleşmez.
+5. **Kasa K5:** "Denemeyi bitir"de ladmin girişi ve şube seçimi (sözleşme: `docs/ASILPOS.md` › Kasa açılışı; kasa
+   tarafının ön incelemesi `harita-28-kasim/kasa-acilis-sube-personel.md`). Kurulu şube seçilemez; internet yoksa
+   ertelenebilir; ilk personel kasanın açık anahtarıyla şifreli gelir ve "Denemeyi bitir" içinde uygulanır.
+6. **Kasa: "Kasa bilgisayarı modu"** (yeni betik, Yönetim kartı, kaldırınca geri alma, Windows CI adımları; duvar kâğıdı,
+   güç, bildirim vb.; hepsi geri alınabilir) ve Uygulamalar listesi, simge, kurulum görselleri.
+7. **Kasa: "Kurulumu yap" fiş yazıcısını da bulsun ve denenebilsin.**
+8. Panel: **Özel günler bölümünü kaldır.** Dikkat: ileri tarihli kapalı gün, kapalı işaretini kaldırma ve personelin
    "Kapalı gün bildirimlerim" listesi yalnız bu ekranda yaşıyor; önce Kasa raporu'na taşınır. Veriler silinmez, göç yok.
-10. Kasa: Giderler gün sonu penceresinden de girilir; kasaya hata kaydı (panelin #168'i örnek; göç var).
-11. Panel P4 (CI'a şema ve göç denetimi; asistan bilgisi derlemede üretilsin ki her PR'da çakışmasın), P7 dönem kapanışı
-    (kasanın gün paketi kapalı aya düşse de reddedilmez).
-12. **Basitleştirme:** önce envanter belgesi (`SADELESTIRME.md`, henüz yok), sahibin onayı, sonra küçük PR'lar.
-13. **P5** (dal `p5-ay-ayarlari` bayat: main'le on dosyada çakışıyor): main'den yeni dal, commit'ler seçilerek;
-    göç `0102_ay_ayarlari`; gündüz ve canlı kopyada provayla. SGK işveren oranı varsayılanı değişmez.
-14. ModPOS API anahtarı ekranları: panelde anahtar girilen ekran yok, yalnız durum ve yönerge kartları var; kapsamı sahibe sor.
-15. Ürün görselleri (panel şema ve yükleme, panel ucu, kasa, site: dört PR), P8 (örnek Z fotoğrafı gerekir), P6, P9.
-16. A3 eski adları kaldıran daraltma göçü: en erken 4 Aralık, bütün kasalar yeni sürümdeyken.
-17. asil-platform (ayrı depo `okanberk-dev/posyazilim`) satışa hazırlık; son rapor `RAPOR-son.md` (`~/Downloads/lafmaliyet-ekler/`).
+9. Kasa: Giderler gün sonu penceresinden de girilir; kasaya hata kaydı (panelin #168'i örnek; göç var). Kurulum sırasında
+   elektrik kesilirse açılışta kendini onaran tek seferlik görev (yapılmadı).
+10. Panel P4'ün kalanı (CI'a şema ve göç denetimi; asistan bilgisi derlemede üretilsin), P7 dönem kapanışı.
+11. **Basitleştirme:** önce envanter belgesi (`SADELESTIRME.md`, henüz yok), sahibin onayı, sonra küçük PR'lar.
+12. **P5** (dal `p5-ay-ayarlari` bayat: main'le on dosyada çakışıyor): main'den yeni dal, commit'ler seçilerek; göç
+    `0102_ay_ayarlari`; gündüz ve canlı kopyada provayla. SGK işveren oranı varsayılanı değişmez; oran sahibe sorulur.
+13. ModPOS API anahtarı ekranları: panelde anahtar girilen ekran yok, yalnız durum ve yönerge kartları var; kapsamı sahibe sor.
+14. Ürün görselleri (panel şema ve yükleme, panel ucu, kasa, site: dört PR), P8 (örnek Z fotoğrafı gerekir), P6, P9.
+15. A3 eski adları kaldıran daraltma göçü: en erken 4 Aralık, bütün kasalar yeni sürümdeyken.
+16. asil-platform (ayrı depo `okanberk-dev/posyazilim`) satışa hazırlık; Merkez'in lisans ve güncelleme ekranlarını
+    konsolda tek ekrana almak; son rapor `RAPOR-son.md` (`~/Downloads/lafmaliyet-ekler/`).
 
 **Ertelenen (sahibin kararı, 28 Kas):** sitenin e-Arşiv'i Paraşüt OAuth'a geçmeli; **son tarih 10 Aralık** (eski
 şifreli giriş o gün duruyor). Şart: bağlantı şube başına, her şube kendi Paraşüt hesabını kendisi ekleyebilsin, biri
