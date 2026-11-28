@@ -4,15 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
-import { KONSOL_SEKMELERI } from "@/lib/yonetim-host";
+import { KONSOL_SEKMELERI, sekmeAcik } from "@/lib/yonetim-host";
 
-/** Konsolun iki sekmesi; telefonda yan yana sığmazsa yatay kayar (sayfa taşmaz) */
+/** Konsolun iki sekmesi (şubenin işlem sayfasında Şubeler ve kasalar seçili); telefonda sığmazsa yatay kayar (sayfa taşmaz) */
 export function KonsolSekmeleri() {
   const yol = usePathname();
   return (
     <nav aria-label="Konsol bölümleri" className="-mb-px flex gap-1 overflow-x-auto pt-2 [scrollbar-width:none]">
       {KONSOL_SEKMELERI.map((s) => {
-        const acik = yol === s.href;
+        const acik = sekmeAcik(s.href, yol);
         return (
           <Link
             key={s.href}

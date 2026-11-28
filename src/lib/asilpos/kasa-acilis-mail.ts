@@ -1,6 +1,6 @@
 // Kasa açılışının asıl yöneticiye giden e-postaları (docs/ASILPOS.md › Kasa açılışı): şubenin kasası yeni bir
-// bilgisayara bağlandı ya da ladmin'den serbest bırakıldı. Parola, PIN, belirteç ve anahtar içermez. Saf
-// (tests/kasa-acilis.test.ts).
+// bilgisayara bağlandı ya da serbest bırakıldı. Yön gösteren metin adres yazmaz, "Yönetim konsolu" der. Parola, PIN,
+// belirteç ve anahtar içermez. Saf (tests/kasa-acilis.test.ts).
 
 import { emailShell, heading, para } from "@/lib/email-kit";
 
@@ -35,7 +35,7 @@ export function baglandiMail(m: KasaMailBilgisi): { subject: string; html: strin
     baglandiKonusu(m.sube),
     `${m.sube} şubesinin kasası ${m.zaman} tarihinde ${m.kim} hesabıyla ladmin'e bağlandı.`,
     m.kasa ? `Kasa kimliği: ${m.kasa}` : "Kasa kimliği bildirilmedi.",
-    "Bunu siz yapmadıysanız ladmin › Ayarlar › Şube ekleme'de şubenin kasasını serbest bırakın ve parolanızı değiştirin.",
+    "Bunu siz yapmadıysanız Yönetim konsolu › Şubeler ve kasalar'da şubenin kasasını serbest bırakın ve parolanızı değiştirin.",
   );
 }
 

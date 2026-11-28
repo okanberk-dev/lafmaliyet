@@ -13,6 +13,7 @@ import {
   acilisSubesi,
   acilistaListelenir,
   buKasaMi,
+  hazirDegilMesaji,
   IKI_ADIM_GEREKLI,
   IKI_ADIM_KURULMALI,
   kasaBilgisi,
@@ -201,12 +202,12 @@ export async function acilisBagla(input: { body: unknown; imzaSubesi: string | n
   if (branch.kind !== "fiziksel") return hata(409, "sube_fiziksel_degil", `${branch.name} fiziksel bir şube değil; kasası olmaz`);
   const hazir = (await readHazirlik([branch.id], db)).has(branch.id);
   if (!acilistaListelenir(branch, hazir)) {
-    return hata(409, "sube_hazir_degil", `${branch.name} şubesinin kasa programı ModPOS ve şube kasa kurulumu için hazırlanmadı: ladmin › Ayarlar › Şube ekleme › Bilgisayara kur`);
+    return hata(409, "sube_hazir_degil", hazirDegilMesaji(branch.name));
   }
   const kayit = await readKasaKaydi(branch.id, db);
   const durum = await loadKasaDurumu(branch.id, db, now);
   const buKasa = buKasaMi({ kayit, kimlik: kasa.kimlik, imzaSubesi: input.imzaSubesi, subeId: branch.id });
-  // Kurulu şube kasadan alınamaz: anahtar dönmez, verilmez (bilgisayar değişikliği yalnız ladmin › Kasayı serbest bırak)
+  // Kurulu şube kasadan alınamaz: anahtar dönmez, verilmez (bilgisayar değişikliği yalnız asıl yöneticinin "Kasayı serbest bırak"ıyla)
   if (durum.durum === "kurulu" && !buKasa) {
     return hata(409, "zaten_kurulu", zatenKuruluMesaji(branch.name), { sube: { id: branch.id, ad: branch.name }, kasa: { sonGun: durum.sonGun } });
   }
@@ -240,9 +241,9 @@ export async function acilisTeslim(subeId: string, db: DB = getDb(), now: Date =
 }
 
 /**
- * "Kasayı serbest bırak" (ladmin › Şube ekleme; asıl yönetici, eylem src/server/actions/branches.ts): şubenin kasa
- * anahtarı yeniden üretilir (eski kasa panelle bağlantısını kaybeder: imzası 401), bekleyen kurulum kodları iptal olur,
- * kasa kaydı "boş" yazılır. Tek işlemde. Anahtar ortam değişkenindeyse (eski tek kasalı kurulum, Marina) yeni anahtar
+ * "Kasayı serbest bırak" (Yönetim konsolu › Şubeler ve kasalar ve ladmin › Şube ekleme; asıl yönetici, eylem
+ * src/server/actions/branches.ts): şubenin kasa anahtarı yeniden üretilir (eski kasa panelle bağlantısını kaybeder:
+ * imzası 401), bekleyen kurulum kodları iptal olur, kasa kaydı "boş" yazılır. Tek işlemde. Anahtar ortam değişkenindeyse (eski tek kasalı kurulum, Marina) yeni anahtar
  * panelde saklanır ve ortamdakinin önüne geçer. Döner: iptal edilen kod sayısı
  */
 export async function releaseTill(db: DB, o: { branchId: string; by: string }, now: Date = new Date()): Promise<{ iptal: number }> {

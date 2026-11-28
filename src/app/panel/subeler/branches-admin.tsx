@@ -21,6 +21,7 @@ import {
   BRANCH_POS_SOURCE_LABEL,
   BRANCH_POS_SOURCES,
   branchSourceError,
+  changedGuardedFields,
   DEFAULT_POS_RATE,
   FIXED_BRANCH_IDS,
   posRateError,
@@ -63,11 +64,12 @@ const oranOf = (text: string) => {
 export interface BranchActions {
   updateAction: (input: {
     id: string;
-    name: string;
-    kind: BranchKind;
-    posSource: BranchPosSource;
-    openedOn: string | null;
-    active: boolean;
+    name?: string;
+    /** Tür, kasa programı ve açık / kapalı: yalnız pencerede değiştiyse (changedGuardedFields); verilmezse eskisi kalır */
+    kind?: BranchKind;
+    posSource?: BranchPosSource;
+    openedOn?: string | null;
+    active?: boolean;
     posRate?: number;
     /** Şubenin e-postası (fiziksel; boş metin siler, verilmezse eskisi kalır) */
     email?: string;
@@ -101,24 +103,23 @@ export function BranchesAdmin({
 } & BranchActions) {
   const [acik, setAcik] = useState<Taslak | null>(null);
   const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
-  // AsilPOS'tan ModPOS'a dönüş onayı (çok şube): sunucunun sorduğu metin ve kaydedilecek taslak
-  const [posOff, setPosOff] = useState<{ taslak: Taslak; text: string } | null>(null);
+  // AsilPOS'tan ModPOS'a dönüş onayı (çok şube): sunucunun sorduğu metin, kaydedilecek taslak ve pencerenin ilk hâli
+  const [posOff, setPosOff] = useState<{ taslak: Taslak; ilk: Taslak; text: string } | null>(null);
   const [bekliyor, basla] = useActionTransition();
 
   function duzenle(b: BranchRow) {
     setAcik({ id: b.id, name: b.name, kind: b.kind, posSource: b.posSource, openedOn: b.openedOn ?? "", active: b.active, posRate: oranMetni(b.posRate), email: emails[b.id] ?? "" });
   }
 
-  function kaydet(t: Taslak, confirmPosOff = false) {
+  /** `ilk`: pencerenin açıldığı hâl; açık / kapalı, tür ve kasa programı yalnız ondan farklıysa gider (changedGuardedFields) */
+  function kaydet(t: Taslak, ilk: Taslak, confirmPosOff = false) {
     // Online kanalın kasası yok: POS oranı ve e-posta yalnız fiziksel şubede gider
     const fiziksel = t.kind === "fiziksel";
     const gonder = {
       id: t.id,
       name: t.name.trim(),
-      kind: t.kind,
-      posSource: t.posSource,
+      ...changedGuardedFields(ilk, t),
       openedOn: t.openedOn || null,
-      active: t.active,
       ...(fiziksel ? { posRate: oranOf(t.posRate), email: t.email.trim() } : {}),
       ...(confirmPosOff ? { confirmPosOff } : {}),
     };
@@ -126,7 +127,7 @@ export function BranchesAdmin({
       const sonuc = await updateAction(gonder);
       if (!sonuc.ok) {
         // Kasası AsilPOS olan şube ModPOS'a dönüyor: geçiş günü silinecek, onay sorulur
-        if (!confirmPosOff && sonuc.error.startsWith(POS_OFF_CONFIRM_PREFIX)) return void setPosOff({ taslak: t, text: sonuc.error.slice(POS_OFF_CONFIRM_PREFIX.length).trim() });
+        if (!confirmPosOff && sonuc.error.startsWith(POS_OFF_CONFIRM_PREFIX)) return void setPosOff({ taslak: t, ilk, text: sonuc.error.slice(POS_OFF_CONFIRM_PREFIX.length).trim() });
         toast.error(sonuc.error);
         return;
       }
@@ -210,7 +211,7 @@ export function BranchesAdmin({
           anaAdmin={anaAdmin}
           bekliyor={bekliyor}
           onClose={() => setAcik(null)}
-          onSave={kaydet}
+          onSave={(t) => kaydet(t, acik)}
           onDelete={anaAdmin ? () => setSilinecek(rows.find((r) => r.id === acik.id) ?? null) : undefined}
         />
       ) : null}
@@ -218,7 +219,7 @@ export function BranchesAdmin({
       <ConfirmDialog
         open={!!posOff}
         onClose={() => setPosOff(null)}
-        onConfirm={() => posOff && kaydet(posOff.taslak, true)}
+        onConfirm={() => posOff && kaydet(posOff.taslak, posOff.ilk, true)}
         pending={bekliyor}
         title="Kasa ModPOS'a dönsün mü?"
         description={posOff?.text ?? ""}

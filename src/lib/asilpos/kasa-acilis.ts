@@ -1,8 +1,10 @@
 // Kasa açılışı (docs/ASILPOS.md › Kasa açılışı; tasarım docs/planlar/kasa-acilis-ve-asil-yonetici.md › P-B2): yeni kasa
 // "Denemeyi bitir" derken asıl yöneticinin ladmin hesabıyla girer (POST /api/asilpos/acilis/giris), şubesini seçer
 // (POST /api/asilpos/acilis/bagla) ve ilk personelin PIN'lerini aldığını onaylar (POST /api/asilpos/acilis/teslim).
-// Kasası kurulu şube seçilemez; bilgisayar değişikliği yalnız ladmin › Şube ekleme › "Kasayı serbest bırak" ile.
-// Kurallar ve metinler burada; bu dosya saf (tests/kasa-acilis.test.ts). Sunucu tarafı src/server/asilpos/acilis.ts.
+// Kasası kurulu şube seçilemez; bilgisayar değişikliği yalnız asıl yöneticinin "Kasayı serbest bırak"ıyla (Yönetim
+// konsolu › Şubeler ve kasalar; ladmin › Şube ekleme'de de). Kasaya giden metinler adres yazmaz, "Yönetim konsolu" der
+// (docs/planlar/yonetim-konsolu.md). Kurallar ve metinler burada; bu dosya saf (tests/kasa-acilis.test.ts). Sunucu
+// tarafı src/server/asilpos/acilis.ts.
 
 import type { KasaDurumu } from "./kasa-durumu";
 
@@ -19,15 +21,20 @@ export const ACILIS_YOLLARI = {
 
 /** Ret ve not cümleleri (kasa ekranda `mesaj`ı gösterir) */
 export const YALNIZ_ASIL_ACAR = "Kasayı yalnız asıl yönetici açar";
-export const KURULU_NEDEN = "Kurulu: değiştirmek için ladmin";
+export const KURULU_NEDEN = "Kurulu: değiştirmek için Yönetim konsolu";
 export const OTURUM_DOLDU = "Giriş süresi doldu ya da hesap değişti; yeniden giriş yapın";
 export const IKI_ADIM_GEREKLI = "İki adımlı doğrulama kodunu girin";
 export const IKI_ADIM_KURULMALI = "Bu hesapta iki adımlı doğrulama zorunlu: önce ladmin › Hesabım'dan kurun";
 
 /** "Kasayı serbest bırak" penceresinin onay cümlesi */
 export const SERBEST_ONAY = "Bu şubenin kasası ladmin bağlantısını kaybeder; yeni bilgisayar şubeyi kasada seçebilir.";
-/** Son bu kadar günde gün sonu gelen şube canlı sayılır (serbest bırakma uyarısı belirginleşir) */
+/**
+ * Son bu kadar günde gün sonu gelen şube canlı sayılır: serbest bırakma ve Yönetim konsolunun yıkıcı şube işlemleri
+ * (kapatma, silme, kasa programı, kasa anahtarı) uyarıyı belirgin gösterir
+ */
 export const CANLI_GUN = 7;
+/** Canlı şubenin uyarı başlığı ("Marina canlı: son 7 günde kasadan gün sonu geldi") */
+export const canliBaslik = (ad: string) => `${ad} canlı: son ${CANLI_GUN} günde kasadan gün sonu geldi`;
 
 /** Kasanın kendini tanıttığı alan: kasa kimliği (Merkez kurulum kimliği ya da kasanın ürettiği), sürüm, açık anahtar */
 export interface KasaBilgisi {
@@ -69,7 +76,7 @@ export function kodKasaBilgisi(body: Record<string, unknown> | null): { kimlik: 
 
 // ---------------------------------------------------------------- Kasa kaydı
 
-/** Kasanın şubeye bağlanma yolu: ladmin girişi, kurulum kodu ya da ladmin'de serbest bırakma */
+/** Kasanın şubeye bağlanma yolu: ladmin girişi, kurulum kodu ya da asıl yöneticinin serbest bırakması */
 export type KasaYolu = "acilis" | "kod" | "serbest";
 
 /** integration_state `asilpos.kasa:<şube>`: şubenin kasası açıkça kurulu ya da boş */
@@ -113,7 +120,7 @@ export interface AcilisSubesi {
   neden?: string;
 }
 
-/** Şube satırı: kurulu ve bu kasa değilse seçilemez ("Kurulu: değiştirmek için ladmin") */
+/** Şube satırı: kurulu ve bu kasa değilse seçilemez ("Kurulu: değiştirmek için Yönetim konsolu") */
 export function acilisSubesi(b: { id: string; name: string }, d: KasaDurumu, buKasa: boolean): AcilisSubesi {
   const kurulu = d.durum === "kurulu";
   const secilebilir = !kurulu || buKasa;
@@ -134,7 +141,11 @@ export function buKasaMi(o: { kayit: KasaKaydi | null; kimlik: string; imzaSubes
 }
 
 /** 409 `zaten_kurulu`'nun cümlesi */
-export const zatenKuruluMesaji = (ad: string) => `${ad} şubesinde kurulu bir kasa var. Bilgisayar değişecekse ladmin › Şube ekleme › Kasayı serbest bırak.`;
+export const zatenKuruluMesaji = (ad: string) => `${ad} şubesinde kurulu bir kasa var. Bilgisayar değişecekse Yönetim konsolu › Şubeler ve kasalar › Kasayı serbest bırak.`;
+
+/** 409 `sube_hazir_degil`'in cümlesi: ModPOS şubesi kasa kurulumu için hazırlanmadı */
+export const hazirDegilMesaji = (ad: string) =>
+  `${ad} şubesinin kasa programı ModPOS ve şube kasa kurulumu için hazırlanmadı: Yönetim konsolu › Şubeler ve kasalar › Bilgisayara kur`;
 
 /** Asıl yöneticiye giden e-postanın konusu */
 export const baglandiKonusu = (ad: string) => `${ad} kasası yeni bir bilgisayara bağlandı`;
