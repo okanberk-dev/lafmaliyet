@@ -223,3 +223,27 @@ test("konsol girişi: yalnız konsol çerezi; parola, kod ve belirteç günlüğ
   assert.match(eylem, /isAnaAdminEmail\(email\) \? await getDb\(\)/);
   assert.match(eylem, /if \(!user \|\| !user\.active \|\| !isAnaAdmin\(user\)\) \{\s*const g = await ghostAttempt\(email, password\);/);
 });
+
+test("iki oturum türü birbirini reddeder: panel belirteci konsolu, konsol belirteci paneli açmaz; iki adım belirteçleri de ayrı", async () => {
+  const ss = await import("../src/server/auth/session");
+  const kisi = { sub: "7", name: "Asıl", role: "admin" as const, sv: 1 };
+  const panel = await ss.signSession(kisi);
+  const konsol = await ss.signYonetim(kisi);
+  assert.equal((await ss.verifySession(panel))?.sub, "7");
+  assert.equal((await ss.verifyYonetim(konsol))?.sub, "7");
+  assert.equal(await ss.verifySession(konsol), null, "konsol belirteci panel oturumu değil");
+  assert.equal(await ss.verifyYonetim(panel), null, "panel belirteci konsol oturumu değil");
+  const panelBekleyen = await ss.signPending({ sub: "7", sv: 1 });
+  const konsolBekleyen = await ss.signYonetimPending({ sub: "7", sv: 1 });
+  assert.deepEqual(await ss.verifyYonetimPending(konsolBekleyen), { sub: "7", sv: 1 });
+  assert.equal(await ss.verifyYonetimPending(panelBekleyen), null);
+  assert.equal(await ss.verifyPending(konsolBekleyen), null);
+  for (const t of [konsolBekleyen, panelBekleyen]) {
+    assert.equal(await ss.verifySession(t), null);
+    assert.equal(await ss.verifyYonetim(t), null);
+  }
+  // Ayrı çerezler, __Host- önekli (yerelde öneksiz)
+  assert.notEqual(ss.YONETIM_COOKIE, ss.SESSION_COOKIE);
+  assert.match(ss.YONETIM_COOKIE, /laf_yonetim$/);
+  assert.notEqual(ss.YONETIM_PENDING_COOKIE, ss.YONETIM_COOKIE);
+});
