@@ -11,6 +11,7 @@ import { test } from "node:test";
 
 import { NextRequest } from "next/server";
 
+import { ESKI_ENV_ONEKI, ESKI_INDIR_YOLU, ESKI_KURULUM_YOLU, KANAL_ALANI } from "../src/lib/asilpos/eski-adlar";
 import { config, proxy } from "../src/proxy";
 import {
   isYonetimHost,
@@ -59,10 +60,10 @@ test("izin matrisi: konsol adresinde yalnız konsol, derlenmiş dosyalar, simgel
   }
   for (const p of ["/", "/panel", "/panel/sube-ekleme", "/panel/kullanicilar"]) assert.deepEqual(konsolYolu(p), { tur: "yonlendir", hedef: "/yonetim" }, p);
   for (const p of ["/giris", "/giris/parola"]) assert.deepEqual(konsolYolu(p), { tur: "yonlendir", hedef: YONETIM_GIRIS }, p);
-  for (const p of ["/api/pos/gun", "/api/asilpos/kurulum", "/api/asilpos/acilis/giris", "/api/panel/pos/x", "/api/cron/gunluk", "/api/export/x", "/api/mcp", "/api/lafpos/kurulum"]) {
+  for (const p of ["/api/pos/gun", "/api/asilpos/kurulum", "/api/asilpos/acilis/giris", "/api/panel/pos/x", "/api/cron/gunluk", "/api/export/x", "/api/mcp", ESKI_KURULUM_YOLU]) {
     assert.deepEqual(konsolYolu(p), { tur: "yanlis-adres" }, p);
   }
-  for (const p of ["/asilpos/indir/abc", "/lafpos/indir/abc", "/davet/abc", "/baglan", "/menu", "/oauth/authorize", "/.well-known/oauth-authorization-server", "/manifest.webmanifest", "/sw.js", "/yonetimx", "/_nextx"]) {
+  for (const p of ["/asilpos/indir/abc", `${ESKI_INDIR_YOLU}/abc`, "/davet/abc", "/baglan", "/menu", "/oauth/authorize", "/.well-known/oauth-authorization-server", "/manifest.webmanifest", "/sw.js", "/yonetimx", "/_nextx"]) {
     assert.deepEqual(konsolYolu(p), { tur: "yok" }, p);
   }
 });
@@ -158,10 +159,10 @@ test("bağlantılar APP_URL'den (isteğin adresinden değil); Merkez Uzaktan'ın
     parolaUnuttum: "https://ladmin.laffogato.net/giris?parola=unuttum",
   });
   assert.equal(panelBaglantilari({}).ladmin, "https://ladmin.laffogato.net/panel");
-  assert.equal(merkezUrl({}), "https://lafpos.laffogato.net/merkez");
+  assert.equal(merkezUrl({}), `https://${KANAL_ALANI}/merkez`);
   assert.equal(merkezUrl({ ASILPOS_CLOUD_URL: "https://uzak.ornek.com/" }), "https://uzak.ornek.com/merkez");
-  assert.equal(merkezUrl({ LAFPOS_CLOUD_URL: "https://eski.ornek.com" }), "https://eski.ornek.com/merkez");
-  assert.equal(merkezUrl({ ASILPOS_CLOUD_URL: "http://uzak.ornek.com" }), "https://lafpos.laffogato.net/merkez", "https değilse varsayılan");
+  assert.equal(merkezUrl({ [`${ESKI_ENV_ONEKI}CLOUD_URL`]: "https://eski.ornek.com" }), "https://eski.ornek.com/merkez");
+  assert.equal(merkezUrl({ ASILPOS_CLOUD_URL: "http://uzak.ornek.com" }), `https://${KANAL_ALANI}/merkez`, "https değilse varsayılan");
   // Giriş sayfası ve kabuk bağlantıları buradan alır
   assert.match(read("src/app/yonetim/giris/page.tsx"), /const p = panelBaglantilari\(\);/);
   assert.match(read("src/app/yonetim/(konsol)/layout.tsx"), /const ladmin = panelBaglantilari\(\)\.ladmin;/);

@@ -216,6 +216,24 @@ Google sayfaları açamaz, noindex'i göremez ve başka yerden bağlantı alan a
 Adres daha önce dizine girdiyse Search Console › Kaldırmalar'dan hemen gizlenir; noindex kalıcı olarak çıkarır. `lafmaliyet.vercel.app` adresi sayfalar için `ladmin.laffogato.net`'e
 yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 
+### Yönetim konsolu alan adı (yonetim.laffogato.net)
+
+Yönetim konsolu (yalnız asıl yönetici; [ROLLER.md › Asıl yönetici](ROLLER.md#asıl-yönetici)) panelle aynı projede, aynı
+veritabanıyla, ayrı alan adında çalışır. Sıra önemli: **önce kod canlıya, sonra alan adı Vercel'e** (`vercel domains add
+yonetim.laffogato.net`, takım kapsamı `okans-projects-fcf7250e`). Tersi olursa alan adı, konsolun kuralları canlıya
+çıkmadan tam paneli sunardı.
+
+- Konsol adresinde yalnız `/yonetim/*`, Next'in dosyaları, simgeler, `robots.txt`, CSP raporu ve hata bildirimi açılır.
+  Kök ve `/panel/*` `/yonetim`'e, `/giris` konsolun girişine yönlenir; `/api/*` 404 ve `{"error":"yanlis_adres"}` (kasa
+  yanlışlıkla bu adrese ayarlanırsa anlaşılır hata); kurucu indirme, `/davet`, `/baglan`, `/menu`, OAuth ve manifest 404.
+  Kural proxy'de (`src/proxy.ts`), yalnız konsolun alan adına bağlı eşleşmelerle: panel adresinde proxy'nin kapsamı aynı.
+- `YONETIM_URL` (isteğe bağlı): yalnız `https://yonetim.laffogato.net` (yerelde `http://yonetim.localhost:3000`) olabilir.
+  Tanımlıysa panel adresindeki `/yonetim` buraya yönlenir; derlemede okunur, değişince yeniden deploy. Alan adı eklenmeden
+  önce boş bırakın: konsol panel adresinde de kendi girişiyle açılır.
+- Konsolun oturumu ayrı çerezdedir (`__Host-laf_yonetim`); panelin oturumunu açmaz, panelinki de konsolu açmaz.
+- Canlıda denenecekler: konsolda giriş, başka bir yöneticiyle giriş (kayıtsız e-posta gibi yanıt), iki adımlı, çıkış,
+  iki sekme, `yonetim.laffogato.net/api/pos/gun` 404; Marina'nın kasası panel adresinde çalışmaya devam eder.
+
 ### Güvenlik başlıkları
 
 `next.config.ts` her yanıta `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,

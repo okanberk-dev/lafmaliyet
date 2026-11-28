@@ -11,6 +11,14 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
+- **Yönetim konsolu: ayrı oturum ve giriş, kabuk, Şubeler ve kasalar** (bu PR, 28 Kasım; K-A'nın ilk yarısı,
+  docs/planlar/yonetim-konsolu.md): `yonetim.laffogato.net` (yalnız asıl yönetici), ayrı belirteç ve çerez,
+  `requireYonetim`, kendi girişi (başka her e-posta kayıtsız adres gibi yanıtlanır), alan adı kuralı (konsolda yalnız
+  `/yonetim/*`; `/api/*` 404 `yanlis_adres`; panel adresinde proxy aynı), iki sekme: Şubeler ve kasalar (Şube ekleme'nin
+  ortak bileşeni) ve Lisans ve güncelleme (Merkez bağlantısı, kasa durumu özeti). ladmin'in ekranları değişmedi.
+  Kalan: şube kapatma / silme / tür / kasa programı / geçiş günü / kasa anahtarı düğmelerinin konsola taşınması (K-A
+  ikinci yarı); alan adının Vercel'e eklenmesi (kod canlıya çıktıktan sonra; docs/DEPLOY.md › Yönetim konsolu alan adı).
+
 - **Kasa açılışı uçları, ilk personel, Kasayı serbest bırak** (bu PR, 28 Kasım; P-B2,
   docs/planlar/kasa-acilis-ve-asil-yonetici.md): `POST /api/asilpos/acilis/giris` (asıl yöneticinin ladmin girişi;
   panelin giriş korumaları aynen, ortak modül `src/server/auth/giris-korumalari.ts`; çerezsiz, 15 dakikalık belirteç ve

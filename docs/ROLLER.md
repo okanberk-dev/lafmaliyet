@@ -212,6 +212,15 @@ hesabı açıldıktan sonra kimse adresi devralamaz**: adres benzersiz, hesap si
 yeni hesap açılamaz. Hesap pasif ya da yönetici olmayan bir hesapsa yalnız veritabanından ya da `LADMIN_ANA_ADMIN`
 değiştirilerek düzelir.
 
+**Yönetim konsolu** (`https://yonetim.laffogato.net`, 28 Kasım 2026; tasarım
+[planlar/yonetim-konsolu.md](planlar/yonetim-konsolu.md)): yalnız asıl yöneticinin girdiği ayrı adres ve ayrı oturum.
+Girişi kendi eylemiyle (`src/server/actions/yonetim-giris.ts`): asıl yöneticinin adresi dışındaki her e-posta, başka
+bir yöneticinin doğru parolasıyla bile, kayıtsız e-posta gibi yanıtlanır (aynı süre ve söz; o hesabın kilit sayacına ve
+son girişine dokunulmaz). Asıl yöneticide panelin korumaları aynen (kilit, iki adımlı, yeni cihaz e-postası). Her konsol
+sayfası `requireYonetim` ister: konsol çerezi geçerli, hesap etkin, oturum sürümü aynı, rol yönetici ve asıl yönetici;
+değilse çerez silinip konsol girişine gidilir (`LADMIN_ANA_ADMIN` değişince de). Bu aşamada `requireAnaAdmin` iki
+oturumu da kabul eder (konsol oturumu varsa onunla, yoksa panelin bugünkü yolu); ladmin'deki ekranlar değişmedi.
+
 Testler: `tests/asil-yonetici.test.ts` (saf kurallar ve kaynak taraması), `tests/asil-yonetici-db.test.ts` (gerçek
 Postgres, `ASIL_YONETICI_TEST_DATABASE_URL`): her korunan eylemde asıl yönetici geçer, öteki yönetici okunur hata alır,
 müdür, muhasebeci ve personel reddedilir; hesap korumasının her eylemi; kapanan şubenin bekleyen kodları iptal olur ve
