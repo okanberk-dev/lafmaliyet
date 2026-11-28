@@ -53,8 +53,8 @@ import type { ActionResult } from "@/server/actions/util";
  * ladmin'de /panel/sube-ekleme, Yönetim konsolunda "Şubeler ve kasalar" (/yonetim; veri src/server/sube-ekleme.ts).
  * `yer` yalnız yön gösteren metni ve şube satırının bağlantısını seçer: ladmin'de metin ladmin'in ekranlarını anar, konsolda
  * konsolun kendi adlarını ve her şube satırında "Şube işlemleri" (/yonetim/sube/[id]: kapatma, silme, tür, kasa programı,
- * geçiş günü, kasa anahtarı). Yeni şube formu (isteğe bağlı ilk
- * personeliyle), fiziksel şubelerin kasa durumu (src/lib/asilpos/kasa-durumu.ts), "Bilgisayara kur" (kurulum bağlantısı;
+ * geçiş günü, kasa anahtarı). Yeni şube formu (isteğe bağlı ilk personeliyle), fiziksel şubelerin kasa durumu
+ * (src/lib/asilpos/kasa-durumu.ts), "Bilgisayara kur" (kurulum bağlantısı;
  * kurulu kasa varsa önce onay), "İlk personeli ayarla" ve "Kasayı serbest bırak" (docs/ASILPOS.md › Kasa açılışı).
  * Kurallar saf dosyalardan okunur, sunucu aynısını denetler. PIN'ler yalnız formda durur: sunucu onları geri vermez,
  * ekranda yalnız "ayarlı" ya da "teslim edildi" görünür.
