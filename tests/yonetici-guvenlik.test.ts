@@ -228,7 +228,8 @@ test("giriş: kurmamış yönetici kurulum ekranına (dönülecek yerle); yeni c
 
 test("kurulum ekranı panelin dışında: proxy eşleştirmez, istek verisi Suspense içinde, eylem bekçisine uyar", () => {
   const proxy = read("src/proxy.ts");
-  assert.match(proxy, /matcher: \["\/panel\/:path\*", "\/giris", "\/api\/export\/:path\*"\]/, "\"/giris\" yalnız giriş sayfasını eşler; /giris/iki-adim proxy'ye girmez");
+  // Panel adresindeki üç kalıp aynı; sonraki girdiler yalnız Yönetim konsolunun alan adında (tests/yonetim-host.test.ts)
+  assert.match(proxy, /matcher: \[\s*"\/panel\/:path\*",\s*"\/giris",\s*"\/api\/export\/:path\*",\s*\{ source: "[^"]+", has: \[\{ type: "host", value: "yonetim\\\\\.laffogato\\\\\.net" \}\] \},\s*\{ source: "[^"]+", has: \[\{ type: "host", value: "yonetim\\\\\.localhost" \}\] \},\s*\]/, "\"/giris\" yalnız giriş sayfasını eşler; /giris/iki-adim proxy'ye girmez");
   const page = read("src/app/giris/iki-adim/page.tsx");
   assert.match(page, /<Suspense fallback=\{/);
   assert.match(page, /const me = await requireSignedIn\(\);/);

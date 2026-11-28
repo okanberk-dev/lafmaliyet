@@ -234,7 +234,7 @@ test("iki oturum türü birbirini reddeder: panel belirteci konsolu, konsol beli
   assert.equal((await ss.verifyYonetim(konsol))?.sub, "7");
   assert.equal(await ss.verifySession(konsol), null, "konsol belirteci panel oturumu değil");
   assert.equal(await ss.verifyYonetim(panel), null, "panel belirteci konsol oturumu değil");
-  const panelBekleyen = await ss.signPending({ sub: "7", sv: 1 });
+  const panelBekleyen = await ss.signPending({ sub: "7", sv: 1, next: "/panel" });
   const konsolBekleyen = await ss.signYonetimPending({ sub: "7", sv: 1 });
   assert.deepEqual(await ss.verifyYonetimPending(konsolBekleyen), { sub: "7", sv: 1 });
   assert.equal(await ss.verifyYonetimPending(panelBekleyen), null);
