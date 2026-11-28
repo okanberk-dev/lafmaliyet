@@ -159,6 +159,8 @@ kapı kaynak başına (CSP yağmuru sunucu hatasını düşürmez), NUL ve uzun 
 Çözüldü 7 günü atlatmaz, son beş hata kodu, takılan e-postanın anahtarı yeniden alınır. Ayrıntı docs/HATA-KAYDI.md.
 
 ### P4. CI ve kod sağlığı (yüksek)
+28 Kasım (dal ci-sure-siniri): CI işinin süre sınırı 15 dakikadan 25 dakikaya çıktı (son koşular 14-15 dakikaydı; sınıra
+takılan koşu yarıda iptal oluyordu). Aşağıdaki maddeler duruyor.
 - CI'da şema–göç tutarlılığı: `drizzle-kit generate` değişiklik üretirse CI düşsün.
 - Asistanın bilgi tabanı (`src/lib/assistant/knowledge-data.ts`, ~900 KB) elle üretilip depoya ekleniyor ve her
   belge değişikliğinde çakışıyor: derlemede (`prebuild`/predeploy) ya da CI'da üretilsin; depodan çıkarılsın ya da
