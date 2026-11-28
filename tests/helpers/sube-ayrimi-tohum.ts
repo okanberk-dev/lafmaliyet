@@ -32,13 +32,6 @@ export function tzLeaks(v: unknown): string | null {
   return at < 0 ? null : text.slice(Math.max(0, at - 80), at + 80);
 }
 
-/** Yalnız metin işareti (tutarı tasarımda firmanın olan yerler: ekstrenin satırı) */
-export function tzTextLeak(v: unknown): string | null {
-  const text = typeof v === "string" ? v : JSON.stringify(v, (_k, x) => (x instanceof Map ? [...x] : x instanceof Set ? [...x] : x));
-  const i = text ? text.indexOf(TZ_MARK) : -1;
-  return i < 0 ? null : text.slice(Math.max(0, i - 80), i + 80);
-}
-
 export interface SubeTohum {
   /** Kullanıcılar: yönetici, muhasebeci, Marina'nın müdürü ve personeli, Tuzla'nın müdürü ve personeli */
   users: { admin: number; accountant: number; marinaManager: number; marinaStaff: number; tuzlaManager: number; tuzlaStaff: number };
@@ -364,17 +357,6 @@ export async function seedSubeAyrimi(db: DB, today: string): Promise<SubeTohum> 
   await db.insert(s.taxAssets).values([
     { name: "Marina dolap demirbaş", invoiceId: invoices.marina, acquiredOn: d1, cost: 1_300, lifeYears: 5 },
     { name: `${TZ_MARK} makine demirbaş`, invoiceId: invoices.tuzla, acquiredOn: d1, cost: 91_990, lifeYears: 5 },
-  ]);
-
-  // Banka ekstresi (firmanın): POS hakedişi ve iki kart harcaması
-  const [st] = await db
-    .insert(s.reconStatements)
-    .values({ kind: "banka", account: "Garanti TL", periodFrom: addDays(today, -20), periodTo: today, lineCount: 3, uploadedOn: today, expiresOn: addDays(today, 90), createdByName: "Ali Yönetici" })
-    .returning({ id: s.reconStatements.id });
-  await db.insert(s.reconLines).values([
-    { statementId: st.id, scope: "banka:Garanti TL", fingerprint: "pos-1", rowNo: 1, date: d1, description: "POS HAKEDIS UYE ISYERI", amount: 950 },
-    { statementId: st.id, scope: "banka:Garanti TL", fingerprint: "kart-m", rowNo: 2, date: d1, description: "KART HARCAMA MARINA", amount: -640 },
-    { statementId: st.id, scope: "banka:Garanti TL", fingerprint: "kart-t", rowNo: 3, date: d1, description: "KART HARCAMA TZ", amount: -91_904.04 },
   ]);
 
   return { users, d1, d2, month, prevMonth, invoices, suppliers: { marina: supM.id, tuzla: supT.id } };

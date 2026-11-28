@@ -176,7 +176,7 @@ describe("şube ayrımı parça 4: alanlar veritabanında", { skip: !SERVER_URL 
     assert.equal(await scope.areaScope("odemeler"), "marina", "yöneticinin varsayılanı şube");
     await signIn(ids.ali, "marina", FIRMA);
     assert.equal(await scope.areaScope("odemeler"), ALL_BRANCHES);
-    assert.equal(await scope.areaScope("mutabakat"), "marina", "yazılmayan alan varsayılanda");
+    assert.equal(await scope.areaScope("tutarlilik"), "marina", "yazılmayan alan varsayılanda");
     // Müdür: tercih yazılı olsa da her alan şubesi
     await signIn(ids.mert, "marina", FIRMA);
     for (const a of ["odemeler", "nakit", "tedarikciler", "komisyon"] as const) assert.equal(await scope.areaScope(a), "marina", a);

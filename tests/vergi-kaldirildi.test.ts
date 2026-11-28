@@ -57,7 +57,8 @@ test("not: Genel bakış ve Muhasebe kısa notu çizer; bilinmeyen değerde not 
   assert.match(note.text, /Kayıtlı veriler silinmedi/);
   assert.deepEqual(removedNotice(["vergi", "x"]), note);
   for (const v of [undefined, null, "", "yok", "toString", "__proto__"]) assert.equal(removedNotice(v), null, String(v));
-  assert.deepEqual(Object.keys(REMOVED_NOTICES), ["vergi"]);
+  // Mutabakat'ın notu 28 Kasım 2026'da eklendi (tests/mutabakat-kaldirildi.test.ts)
+  assert.deepEqual(Object.keys(REMOVED_NOTICES), ["vergi", "mutabakat"]);
   const dash = read("src/app/panel/page.tsx");
   assert.match(dash, /const removed = removedNotice\(sp\.kaldirildi\);/);
   assert.match(dash, /\{removed \? <Notice tone="neutral" size="sm" live="polite" title=\{removed\.title\} text=\{removed\.text\} \/> : null\}/);

@@ -7,8 +7,8 @@ hakediş geldi mi? Hesap saf modüllerdedir: `src/lib/commission/channels.ts` (k
 `src/lib/commission/report.ts` (rapor, uyarılar, hakediş, zil ve e-posta); testleri `tests/komisyon.test.ts`.
 
 Banka hesabı panele bağlı değildir (Paraşüt'te de bağlı değil): hakedişin geldiğini yönetici işaretler, hiçbir şey
-kendiliğinden işaretlenmez. Banka POS'unun (kredi kartı) hakedişi ayrı ekranda, yüklenen banka ekstresiyle karşılaştırılır:
-Mutabakat › POS hakediş ([MUTABAKAT.md](MUTABAKAT.md)); yemek kartı ve platform hakedişini o da işaretlemez. Komisyon faturalarının ödeme durumuna dokunulmaz (Paraşüt'ten "ödendi" gelirler,
+kendiliğinden işaretlenmez. Banka POS'unun (kredi kartı) hakedişini banka ekstresiyle karşılaştıran Mutabakat › POS
+hakediş ekranı 28 Kasım 2026'da kaldırıldı ([arsiv/MUTABAKAT.md](arsiv/MUTABAKAT.md)); panelde yok. Komisyon faturalarının ödeme durumuna dokunulmaz (Paraşüt'ten "ödendi" gelirler,
 [TEDARIKCILER.md](TEDARIKCILER.md)). Panel Paraşüt'e yeni bir istek atmaz: yalnız eşitlemenin yazdığı alış faturalarını
 ve kalemlerini okur.
 

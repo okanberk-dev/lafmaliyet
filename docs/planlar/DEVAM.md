@@ -45,6 +45,7 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "AsilPOS yalnız bir şubenin kasası" sınırı kalkar).
 - **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Nakit
   planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
+  (Mutabakat bölümü ve alanı 28 Kasım 2026'da sahibin isteğiyle kaldırıldı; veriler duruyor.)
   **Durum (27 Kasım):** `sube-ayrimi` dalında hazır (#167'nin üstünde; göçler 0100, 0101): altı parça, bağımsız doğrulama
   testi (`tests/sube-ayrimi-db.test.ts`) ve doğrulamanın sekiz sızıntısının düzeltmesi. Dal gönderilmedi, PR açılmadı:
   açıklaması `~/Downloads/lafmaliyet-ekler/sube-ayrimi-pr.md`; #167'den sonra birleşir. Sahibin kararına kalanlar
@@ -246,8 +247,8 @@ dalları (GitHub'da silinsin), çok büyümüş dosyaların bölünmesi.
 
 ### Sonra (değer düşük ya da büyük iş)
 Ağır veri yolu ve Faturalar listesinin sayfalanması; ModPOS föyünden kasa formunu doldurma; asistanın eksik okuma
-araçları (kasadan_cikanlar, zayi_ikram, komisyon_kanallari) ve ~60 işlem uyarlayıcısı; mutabakatta resmi tatiller
-("Geç geldi" yanlış uyarısı); şube başına kalan ayarlar (uyarı sesi / kontrol hatırlatma saatleri); Tükendi'nin şube
+araçları (kasadan_cikanlar, zayi_ikram, komisyon_kanallari) ve ~60 işlem uyarlayıcısı; ~~mutabakatta resmi tatiller
+("Geç geldi" yanlış uyarısı)~~ düştü (Mutabakat bölümü 28 Kasım 2026'da kaldırıldı, docs/arsiv/MUTABAKAT.md); şube başına kalan ayarlar (uyarı sesi / kontrol hatırlatma saatleri); Tükendi'nin şube
 başına tutulması; karaoke "Gelmedi"; senkron Faz 2'nin panel tarafı; tedarikçi "Birleştir"; cari v2.
 AsilPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; çok şubeli kasanın kasa tarafı
 (#188, ikinci kasa açılmadan önce); `bankPosPending` değişikliğinin AsilPOS'ta birleşmesi.

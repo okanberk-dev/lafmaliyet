@@ -1,9 +1,8 @@
-// Şube ayrımı parça 5, gerçek Postgres'te (docs/SUBE.md › Şube ayrımı › Alanlar: Tutarlılık, Mutabakat, Stok değeri): üç
-// alan kişinin şube görünümüyle okur; ekstre ve bankaya gelen POS parası her kipte firmanın. Vergi şubeye bölünmez
-// (sahibin kararı 27 Kasım 2026): Vergi her kipte firmanın, Marina seçiliyken de Tümü'yle aynı. Tuzla'nın kayıtları
-// "IZ-TUZLA" işaretini ya da 77.777,77 tutarını taşır: Marina seçili ve "Yalnız şube" kipindeyken alınan miktarda, FIFO
-// havuzunda, mutabakatın şube ayrımında, POS'un şube kipinde, fiyat önerilerinde, tedarikçi fiyatlarında ve tahmini
-// stoğun faturalarında görünmemeli; firma kipinde ve "Tümü"de görünmeli; müdürde firma tercihi yazılı olsa da
+// Şube ayrımı parça 5, gerçek Postgres'te (docs/SUBE.md › Şube ayrımı › Alanlar: Tutarlılık, Mutabakat, Stok değeri):
+// alanlar kişinin şube görünümüyle okur. Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): Vergi her kipte
+// firmanın, Marina seçiliyken de Tümü'yle aynı. Mutabakat bölümü 28 Kasım 2026'da kaldırıldı (alanı da). Tuzla'nın
+// kayıtları "IZ-TUZLA" işaretini ya da 77.777,77 tutarını taşır: Marina seçili ve "Yalnız şube" kipindeyken alınan
+// miktarda, FIFO havuzunda, fiyat önerilerinde, tedarikçi fiyatlarında ve tahmini stoğun faturalarında görünmemeli; firma kipinde ve "Tümü"de görünmeli; müdürde firma tercihi yazılı olsa da
 // görünmemeli. Oturum gerçek src/server/auth/dal.ts'le, çerezler taklit edilerek.
 //
 // SUBE_ALANLAR5_TEST_DATABASE_URL verilmezse atlanır (npm run test:db onu TEST_DATABASE_URL'e bağlar). Bir Postgres
@@ -143,27 +142,10 @@ describe("şube ayrımı parça 5: alanlar veritabanında", { skip: !SERVER_URL 
       { name: "Marina dolap", invoiceId: ids.marinaInv, acquiredOn: day, cost: 1_000, lifeYears: 5 },
     ]);
 
-    // Kasa raporları: kart satışı (POS hakediş) ve ciro; Tuzla'nınki işaretli
+    // Kasa raporları: kart satışı ve ciro; Tuzla'nınki işaretli
     await db.insert(s.cashReports).values([
       { date: day, branchId: "marina", zTotal: 2_000, cash: 1_000, card: 1_000, submittedByName: "Arda" },
       { date: day, branchId: "tuzla", zTotal: AMOUNT, cash: 0, card: AMOUNT, submittedByName: "Can" },
-    ]);
-
-    // Harcamalar (kartla) ve aynı günün banka ekstresi: Marina'nın harcaması, Tuzla'nın işaretli harcaması
-    const [cat] = await db.insert(s.expenseCategories).values({ name: "Şube testi tamir" }).returning({ id: s.expenseCategories.id });
-    await db.insert(s.expenseEntries).values([
-      { date: day, categoryId: cat.id, description: "Marina tamir", amount: 120, paymentMethod: "kart", branchId: "marina" },
-      { date: day, categoryId: cat.id, description: `${MARK} tamir`, amount: 333, paymentMethod: "kart", branchId: "tuzla" },
-      { date: addDays(day, 1), categoryId: cat.id, description: "Marina eksik", amount: 45, paymentMethod: "kart", branchId: "marina" },
-      { date: addDays(day, 1), categoryId: cat.id, description: `${MARK} eksik`, amount: 46, paymentMethod: "kart", branchId: "tuzla" },
-    ]);
-    const [st] = await db
-      .insert(s.reconStatements)
-      .values({ kind: "banka", account: "Garanti TL", periodFrom: addDays(today, -20), periodTo: today, lineCount: 2, uploadedOn: today, expiresOn: addDays(today, 90), createdByName: "Ali" })
-      .returning({ id: s.reconStatements.id });
-    await db.insert(s.reconLines).values([
-      { statementId: st.id, scope: "banka:Garanti TL", fingerprint: "a", rowNo: 1, date: day, description: "KART HARCAMA 1", amount: -120 },
-      { statementId: st.id, scope: "banka:Garanti TL", fingerprint: "b", rowNo: 2, date: day, description: "KART HARCAMA 2", amount: -333 },
     ]);
 
     dal = await import("../src/server/auth/dal");
@@ -184,15 +166,15 @@ describe("şube ayrımı parça 5: alanlar veritabanında", { skip: !SERVER_URL 
     await dal.startSession(u);
     jar.set(BRANCH_COOKIE, secim);
   };
-  const FIRMA: BranchViewPrefs = { tutarlilik: "firma", mutabakat: "firma", stok_degeri: "firma" };
+  const FIRMA: BranchViewPrefs = { tutarlilik: "firma", stok_degeri: "firma" };
 
   test("alanın kapsamı: Marina'da yöneticinin varsayılanı şube, firma tercihinde Tümü, müdürde hep şube", async () => {
     await signIn(ids.ali, "marina");
-    for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", a);
+    for (const a of ["tutarlilik", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", a);
     await signIn(ids.ali, "marina", FIRMA);
-    for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), ALL_BRANCHES, a);
+    for (const a of ["tutarlilik", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), ALL_BRANCHES, a);
     await signIn(ids.mert, "marina", FIRMA);
-    for (const a of ["tutarlilik", "mutabakat", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", `müdür ${a}`);
+    for (const a of ["tutarlilik", "stok_degeri"] as const) assert.equal(await scope.areaScope(a), "marina", `müdür ${a}`);
   });
 
   test("Tutarlılık: şube kipinde alınan yalnız şubeye seçilmiş faturalardan; şubesiz fatura ve elle alım sayı olarak", async () => {
@@ -220,33 +202,6 @@ describe("şube ayrımı parça 5: alanlar veritabanında", { skip: !SERVER_URL 
     assert.equal(lotIds((await loadModel()).ds.purchaseLots ?? []).includes(ids.tuzlaInv), true, "firma kipi");
     await signIn(ids.mert, "marina", FIRMA);
     assert.equal(lotIds((await loadModel()).ds.purchaseLots ?? []).includes(ids.tuzlaInv), false, "müdür hep şube");
-  });
-
-  test("Mutabakat: şube kipinde Marina'nın kaydıyla eşleşen üstte, Tuzla'nınki adsız İşletme geneli'nde; eksikler Marina'nın", async () => {
-    const { loadRecon } = await import("../src/server/mutabakat/load");
-    const firm = await loadRecon();
-    assert.equal(leaks(firm.statements), true, "firma kipinde Tuzla'nın harcaması adıyla");
-    const [st] = (await loadRecon("marina")).statements;
-    assert.ok(st.branch, "şube ayrımı");
-    assert.equal(leaks(st), false);
-    assert.deepEqual(st.branch.own.map((r) => r.line.amount), [-120]);
-    assert.deepEqual(st.branch.shared.map((r) => [r.line.amount, r.candidate?.label]), [[-333, "Öbür şubenin kaydı"]]);
-    assert.deepEqual(st.missing.map((c) => c.amount), [-45], "yalnız Marina'nın eksik kaydı");
-    assert.equal(st.branch.otherMissing, 1);
-    assert.equal(st.summary.eslesti, firm.statements[0].summary.eslesti, "eşleşme aynı (firmanın)");
-    assert.equal((await loadRecon("marina")).pools.size, 0, "şube kipinde havuz dönmez");
-  });
-
-  test("POS hakediş: şube kipinde şubenin kart satışı ve beklenen neti; firmanın satırları dönmez", async () => {
-    const { loadPosView } = await import("../src/server/mutabakat/load");
-    const firm = await loadPosView(today);
-    assert.equal(leaks(firm.result.rows), true, "firma kipinde Tuzla'nın satışı");
-    const v = await loadPosView(today, "marina");
-    assert.ok(v.branch, "şubenin hakedişi");
-    assert.equal(leaks(v.branch), false);
-    assert.equal(v.branch.totals.gross, 1_000);
-    assert.deepEqual(v.result.rows, []);
-    assert.deepEqual(v.branches.map((b) => b.id), ["marina"]);
   });
 
   test("fiyat önerisi, tedarikçi fiyatları, tahmini stoğun faturaları: Marina seçiliyken Tuzla'nınki sayı olarak", async () => {
