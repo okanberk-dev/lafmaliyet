@@ -5,7 +5,8 @@
 //   okunur" alır; reddedilen işlem hiçbir satır yazmaz. Şubenin öteki alanları (ad, POS oranı, e-posta) her yöneticide.
 // - Hesap koruması: başka yönetici asıl yöneticinin e-postasını, parolasını, rolünü, erişimini değiştiremez, silemez, iki
 //   adımlısını sıfırlayamaz, kilidini açamaz, oturumlarını kapatamaz, ona bağlantı üretemez; hiçbir hesap adresini asıl
-//   yöneticinin adresine çeviremez; asıl yönetici kendi e-postasını değiştiremez. Adres boştayken hesap açılabilir.
+//   yöneticinin adresine çeviremez; asıl yönetici kendi e-postasını değiştiremez. O adresle hesap, hesap yokken de
+//   açılamaz (istisna kapandı, 28 Kasım 2026). Yönetici hesaplarının kuralı: tests/yonetici-hesaplari-db.test.ts.
 // - Kapanan şubenin bekleyen kurulum kodları iptal olur, kapalı şubenin kodu 410 alır (yanıtın biçimi aynı); kurulu
 //   kasada yeni kurulum önce onay ister.
 // - Marina'nın anahtarı bütün senaryolardan sonra baştakiyle aynı.
@@ -338,15 +339,24 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     assert.equal((await settings.signOutUserEverywhere(ids.ali)).ok, true);
   });
 
-  test("adres boştayken (o adresle hesap yok) hesap açılabilir; açıldıktan sonra o adresle ikinci hesap açılamaz", async () => {
+  test("asıl yöneticinin adresi, o adresle hesap yokken de alınamaz (istisna kapandı); yönetici rolüyle de", async () => {
     const BOS = "bos-asil@ornek.com";
     process.env.LADMIN_ANA_ADMIN = BOS;
     try {
       await signIn("ali");
-      const first = await settings.createUser({ mode: "invite", name: "Yeni Asıl", email: BOS, role: "staff", active: true, branchId: null });
-      assert.equal(first.ok, true, JSON.stringify(first));
-      const second = await settings.createUser({ mode: "invite", name: "İkinci", email: BOS, role: "staff", active: true, branchId: null });
-      assert.deepEqual(second, { ok: false, error: ASIL_ADRES_ALINAMAZ });
+      for (const role of ["staff", "accountant"] as const) {
+        assert.deepEqual(await settings.createUser({ mode: "invite", name: "Yeni Asıl", email: BOS, role, active: true, branchId: null }), { ok: false, error: ASIL_ADRES_ALINAMAZ }, role);
+      }
+      // Yönetici rolüyle: o adreste asıl yönetici yok, kimse asıl yönetici değil; yönetici açmak reddedilir
+      assert.deepEqual(
+        await settings.createUser({ mode: "invite", name: "Yeni Asıl", email: BOS, role: "admin", active: true, branchId: null }),
+        { ok: false, error: yalnizAsilYonetici("yoneticiAcma") },
+      );
+      // Var olan bir hesabın adresi de o adrese çevrilemez
+      const ayse = (await db.select().from(s.users).where(eq(s.users.id, ids.ayse)))[0];
+      const ayseSeen = { name: ayse.name, email: ayse.email, role: ayse.role, active: ayse.active, branchId: ayse.branchId };
+      assert.deepEqual(await settings.saveUser({ id: ids.ayse, name: ayse.name, email: BOS, role: "staff", active: true, branchId: ayse.branchId, seen: ayseSeen }), { ok: false, error: ASIL_ADRES_ALINAMAZ });
+      assert.deepEqual(await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, BOS)), [], "hesap açılmadı");
     } finally {
       process.env.LADMIN_ANA_ADMIN = ASIL;
       const made = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, BOS));
