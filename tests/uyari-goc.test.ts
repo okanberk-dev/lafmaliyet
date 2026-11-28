@@ -26,6 +26,9 @@ function scopeFiles(): string[] {
   };
   walk("src/app/panel");
   walk("src/components/panel");
+  // ladmin'in ve Yönetim konsolunun ortak şube bileşenleri (kasa anahtarı, geçiş günü) ve konsolun ekranları
+  walk("src/components/sube-islemleri");
+  walk("src/app/yonetim");
   return out.sort();
 }
 
@@ -409,7 +412,8 @@ const NOTICE_FILES = [
   "analiz/analysis-client.tsx",
   "ayarlar/jobs-card.tsx",
   "ayarlar/asilpos-card.tsx",
-  "ayarlar/asilpos-client.tsx",
+  // Geçiş günü formu ladmin ve konsol için ortak bileşende (eskiden ayarlar/asilpos-client.tsx)
+  "src/components/sube-islemleri/gecis-gunu.tsx",
   "ayarlar/page.tsx",
   "ayarlar/photo-card.tsx",
   "ayarlar/settings-client.tsx",
@@ -492,7 +496,7 @@ const NOTICE_FILES = [
   "urunler/site/site-new-product.tsx",
   "zayi/page.tsx",
   "zayi/waste-board.tsx",
-].map((p) => (p.startsWith("c/") ? `src/components/panel/${p.slice(2)}` : `src/app/panel/${p}`));
+].map((p) => (p.startsWith("src/") ? p : p.startsWith("c/") ? `src/components/panel/${p.slice(2)}` : `src/app/panel/${p}`));
 
 /** Ek A'nın D satırlarındaki elle rol: dosya + rolün bulunduğu satırın bir parçası */
 const ROLE_ALLOW: readonly [string, string][] = [

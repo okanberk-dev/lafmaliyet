@@ -124,9 +124,14 @@ const KORUNAN: [file: string, name: string, is: keyof typeof ASIL_YONETICI_ISLER
 test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / kapalı ve kasa programı değişince", () => {
   for (const [file, name, is] of KORUNAN) assert.match(body(file, name), new RegExp(`requireAnaAdmin\\("${is}"\\)`), `${name}: ${is}`);
   const update = body("src/server/actions/branches.ts", "updateBranch");
-  assert.match(update, /const me = await requireAdmin\(\);/, "öteki alanlar her yöneticide");
-  assert.match(update, /if \(mevcut\.active !== d\.active\) await requireAnaAdmin\("subeKapatma"\);/);
-  assert.match(update, /if \(mevcut\.posSource !== d\.posSource\) await requireAnaAdmin\("kasaProgrami"\);/);
+  // Öteki alanlar her yöneticide; konsolun oturumu (asıl yönetici) da geçer
+  assert.match(update, /const me = \(await getYonetimUser\(\)\) \?\? \(await requireAdmin\(\)\);/, "öteki alanlar her yöneticide");
+  // Verilmeyen alanın eskisi kalır: değişmeyen alan asıl yönetici sormaz
+  assert.match(update, /active: d\.active \?\? mevcut\.active,/);
+  assert.match(update, /posSource: d\.posSource \?\? mevcut\.posSource,/);
+  assert.match(update, /kind: d\.kind \?\? mevcut\.kind,/);
+  assert.match(update, /if \(mevcut\.active !== yeni\.active\) await requireAnaAdmin\("subeKapatma"\);/);
+  assert.match(update, /if \(mevcut\.posSource !== yeni\.posSource \|\| mevcut\.kind !== yeni\.kind\) await requireAnaAdmin\("kasaProgrami"\);/);
   // Kapanan şubenin bekleyen kodları aynı işlemde iptal
   assert.match(update, /return closing \? revokePendingInstalls\(tx, d\.id\) : 0;/);
   // Kapı tek tanımdan: dal.ts isAnaAdmin + yalnizAsilYonetici
@@ -194,7 +199,7 @@ test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki y
   assert.match(admin, /onDelete=\{anaAdmin \?/);
   assert.match(read("src/app/panel/subeler/page.tsx"), /anaAdmin=\{isAnaAdmin\(me\)\}/);
   // Kasa anahtarı ve geçiş günü
-  assert.match(read("src/app/panel/subeler/[id]/pos-card.tsx"), /disabled=\{!anaAdmin \|\| !secret\.trim\(\) \|\| short\}/);
+  assert.match(read("src/components/sube-islemleri/kasa-anahtari.tsx"), /disabled=\{!anaAdmin \|\| !secret\.trim\(\) \|\| short\}/);
   assert.match(read("src/app/panel/ayarlar/asilpos-card.tsx"), /locked=\{anaAdmin \? null : asilYoneticiNotu\("gecisGunu"\)\}/);
   // Kullanıcılar & roller: etiket ve satır anahtarı; Hesabım: asıl yöneticinin e-postası sabit
   const users = read("src/app/panel/kullanicilar/users-client.tsx");

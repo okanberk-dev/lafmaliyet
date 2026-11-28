@@ -181,7 +181,7 @@ test("kaynak: yalnız yönetici yazar; yazım ve işlem geçmişi tek işlem; ba
   assert.match(server, /pg_advisory_xact_lock/, "grubun yazımları sıraya girer");
   assert.match(server, /seal\(v\.trim\(\), "branch-settings"\)/, "gizli alan şifreli");
   const branches = read("src/server/actions/branches.ts");
-  assert.match(branches, /mevcut\.active && !d\.active\) \{\s+const bagli = await branchSettingsCloseError\(/);
+  assert.match(branches, /mevcut\.active && !yeni\.active\) \{\s+const bagli = await branchSettingsCloseError\(/);
   assert.match(branches, /branchDeleteError\([^;]*\?\? \(await branchSettingsCloseError\(/);
   // Ekran yalnız yöneticiye (sayfa requireAdmin; /panel/subeler personele kapalı)
   assert.match(read("src/app/panel/subeler/[id]/page.tsx"), /await requireAdmin\(\);/);

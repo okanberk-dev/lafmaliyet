@@ -77,7 +77,8 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     await seedBranches(db);
     const [u] = await db.insert(s.users).values({ email: "yonetici@laffogato.net", name: "Yönetici", passwordHash: "x", role: "admin" }).returning();
     const me = async () => ({ ...u, role: "admin" as const });
-    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: me, requireUser: me });
+    // Yönetim konsolunun oturumu yok (updateBranch önce ona bakar)
+    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: me, requireUser: me, getYonetimUser: async () => null });
     dataset = await import("../src/server/data/dataset");
     branches = await import("../src/server/actions/branches");
     branchScope = await import("../src/server/branch-scope");

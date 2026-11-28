@@ -251,7 +251,8 @@ test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bil
   assert.match(toggle, /<ToggleRow/);
   assert.match(toggle, /setBranchSettingLink\(\{ branchId, group, sameAs: to === "link" \? target : null \}\)/);
   // Anahtar alanı parola kutusu, değer bir daha gösterilmez
-  const pos = read("src/app/panel/subeler/[id]/pos-card.tsx");
+  // Kart ladmin'in Şube ayarları ve konsolun Şube işlemleri için ortak bileşende
+  const pos = read("src/components/sube-islemleri/kasa-anahtari.tsx");
   assert.match(pos, /<PasswordInput\s+id="asilpos-anahtar"/);
   // Kaydetme ve silme parola penceresiyle
   assert.match(pos, /await saveAsilposSecret\(\{ branchId: data\.branchId, secret: value \}, \{ password \}\)/);
