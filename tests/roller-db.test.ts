@@ -1292,7 +1292,9 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       const installs = (id: string) => db.select({ email: s.asilposInstalls.email }).from(s.asilposInstalls).where(eq(s.asilposInstalls.branchId, id));
       const userCount = async () => (await db.select({ id: s.users.id }).from(s.users)).length;
       try {
-        await signIn("ali");
+        // Şube açma ve kasa kurma yalnız Yönetim konsolunun oturumuyla (K-C): asıl yönetici (Ali) konsolda
+        jar = new Jar();
+        await dal.startYonetimSession((await db.select().from(s.users).where(eq(s.users.id, ids.ali)))[0]);
         asAction();
         const users = await userCount();
 

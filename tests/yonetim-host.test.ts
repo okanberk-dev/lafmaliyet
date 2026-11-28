@@ -196,12 +196,14 @@ test("kabuk ve sekmeler: panelin kabuğu yok, noindex, üç sekme, her sayfa req
   assert.match(read("src/app/yonetim/giris/page.tsx"), /robots: \{ index: false, follow: false \}/);
   for (const f of ["src/app/yonetim/(konsol)/page.tsx", "src/app/yonetim/(konsol)/lisans/page.tsx", "src/app/yonetim/(konsol)/sube/[id]/page.tsx"]) assert.match(read(f), /await requireYonetim\(\);/, f);
   assert.match(read("src/app/yonetim/(konsol)/yoneticiler/page.tsx"), /const me = await requireYonetim\(\);/);
-  // Şubeler ve kasalar: ladmin'deki Şube ekleme ile aynı bileşen, veri ve eylemler
-  for (const f of ["src/app/yonetim/(konsol)/page.tsx", "src/app/panel/sube-ekleme/page.tsx"]) {
+  // Şubeler ve kasalar: Şube ekleme bileşeni, verisi ve eylemleri yalnız konsolda (K-C: ladmin'deki eski adres yönlenir)
+  const konsolAna = read("src/app/yonetim/(konsol)/page.tsx");
+  assert.ok(konsolAna.includes('from "@/components/sube-ekleme/sube-ekleme-client"'));
+  assert.ok(konsolAna.includes("await subeEklemeVerisi()"));
+  assert.match(konsolAna, /createAction=\{createBranch\}\s*installAction=\{sendBranchInstall\}\s*staffAction=\{saveBranchStaff\}\s*releaseAction=\{releaseBranchTill\}/);
+  for (const f of ["src/app/panel/sube-ekleme/page.tsx", "src/app/panel/sube-ekleme/icerik.tsx"]) {
     const t = read(f);
-    assert.ok(t.includes('from "@/components/sube-ekleme/sube-ekleme-client"'), f);
-    assert.ok(t.includes("await subeEklemeVerisi()"), f);
-    assert.match(t, /createAction=\{createBranch\}\s*installAction=\{sendBranchInstall\}\s*staffAction=\{saveBranchStaff\}\s*releaseAction=\{releaseBranchTill\}/, f);
+    assert.ok(!t.includes("sube-ekleme-client") && !t.includes("subeEklemeVerisi") && !t.includes("createBranch"), f);
   }
   const konsolSayfasi = read("src/app/yonetim/(konsol)/page.tsx") + read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   assert.ok(!/["'`>][^"'`<]*ladmin › Şube ekleme/.test(konsolSayfasi), "konsolun metinleri ladmin › Şube ekleme demez");
@@ -248,13 +250,13 @@ test("şube işlemleri konsolda: şube satırından işlem sayfasına; var olan 
   assert.match(read("src/app/yonetim/(konsol)/sekmeler.tsx"), /const acik = yol !== null && sekmeAcik\(s\.href, yol\);/);
   // Dinamik yolda usePathname ön çizimde bilinmez (Next 16): sekmeler kabukta Suspense içinde, yedeği seçimsiz aynı liste
   assert.match(read("src/app/yonetim/(konsol)/layout.tsx"), /<Suspense fallback=\{<KonsolSekmeleriYedek \/>\}>\s*<KonsolSekmeleri \/>\s*<\/Suspense>/);
-  // Şubeler ve kasalar: aynı bileşen konsol metinleriyle; satırda "Şube işlemleri"; online kanallar da listede
+  // Şubeler ve kasalar: bileşen yalnız konsolda (yer seçeneği kalktı); satırda "Şube işlemleri"; online kanallar da listede
   const ana = read("src/app/yonetim/(konsol)/page.tsx");
-  assert.match(ana, /releaseAction=\{releaseBranchTill\}\s*yer="konsol"/);
+  assert.match(ana, /releaseAction=\{releaseBranchTill\}\s*\/>/);
   assert.match(ana, /href=\{konsolSubeYolu\(b\.id\)\}/);
-  assert.doesNotMatch(read("src/app/panel/sube-ekleme/page.tsx"), /yer=/, "ladmin'in Şube ekleme sayfası değişmez");
   const ekleme = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
-  assert.match(ekleme, /\{yer === "konsol" \? \(\s*<ButtonLink href=\{konsolSubeYolu\(b\.id\)\}/);
+  assert.doesNotMatch(ekleme, /\byer\b|SubeEklemeYeri/);
+  assert.match(ekleme, /<ButtonLink href=\{konsolSubeYolu\(b\.id\)\}/);
   // İşlem sayfası: var olan eylemler ve ladmin'in bileşenleri (taşındı, kopyalanmadı)
   const sayfa = read("src/app/yonetim/(konsol)/sube/[id]/page.tsx");
   const islem = read("src/app/yonetim/(konsol)/sube/[id]/sube-islemleri.tsx");
@@ -264,12 +266,10 @@ test("şube işlemleri konsolda: şube satırından işlem sayfasına; var olan 
   assert.match(islem, /await deleteBranch\(\{ id: branch\.id \}\)/);
   assert.match(islem, /branchChangeError\(/, "kapatma ve tür kuralları sunucuyla aynı işlevden");
   assert.match(sayfa, /<AsilposSwitchDayForm branchId=\{branch\.id\} \{\.\.\.v\.gecis\} \/>/);
-  assert.match(sayfa, /<AsilposBranchCard data=\{v\.asilpos\} anaAdmin yer="konsol" canli=\{canli\} \/>/);
-  assert.match(sayfa, /<AsilposOldSecretCard branchId=\{branch\.id\} anaAdmin \/>/);
-  for (const [f, ad] of [
-    ["src/app/panel/subeler/[id]/page.tsx", "AsilposBranchCard"],
-    ["src/app/panel/ayarlar/asilpos-card.tsx", "AsilposSwitchDayForm"],
-  ] as const) {
+  assert.match(sayfa, /<AsilposBranchCard data=\{v\.asilpos\} yer="konsol" canli=\{canli\} \/>/);
+  assert.match(sayfa, /<AsilposOldSecretCard branchId=\{branch\.id\} yer="konsol" \/>/);
+  // ladmin'in Şube ayarları aynı kartı salt okunur çizer (yer varsayılanı ladmin); geçiş günü formu yalnız konsolda
+  for (const [f, ad] of [["src/app/panel/subeler/[id]/page.tsx", "AsilposBranchCard"]] as const) {
     assert.match(read(f), new RegExp(`import \\{[^}]*${ad}[^}]*\\} from "@/components/sube-islemleri/`), `${f} ortak bileşeni kullanır`);
   }
   assert.doesNotMatch(read("src/app/panel/subeler/[id]/pos-card.tsx"), /export function AsilposBranchCard/, "kopya yok");
@@ -284,11 +284,11 @@ test("şube işlemleri konsolda: şube satırından işlem sayfasına; var olan 
     sayfa,
     islem,
     ana,
-    ekleme.slice(ekleme.indexOf("  konsol: {"), ekleme.indexOf("} as const;", ekleme.indexOf("  konsol: {"))),
+    ekleme.slice(ekleme.indexOf("const YON_METNI = {"), ekleme.indexOf("} as const;", ekleme.indexOf("const YON_METNI = {"))),
     anahtar.slice(anahtar.indexOf("  konsol: {"), anahtar.indexOf("} as const;", anahtar.indexOf("  konsol: {"))),
   ];
   for (const t of konsolMetni) assert.doesNotMatch(t, /ladmin ›|Şubeler'de|Ayarlar ›/, t.slice(0, 80));
-  assert.ok(ekleme.includes("AsilPOS'a geçiş sonra ladmin › Şubeler'de."), "ladmin'in metni değişmedi");
+  assert.ok(ekleme.includes("AsilPOS'a geçiş sonra şubenin Şube işlemleri sayfasında."), "konsolun metni");
   assert.ok(anahtar.includes(`title: "Kasa kaynağı Şubeler'de hâlâ ModPOS"`), "ladmin'in metni değişmedi");
   assert.match(anahtar, /\{yer === "ladmin" \? \(\s*<div[^>]*>\s*<span[^>]*>\s*<span className="text-ink-mute">Geçiş günü:<\/span>/, "Ayarlar › AsilPOS bağlantısı yalnız ladmin'de");
 });

@@ -101,12 +101,6 @@ export function asilAdresRet(o: { next: string; before: string | null }, env: En
 /** Asıl yönetici kendi e-postasını değiştiremez (Hesabım): yetki bu adrese bağlı, değişirse yetki giderdi */
 export const ASIL_EPOSTA_SABIT = "Asıl yöneticinin e-postası değişmez: asıl yönetici yetkisi bu adrese bağlıdır";
 
-/** Arayüzde, asıl yönetici olmayan yöneticiye korunan düğmenin yanında (tek cümle) */
-export function asilYoneticiNotu(is: AsilYoneticiIsi): string {
-  const metin = ASIL_YONETICI_ISLERI[is];
-  return `${metin.charAt(0).toLocaleUpperCase("tr-TR")}${metin.slice(1)} yalnız asıl yöneticinin işidir.`;
-}
-
 /**
  * İş bir yönetici hesabına dokunuyor mu: işlemden önceki ya da sonraki rol yönetici (docs/ROLLER.md › Yönetici
  * hesapları). Dokunuyorsa eylem, parola sorusundan önce `requireAnaAdmin(yonetici…)` ister

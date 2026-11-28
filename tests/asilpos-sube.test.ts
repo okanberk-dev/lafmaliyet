@@ -101,7 +101,8 @@ test("kaynak: tek AsilPOS şubesi engeli yok; şube eylemleri önbelleği düş�
   assert.match(actions, /if \(posOff && !d\.confirmPosOff\) throw new UserError\(posOffConfirmText\(mevcut\.name\)\);/);
   assert.match(actions, /if \(posOff\) await putBranchSetting\(tx, ASILPOS_GROUP, d\.id, \{ switchDay: null \}, me\.name\);/);
   assert.ok(posOffConfirmText("Marina").startsWith(POS_OFF_CONFIRM_PREFIX));
-  assert.match(read("src/app/panel/subeler/branches-admin.tsx"), /sonuc\.error\.startsWith\(POS_OFF_CONFIRM_PREFIX\)/);
+  // Kasa programı yalnız Yönetim konsolunda değişir (K-C): onayı konsolun Şube işlemleri sayfası sorar
+  assert.match(read("src/app/yonetim/(konsol)/sube/[id]/sube-islemleri.tsx"), /r\.error\.startsWith\(POS_OFF_CONFIRM_PREFIX\)/);
   // Eski tek kasa yardımcıları kalktı
   for (const f of ["src/lib/asilpos/switch.ts", "src/server/asilpos/branch.ts"]) assert.doesNotMatch(read(f), /asilposBranchId|asilposBranchOf|asilposSourceError|ASILPOS_BRANCH_ID/, f);
 });

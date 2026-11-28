@@ -31,7 +31,7 @@ export const ANA_ADMIN_ONLY = "Bu işlemi yalnız asıl yönetici yapar: şube a
  * kilitli personel hesabı (büyük-küçük harf ve boşluk fark etmez). Şubenin öbür personeli (ortak tablette sırayla giren
  * baristalar), müdürü, muhasebeci ve yönetici görmez: bağlantıdaki kod kasanın eşitleme anahtarını verir
  * (POST /api/asilpos/kurulum) ve tek kullanımlıktır. Şube hesabı yalnız personel olabilir (`branchEmailTaken`); yönetici
- * bağlantıyı Şube ekleme sayfasında görür (yalnız asıl yönetici)
+ * bağlantıyı Yönetim konsolunun Şubeler ve kasalar sayfasında görür (yalnız asıl yönetici)
  */
 export function isBranchAccount(user: { role: string; email: string; branchId?: string | null }, install: { branchId: string; email: string }): boolean {
   const norm = (v: string) => v.trim().toLowerCase();

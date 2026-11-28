@@ -1,7 +1,8 @@
 // Asıl yönetici (docs/ROLLER.md › Asıl yönetici; sahibin kararı, 28 Kasım 2026): saf kurallar (src/lib/asil-yonetici.ts),
 // kasa durumu (src/lib/asilpos/kasa-durumu.ts) ve kaynak taraması: korunan her eylem aynı kapıyı (requireAnaAdmin) ve
 // aynı ret metnini kullanır, hesap korumasının her eylemi aynı denetimi çağırır, yönetici hesabına dokunan her kullanıcı
-// eylemi parola sorusundan önce requireAnaAdmin(yonetici…) ister, ekranlar bayrağı sunucuda hesaplar.
+// eylemi parola sorusundan önce requireAnaAdmin(yonetici…) ister, requireAnaAdmin yalnız Yönetim konsolunun oturumunu
+// kabul eder (K-C), ladmin'deki ekranlar bu işleri salt okunur gösterir ve konsol bağlantısını sunucuda kurar.
 // Veritabanında davranış: tests/asil-yonetici-db.test.ts ve tests/yonetici-hesaplari-db.test.ts.
 // Çalıştırma: npx tsx --test tests/asil-yonetici.test.ts
 
@@ -16,9 +17,9 @@ import {
   ASIL_YONETICI_ISLERI,
   asilAdresRet,
   asilHesapRet,
-  asilYoneticiNotu,
   isAnaAdmin,
   isAnaAdminEmail,
+  KONSOLDA_YAPILIR,
   yalnizAsilYonetici,
   YONETICI_KONSOLDA,
   YONETICI_ROLU_KAPALI,
@@ -58,7 +59,8 @@ test("asıl yönetici: yönetici rolü ve ortamdaki adres (harf büyüklüğü v
   // Ret cümlesi tek biçim; şube ekleme sabiti de aynı cümle
   assert.equal(yalnizAsilYonetici("subeAcma"), "Bu işlemi yalnız asıl yönetici yapar: şube açmak");
   assert.equal(ANA_ADMIN_ONLY, yalnizAsilYonetici("subeAcma"));
-  assert.equal(asilYoneticiNotu("subeKapatma"), "Şubeyi kapatmak ya da yeniden açmak yalnız asıl yöneticinin işidir.");
+  // Asıl yönetici ladmin'den (panel oturumuyla) gelirse: tek cümle, uzun tire yok
+  assert.equal(KONSOLDA_YAPILIR, "Bu iş Yönetim konsolunda yapılır");
   for (const metin of Object.values(ASIL_YONETICI_ISLERI)) assert.doesNotMatch(metin, /[–—]/, metin);
 });
 
@@ -149,7 +151,7 @@ const KORUNAN: [file: string, name: string, is: keyof typeof ASIL_YONETICI_ISLER
   ["src/server/actions/branches.ts", "releaseBranchTill", "kasaSerbest"],
 ];
 
-test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / kapalı ve kasa programı değişince", () => {
+test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / kapalı ve kasa programı değişince; kapı yalnız konsol oturumu", () => {
   for (const [file, name, is] of KORUNAN) assert.match(body(file, name), new RegExp(`requireAnaAdmin\\("${is}"\\)`), `${name}: ${is}`);
   const update = body("src/server/actions/branches.ts", "updateBranch");
   // Öteki alanlar her yöneticide; konsolun oturumu (asıl yönetici) da geçer
@@ -162,10 +164,15 @@ test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / k
   assert.match(update, /if \(mevcut\.posSource !== yeni\.posSource \|\| mevcut\.kind !== yeni\.kind\) await requireAnaAdmin\("kasaProgrami"\);/);
   // Kapanan şubenin bekleyen kodları aynı işlemde iptal
   assert.match(update, /return closing \? revokePendingInstalls\(tx, d\.id\) : 0;/);
-  // Kapı tek tanımdan: dal.ts isAnaAdmin + yalnizAsilYonetici
+  // Kapı tek tanımdan: dal.ts. Yalnız Yönetim konsolunun oturumu (getYonetimUser) geçer (K-C); panel oturumu hiçbir zaman:
+  // asıl yönetici KONSOLDA_YAPILIR, öteki yönetici yalnizAsilYonetici alır (önce yönetici kapısı: başka rol ana ekranına)
   const dal = read("src/server/auth/dal.ts");
-  // Yönetim konsolunun oturumu (yalnız asıl yönetici, getYonetimUser) da geçer; yoksa panelin bugünkü yolu
-  assert.match(dal, /export async function requireAnaAdmin\(is: AsilYoneticiIsi = "subeAcma"\): Promise<CurrentUser> \{\s*(?:\/\/[^\n]*\n\s*)*const konsol = await getYonetimUser\(\);\s*if \(konsol\) return konsol;\s*const user = await requireAdmin\(\);\s*if \(!isAnaAdmin\(user\)\) throw new UserError\(yalnizAsilYonetici\(is\)\);/);
+  const kapi = dal.slice(dal.indexOf("export async function requireAnaAdmin("), dal.indexOf("\n}\n", dal.indexOf("export async function requireAnaAdmin(")) + 3);
+  assert.match(
+    kapi,
+    /^export async function requireAnaAdmin\(is: AsilYoneticiIsi = "subeAcma"\): Promise<CurrentUser> \{\s*const konsol = await getYonetimUser\(\);\s*if \(konsol\) return konsol;\s*const user = await requireAdmin\(\);\s*throw new UserError\(isAnaAdmin\(user\) \? KONSOLDA_YAPILIR : yalnizAsilYonetici\(is\)\);\s*\}\n$/,
+  );
+  assert.equal((kapi.match(/return /g) ?? []).length, 1, "tek dönüş: konsol oturumu");
   // Eylem kapısı taraması requireAnaAdmin'i yönetici kapısı sayar (muhasebeci "salt okunur", tests/roller.test.ts)
   for (const [file, name] of KORUNAN) assert.ok(actionGatesOf(ROOT, file).find((g) => g.name === name)?.gates.some((g) => g.kind === "requireAdmin"), name);
 });
@@ -251,9 +258,18 @@ test("kapalı şubenin kurulum kodu: koşullu güncellemede şube açık olmalı
   assert.ok(!branch.includes("anaAdmin") && !branch.includes("asil-yonetici"));
 });
 
-test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki yöneticiye kapalı ve nedeni yazılı", () => {
+test("ekranlar (K-C): ladmin'de asıl yönetici işleri salt okunur, yerinde tek cümle; konsol bağlantısı yalnız asıl yöneticiye", () => {
+  // /panel/sube-ekleme: eski adres; asıl yönetici konsolun Şubeler ve kasalar sayfasına (kurucu panelden), öteki yönetici tek cümle
   const page = read("src/app/panel/sube-ekleme/page.tsx");
-  assert.match(page, /const me = await requireAdmin\(\);\s*if \(!isAnaAdmin\(me\)\) \{\s*return <Notice tone="neutral" title="Şube ekleme ve kasa kurulumu yalnız asıl yöneticinin hesabında açılır\." \/>;/);
+  assert.match(page, /<SubeEklemeIcerik \/>/);
+  assert.doesNotMatch(page, /SubeEkleme\b(?!Icerik)|createBranch|sendBranchInstall/, "eylemler ladmin'de çizilmez");
+  const icerik = read("src/app/panel/sube-ekleme/icerik.tsx");
+  assert.match(icerik, /const me = await requireAdmin\(\);\s*if \(isAnaAdmin\(me\)\) redirect\(panelden\(YONETIM_YOLU\)\);\s*return <Notice tone="neutral" title=\{KONSOLDA_YAPILIR\} \/>;/);
+  // Ortak not: tek cümle, bağlantı yalnız verilirse (sunucu yalnız asıl yöneticiye verir)
+  const not = read("src/components/panel/konsol-notu.tsx");
+  assert.match(not, /\{KONSOLDA_YAPILIR\}/);
+  assert.match(not, /\{href \? \(/);
+  assert.doesNotMatch(not, /^"use client";|onClick=/m, "sunucu ve istemci bileşenleri birlikte kullanır");
   assert.ok(existsSync(join(ROOT, "src/components/sube-ekleme/sube-ekleme-client.tsx")));
   const client = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   // Kurulu kasada önce onay (ekranın ve sunucunun sorusu), sonuç penceresi istenen bilgilerle
@@ -261,16 +277,29 @@ test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki y
   assert.match(client, /r\.error\.startsWith\(YENI_KURULUM_ONEKI\)/);
   for (const s of ["Şubenin e-postası", "Kasada giriş hesabı", "Son geçerlilik", "Bağlantıyı kopyala", "E-posta gitmedi"]) assert.ok(client.includes(s), s);
   assert.equal((client.match(/<li>/g) ?? []).length, 4, "dört adım");
-  // Şubeler: düzenleme penceresinin e-postası şubenin kendi kaydından; korunan alanlar kapalı
+  // Şubeler: düzenleme penceresinin e-postası şubenin kendi kaydından; tür, kasa programı ve açık / kapalı salt okunur,
+  // silme yok; başlıkta ve pencerede tek cümle, konsol bağlantıları yalnız asıl yöneticiye (sunucuda, kurucudan)
   const admin = read("src/app/panel/subeler/branches-admin.tsx");
   assert.match(admin, /email: emails\[b\.id\] \?\? ""/);
   assert.ok(!admin.includes("installs["), "son kurulumdan dolmaz");
-  assert.match(admin, /disabled=\{sabit \|\| !anaAdmin\}/);
-  assert.match(admin, /onDelete=\{anaAdmin \?/);
-  assert.match(read("src/app/panel/subeler/page.tsx"), /anaAdmin=\{isAnaAdmin\(me\)\}/);
-  // Kasa anahtarı ve geçiş günü
-  assert.match(read("src/components/sube-islemleri/kasa-anahtari.tsx"), /disabled=\{!anaAdmin \|\| !secret\.trim\(\) \|\| short\}/);
-  assert.match(read("src/app/panel/ayarlar/asilpos-card.tsx"), /locked=\{anaAdmin \? null : asilYoneticiNotu\("gecisGunu"\)\}/);
+  assert.doesNotMatch(admin, /anaAdmin|href="\/panel\/sube-ekleme"|deleteAction|<Select|<Checkbox/);
+  assert.match(admin, /meta=\{<KonsolNotu href=\{konsol\?\.subeler \?\? null\} konu="Şube açmak ve kasa kurmak" \/>\}/);
+  assert.match(admin, /<KonsolNotu href=\{konsolUrl\} konu=/);
+  assert.match(
+    read("src/app/panel/subeler/page.tsx"),
+    /konsol=\{isAnaAdmin\(me\) \? \{ subeler: panelden\(YONETIM_YOLU\), sube: Object\.fromEntries\(rows\.map\(\(b\) => \[b\.id, panelden\(konsolSubeYolu\(b\.id\)\)\]\)\) \} : null\}/,
+  );
+  // Kasa anahtarı: alan ve düğmeler yalnız konsolda; ladmin'de cümle (eski anahtar da)
+  const anahtar = read("src/components/sube-islemleri/kasa-anahtari.tsx");
+  assert.doesNotMatch(anahtar, /anaAdmin/);
+  assert.match(anahtar, /\) : \(\s*<KonsolNotu href=\{konsolUrl\} konu="Anahtarı değiştirmek ya da silmek" \/>\s*\)\}/);
+  assert.match(anahtar, /\) : \(\s*<KonsolNotu href=\{konsolUrl\} konu="Eski anahtarı silmek" \/>\s*\)\}/);
+  assert.match(read("src/app/panel/subeler/[id]/page.tsx"), /const konsolUrl = isAnaAdmin\(me\) \? panelden\(`\$\{konsolSubeYolu\(branch\.id\)\}#asilpos`\) : null;/);
+  // Geçiş günü: ladmin'de salt okunur; form yalnız konsolda (kilit seçeneği kalktı)
+  const kart = read("src/app/panel/ayarlar/asilpos-card.tsx");
+  assert.doesNotMatch(kart, /AsilposSwitchDayForm/);
+  assert.match(kart, /<KonsolNotu href=\{anaAdmin \? panelden\(`\$\{konsolSubeYolu\(data\.branchId\)\}#gecis-gunu`\) : null\} konu="Geçiş gününü değiştirmek" \/>/);
+  assert.doesNotMatch(read("src/components/sube-islemleri/gecis-gunu.tsx"), /locked/);
   // Kullanıcılar & roller: etiket ve satır anahtarı; yönetici satırları herkese salt okunur, satırda ve pencerede tek
   // cümle; Yönetici rolü eklemede ve düzenlemede kapalı. Hesabım: asıl yöneticinin e-postası sabit
   const users = read("src/app/panel/kullanicilar/users-client.tsx");
@@ -299,6 +328,11 @@ test("yeni metinde uzun tire yok; Şube ekleme sayfa, uç değil; kasa açılı�
     "src/server/asilpos/ilk-personel.ts",
     "src/server/auth/giris-korumalari.ts",
     "src/app/panel/sube-ekleme/page.tsx",
+    "src/app/panel/sube-ekleme/icerik.tsx",
+    "src/components/panel/konsol-notu.tsx",
+    "src/app/panel/subeler/branches-admin.tsx",
+    "src/app/panel/subeler/page.tsx",
+    "src/app/panel/ayarlar/asilpos-card.tsx",
     "src/components/sube-ekleme/sube-ekleme-client.tsx",
     "src/server/yonetici-hesaplari.ts",
     "src/app/yonetim/(konsol)/yoneticiler/page.tsx",
