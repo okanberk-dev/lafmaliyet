@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, eq, gt, inArray, isNotNull, isNull, max } from "drizzle-orm";
 
-import { kasaKaydi, type KasaKaydi } from "@/lib/asilpos/kasa-acilis";
+import { CANLI_GUN, kasaKaydi, type KasaKaydi } from "@/lib/asilpos/kasa-acilis";
 import { kasaDurumu, type KasaDurumu } from "@/lib/asilpos/kasa-durumu";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { posKeyState } from "@/server/asilpos/branch";
@@ -120,4 +120,19 @@ export async function loadKasaDurumlari(branchIds: readonly string[], db: DB = g
 /** Tek şubenin kasa durumu */
 export async function loadKasaDurumu(branchId: string, db: DB = getDb(), now: Date = new Date()): Promise<KasaDurumu> {
   return (await loadKasaDurumlari([branchId], db, now))[branchId] ?? { durum: "yok" };
+}
+
+/** "Kasayı serbest bırak" penceresinin bilgisi: şube canlı mı (son CANLI_GUN günde gün sonu), anahtar ortamdan mı */
+export interface SerbestBilgisi {
+  canli: boolean;
+  anahtarOrtamda: boolean;
+}
+
+export async function loadSerbestBilgileri(ids: readonly string[], db: DB = getDb(), now: Date = new Date()): Promise<Record<string, SerbestBilgisi>> {
+  const out: Record<string, SerbestBilgisi> = {};
+  for (const id of new Set(ids)) {
+    const [at, key] = await Promise.all([lastDayReceivedAt(id, db), posKeyState(id, db)]);
+    out[id] = { canli: !!at && now.getTime() - Date.parse(at) <= CANLI_GUN * 86_400_000, anahtarOrtamda: key.source === "ortam" };
+  }
+  return out;
 }
