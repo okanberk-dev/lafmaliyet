@@ -8,6 +8,7 @@ import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoK
 import { normalizeOkc, okcReadFigures, toStaffReading, type OkcReadFigures } from "@/lib/photo-read/okc";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
 import { asilposDiffs } from "@/lib/asilpos/diffs";
+import { blindAsilposDay } from "@/lib/asilpos/kor-kasa";
 import { asilposMovesPending, unreceiptedCashOut, type AsilposDay } from "@/lib/asilpos/prefill";
 import { cashOutsOn, cashOutsShownTo, type CashOutDTO } from "@/server/data/cash-outs";
 import { loadKasaAsilpos } from "@/server/data/asilpos-day";
@@ -187,10 +188,12 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
 /**
  * Kayıtlı raporun WhatsApp ve e-posta ekleri (AsilPOS gününde AsilPOS'tan farklı yazılanlar da). `viewer`: metni ekranda
  * alan kişinin rolü (WhatsApp); müdüre yöneticinin kategorisindeki satır yalnız tutarıyla (cashOutsShownTo). E-posta
- * (alıcıları yönetici ve muhasebe) verilmeden bütün satırla
+ * (alıcıları yönetici ve muhasebe) verilmeden bütün satırla. `blind`: kör kasa (personelin AsilPOS günü; rapor sayımsız
+ * verilir, blindReport): AsilPOS'tan farklı yazılanlar AsilPOS'un sayımsız günüyle (blindAsilposDay), personelin kartındaki gibi
  */
-export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields, viewer?: Role): Promise<CashReportExtras> {
+export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields, viewer?: Role, blind = false): Promise<CashReportExtras> {
   // Raporun kendi kasası: kasadan çıkanlar ve AsilPOS günü raporun şubesinin
   const [info, outs, asilpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date, report.branchId), loadKasaAsilpos(report.date, undefined, report.branchId)]);
-  return extrasFrom(info.get(report.id), viewer ? await cashOutsShownTo(viewer, outs) : outs, report, asilpos);
+  const day = blind && asilpos.day ? { ...asilpos, day: blindAsilposDay(asilpos.day) } : asilpos;
+  return extrasFrom(info.get(report.id), viewer ? await cashOutsShownTo(viewer, outs) : outs, report, day);
 }

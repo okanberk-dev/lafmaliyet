@@ -115,6 +115,13 @@ Sıra:
 - Kasa deposunun PR'ları: #192 Token sürücüsünün sessiz kurulumu, #193 müşteri ekranında çeviri balonu, yenileme simgesi
   PR'ı.
 
+## 28 Kasım: personele kör sayımlı WhatsApp metni (dal whatsapp-kor-metin)
+
+Sahibin bildirimi: "WhatsApp kopyala gitmiş ladmin'de, o olsun". Marina'da (AsilPOS günü, kör kasa) personelin Kasa raporu
+kartında WhatsApp ile gönder ve Metni kopyala geri geldi; metin sayımsız (`whatsappText(…, { blind: true })`; açılış,
+sayılan, teslim, olması gereken, fark ve devir yok), sunucunun eylemi reddetmek yerine aynı metni verir. Yönetici ve Tuzla
+değişmedi. Göç yok. Yukarıdaki sıra değişmedi.
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)

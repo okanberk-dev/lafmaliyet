@@ -189,7 +189,7 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 
 /**
  * Gün şubenin kendi kasasının AsilPOS günü mü (çok şube: şubenin kasası AsilPOS ve gün şubenin geçiş gününden önce değil).
- * Personele kör kasa günüdür (src/lib/asilpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp metni reddedilir
+ * Personele kör kasa günüdür (src/lib/asilpos/kor-kasa.ts): yazım ve düzeltme önerisi reddedilir, WhatsApp metni sayımsız
  */
 export async function isAsilposTillDay(db: Pick<DB, "select"> | CashTx, date: string, branchId: string): Promise<boolean> {
   return isAsilposDay(date, await switchDayOf(branchId, db));

@@ -538,9 +538,10 @@ export function CashForm({
   asilposMode?: boolean;
   /**
    * Rapor AsilPOS'un gün sonundan kendiliğinden yazıldı (gün sonu tam, 24 Kasım 2026): personele rakamlar salt okunur,
-   * tek işi gün sonu fotoğrafı (sayfanın "Gün sonu fotoğrafı" kartı). Düzenle, silme isteği, düzeltme önerisi, WhatsApp ve
-   * metin personelde yok: düzeltme AsilPOS'ta yapılır (föy, yeniden açma), AsilPOS yeniden gönderir. Yönetici Düzenle'yi
-   * görür; elle düzelttiği alanı sonraki otomatik güncelleme ezmez
+   * tek işi gün sonu fotoğrafı (sayfanın "Gün sonu fotoğrafı" kartı). Düzenle, silme isteği ve düzeltme önerisi personelde
+   * yok: düzeltme AsilPOS'ta yapılır (föy, yeniden açma), AsilPOS yeniden gönderir. WhatsApp ile gönder ve Metni kopyala
+   * var, metin kör kasanın sayımsız metni (28 Kasım 2026). Yönetici Düzenle'yi görür; elle düzelttiği alanı sonraki
+   * otomatik güncelleme ezmez
    */
   asilposAuto?: boolean;
   /** AsilPOS gününün gün sonu fotoğrafının adı (asilposPhotoLabel: "Pavo gün sonu fişi"); yoksa türün adı */
@@ -1204,7 +1205,8 @@ export function CashForm({
 
   if (report && !editing) {
     // AsilPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı). Kör kasa (bulgu 0): personelin
-    // AsilPOS günü raporu (otomatik ya da yöneticinin elle girdiği) sayımsız gelir (blindReport), o da salt okunur
+    // AsilPOS günü raporu (otomatik ya da yöneticinin elle girdiği) sayımsız gelir (blindReport), o da salt okunur;
+    // WhatsApp metni de sayımsız gelir (sayfa kurar)
     const blind = report.blind === true && !photoUi.admin;
     const staffAuto = (asilposAuto || blind) && !photoUi.admin;
     const mail = emailLine(report.emailStatus, report.emailError, recipients);
@@ -1264,26 +1266,31 @@ export function CashForm({
             // "AsilPOS'ta düzeltin" değil: farkı görmeyen kasiyere düzeltmeyi istemek açığı ima ederdi (bulgu 0). Elle
             // girilmiş kör raporda rakamlar AsilPOS'tan gelmedi: ayrı satır
             <p className="text-[13px] leading-5 text-ink-mute">{asilposAuto ? BLIND_TEXT.line : BLIND_TEXT.manualLine}</p>
-          ) : (
-          <div className="flex flex-wrap gap-2">
-            {whatsapp ? (
-              <a href={whatsapp.link} target="_blank" rel="noopener noreferrer" className={buttonClass("accent", "lg")}>
-                <MessageCircle size={18} /> WhatsApp ile gönder
-              </a>
-            ) : null}
-            {whatsapp ? (
-              <Button variant="secondary" size="lg" onClick={() => void copy()}>
-                <Copy size={16} /> Metni kopyala
-              </Button>
-            ) : null}
-            {canEdit ? (
-              <Button variant="ghost" size="lg" onClick={edit} disabled={Boolean(ownDelete)}>
-                <Pencil size={16} /> Düzenle
-              </Button>
-            ) : null}
-            {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} branchId={branchId} label={`${longDateTR(date)} kasa raporu`} /> : null}
-          </div>
-          )}
+          ) : null}
+          {/*
+            Personelin AsilPOS gününde rapor salt okunur (Düzenle ve silme isteği yok) ama metin paylaşılır (sahibin isteği,
+            28 Kasım 2026): sayfa kör günde sayımsız metni verir (whatsappText blind; açılış, sayılan ve fark yok)
+          */}
+          {!staffAuto || whatsapp ? (
+            <div className="flex flex-wrap gap-2">
+              {whatsapp ? (
+                <a href={whatsapp.link} target="_blank" rel="noopener noreferrer" className={buttonClass("accent", "lg")}>
+                  <MessageCircle size={18} /> WhatsApp ile gönder
+                </a>
+              ) : null}
+              {whatsapp ? (
+                <Button variant="secondary" size="lg" onClick={() => void copy()}>
+                  <Copy size={16} /> Metni kopyala
+                </Button>
+              ) : null}
+              {canEdit && !staffAuto ? (
+                <Button variant="ghost" size="lg" onClick={edit} disabled={Boolean(ownDelete)}>
+                  <Pencil size={16} /> Düzenle
+                </Button>
+              ) : null}
+              {requests && !ownDelete && !staffAuto ? <DeleteRequestButton date={date} revision={report.revision} branchId={branchId} label={`${longDateTR(date)} kasa raporu`} /> : null}
+            </div>
+          ) : null}
           {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
           {locked && !staffAuto ? (
             <Notice

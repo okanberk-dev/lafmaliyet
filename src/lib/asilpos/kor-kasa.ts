@@ -8,10 +8,13 @@ import type { AsilposDay } from "./prefill";
  * personele göstermez: AsilPOS'un şubesinde geçiş gününden itibaren (staffAsilposEntryClosed'ın şube ve gün kuralı)
  * personelin gördüğü raporda açılış, sayılan nakit, teslim ve kasa farkı yoktur (kayıtlı rapor kartı, döküm, Bugün,
  * Son 7 gün, eski AsilPOS günü, RSC yükü). Olması gereken ve ertesi güne devir bunlardan hesaplandığı için onlar da
- * yok. Personel o günün raporunu formdan yazamaz, düzeltme öneremez, WhatsApp metnini alamaz (sunucu reddeder). Yönetici
- * (rakam yetkisi) her şeyi görür. Teslim (patrona verilen) kasiyerin AsilPOS'a kendi girdiği kasa hareketidir: "gün içinde
- * çıkan"ın ve AsilPOS'un "harcama + teslim" bilgi satırının parçası olarak personelde kalır; açılış ve sayılan olmadan
- * olması gereken ve fark çıkmaz. Raporun ayrı teslim alanı sıfırdır. Saf: tests/kor-kasa.test.ts
+ * yok. Personel o günün raporunu formdan yazamaz, düzeltme öneremez. WhatsApp metnini sayımsız alır (sahibin isteği, 28
+ * Kasım 2026; src/lib/cash-report.ts whatsappText `blind`): personelin dökümünün gösterdiği kadar, açılış, sayılan, teslim,
+ * olması gereken, fark ve devir yerine BLIND_TEXT.breakdown; Kasa sayfası da sunucunun eylemi de (cashReportWhatsapp) bunu
+ * verir. Yönetici (rakam yetkisi) her şeyi görür, metni de eskisi gibi. Teslim (patrona verilen) kasiyerin AsilPOS'a kendi
+ * girdiği kasa hareketidir: "gün içinde çıkan"ın ve AsilPOS'un "harcama + teslim" bilgi satırının parçası olarak
+ * personelde kalır; açılış ve sayılan olmadan olması gereken ve fark çıkmaz. Raporun ayrı teslim alanı sıfırdır. Saf:
+ * tests/kor-kasa.test.ts, metin tests/whatsapp-kor.test.ts
  */
 
 /** Personelin yükünde sıfırlanan alanlar (sayımın rakamları) */
@@ -45,8 +48,6 @@ export const BLIND_TEXT = {
   breakdown: "Kör sayım: açılış, sayılan nakit ve kasa farkı yalnız yöneticide.",
   /** Son 7 gün listesinde farkın rozeti yerine */
   badge: "Sayım AsilPOS'ta",
-  /** Personel WhatsApp metnini isterse (sunucunun reddi): metin farkı ve sayılanı taşır */
-  whatsapp: "AsilPOS gününün kasa raporu personelden WhatsApp'la paylaşılmaz; yönetici e-postadan görür.",
 } as const;
 
 /**

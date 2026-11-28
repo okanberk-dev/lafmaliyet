@@ -9,7 +9,8 @@ import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID, namedTill, tillBranches, zFormBranch 
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
-import { BLIND_TEXT } from "@/lib/asilpos/kor-kasa";
+import { staffPhotoDiffs } from "@/lib/asilpos/foto";
+import { blindReport } from "@/lib/asilpos/kor-kasa";
 import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
@@ -29,7 +30,7 @@ import { renderCashReport } from "@/server/notify/cash-report-template";
 import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { attachAsilposDayPhotoCore, refreshDayPhotoCheck, setAsilposBankPosCore } from "@/server/asilpos/foto";
+import { asilposAutoReport, attachAsilposDayPhotoCore, refreshDayPhotoCheck, setAsilposBankPosCore } from "@/server/asilpos/foto";
 import { sendPhotoEmail } from "@/server/asilpos/gun-sonu";
 import { readUnreadDayPhotos } from "@/server/photo-read/asilpos";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -368,10 +369,26 @@ export async function cashReportWhatsapp(date: string, branchId?: string | null)
     // Salt okunur: rakam gören rol (yönetici, müdür şubesinin, muhasebeci) her günü, personel düzenleyebildiği günü
     if (cashAudience(me.role) !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
     const till = await formTillBranch(zFormBranch.parse(branchId));
-    // Kör kasa (bulgu 0): AsilPOS gününün metni sayılanı ve farkı taşır; personele verilmez
-    if (cashAudience(me.role) !== "admin" && (await isAsilposTillDay(getDb(), d, till))) throw new UserError(BLIND_TEXT.whatsapp);
+    // Kör kasa (bulgu 0; sahibin isteği, 28 Kasım 2026): personel AsilPOS gününün metnini sayımsız alır (Kasa sayfasındaki
+    // gibi): açılış, sayılan, teslim, olması gereken, fark ve devir yok; açılış ↔ devir ve "Değişen" yok, yalnız sayan
+    const blind = cashAudience(me.role) !== "admin" && (await isAsilposTillDay(getDb(), d, till));
     const r = await getCashReport(d, "staff", till);
     if (!r) throw new UserError("Bu günün raporu yok");
+    if (blind) {
+      const shown = blindReport(r);
+      const [settings, waste, extras, branches, auto] = await Promise.all([
+        loadCashSettings(r.branchId),
+        dayWaste(d, r.branchId),
+        cashReportExtras(shown, me.role, true),
+        listBranches(),
+        // Otomatik raporda fotoğraf farkı personele gitmez (staffPhotoDiffs); okunamazsa gitmez
+        asilposAutoReport(getDb(), r.id).catch(() => true),
+      ]);
+      const branchName = namedTill(branches, r.branchId)?.name ?? null;
+      const photoDiffs = staffPhotoDiffs(extras.photoDiffs ?? null, { admin: false, asilposAuto: auto });
+      const text = whatsappText(shown, { by: r.submittedByName, revision: r.revision, waste, branchName, ...extras, photoDiffs, countedBy: r.countedByName }, { blind: true });
+      return { text, link: whatsappLink(text, settings.whatsapp) };
+    }
     const [settings, waste, extras, integrity, branches] = await Promise.all([
       loadCashSettings(r.branchId),
       dayWaste(d, r.branchId),

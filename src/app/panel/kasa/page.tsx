@@ -397,8 +397,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
   // Kör kasa (bulgu 0; src/lib/asilpos/kor-kasa.ts): AsilPOS'un şubesinin AsilPOS gününde personel sayımı görmez. Rapor
   // açılış, sayılan, teslim ve farkı sıfırlanmış gider (blindReport); önceki devir, ertesi günün açılışı, sürümler,
-  // istekler, WhatsApp metni ve AsilPOS'un açılış / sayım alanları hiç gitmez; rapor salt okunur. AsilPOS okuması düşerse
-  // kapalı kalır: AsilPOS'un şubesinin kasasında personele kör (staffBlindView)
+  // istekler ve AsilPOS'un açılış / sayım alanları hiç gitmez; WhatsApp metni sayımsız (aşağıda); rapor salt okunur.
+  // AsilPOS okuması düşerse kapalı kalır: AsilPOS'un şubesinin kasasında personele kör (staffBlindView)
   const asilposState = asilposRead ?? NO_ASILPOS;
   const blind = staffBlindView({ admin, till: tillIdsOf(asilposBranch, view.till), asilposDay: asilposRead ? asilposRead.asilpos : null });
   const shownReport = report && blind ? blindReport(report) : report;
@@ -461,8 +461,30 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     photoAuto: asilposPhoto ? asilposPhoto.auto : null,
     reportAuto: !admin && report && !asilposPhoto?.auto ? await asilposAutoReport(getDb(), report.id).catch(() => "error" as const) : false,
   });
-  const whatsapp = report && !blind
+  // Kör kasa (bulgu 0; sahibin isteği, 28 Kasım 2026): personelin AsilPOS gününde metin sayımsızdır (whatsappText blind):
+  // açılış, sayılan, teslim, olması gereken, fark ve devir yok; açılış ↔ devir ve "Değişen" yok, yalnız sayan. Sayımsız
+  // raporla ve AsilPOS'un sayımsız günüyle kurulur (AsilPOS'tan farklı yazılanlar personelin kartındaki gibi); notu metin
+  // kendisi süzer. Yönetici ve ModPOS günü eskisi gibi
+  const whatsapp = report
     ? (() => {
+        if (blind) {
+          const uncounted = blindReport(report);
+          const extras = extrasFrom(photoInfo, shownOuts, uncounted, { asilpos: asilposState.asilpos, day: asilposState.day ? blindAsilposDay(asilposState.day) : null });
+          const text = whatsappText(
+            uncounted,
+            {
+              by: report.submittedByName,
+              revision: report.revision,
+              waste,
+              branchName: view.branch?.name ?? null,
+              ...extras,
+              photoDiffs: staffPhotoDiffs(extras.photoDiffs ?? null, { admin, asilposAuto: staffAsilposAuto }),
+              countedBy: report.countedByName,
+            },
+            { blind: true },
+          );
+          return { text, link: whatsappLink(text, settings.whatsapp) };
+        }
         const extras = extrasFrom(photoInfo, shownOuts, report, asilposState);
         const shown = staffAsilposAuto ? { ...report, note: staffAutoNote(report.note, report) } : report;
         const text = whatsappText(shown, {

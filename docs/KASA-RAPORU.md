@@ -526,7 +526,8 @@ Banka POS Pavo'nun kendi gün sonlarından (günün bütün batch'lerinin toplam
 belgelerinden kendiliğinden yazılır; eski "Uydurma değer yok: Banka POS ve yazarkasa alanları boş kalır" kuralı AsilPOS
 günlerinde bunun yerine geçti (Tuzla / ModPOS günleri değişmedi). Cihazın rakamı yoksa (Pavo alınamadı ya da belirsiz,
 cihaz yok) alan boş kalır ve not tam nedenini yazar, "panelden ekleyin" demez. **Personelin tek işi gün sonu
-fotoğrafıdır:** rapor personelde salt okunur (Düzenle, silme isteği, WhatsApp ve metin yok; düzeltme AsilPOS'ta), alt
+fotoğrafıdır:** rapor personelde salt okunur (Düzenle ve silme isteği yok; düzeltme AsilPOS'ta; WhatsApp ile gönder ve
+Metni kopyala sayımsız metinle, aşağıda [Gönderince](#gönderince) › WhatsApp), alt
 başlık "Rakamlar AsilPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin." ve "Gün sonu
 fotoğrafı" kartından tek fotoğraf eklenir: Pavo istenince detaylı Z basar (sahibin yanıtı, 24 Kasım 2026), banka gün sonu
 da Z'nin rakamları da aynı fişte (ayrı mali Z basan cihazda yazarkasa Z'si de); kayıt, sürüm, sayan ve onay yok, günden
@@ -945,6 +946,13 @@ panelde yapılır." Kurallar `src/lib/teslim.ts` (`tests/teslim-defteri.test.ts`
   ("Günlük toplam (banka POS Z)"); e-postada değeriyle ve Banka POS Z bölümünün altında.
 - **WhatsApp:** "WhatsApp ile gönder" ayrıntılı metni hazır açar. Ayarlarda numara girildiyse o sohbet açılır,
   girilmediyse kişi ya da grup seçilir. "Metni kopyala" ile başka yere de yapıştırılır.
+- **AsilPOS gününde personelin metni sayımsız** (kör kasa; sahibin isteği, 28 Kasım 2026): Marina'da personel iki düğmeyi
+  de görür, metin personelin dökümünün gösterdiği kadardır (`whatsappText(…, { blind: true })`): açılış, sayılan nakit,
+  teslim, olması gereken, kasa farkı, ertesi güne devir, açılış ↔ devir uyarıları ve "Değişen" satırı yok; kasa
+  bölümünde nakit satış, gün içinde giren ve çıkan (kasadan çıkan satırlarıyla), altında "Kör sayım: açılış, sayılan
+  nakit ve kasa farkı yalnız yöneticide."; not personelin kartındaki gibi süzülür. Kasa sayfası da sunucunun eylemi de
+  (`cashReportWhatsapp`, eskiden reddediyordu) aynı metni verir. Yöneticinin metni ve Tuzla (ModPOS) günü değişmedi.
+  Ayrıntı: [ASILPOS.md](ASILPOS.md) › Kör kasa.
 - **Deneme e-postası** (yönetici, Rapor alıcıları): son kayıtlı raporla gider; kayıtlı rapor yoksa yazarkasa alanları
   da dolu bir örnek raporla.
 - **Zil:**

@@ -4,6 +4,8 @@ import { dayRevenue } from "./cash-revenue";
 import { money } from "./format";
 import { okcFromDevice, okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
 import { asilposDiffsLine, type AsilposDiff } from "./asilpos/diffs";
+import { staffAutoNote } from "./asilpos/foto";
+import { BLIND_TEXT, blindNote } from "./asilpos/kor-kasa";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
 import { handedOverLine } from "./teslim";
@@ -949,14 +951,32 @@ export interface CashTextBranch {
 }
 
 /**
+ * Metnin seçenekleri. `blind`: kör kasa (personelin AsilPOS günü; src/lib/asilpos/kor-kasa.ts, sahibin isteği 28 Kasım
+ * 2026: "WhatsApp kopyala gitmiş ladmin'de, o olsun"). Metin personelin dökümünün gösterdiği kadardır (CashBreakdown
+ * `blind`): açılış, sayılan nakit, teslim, olması gereken, kasa farkı ve ertesi güne devir yok, kasa bölümünde yalnız
+ * nakit satış, gün içinde giren ve çıkan (kasadan çıkan satırlarıyla), altında BLIND_TEXT.breakdown. Açılış ↔ devir ve
+ * ertesi günün açılışı uyarıları, "Değişen" satırı (sürümler sayılanı taşır) ve AsilPOS'tan farklı yazılanların sayıma
+ * ait satırları da yok. Not personelin gördüğü gibi: açılış cümleleri çıkar (blindNote), yönetici yönergesi kısa satır
+ * olur (staffAutoNote). Alanlar dolu gelse de yazılmaz (sıfırlanır). Verilmezse metin bugünkü gibi
+ */
+export interface CashTextOptions {
+  blind?: boolean;
+}
+
+/** AsilPOS'tan farklı yazılanların kör metinde yazılmayan alanları: açılış, sayılan, devir ve teslimli çıkan */
+const BLIND_DIFF_FIELDS: readonly AsilposDiff["field"][] = ["openingCash", "countedCash", "carry", "outflow"];
+
+/**
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
- * türleriyle tutmaması öne çıkarılır. Her zaman personelin metni (yönetici gönderse de gruba gider)
+ * türleriyle tutmaması öne çıkarılır. Her zaman personelin metni (yönetici gönderse de gruba gider); kör kasada
+ * (`opts.blind`) sayımsız
  */
 export function whatsappText(
   f: CashReportFields,
   meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
+  opts: CashTextOptions = {},
 ): string {
-  return cashReportText(f, meta, "staff");
+  return cashReportText(f, meta, "staff", opts);
 }
 
 /**
@@ -978,12 +998,22 @@ export function unreceiptedText(amount: number): string {
 /** Fişsiz çıkışın kısa adı: ay listesinin rozeti ve tek gün görünümünün özeti */
 export const unreceiptedLabel = (amount: number) => `Fişsiz çıkış: ${money(amount)}`;
 
-/** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
+/**
+ * Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler). Kör kasa
+ * (`opts.blind`, CashTextOptions) yalnız personelin metnidir
+ */
 export function cashReportText(
   f: CashTextFields,
   meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
   audience: CashTextAudience,
+  opts: CashTextOptions = {},
 ): string {
+  const blind = opts.blind === true;
+  if (blind) {
+    // Kör kasa: sayımın rakamları ve onlardan çıkanlar hiçbir satıra girmesin (çağıran sıfırlamamış olsa da)
+    f = { ...f, openingCash: 0, countedCash: 0, handedOver: 0, handedToName: null, note: staffAutoNote(blindNote(f.note), f) };
+    meta = { ...meta, carry: null, next: null, changes: null, unreceipted: null, asilposDiffs: (meta.asilposDiffs ?? []).filter((d) => !BLIND_DIFF_FIELDS.includes(d.field)) };
+  }
   // AsilPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
   f = withCardExtra(f, meta.cardExtra, meta.offDevice, meta.kasa);
   const c = computeCash(f);
@@ -1009,21 +1039,26 @@ export function cashReportText(
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE)
     z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
   const mark = c.kind === "short" ? "🔴" : c.kind === "over" ? "🟠" : "✅";
-  const kasa = [
-    "*Kasa (nakit)*",
-    `Açılış (devir): ${money(f.openingCash)}`,
-    ...(meta.carry ? [`⚠️ ${carryWarning(meta.carry)}`] : []),
-    `+ Nakit satış: ${money(f.cash)}`,
-    ...(f.cashIn ? [`+ Gün içinde giren: ${money(f.cashIn)}`] : []),
-    ...(f.cashOut || outs.length ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`, ...outs.map((l) => `  · ${l}`)] : []),
-    // Fişsiz çıkış yöneticinin metninde (e-posta); personelin WhatsApp'ında yok (bulgu 2)
-    ...(audience === "admin" && meta.unreceipted ? [`⚠️ ${unreceiptedText(meta.unreceipted)}`] : []),
-    `= Olması gereken: ${money(c.expectedCash)}`,
-    `Sayılan: ${money(f.countedCash)}`,
-    `${mark} *${c.kind === "even" ? "Kasa tutuyor" : diffText(c.cashDiff).toLocaleUpperCase("tr")}*`,
-    ...(f.handedOver ? [`Teslim edilen: ${handedOverLine(f.handedOver, f.handedToName ?? null)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
-    ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
-  ];
+  const cashIn = f.cashIn ? [`+ Gün içinde giren: ${money(f.cashIn)}`] : [];
+  const cashOut = f.cashOut || outs.length ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`, ...outs.map((l) => `  · ${l}`)] : [];
+  const kasa = blind
+    ? // Kör kasa: personelin dökümündeki gibi (CashBreakdown blind); açılış olmadan "+" yok
+      ["*Kasa (nakit)*", `Nakit satış: ${money(f.cash)}`, ...cashIn, ...cashOut, BLIND_TEXT.breakdown]
+    : [
+        "*Kasa (nakit)*",
+        `Açılış (devir): ${money(f.openingCash)}`,
+        ...(meta.carry ? [`⚠️ ${carryWarning(meta.carry)}`] : []),
+        `+ Nakit satış: ${money(f.cash)}`,
+        ...cashIn,
+        ...cashOut,
+        // Fişsiz çıkış yöneticinin metninde (e-posta); personelin WhatsApp'ında yok (bulgu 2)
+        ...(audience === "admin" && meta.unreceipted ? [`⚠️ ${unreceiptedText(meta.unreceipted)}`] : []),
+        `= Olması gereken: ${money(c.expectedCash)}`,
+        `Sayılan: ${money(f.countedCash)}`,
+        `${mark} *${c.kind === "even" ? "Kasa tutuyor" : diffText(c.cashDiff).toLocaleUpperCase("tr")}*`,
+        ...(f.handedOver ? [`Teslim edilen: ${handedOverLine(f.handedOver, f.handedToName ?? null)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
+        ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
+      ];
   const kart = okcTextBlock(f, audience, meta.kasa);
   const waste = meta.waste?.ikram || meta.waste?.zayi ? ["*Zayi & ikram*", ...(meta.waste.ikram ? [`İkram: ${meta.waste.ikram}`] : []), ...(meta.waste.zayi ? [`Zayi: ${meta.waste.zayi}`] : [])] : [];
   const blocks = [head, z, kasa, kart, waste, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);
