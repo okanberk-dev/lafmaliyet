@@ -648,8 +648,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             gönderin. Personel Bugün, Siparişler, Karaoke, Kasa raporu, Kontrol listeleri, Vardiya, Zayi &amp; ikram, Reçete defteri (öneri ve satış fiyatı),
             Stok sayımı (Listeye ekle), Özel günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını
             görmez. Geçmiş kasa, silme ve geç kayıt gibi işler isteğe döner, kararı <Path href="/panel/onaylar" /> ekranında verirsiniz. Her kullanıcı
-            Hesabım&apos;dan iki adımlı doğrulamayı açabilir; yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız
-            sorulur.
+            Hesabım&apos;dan iki adımlı doğrulamayı açabilir. Yönetici hesaplarını yalnız asıl yönetici Yönetim konsolunda açar ve yönetir: Kullanıcılar&apos;da
+            yönetici satırları salt okunurdur, rol seçiminde Yönetici kapalıdır.
           </>
         ),
         icon: UserPlus,
@@ -755,8 +755,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasayı bilgisayara kurmak yalnız asıl yöneticinin işidir; öteki yöneticiler
             şubenin adını, POS oranını ve e-postasını düzenler. <Path href="/panel/sube-ekleme" /> yalnız asıl yöneticinin menüsünde: yeni şube,
             şubelerin kasa durumu ve Bilgisayara kur. Bilgisayara kur, şubenin e-postasına 14 gün geçerli, tek kurulumluk bir bağlantı gönderir;
-            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Asıl yöneticinin hesabını başka
-            yönetici değiştiremez; Kullanıcılar &amp; roller&apos;de satırı &quot;Asıl yönetici&quot; etiketlidir.
+            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Yönetici hesaplarını (açmak,
+            yöneticilik vermek ve almak, pasif yapmak, silmek, iki adımlıyı sıfırlamak, kilidi açmak, oturumları kapatmak, giriş bağlantısı) yalnız asıl
+            yönetici Yönetim konsolu › Yöneticiler&apos;de yönetir; öteki yöneticiler müdür, muhasebeci ve personel hesaplarını yönetir, kendi hesaplarını
+            Hesabım&apos;dan. Kullanıcılar &amp; roller&apos;de asıl yöneticinin satırı &quot;Asıl yönetici&quot; etiketlidir.
           </>
         ),
         icon: MonitorDown,

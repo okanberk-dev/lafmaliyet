@@ -11,7 +11,19 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
-- **Yönetim konsolu: şube işlemleri** (bu PR, 28 Kasım; K-A'nın ikinci yarısı, docs/planlar/yonetim-konsolu.md,
+- **Yönetici hesaplarını yalnız asıl yönetici yönetir; konsolda Yöneticiler sekmesi** (bu PR, 28 Kasım; K-B,
+  docs/planlar/yonetim-konsolu.md, docs/ROLLER.md › Yönetici hesapları): bir yönetici hesabına dokunan iş (önceki ya da
+  sonraki rol yönetici: yönetici açmak, yöneticilik vermek ve almak, yöneticinin e-postası, parolası, erişimi, silme,
+  iki adımlıyı sıfırlama, kilit açma, oturum kapatma, giriş bağlantısı) yalnız asıl yöneticinin; ret parola sorusundan
+  önce. Öteki yöneticiler müdür, muhasebeci ve personel hesaplarını bugünkü gibi yönetir, başka bir yöneticinin yalnız
+  adını değiştirir, kendi hesabını Hesabım'dan. Asıl yöneticinin adresi hesap yokken de alınamaz. Konsol ›
+  Yöneticiler (`/yonetim/yoneticiler`): liste, Yönetici ekle, Yöneticilik ver, İşlemler; üstte asıl yöneticinin iki
+  adımlı durumu ve kalan kurtarma kodu. ladmin › Kullanıcılar'da yönetici satırları herkese salt okunur, Yönetici rolü
+  kapalı. Kurtarma betiği `scripts/asil-yonetici-kurtar.ts` ve docs/DEPLOY.md › Asıl yönetici kilitlenirse. Göç yok.
+  Kalan: K-C (ladmin'deki şube düğmelerinin kaldırılması, `/panel/sube-ekleme` yönlendirmesi, asıl yönetici
+  eylemlerinin yalnız konsol oturumunu kabul etmesi).
+
+- **Yönetim konsolu: şube işlemleri** (#189, 28 Kasım; K-A'nın ikinci yarısı, docs/planlar/yonetim-konsolu.md,
   docs/SUBE.md › Şube işlemleri): Şubeler ve kasalar'da her şube satırından "Şube işlemleri" sayfası (`/yonetim/sube/[id]`):
   kapatma ve yeniden açma, tür ve kasa programı (AsilPOS'tan ModPOS'a dönüşün onayı aynen), AsilPOS'a geçiş günü (kapalı
   dönem kuralı aynen), kasa anahtarını döndürme ve silme, eski anahtarı silme (parolayla, konsol oturumuyla), şubeyi
@@ -19,8 +31,8 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   geçiş günü formu `src/components/sube-islemleri/`'ye taşındı (ladmin ve konsol aynı bileşen). `updateBranch`'te
   kimlikten başka her alan isteğe bağlı; ladmin'in penceresi açık / kapalı, tür ve kasa programını yalnız değiştiyse
   gönderir. Kasaya giden metinler "Yönetim konsolu" der (adres yok). ladmin'in görünümü değişmedi; göç yok.
-  Kalan: K-B (yönetici hesapları kuralı, Yöneticiler sekmesi), K-C (ladmin'deki düğmelerin kaldırılması,
-  `/panel/sube-ekleme` yönlendirmesi, asıl yönetici eylemlerinin yalnız konsol oturumunu kabul etmesi).
+  Kalan: K-C (ladmin'deki düğmelerin kaldırılması, `/panel/sube-ekleme` yönlendirmesi, asıl yönetici eylemlerinin
+  yalnız konsol oturumunu kabul etmesi); K-B yukarıda.
 
 - **Yönetim konsolu: ayrı oturum ve giriş, kabuk, Şubeler ve kasalar** (#187, 28 Kasım; K-A'nın ilk yarısı,
   docs/planlar/yonetim-konsolu.md): `yonetim.laffogato.net` (yalnız asıl yönetici), ayrı belirteç ve çerez,
