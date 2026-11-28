@@ -11,6 +11,18 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
+- **Kasa açılışı uçları, ilk personel, Kasayı serbest bırak** (bu PR, 28 Kasım; P-B2,
+  docs/planlar/kasa-acilis-ve-asil-yonetici.md): `POST /api/asilpos/acilis/giris` (asıl yöneticinin ladmin girişi;
+  panelin giriş korumaları aynen, ortak modül `src/server/auth/giris-korumalari.ts`; çerezsiz, 15 dakikalık belirteç ve
+  seçilebilir şubeler), `.../bagla` (boş şubeye bağlar, yanıt kurulum koduyla aynı biçimde; kurulu şube her zaman 409
+  `zaten_kurulu`, anahtar dönmez; devralma yok), `.../teslim` (kasa ilk personeli aldığını şube anahtarıyla imzalı
+  onaylar). Kasa kaydı `asilpos.kasa:<şube>` (kasa açılışı, kurulum kodu ve serbest bırakma yazar; kasa durumu önce ona
+  bakar, kayıtsız Marina kurulu, eski deneme günlü Tuzla boş); "Bilgisayara kur" şubeyi hazırlar (ModPOS şubesi de kasada
+  seçilebilir). Şube ekleme'de ilk personel (Patron, Müdür, Barista: ad ve PIN; mühürlü, yedek dışı, kasanın açık
+  anahtarıyla şifreli teslim, onayla ya da 24 saat / 30 gün sonra silinir) ve **Kasayı serbest bırak** (asıl yönetici,
+  ad ve parola; anahtar yenilenir, bekleyen kodlar iptal, kayıt boş). Kurulum koduna isteğe bağlı `kimlik`,
+  `acikAnahtar` ve yanıtta `personel` (eski kasanın yanıtı aynı). Göç yok; var olan uçların yolu, gövdesi, imzası
+  değişmedi. docs/ASILPOS.md › Kasa açılışı (`tests/kasa-acilis.test.ts`, `tests/kasa-acilis-db.test.ts`).
 - **Asıl yönetici ve Şube ekleme sayfası** (bu PR, 28 Kasım; P-B1, docs/planlar/kasa-acilis-ve-asil-yonetici.md):
   şube açmak, kapatmak, silmek, kasa programını değiştirmek, kasa kurmak, kasa anahtarını döndürmek ve geçiş gününü
   değiştirmek yalnız asıl yöneticide (`requireAnaAdmin`; öteki yönetici "Bu işlemi yalnız asıl yönetici yapar: …" alır,
@@ -223,10 +235,9 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - **Sitenin e-Arşiv'i Paraşüt OAuth'a geçmeli; SON TARİH 10 Aralık** (eski şifreli giriş o gün duruyor). Sahibin kararı
   (28 Kasım): şimdilik sıradan çıktı. Şart: bağlantı şube başına olacak, her şube kendi Paraşüt hesabını kendisi
   ekleyebilecek, biri ötekini düşürmeyecek. DevHub uygulaması açıldı.
-- **Kasada gerçek açılış** (sahibin isteği, 28 Kasım): önce ladmin kullanıcı adı ve şifresi, sonra hangi şubenin
-  açılacağı; şube zaten kuruluysa "emin misin / başka şube" sorusu.
-- **Kasa açılışı uçları (P-B2)**: kasada ladmin girişi ve şube seçimi için panel uçları, ilk personel ve PIN, Şube
-  ekleme'de "Kasayı serbest bırak", kasa kaydı (`integration_state`). Kasadan devralma yok (sahibin kararı, 28 Kasım).
+- **Kasada gerçek açılış (K5, kasa deposu)** (sahibin isteği, 28 Kasım): "Denemeyi bitir"de ladmin girişi, şube seçimi
+  (kurulu şube seçilemez), bağlantıların ve ilk personelin inmesi, teslim onayı. Panel uçları hazır: sözleşme
+  docs/ASILPOS.md › Kasa açılışı. P-B2 canlıya girdikten sonra.
 - **Kasa: "Kurulumu yap" fiş yazıcısını da bulup denetebilsin** (sahibin isteği).
 - **Kasa deposunun PR'ları:** #192 Token sürücüsünün sessiz kurulumu, #193 müşteri ekranında çeviri balonu, yenileme
   simgesi PR'ı.

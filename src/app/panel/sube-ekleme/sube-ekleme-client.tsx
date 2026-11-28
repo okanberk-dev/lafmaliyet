@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Copy, MonitorDown, Plus } from "lucide-react";
+import { Building2, Copy, MonitorDown, Plus, Unlink, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -13,6 +13,18 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
+import { PasswordInput } from "@/components/ui/password-input";
+import {
+  CANLI_GUN,
+  doluSatirlar,
+  ILK_PERSONEL_ETIKET,
+  ILK_PERSONEL_ROLLERI,
+  ilkPersonelHatasi,
+  SERBEST_ONAY,
+  type IlkPersonel,
+  type IlkPersonelDurumu,
+  type IlkPersonelRolu,
+} from "@/lib/asilpos/kasa-acilis";
 import { gunMetni, kasaDurumMetni, YENI_KURULUM_ONEKI, yeniKurulumOnayi, type KasaDurumu } from "@/lib/asilpos/kasa-durumu";
 import {
   BRANCH_ID_MAX,
@@ -31,13 +43,16 @@ import {
 } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
+import { isStepUpError, type StepUpConfirm } from "@/lib/step-up";
 import type { KurulumSonucu } from "@/server/actions/branches";
 import type { ActionResult } from "@/server/actions/util";
 
 /*
- * Şube ekleme (/panel/sube-ekleme; yalnız asıl yönetici; docs/SUBE.md › Şube ekleme). Üç bölüm: yeni şube formu,
- * fiziksel şubelerin kasa durumu (src/lib/asilpos/kasa-durumu.ts) ve "Bilgisayara kur" (kurulum bağlantısı; kurulu kasa
- * varsa önce onay). Kurallar saf dosyalardan okunur, sunucu aynısını denetler.
+ * Şube ekleme (/panel/sube-ekleme; yalnız asıl yönetici; docs/SUBE.md › Şube ekleme). Yeni şube formu (isteğe bağlı ilk
+ * personeliyle), fiziksel şubelerin kasa durumu (src/lib/asilpos/kasa-durumu.ts), "Bilgisayara kur" (kurulum bağlantısı;
+ * kurulu kasa varsa önce onay), "İlk personeli ayarla" ve "Kasayı serbest bırak" (docs/ASILPOS.md › Kasa açılışı).
+ * Kurallar saf dosyalardan okunur, sunucu aynısını denetler. PIN'ler yalnız formda durur: sunucu onları geri vermez,
+ * ekranda yalnız "ayarlı" ya da "teslim edildi" görünür.
  */
 
 export type CreateAction = (input: {
@@ -48,9 +63,20 @@ export type CreateAction = (input: {
   openedOn: string | null;
   posRate?: number;
   email?: string;
+  personel?: IlkPersonel[];
 }) => Promise<ActionResult<{ id: string; kurulum: KurulumSonucu | null }>>;
 
 export type InstallAction = (input: { id: string; email?: string; confirmReplace?: boolean }) => Promise<ActionResult<KurulumSonucu>>;
+export type StaffAction = (input: { id: string; personel: IlkPersonel[] }) => Promise<ActionResult<{ saved: boolean }>>;
+export type ReleaseAction = (input: { id: string; ad: string }, confirm?: StepUpConfirm) => Promise<ActionResult<{ id: string }>>;
+
+/** Serbest bırakma penceresinin bilgisi (sunucuda: son gün sonu ve anahtarın kaynağı) */
+export type SerbestBilgisi = { canli: boolean; anahtarOrtamda: boolean };
+
+/** İlk personelin üç satırı (Patron, Müdür, Barista); boş satır gönderilmez */
+type PersonelSatiri = { rol: IlkPersonelRolu; ad: string; pin: string };
+const BOS_PERSONEL: PersonelSatiri[] = ILK_PERSONEL_ROLLERI.map((r) => ({ rol: r.rol, ad: "", pin: "" }));
+const PERSONEL_TONU: Record<IlkPersonelDurumu, "green" | "blue" | "gray"> = { yok: "gray", ayarli: "blue", gonderildi: "blue", teslim: "green" };
 
 /** Yeni şube formunun taslağı; `posRate` yüzde metni ("2", "1,5") */
 type Taslak = { name: string; id: string; kind: BranchKind; posSource: BranchPosSource; posRate: string; openedOn: string; email: string };
@@ -69,25 +95,38 @@ export function SubeEkleme({
   rows,
   emails,
   durum,
+  personel,
+  serbest,
   girisHesabi,
   createAction,
   installAction,
+  staffAction,
+  releaseAction,
 }: {
   rows: BranchRow[];
   /** Şubelerin kayıtlı e-postası */
   emails: Record<string, string | null>;
   /** Fiziksel şubelerin kasa durumu */
   durum: Record<string, KasaDurumu>;
+  /** Fiziksel şubelerin ilk personel durumu (PIN'siz) */
+  personel: Record<string, IlkPersonelDurumu>;
+  /** Kasası kurulu şubelerin serbest bırakma bilgisi */
+  serbest: Record<string, SerbestBilgisi>;
   /** Kasada ladmin girişinde kullanılacak hesap: asıl yöneticinin e-postası */
   girisHesabi: string;
   createAction: CreateAction;
   installAction: InstallAction;
+  staffAction: StaffAction;
+  releaseAction: ReleaseAction;
 }) {
   const subeler = rows.filter((b) => b.kind === "fiziksel").sort((a, b) => Number(b.active) - Number(a.active));
   const [sonuc, setSonuc] = useState<KurulumSonucu | null>(null);
   // "Bilgisayara kur": e-posta penceresi (onaylandıysa `confirmed`) ve kurulu kasanın onayı
   const [kur, setKur] = useState<{ branch: BranchRow; confirmed: boolean } | null>(null);
   const [onay, setOnay] = useState<{ branch: BranchRow; text: string; email?: string } | null>(null);
+  /** "İlk personeli ayarla" ve "Kasayı serbest bırak" pencereleri */
+  const [ekip, setEkip] = useState<BranchRow | null>(null);
+  const [birak, setBirak] = useState<BranchRow | null>(null);
   const [bekliyor, basla] = useActionTransition();
 
   function kurBasla(b: BranchRow) {
@@ -130,6 +169,7 @@ export function SubeEkleme({
           <ul className="divide-y divide-line border-t border-line">
             {subeler.map((b) => {
               const d = durum[b.id] ?? { durum: "yok" as const };
+              const p = personel[b.id] ?? "yok";
               return (
                 <li key={b.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3 pr-3 pl-5 text-sm">
                   <div className="min-w-0 flex-1 basis-56">
@@ -147,11 +187,26 @@ export function SubeEkleme({
                     {d.durum === "kurulu" && d.bekleyen ? (
                       <p className="mt-1 text-[13px] text-ink-mute">Yeni kurulum bağlantısı bekliyor · son geçerlilik {gunMetni(d.bekleyen)}</p>
                     ) : null}
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-soft">
+                      <Badge tone={PERSONEL_TONU[p]} dot>
+                        {ILK_PERSONEL_ETIKET[p]}
+                      </Badge>
+                    </p>
                   </div>
                   {b.active ? (
-                    <Button size="sm" variant="secondary" onClick={() => kurBasla(b)} disabled={bekliyor} className="max-sm:w-full">
-                      <MonitorDown className="size-4" aria-hidden="true" /> Bilgisayara kur
-                    </Button>
+                    <div className="flex flex-wrap gap-2 max-sm:w-full">
+                      <Button size="sm" variant="secondary" onClick={() => kurBasla(b)} disabled={bekliyor} className="max-sm:w-full">
+                        <MonitorDown className="size-4" aria-hidden="true" /> Bilgisayara kur
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setEkip(b)} disabled={bekliyor} className="max-sm:w-full">
+                        <UsersRound className="size-4" aria-hidden="true" /> İlk personeli ayarla
+                      </Button>
+                      {d.durum === "kurulu" ? (
+                        <Button size="sm" variant="ghost" onClick={() => setBirak(b)} disabled={bekliyor} className="max-sm:w-full">
+                          <Unlink className="size-4" aria-hidden="true" /> Kasayı serbest bırak
+                        </Button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </li>
               );
@@ -193,13 +248,172 @@ export function SubeEkleme({
       />
 
       {sonuc ? <KurulumSonucDialog sonuc={sonuc} girisHesabi={girisHesabi} onClose={() => setSonuc(null)} /> : null}
+
+      {ekip ? <PersonelDialog key={ekip.id} branch={ekip} durum={personel[ekip.id] ?? "yok"} staffAction={staffAction} onClose={() => setEkip(null)} /> : null}
+
+      {birak ? (
+        <SerbestDialog key={birak.id} branch={birak} bilgi={serbest[birak.id] ?? { canli: false, anahtarOrtamda: false }} releaseAction={releaseAction} onClose={() => setBirak(null)} />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * İlk personelin üç satırı: Patron, Müdür, Barista (kasada Kasiyer / Barista); her biri ad ve PIN (4-6 rakam, üçü
+ * farklı, kasanın örnek PIN'leri olamaz). Boş satır gönderilmez
+ */
+function PersonelAlanlari({ rows, onChange, idPrefix, error }: { rows: PersonelSatiri[]; onChange: (rows: PersonelSatiri[]) => void; idPrefix: string; error: string | null }) {
+  const set = (rol: IlkPersonelRolu, patch: Partial<PersonelSatiri>) => onChange(rows.map((r) => (r.rol === rol ? { ...r, ...patch } : r)));
+  return (
+    <div className="space-y-3">
+      {ILK_PERSONEL_ROLLERI.map(({ rol, etiket }) => {
+        const r = rows.find((x) => x.rol === rol) ?? { rol, ad: "", pin: "" };
+        return (
+          <div key={rol} className="grid gap-3 sm:grid-cols-[7rem_1fr_9rem] sm:items-end">
+            <p className="text-sm font-medium text-ink sm:pb-2">{etiket}</p>
+            <Field label={`${etiket}: ad`} htmlFor={`${idPrefix}-${rol}-ad`}>
+              <Input id={`${idPrefix}-${rol}-ad`} value={r.ad} maxLength={40} autoComplete="off" onChange={(e) => set(rol, { ad: e.target.value })} />
+            </Field>
+            <Field label={`${etiket}: PIN`} htmlFor={`${idPrefix}-${rol}-pin`}>
+              <PasswordInput
+                id={`${idPrefix}-${rol}-pin`}
+                autoComplete="new-password"
+                inputMode="numeric"
+                maxLength={6}
+                value={r.pin}
+                onChange={(e) => set(rol, { pin: e.target.value.replace(/\D/g, "") })}
+              />
+            </Field>
+          </div>
+        );
+      })}
+      {error ? <p className="text-[13px] text-bad">{error}</p> : null}
+    </div>
+  );
+}
+
+/** "İlk personeli ayarla": yeni değerler eskisinin yerine geçer; hepsi boş kaydedilirse kayıt silinir */
+function PersonelDialog({ branch, durum, staffAction, onClose }: { branch: BranchRow; durum: IlkPersonelDurumu; staffAction: StaffAction; onClose: () => void }) {
+  const [rows, setRows] = useState<PersonelSatiri[]>(BOS_PERSONEL);
+  const [denendi, setDenendi] = useState(false);
+  const [bekliyor, basla] = useActionTransition();
+  const dolu = doluSatirlar(rows);
+  const hata = dolu.length ? ilkPersonelHatasi(dolu) : null;
+  const sil = !dolu.length && durum !== "yok";
+
+  function kaydet() {
+    setDenendi(true);
+    if (hata || (!dolu.length && !sil)) return;
+    basla(async () => {
+      const r = await staffAction({ id: branch.id, personel: dolu });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(r.data.saved ? `${branch.name}: ilk personel ayarlandı` : `${branch.name}: ilk personel silindi`);
+      onClose();
+    });
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="lg"
+      title={`${branch.name}: ilk personel`}
+      description="Kasa bu şubeye bağlanınca patron, müdür ve baristanın hesapları bu ad ve PIN'lerle açılır. PIN'ler panelde şifreli durur, kasaya şifreli gider; kasa aldığını onaylayınca panelden silinir."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={bekliyor}>
+            Vazgeç
+          </Button>
+          <Button onClick={kaydet} disabled={bekliyor || (!dolu.length && !sil)} variant={sil ? "danger" : "primary"}>
+            {bekliyor ? "Kaydediliyor…" : sil ? "Kaydı sil" : "Kaydet"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4 pb-2">
+        {durum !== "yok" ? <Notice tone="neutral" size="sm" title={`${ILK_PERSONEL_ETIKET[durum]}. Yeni değerler eskisinin yerine geçer; hepsini boş bırakıp kaydederseniz kayıt silinir.`} /> : null}
+        <PersonelAlanlari rows={rows} onChange={setRows} idPrefix="ip" error={denendi ? hata : null} />
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * "Kasayı serbest bırak": şubenin adı yazılır ve parolayla onaylanır. Son günlerde gün sonu gelen (canlı) şubede uyarı
+ * belirgin; anahtar ortam değişkenindeyse (eski kurulum) bunu söyler
+ */
+function SerbestDialog({ branch, bilgi, releaseAction, onClose }: { branch: BranchRow; bilgi: SerbestBilgisi; releaseAction: ReleaseAction; onClose: () => void }) {
+  const [ad, setAd] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [bekliyor, basla] = useActionTransition();
+  const adTutar = ad.trim().toLocaleLowerCase("tr-TR") === branch.name.trim().toLocaleLowerCase("tr-TR");
+
+  function birak(e: FormEvent) {
+    e.preventDefault();
+    if (!adTutar || !password) return;
+    setError(null);
+    basla(async () => {
+      const r = await releaseAction({ id: branch.id, ad }, { password });
+      if (!r.ok) {
+        if (isStepUpError(r.error)) return void setError(r.error);
+        return void toast.error(r.error);
+      }
+      toast.success(`${branch.name}: kasa serbest bırakıldı`, { description: "Yeni bilgisayar şubeyi kasa açılışında seçebilir." });
+      onClose();
+    });
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`${branch.name}: kasayı serbest bırak`}
+      description={SERBEST_ONAY}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={bekliyor}>
+            Vazgeç
+          </Button>
+          <Button type="submit" form="serbest-birak" variant="danger" disabled={bekliyor || !adTutar || !password}>
+            {bekliyor ? "Bekleyin…" : "Kasayı serbest bırak"}
+          </Button>
+        </>
+      }
+    >
+      <form id="serbest-birak" onSubmit={birak} className="space-y-4 pb-2">
+        {bilgi.canli ? (
+          <Notice
+            tone="bad"
+            size="sm"
+            title={`${branch.name} canlı: son ${CANLI_GUN} günde kasadan gün sonu geldi`}
+            text="Serbest bırakınca bugünkü kasa gün sonunu ladmin'e gönderemez. Yalnız kasa bilgisayarı değişiyorsa ya da kasa kayıpsa devam edin."
+          />
+        ) : null}
+        {bilgi.anahtarOrtamda ? (
+          <Notice
+            tone="warn"
+            size="sm"
+            title="Bu şubenin anahtarı sunucunun ortam değişkeninde (eski kurulum)"
+            text="Yeni anahtar panelde saklanır ve ortamdakinin önüne geçer; ortamdaki anahtar bu şube için bir daha kullanılmaz."
+          />
+        ) : null}
+        <p className="text-sm text-ink-soft">Şubenin kasa anahtarı yenilenir, bekleyen kurulum bağlantıları iptal olur. Geri alınamaz: eski kasa yeniden bağlanmak için yeni kurulum ister.</p>
+        <Field label={`Onay için şubenin adını yazın: ${branch.name}`} htmlFor="serbest-ad">
+          <Input id="serbest-ad" value={ad} autoComplete="off" onChange={(e) => setAd(e.target.value)} />
+        </Field>
+        <Field label="Parolanız" htmlFor="serbest-pw" error={error}>
+          <PasswordInput id="serbest-pw" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} className="h-11 pointer-coarse:h-11" />
+        </Field>
+      </form>
+    </Dialog>
   );
 }
 
 /** Yeni şube formu: bugünkü ekleme penceresinin alanları. E-posta yazılırsa (fiziksel) kurulum bağlantısı da gider */
 function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateAction; rows: BranchRow[]; onKurulum: (k: KurulumSonucu) => void }) {
   const [t, setT] = useState<Taslak>(BOS);
+  const [ekip, setEkip] = useState<PersonelSatiri[]>(BOS_PERSONEL);
   const [denendi, setDenendi] = useState(false);
   const [bekliyor, basla] = useActionTransition();
   const fiziksel = t.kind === "fiziksel";
@@ -208,7 +422,10 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
   const kaynakHata = branchSourceError(t.kind, t.posSource);
   const oranHata = fiziksel ? posRateError(oranOf(t.posRate)) : null;
   const epostaHata = fiziksel && t.email.trim() && !EPOSTA_RE.test(t.email.trim()) ? "E-posta adresi geçersiz" : null;
-  const hata = adHata ?? idHata ?? kaynakHata ?? oranHata ?? epostaHata;
+  // İlk personel isteğe bağlı: boşsa kasa bugünkü gibi kendi PIN akışını kullanır
+  const personel = fiziksel ? doluSatirlar(ekip) : [];
+  const personelHata = personel.length ? ilkPersonelHatasi(personel) : null;
+  const hata = adHata ?? idHata ?? kaynakHata ?? oranHata ?? epostaHata ?? personelHata;
   // Alan hatası ilk denemeden sonra (boş formda kırmızı yazı yok); kimlik hatası yazılmaya başlayınca
   const goster = (h: string | null, dolu = false) => (denendi || dolu ? h : null);
 
@@ -231,10 +448,12 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
           openedOn: t.openedOn || null,
           ...(fiziksel ? { posRate: oranOf(t.posRate) } : {}),
           ...(email ? { email } : {}),
+          ...(personel.length ? { personel } : {}),
         });
         if (!r.ok) return void toast.error(r.error);
         toast.success(`${t.name.trim()} eklendi`);
         setT(BOS);
+        setEkip(BOS_PERSONEL);
         setDenendi(false);
         if (r.data.kurulum) onKurulum(r.data.kurulum);
       },
@@ -311,6 +530,15 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
             </Field>
           ) : null}
         </div>
+        {fiziksel ? (
+          <fieldset className="space-y-3 rounded-2xl p-4 ring-1 ring-line">
+            <legend className="px-1 text-sm font-medium text-ink">İlk personel (isteğe bağlı)</legend>
+            <p className="text-[13px] text-ink-soft">
+              Kasa bu şubeye bağlanınca patron, müdür ve baristanın hesapları bu ad ve PIN&apos;lerle açılır. PIN&apos;ler panelde şifreli durur ve kasa aldığını onaylayınca silinir. Boş bırakılırsa kasa PIN&apos;leri kendisi sorar.
+            </p>
+            <PersonelAlanlari rows={ekip} onChange={setEkip} idPrefix="se" error={goster(personelHata)} />
+          </fieldset>
+        ) : null}
         {rows.length ? <p className="text-xs text-ink-mute">Şu anki şubeler: {rows.map((r) => r.name).join(" · ")}</p> : null}
         <Button type="submit" disabled={bekliyor} className="max-sm:w-full">
           {bekliyor ? "Ekleniyor…" : fiziksel && t.email.trim() ? "Şubeyi ekle ve kurulum gönder" : "Şubeyi ekle"}

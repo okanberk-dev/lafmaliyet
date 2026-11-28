@@ -79,12 +79,15 @@ export const EXCLUDED_STATE_KEYS: Readonly<Record<string, string>> = {
  * Önekiyle dışarıda kalan durum anahtarları: şube başına Paraşüt hesabının oturumu ve ayarları hesap adıyla saklanır
  * ("parasut.token:marina", "parasut.settings:marina"; docs/PARASUT.md › Şube başına Paraşüt hesabı). Varsayılan hesabın
  * eski adlı kayıtları EXCLUDED_STATE_KEYS'te. Yarım bağlanma istekleri (parasut.connect:<özet>) ve "Aynı vergi numarası mı?"
- * onayını bekleyen bağlantı (parasut.connect.onay…) de şifreli ve 10 dakikalık: girmez
+ * onayını bekleyen bağlantı (parasut.connect.onay…) de şifreli ve 10 dakikalık: girmez. Kasaya teslimi bekleyen ilk
+ * personelin PIN'leri (asilpos.ilk-personel:<şube>) de girmez
  */
 export const EXCLUDED_STATE_PREFIXES: Readonly<Record<string, string>> = {
   "parasut.token:": "öbür şubelerin Paraşüt oturumu (şifreli); geri yüklemeden sonra Paraşüt ekranında o şube seçiliyken yeniden bağlanır",
   "parasut.settings:": "öbür şubelerin Paraşüt bağlantı ayarları (client_secret şifreli); geri yüklemeden sonra yeniden girilir",
   "parasut.connect": "yarım kalmış Paraşüt bağlanma istekleri ve onay bekleyen bağlantı (şifreli, 10 dakika geçerli)",
+  // Kasa açılışı (docs/ASILPOS.md › Kasa açılışı): kasaya teslim edilene kadar mühürlü PIN'ler; geçicidir
+  "asilpos.ilk-personel:": "kasaya teslimi bekleyen ilk personelin PIN'leri (şifreli; teslimle ya da en geç 30 günde silinir); geri yüklemeden sonra Şube ekleme'den yeniden girilir",
 };
 
 const sqlList = (keys: string[]) => keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");

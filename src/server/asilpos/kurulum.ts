@@ -14,6 +14,8 @@ import { open, seal } from "@/server/secret-box";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { ensurePosKey, forgetPosKeys } from "@/server/asilpos/branch";
+import { personelForKasa, type KasaPersoneli } from "@/server/asilpos/ilk-personel";
+import { writeKasaKaydi } from "@/server/asilpos/kasa-durumu";
 
 // Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): kodu üretir, e-postayla gönderir, şube hesabına gösterir ve kasa
 // verince (POST /api/asilpos/kurulum) şubeyi ve bağlantı bilgilerini döner. Kurallar saf dosyada (src/lib/asilpos/kurulum.ts).
@@ -119,7 +121,7 @@ export async function installForDownload(raw: string, db: DB = getDb(), now = ne
 }
 
 export type RedeemResult =
-  | { status: 200; body: { ok: true; sube: { id: string; ad: string }; baglanti: Record<string, string> } }
+  | { status: 200; body: { ok: true; sube: { id: string; ad: string }; baglanti: Record<string, string>; personel?: KasaPersoneli } }
   | { status: 404 | 410; body: { ok: false; error: string } };
 
 /** Kapalı şubenin kodu (kasaya 410, "geçersiz / süresi geçmiş kod"la aynı biçim; kasa 404 ve 410'u kalıcı sayar) */
@@ -130,9 +132,19 @@ export const KURULUM_SUBE_KAPALI = "Şube kapatıldı; bu kurulum bağlantısı 
  * bağlantılar (lafmaliyet adresi ve şubenin kendi anahtarı; ortamda tanımlıysa AsilPOS Uzaktan ve site). Başka şubenin
  * anahtarı hiçbir zaman verilmez (çok şube): şubenin anahtarı yoksa (kod göç öncesi üretildi) burada üretilir. 404 kod
  * yok, 410 kullanılmış, iptal, süresi dolmuş ya da şubesi kapalı (asıl yönetici, 28 Kasım 2026: şube kapatılınca bekleyen
- * kodları iptal olur, kapalı şubenin kodu hiçbir koşulda geçmez). Yanıtın yolu, biçimi ve durum kodları değişmedi
+ * kodları iptal olur, kapalı şubenin kodu hiçbir koşulda geçmez). Yanıtın yolu, biçimi ve durum kodları değişmedi.
+ *
+ * Kasa açılışı (docs/ASILPOS.md › Kasa açılışı): başarıda şubenin kasa kaydı yazılır (`yol: "kod"`; yeni kasa isteğe bağlı
+ * `kimlik` ve `surum` gönderirse onlarla, eski kasa için de yazılır). Yeni kasa `acikAnahtar` gönderirse ve şubenin ilk
+ * personeli ayarlıysa yanıta ek alan `personel` girer (PIN'ler kasanın açık anahtarıyla şifreli); göndermeyen eski
+ * kasanın yanıtı bugünküyle birebir aynı
  */
-export async function redeemInstallCode(raw: string, db: DB = getDb(), now = new Date()): Promise<RedeemResult> {
+export async function redeemInstallCode(
+  raw: string,
+  db: DB = getDb(),
+  now = new Date(),
+  kasa: { kimlik: string | null; surum: string | null; acikAnahtar: string | null } = { kimlik: null, surum: null, acikAnahtar: null },
+): Promise<RedeemResult> {
   const hash = hashOf(raw);
   const openBranches = db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.active, true));
   const [row] = await db
@@ -167,5 +179,14 @@ export async function redeemInstallCode(raw: string, db: DB = getDb(), now = new
   const { key, created } = await db.transaction((tx) => ensurePosKey(tx, branch.id, "kurulum kodu"));
   if (created) forgetPosKeys();
   const baglanti = kurulumBaglantilari({ panelUrl: appUrl(), syncSecret: key });
-  return { status: 200, body: { ok: true, sube: { id: branch.id, ad: branch.name }, baglanti } };
+  // Kod harcandı: kayıt ya da personel yazılamazsa da kasa yanıtını alır (kod ikinci kez geçmez). Kayıt yoksa durum
+  // eski ölçütle (kullanılmış kod ve anahtar) yine "kurulu" çıkar
+  let personel: KasaPersoneli | null = null;
+  try {
+    await writeKasaKaydi(db, branch.id, { durum: "kurulu", kimlik: kasa.kimlik, surum: kasa.surum, at: now.toISOString(), by: "kurulum kodu", yol: "kod" });
+    personel = await personelForKasa(db, branch.id, kasa.acikAnahtar, now);
+  } catch (e) {
+    console.error("[asilpos] kurulum kodu: kasa kaydı ya da ilk personel yazılamadı", e);
+  }
+  return { status: 200, body: { ok: true, sube: { id: branch.id, ad: branch.name }, baglanti, ...(personel ? { personel } : {}) } };
 }

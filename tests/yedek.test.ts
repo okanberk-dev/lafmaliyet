@@ -270,10 +270,11 @@ test("yedek dışı: Paraşüt belirteci ve bağlantı ayarları, bildirim anaht
   // Şube başına Paraşüt hesabı: öbür hesapların oturumu ve ayarları hesap adıyla ("parasut.token:marina"), önekiyle dışarıda
   assert.equal(
     TABLE_RULES.integration_state.where,
-    "key NOT IN ('parasut.token', 'parasut.settings', 'webpush_vapid', 'site_orders') AND key NOT LIKE 'parasut.token:%' AND key NOT LIKE 'parasut.settings:%' AND key NOT LIKE 'parasut.connect%'",
+    "key NOT IN ('parasut.token', 'parasut.settings', 'webpush_vapid', 'site_orders') AND key NOT LIKE 'parasut.token:%' AND key NOT LIKE 'parasut.settings:%' AND key NOT LIKE 'parasut.connect%' AND key NOT LIKE 'asilpos.ilk-personel:%'",
   );
-  assert.deepEqual(Object.keys(EXCLUDED_STATE_PREFIXES).sort(), ["parasut.connect", "parasut.settings:", "parasut.token:"]);
-  assert.deepEqual(excludedFor(["integration_state"], false).stateKeys.slice(-3), ["parasut.token:*", "parasut.settings:*", "parasut.connect*"]);
+  // Kasa açılışı: kasaya teslimi bekleyen ilk personelin mühürlü PIN'leri de dışarıda (docs/ASILPOS.md › Kasa açılışı)
+  assert.deepEqual(Object.keys(EXCLUDED_STATE_PREFIXES).sort(), ["asilpos.ilk-personel:", "parasut.connect", "parasut.settings:", "parasut.token:"]);
+  assert.deepEqual(excludedFor(["integration_state"], false).stateKeys.slice(-4), ["parasut.token:*", "parasut.settings:*", "parasut.connect*", "asilpos.ilk-personel:*"]);
   // Paraşüt'ün PDF'i önbellek: yalnız yüklenenler, onlar da yalnız istenince
   assert.equal(TABLE_RULES.invoice_documents.where, "source = 'upload'");
   assert.equal(TABLE_RULES.invoice_documents.documents, true);
@@ -284,7 +285,7 @@ test("yedek dışı: Paraşüt belirteci ve bağlantı ayarları, bildirim anaht
   assert.deepEqual(noDocs.tables, ["invoice_documents", "push_subscriptions", "user_tokens"]);
   assert.equal(noDocs.documents, "hepsi");
   assert.deepEqual(Object.keys(noDocs.columns), ["users"]);
-  assert.deepEqual(noDocs.stateKeys, ["parasut.token", "parasut.settings", "webpush_vapid", "site_orders", "parasut.token:*", "parasut.settings:*", "parasut.connect*"]);
+  assert.deepEqual(noDocs.stateKeys, ["parasut.token", "parasut.settings", "webpush_vapid", "site_orders", "parasut.token:*", "parasut.settings:*", "parasut.connect*", "asilpos.ilk-personel:*"]);
 });
 
 test("panelden belgeli yedek en çok 4 MB (Vercel'in yanıt sınırı canlıda doğrulanana kadar)", () => {

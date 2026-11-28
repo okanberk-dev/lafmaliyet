@@ -116,6 +116,9 @@ const KORUNAN: [file: string, name: string, is: keyof typeof ASIL_YONETICI_ISLER
   ["src/server/actions/branches.ts", "deleteBranch", "subeSilme"],
   ["src/server/actions/branch-settings.ts", "saveAsilposSecret", "kasaAnahtari"],
   ["src/server/actions/asilpos.ts", "saveAsilposSwitchDay", "gecisGunu"],
+  // Kasa açılışı (docs/ASILPOS.md › Kasa açılışı)
+  ["src/server/actions/branches.ts", "saveBranchStaff", "ilkPersonel"],
+  ["src/server/actions/branches.ts", "releaseBranchTill", "kasaSerbest"],
 ];
 
 test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / kapalı ve kasa programı değişince", () => {
@@ -200,16 +203,23 @@ test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki y
   assert.match(read("src/app/panel/hesap/page.tsx"), /emailLocked=\{isAnaAdminEmail\(user\.email\) \? ASIL_EPOSTA_SABIT : null\}/);
 });
 
-test("yeni metinde uzun tire yok; yeni uç ve göç yok", () => {
+test("yeni metinde uzun tire yok; Şube ekleme sayfa, uç değil; kasa açılışının üç ucu (P-B2)", () => {
   for (const f of [
     "src/lib/asil-yonetici.ts",
     "src/lib/asilpos/kasa-durumu.ts",
+    "src/lib/asilpos/kasa-acilis.ts",
+    "src/lib/asilpos/kasa-acilis-mail.ts",
     "src/server/asilpos/kasa-durumu.ts",
+    "src/server/asilpos/acilis.ts",
+    "src/server/asilpos/acilis-route.ts",
+    "src/server/asilpos/ilk-personel.ts",
+    "src/server/auth/giris-korumalari.ts",
     "src/app/panel/sube-ekleme/page.tsx",
     "src/app/panel/sube-ekleme/sube-ekleme-client.tsx",
   ]) {
     assert.doesNotMatch(read(f), /[–—]/, f);
   }
   assert.ok(!existsSync(join(ROOT, "src/app/panel/sube-ekleme/route.ts")));
-  assert.ok(!existsSync(join(ROOT, "src/app/api/asilpos/acilis")), "açılış uçları sonraki PR'da");
+  // Kasa açılışı (docs/ASILPOS.md › Kasa açılışı): giriş, bağla, teslim; veri integration_state'te (göç yok)
+  for (const uc of ["giris", "bagla", "teslim"]) assert.ok(existsSync(join(ROOT, `src/app/api/asilpos/acilis/${uc}/route.ts`)), uc);
 });

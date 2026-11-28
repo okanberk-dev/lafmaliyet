@@ -766,6 +766,20 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ],
       },
       {
+        id: "kasa-acilis",
+        q: "Kasanın gerçek açılışı, ilk personel ve kasayı serbest bırakma",
+        a: (
+          <>
+            Yeni kasa gerçek kullanıma geçerken asıl yöneticinin ladmin e-postası ve parolasıyla girip şubesini seçer; kasası kurulu şube kasada
+            seçilemez. Bilgisayar değişecekse <Path href="/panel/sube-ekleme" /> › şubenin satırı › Kasayı serbest bırak (şubenin adı ve
+            parolanızla): eski kasa ladmin bağlantısını kaybeder, yeni bilgisayar şubeyi seçebilir. İlk personeli ayarla ile patron, müdür ve
+            baristanın adı ve PIN&apos;i girilir; PIN&apos;ler şifreli durur, kasa aldığını onaylayınca silinir.
+          </>
+        ),
+        icon: MonitorDown,
+        links: [{ href: "/panel/sube-ekleme", label: "Şube ekleme" }],
+      },
+      {
         id: "iki-kar",
         q: "İki kâr hesabı: neden iki farklı kâr görüyorum?",
         a: (

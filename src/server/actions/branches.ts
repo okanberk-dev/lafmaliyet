@@ -25,12 +25,17 @@ import {
 } from "@/lib/branches";
 import { anaAdminEmail } from "@/lib/asil-yonetici";
 import { ESKI_KASA_KAYNAGI } from "@/lib/asilpos/eski-adlar";
+import { ILK_PERSONEL_ROLLERI, ilkPersonelHatasi, rolEtiketi, type IlkPersonel, type IlkPersonelRolu } from "@/lib/asilpos/kasa-acilis";
 import { YENI_KURULUM_ONEKI, yeniKurulumOnayi } from "@/lib/asilpos/kasa-durumu";
 import { posOffConfirmText } from "@/lib/pos/tills";
+import type { StepUpConfirm } from "@/lib/step-up";
 import { requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
+import { requireStepUp } from "@/server/auth/step-up";
 import { INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { issueUserToken } from "@/server/auth/user-tokens";
-import { loadKasaDurumu } from "@/server/asilpos/kasa-durumu";
+import { mailReleased, releaseTill } from "@/server/asilpos/acilis";
+import { saveIlkPersonel } from "@/server/asilpos/ilk-personel";
+import { loadKasaDurumu, writeHazirlik } from "@/server/asilpos/kasa-durumu";
 import { issueInstallCode, revokePendingInstalls, sendInstallMail } from "@/server/asilpos/kurulum";
 import { staffBranchLock } from "@/server/branch-scope";
 import { branchSettingsCloseError, putBranchSetting } from "@/server/branch-settings";
@@ -81,6 +86,32 @@ const branchEmail = z
   .transform((v) => v || null)
   .refine((v) => v === null || z.email().safeParse(v).success, { message: "E-posta adresi geçersiz" });
 
+/**
+ * İlk personel (patron, müdür, barista: ad + PIN; docs/ASILPOS.md › Kasa açılışı › İlk personel). Kural saf dosyada
+ * (ilkPersonelHatasi); PIN hiçbir hata metninde, işlem geçmişinde ya da yanıtta geçmez
+ */
+const personelInput = z
+  .array(
+    z.object({
+      rol: z.enum(ILK_PERSONEL_ROLLERI.map((r) => r.rol) as [IlkPersonelRolu, ...IlkPersonelRolu[]], { message: "Rol tanınmadı" }),
+      ad: z.string().max(200),
+      pin: z.string().max(20),
+    }),
+  )
+  .max(ILK_PERSONEL_ROLLERI.length)
+  .transform((list) => list.map((p) => ({ rol: p.rol, ad: p.ad.trim(), pin: p.pin.trim() })));
+
+/** İlk personeli denetler (boş liste: bölüm boş bırakıldı) */
+function checkPersonel(list: IlkPersonel[]): IlkPersonel[] {
+  if (!list.length) return list;
+  const hata = ilkPersonelHatasi(list);
+  if (hata) throw new UserError(hata);
+  return list;
+}
+
+/** İşlem geçmişi satırı: yalnız roller ("Patron, Müdür, Barista"); ad ve PIN yazılmaz */
+const rollerMetni = (list: readonly IlkPersonel[]) => list.map((p) => rolEtiketi(p.rol)).join(", ");
+
 const createInput = z.object({
   id: z.string().trim(),
   name: zText("Şube adı", BRANCH_NAME_MAX),
@@ -89,6 +120,8 @@ const createInput = z.object({
   openedOn,
   posRate,
   email: branchEmail,
+  /** İsteğe bağlı ilk personel (yalnız fiziksel şube); boşsa kasa bugünkü gibi kendi PIN akışını kullanır */
+  personel: personelInput.optional(),
 });
 
 /**
@@ -113,15 +146,22 @@ export async function createBranch(input: z.input<typeof createInput>) {
       throw new UserError("Bu adda bir şube zaten var");
     }
     if (d.email && d.kind !== "fiziksel") throw new UserError("E-posta ve AsilPOS kurulumu yalnız fiziksel şubede");
+    const personel = checkPersonel(d.personel ?? []);
+    if (personel.length && d.kind !== "fiziksel") throw new UserError("İlk personel yalnız fiziksel şubede");
     // Adres reddedilirse şube kaydı da yazılmaz: denetim eklemeden önce
     if (d.email) await assertBranchEmailFree(db, d.email, d.id.trim());
     const sortOrder = Math.max(0, ...mevcut.map((b) => b.sortOrder)) + 1;
-    const { posRate: oran, email, ...alanlar } = d;
+    const { posRate: oran, email, personel: _p, ...alanlar } = d;
+    void _p;
     const id = d.id.trim();
     await db.insert(s.branches).values({ ...alanlar, id, email, sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
     forgetPosBranches();
     await logActivity(me, "Şube eklendi", `${d.name} (${d.id})${email ? ` · ${email}` : ""}`);
-    const kurulum = email ? await onboard(me.id, { id, name: d.name.trim(), email }) : null;
+    if (personel.length) {
+      await saveIlkPersonel(db, id, personel, me.name);
+      await logActivity(me, "İlk personel ayarlandı", `${d.name} · ${rollerMetni(personel)}`, { branchId: id });
+    }
+    const kurulum = email ? await onboard(me, { id, name: d.name.trim(), email }) : null;
     if (kurulum) await logActivity(me, "AsilPOS kurulumu gönderildi", `${d.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
     refresh();
     return { id, kurulum };
@@ -160,7 +200,7 @@ export interface KurulumSonucu {
  * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir). Adres bir hesaptaysa o hesap yeniden
  * kullanılır; çağıran önce `assertBranchEmailFree`'den geçirir, yani bu hep şubesiz ya da bu şubedeki personel hesabıdır
  */
-async function onboard(by: number, b: { id: string; name: string; email: string }): Promise<KurulumSonucu> {
+async function onboard(me: { id: number; name: string }, b: { id: string; name: string; email: string }): Promise<KurulumSonucu> {
   const db = getDb();
   const [existing] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, b.email)).limit(1);
   let inviteRaw: string | null = null;
@@ -171,7 +211,9 @@ async function onboard(by: number, b: { id: string; name: string; email: string 
       .returning({ id: s.users.id });
     inviteRaw = (await issueUserToken(u.id, "invite", TOKEN_HOURS.invite)).raw;
   }
-  const code = await issueInstallCode(db, { branchId: b.id, email: b.email, by });
+  const code = await issueInstallCode(db, { branchId: b.id, email: b.email, by: me.id });
+  // Şube kasa kurulumu için hazırlandı: kasa açılışında seçilebilir (kasa programı ModPOS kalsa da; çekim durmaz)
+  await writeHazirlik(db, b.id, me.name);
   const mail = await sendInstallMail({ to: b.email, branchName: b.name, link: code.link, expiresAt: code.expiresAt, inviteRaw });
   return {
     link: code.link,
@@ -212,10 +254,65 @@ export async function sendBranchInstall(input: z.input<typeof installInput>) {
     // Şubeye yazılmadan ve bağlantı üretilmeden önce (kayıtlı adres de: eskiden kabul edilmiş olabilir)
     await assertBranchEmailFree(db, email, b.id);
     if (email !== b.email) await db.update(s.branches).set({ email }).where(eq(s.branches.id, b.id));
-    const kurulum = await onboard(me.id, { id: b.id, name: b.name, email });
+    const kurulum = await onboard(me, { id: b.id, name: b.name, email });
     await logActivity(me, "AsilPOS kurulumu gönderildi", `${b.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
     refresh();
     return kurulum;
+  });
+}
+
+const staffInput = z.object({ id: z.string().trim().min(1), personel: personelInput });
+
+/**
+ * "İlk personeli ayarla" (Şube ekleme › şube satırı): patron, müdür ve baristanın adı ve PIN'i, mühürlü saklanır ve kasa
+ * bağlanınca kasanın açık anahtarıyla şifreli teslim edilir (docs/ASILPOS.md › Kasa açılışı › İlk personel). Eskisinin
+ * yerine geçer; boş liste kaydı siler. Yalnız asıl yönetici. Yanıtta PIN yok
+ */
+export async function saveBranchStaff(input: z.input<typeof staffInput>) {
+  return attempt(async () => {
+    const me = await requireAnaAdmin("ilkPersonel");
+    const d = staffInput.parse(input);
+    const personel = checkPersonel(d.personel);
+    const db = getDb();
+    const [b] = await db.select({ id: s.branches.id, name: s.branches.name, kind: s.branches.kind, active: s.branches.active }).from(s.branches).where(eq(s.branches.id, d.id)).limit(1);
+    if (!b) throw new UserError("Şube bulunamadı");
+    if (b.kind !== "fiziksel" || !b.active) throw new UserError("İlk personel yalnız açık fiziksel şubede ayarlanır");
+    await saveIlkPersonel(db, b.id, personel, me.name);
+    await logActivity(me, personel.length ? "İlk personel ayarlandı" : "İlk personel silindi", personel.length ? `${b.name} · ${rollerMetni(personel)}` : b.name, { branchId: b.id });
+    refresh();
+    return { saved: personel.length > 0 };
+  });
+}
+
+const releaseInput = z.object({
+  id: z.string().trim().min(1),
+  /** Onay: şubenin adı (büyük-küçük harf ve baştaki, sondaki boşluk fark etmez) */
+  ad: z.string().max(200),
+});
+
+/**
+ * "Kasayı serbest bırak" (Şube ekleme › şube satırı; docs/ASILPOS.md › Kasa açılışı): bilgisayar değişecekse şubenin
+ * kasa bağını çözer. Şubenin kasa anahtarı yeniden üretilir (eski kasa ladmin bağlantısını kaybeder), bekleyen kurulum
+ * bağlantıları iptal olur, kasa kaydı "boş" yazılır; yeni bilgisayar şubeyi kasa açılışında seçebilir. Yalnız asıl
+ * yönetici, yalnız kasası kurulu şubede; şubenin adı yazılır ve parolayla onaylanır. İşlem geçmişi ve asıl yöneticiye
+ * e-posta
+ */
+export async function releaseBranchTill(input: z.input<typeof releaseInput>, confirm?: StepUpConfirm) {
+  return attempt(async () => {
+    const me = await requireAnaAdmin("kasaSerbest");
+    const d = releaseInput.parse(input);
+    const db = getDb();
+    const [b] = await db.select({ id: s.branches.id, name: s.branches.name, kind: s.branches.kind }).from(s.branches).where(eq(s.branches.id, d.id)).limit(1);
+    if (!b) throw new UserError("Şube bulunamadı");
+    if (b.kind !== "fiziksel") throw new UserError("Kasa yalnız fiziksel şubede olur");
+    if ((await loadKasaDurumu(b.id, db)).durum !== "kurulu") throw new UserError("Bu şubede kurulu kasa yok; serbest bırakılacak bir şey yok");
+    if (d.ad.trim().toLocaleLowerCase("tr-TR") !== b.name.trim().toLocaleLowerCase("tr-TR")) throw new UserError("Onay için şubenin adını tam yazın");
+    await requireStepUp(me, confirm, `Kasayı serbest bırak: ${b.name}`, "AsilPOS");
+    const { iptal } = await releaseTill(db, { branchId: b.id, by: me.name });
+    await logActivity(me, "Kasa serbest bırakıldı", `${b.name} · kasa anahtarı yenilendi${iptal ? ` · ${iptal} bekleyen kurulum bağlantısı iptal edildi` : ""}`, { branchId: b.id });
+    await mailReleased(me.email, b.name, me.email);
+    refresh();
+    return { id: b.id };
   });
 }
 

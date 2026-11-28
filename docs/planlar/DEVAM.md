@@ -131,6 +131,17 @@ kur". Göç yok; yeni uç yok; `resolvePosCaller`, `readKeys`, `ensurePosKey` de
 ilk personel, "Kasayı serbest bırak", kasa kaydı), sonra kasada K5. Canlıya almadan önce: `info@nextgenlab.com.tr`
 hesabı canlıda var, etkin ve yönetici mi (değilse hesap koruması onu da kilitler; docs/ROLLER.md › Asıl yönetici).
 
+## 28 Kasım: kasa açılışı uçları, ilk personel, Kasayı serbest bırak (dal kasa-acilis-uclari; P-B2)
+
+Tasarım [kasa-acilis-ve-asil-yonetici.md](kasa-acilis-ve-asil-yonetici.md) › P-B2 (devralma kalktı), istek
+[istek-28-kasim.md](istek-28-kasim.md) › B ve C. Üç uç: `POST /api/asilpos/acilis/giris` (asıl yöneticinin girişi;
+panelin giriş korumaları ortak modülde, `src/server/auth/giris-korumalari.ts`, davranış aynı), `.../bagla` (boş şubeye
+bağlar; kurulu şube her zaman 409, anahtar dönmez), `.../teslim` (ilk personelin teslim onayı, şube anahtarıyla imzalı).
+Kasa kaydı ve hazırlık `integration_state`'te; ilk personel mühürlü, yedek dışı. Şube ekleme'de "İlk personeli ayarla" ve
+"Kasayı serbest bırak". Göç yok; var olan uçlar, `resolvePosCaller`, `readKeys`, `ensurePosKey` ve
+`/api/panel/pos/baglanti` değişmedi. Tam sözleşme docs/ASILPOS.md › Kasa açılışı. Sıradaki: kasada K5 (P-B2 canlıya
+girdikten sonra).
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)

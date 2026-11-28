@@ -177,8 +177,17 @@ palet). Kodda eski ad ("ana yönetici": `isAnaAdmin`, `LADMIN_ANA_ADMIN`) kalır
 | Şubeyi kapatmak ya da yeniden açmak | `updateBranch` (yalnız `active` değişince) |
 | Kasa programını değiştirmek (tür değişikliği de) | `updateBranch` (yalnız `posSource` değişince) |
 | Kasa kurmak (kurulum bağlantısı) | `sendBranchInstall` |
+| Şubenin kasasını serbest bırakmak (parola ve şubenin adıyla) | `releaseBranchTill` |
+| Şubenin ilk personelini (patron, müdür, barista PIN'leri) ayarlamak | `saveBranchStaff`, `createBranch` |
 | Kasa anahtarını değiştirmek ya da silmek | `saveAsilposSecret` |
 | AsilPOS'a geçiş gününü değiştirmek | `saveAsilposSwitchDay` |
+| Kasayı gerçek açılışta şubeye bağlamak (kasada ladmin girişi) | `POST /api/asilpos/acilis/giris`, `.../bagla` |
+
+**Kasa açılışı** ([ASILPOS.md › Kasa açılışı](ASILPOS.md#kasa-açılışı-28-kasım-2026)): yeni kasa gerçek kullanıma
+geçerken asıl yöneticinin e-postası ve parolasıyla (hesapta açıksa iki adımlı kodla) girer. Panelin giriş korumaları
+aynen (IP sınırı, 5 hatada 15 dakika kilit, kayıtsız e-postada aynı söz; panelin girişiyle aynı sayaçlar); başka hesap
+"Kasayı yalnız asıl yönetici açar" alır. Oturum açılmaz, çerez yazılmaz: 15 dakikalık belirteç kişinin oturum sürümüne
+bağlıdır, parola değişince ya da oturumlar kapatılınca geçmez.
 
 Şubenin öteki alanları (ad, açılış günü, sıra, POS oranı, özellikler, e-posta) her yöneticide kalır. Ekranlarda asıl
 yönetici olmayan yöneticiye bu alanlar ve düğmeler kapalıdır, nedeni yanında yazılıdır (Şubeler'in düzenleme penceresi,
@@ -206,7 +215,8 @@ değiştirilerek düzelir.
 Testler: `tests/asil-yonetici.test.ts` (saf kurallar ve kaynak taraması), `tests/asil-yonetici-db.test.ts` (gerçek
 Postgres, `ASIL_YONETICI_TEST_DATABASE_URL`): her korunan eylemde asıl yönetici geçer, öteki yönetici okunur hata alır,
 müdür, muhasebeci ve personel reddedilir; hesap korumasının her eylemi; kapanan şubenin bekleyen kodları iptal olur ve
-kodu reddedilir; Marina'nın anahtarı bütün senaryolardan sonra baştakiyle aynı.
+kodu reddedilir; Marina'nın anahtarı bütün senaryolardan sonra baştakiyle aynı. Kasa açılışı: `tests/kasa-acilis.test.ts`
+ve `tests/kasa-acilis-db.test.ts` (`KASA_ACILIS_TEST_DATABASE_URL`).
 
 ## Kullanıcı yönetimi ve davet
 

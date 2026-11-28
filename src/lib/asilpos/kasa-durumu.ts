@@ -1,7 +1,9 @@
-// Şubenin AsilPOS kasası kurulu mu (Şube ekleme sayfası; docs/ASILPOS.md › Şube kurulumu). Eldeki veriden: şubenin
-// kullanılabilen anahtarı, kurulum kodları ve son kabul edilen gün sonu. Tek bir eski deneme günü "kurulu" saymaya yetmez
-// (Tuzla'nın eski deneme günü onu kilitlemesin; sahibin kararı, 28 Kasım 2026): kurulu = kullanılabilen anahtar VE
-// (kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün). Bu dosya saf (tests/asil-yonetici.test.ts).
+// Şubenin AsilPOS kasası kurulu mu (Şube ekleme sayfası, kasa açılışı; docs/ASILPOS.md › Şube kurulumu, › Kasa açılışı).
+// Önce açık kayıt (integration_state `asilpos.kasa:<şube>`; kasa açılışı, kurulum kodu ve "Kasayı serbest bırak" yazar):
+// varsa o geçerli. Yoksa eldeki veriden: şubenin kullanılabilen anahtarı, kurulum kodları ve son kabul edilen gün sonu.
+// Tek bir eski deneme günü "kurulu" saymaya yetmez (Tuzla'nın eski deneme günü onu kilitlemesin; sahibin kararı, 28 Kasım
+// 2026): kurulu = kullanılabilen anahtar VE (kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün). Kayıtsız
+// Marina (ortamdaki anahtar, yakın tarihli gün) kurulu çıkar. Bu dosya saf (tests/asil-yonetici.test.ts).
 
 import { dayMonthYearTR } from "./switch";
 
@@ -17,6 +19,8 @@ export interface KasaKaniti {
   bekleyen: string | null;
   /** Son kabul edilen gün sonu: en yeni gün (YYYY-MM-DD) ve en son geldiği an (ISO); hiç yoksa null */
   sonGun: { date: string; receivedAt: string } | null;
+  /** Açık kayıt (`asilpos.kasa:<şube>`): varsa ölçütün yerine geçer; yoksa ya da bozuksa null */
+  kayit?: { durum: "kurulu" | "bos" } | null;
 }
 
 export type KasaDurumu =
@@ -25,6 +29,8 @@ export type KasaDurumu =
   | { durum: "yok" };
 
 export function kasaDurumu(k: KasaKaniti, now: Date = new Date()): KasaDurumu {
+  if (k.kayit?.durum === "kurulu") return { durum: "kurulu", sonGun: k.sonGun?.date ?? null, bekleyen: k.bekleyen };
+  if (k.kayit?.durum === "bos") return k.bekleyen ? { durum: "bekliyor", sonGecerlilik: k.bekleyen } : { durum: "yok" };
   const yakin = !!k.sonGun && now.getTime() - Date.parse(k.sonGun.receivedAt) <= KASA_KURULU_GUN * 86_400_000;
   if (k.anahtar && (k.kodKullanildi || yakin)) return { durum: "kurulu", sonGun: k.sonGun?.date ?? null, bekleyen: k.bekleyen };
   if (k.bekleyen) return { durum: "bekliyor", sonGecerlilik: k.bekleyen };
