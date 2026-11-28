@@ -6,7 +6,9 @@ Uçlar: `POST /api/pos/gun` (gün sonu), `GET /api/panel/pos/urunler` (ürün ma
 `GET /api/panel/pos/modpos-gunler` (geçiş gününden önceki ModPOS günleri) ve kasa zincirinin iki okuması
 (Faz 3): `GET /api/panel/pos/devir` (bir günün devri, ertesi günün beklenen açılışı) ve
 `GET /api/panel/pos/gider-kategorileri` (personelin harcama kategorileri), personel bağlantısının listesi
-`GET /api/panel/pos/personel` (LM-4b; aşağıda "Personel bağlantısı"). Ekranlar: **Ayarlar ›
+`GET /api/panel/pos/personel` (LM-4b; aşağıda "Personel bağlantısı"). Şube kurulumu ve kasa açılışı:
+`POST /api/asilpos/kurulum`, `POST /api/asilpos/acilis/giris`, `.../bagla`, `.../teslim` (aşağıda "Şube kurulumu",
+"Kasa açılışı"). Ekranlar: **Ayarlar ›
 AsilPOS (kasa)** (bağlantının durumu, son ret ve onarımı, **AsilPOS'a geçiş günü**, ürüne bağlanamayan adlar) ve geçiş
 gününden itibaren **Kasa raporu** (`/panel/kasa`) › **AsilPOS'tan doldur**, **Satışlar** (`/panel/satislar`:
 AsilPOS'un ürün satışları, ay toplamı), **Komisyon & hakediş** (kanal kanal satış) ve **Zayi & ikram** (AsilPOS'un
@@ -1383,6 +1385,11 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
    eski adları da okunur (önce `ASILPOS_CLOUD_*`, yoksa `LAFPOS_CLOUD_*`; önce `ASILPOS_SITE_*`, yoksa `LAFPOS_SITE_*`).
    Kasa şube kimliğini ve bağlantıları yazar, yeniden başlar; Merkez'e (uzaktan yönetim) şubenin adıyla kaydolur.
    Kasa tarafı: AsilPOS deposunda `server/sync/kurulum-kodu.ts`, `docs/03-ENTEGRASYON.md` "Şube kurulumu".
+   28 Kasım 2026'dan beri başarıda şubenin kasa kaydı da yazılır; yeni kasa isteğe bağlı `kimlik` ve `acikAnahtar`
+   gönderebilir, ilk personel ayarlıysa yanıta `personel` girer (aşağıda [Kasa açılışı](#kasa-açılışı-28-kasım-2026);
+   eski kasanın yanıtı aynı).
+6. Gerçek kullanıma geçerken yeni kasa asıl yöneticinin ladmin hesabıyla girer ve şubesini seçer; kurulu şube kasadan
+   seçilemez, bilgisayar değişikliği **Kasayı serbest bırak** ile ([Kasa açılışı](#kasa-açılışı-28-kasım-2026)).
 
 Kurallar `src/lib/asilpos/kurulum.ts` ve `kurulum-mail.ts` (saf, `tests/asilpos-kurulum.test.ts`), sunucu
 `src/server/asilpos/kurulum.ts` (gerçek Postgres'te `tests/asilpos-kurulum-db.test.ts`), uçlar `src/server/asilpos/kurulum-route.ts` ve `indir-route.ts` (yeni ve eski yolun `route.ts`'i bunları dışa verir), göç
@@ -1466,6 +1473,223 @@ alır. Sıra: Şubeler'de şubenin kasa kaynağını AsilPOS yapın (ya da ModPO
 gönderin, kasa kurulunca günleri Ayarlar › AsilPOS'ta o şubenin bölümünde "Deneme" olarak görünür, geçiş gününü o
 bölümden seçin. Kasası ModPOS olan şubenin anahtarlı kasasının günleri saklanır, hiçbir hesaba girmez. Tuzla ModPOS'ta
 kalır. Kasa tarafında şubeyi değiştirmek (başka şubeye taşımak) yeni bir kurulum kodu ister: anahtar şubeyi tanıtır.
+
+## Kasa açılışı (28 Kasım 2026)
+
+Sahibin isteği ([planlar/istek-28-kasim.md](planlar/istek-28-kasim.md) › C; tasarım
+[planlar/kasa-acilis-ve-asil-yonetici.md](planlar/kasa-acilis-ve-asil-yonetici.md) › P-B2): yeni kurulan kasa deneme
+modunda açılır; "Denemeyi bitir, gerçek kullanıma başla" derken **asıl yöneticinin ladmin hesabıyla** girilir, şube
+seçilir, kasa şubeye bağlanır ve ilk personelin PIN'leri kasaya iner. **Kasası kurulu şube kasadan seçilemez**
+("Kurulu: değiştirmek için ladmin"); kasadan devralma yoktur. Bilgisayar değişecekse önce ladmin › Ayarlar › Şube
+ekleme › **Kasayı serbest bırak**. Göç yok: yeni veri `integration_state`'te ve imzalı kısa ömürlü belirteçte durur.
+
+Bu bölüm kasa tarafını yazacak mühendis için tam sözleşmedir. Var olan uçların (`/api/asilpos/kurulum`,
+`/api/lafpos/kurulum`, `/api/panel/pos/*`, `/api/pos/gun`) yolu, gövdesi, imzası, yanıt biçimi ve durum kodları
+değişmedi (kurulum koduna yalnız isteğe bağlı alanlar eklendi, aşağıda). Gerçek kullanımdaki kasa (Marina) bu uçları
+hiç çağırmaz; panelin bu uçları yoksa (404, panelin JSON'u değil) kasa bugünkü gibi açılır.
+
+### Ortak kurallar
+
+- Adres: kasanın bildiği panel kökü (`LAFMALIYET_URL`; yoksa kurulum kodu dosyasındaki `adres`), https (yerelde
+  `http://localhost`). Yönlendirme izlenmez.
+- İstek `POST`, gövde JSON (`content-type: application/json`, UTF-8), en çok **4096 bayt** (teslim 1024). Yanıt JSON,
+  `Cache-Control: no-store`; hiçbir uç çerez yazmaz, oturum açmaz. Oturum kalkanı (proxy) bu yolları kapsamaz.
+- Hata gövdesi hep aynı biçim: `{ "ok": false, "error": "<kod>", "mesaj": "<Türkçe cümle>" }` (bazı kodlarda ek alan).
+  Kasa ekranda `mesaj`'ı gösterir, kararı durum koduna ve `error`'a göre verir. Bilinmeyen alanlar yok sayılır
+  (`devral` gelse de okunmaz).
+- **`kasa` alanı** (giriş ve bağla): `{ "kimlik": string, "surum"?: string, "acikAnahtar"?: string }`.
+  - `kimlik` zorunlu: 8-64 karakter, `[A-Za-z0-9_-]`. Kasanın kalıcı kimliği (Merkez kurulum kimliği
+    `merkez.kimlik.id`, yoksa kasanın bir kez ürettiği kimlik). Eksik ya da bozuksa 400.
+  - `surum` isteğe bağlı: 1-40 karakter, `[A-Za-z0-9_.+-]`; biçimi tutmazsa yok sayılır.
+  - `acikAnahtar` isteğe bağlı: kasanın **RSA-OAEP açık anahtarı**, SPKI DER, base64 (base64url ve dolgusuz da olur),
+    en az 2048 bit (AsilPOS Uzaktan'ın PIN anahtarı, `server/sync/kontrol.ts` › `anahtar().pub`). Gönderilirse ilk
+    personelin PIN'leri bununla şifrelenip yanıtta gelir; gönderilmezse ya da okunamazsa `personel` gelmez.
+- **İsteğe bağlı imza** (giriş ve bağla): kasa zaten bir şubenin anahtarını taşıyorsa (`LAFMALIYET_SYNC_SECRET`) isteği
+  bugünkü imzayla da imzalayabilir (`x-laf-timestamp`, `x-laf-signature: v1=<hex>`; kanonik metin
+  `ts\nPOST\n<yol>\n\nsha256(gövde)`, ±300 sn). İmza bir şubenin anahtarıyla tutarsa o şube **"bu kasa"** sayılır
+  (kimlik değişmiş olsa da). İmza tutmazsa istek imzasız gibi işlenir (ret değil).
+- "Bu kasa" (`buKasa`): şubenin kasa kaydındaki kimlik isteğin `kasa.kimlik`'iyle aynı ya da istek o şubenin
+  anahtarıyla imzalı.
+
+### 1. `POST /api/asilpos/acilis/giris`
+
+İstek: `{ "eposta": string, "parola": string, "kod"?: string, "kasa": {…} }`. `kod`: doğrulama uygulamasının 6 haneli
+kodu ya da kurtarma kodu (en çok 64 karakter).
+
+Panelin giriş korumaları **aynen** (ortak modül `src/server/auth/giris-korumalari.ts`; panelin girişiyle aynı sayaçlar):
+IP başına 15 dakikada 20 deneme (başarılı giriş geri verir), hesap kilidi 5 hatada 15 dakika (kasada bilinen cihaz yok:
+her zaman hesabın kilidi), kayıtsız ya da pasif e-postada sahte özet ve aynı söz, kilit işlem geçmişine yazılır,
+başarısız yanıt en erken 0,9 saniyede döner. İki adımlı kod ve kurtarma kodu tek yazımda tüketilir (aynı kod ikinci kez
+geçmez).
+
+| Durum | Gövde | Anlamı |
+| --- | --- | --- |
+| 200 | `{ ok: true, kisi: { ad }, belirtec, subeler: [ŞubeSatırı] }` | Giriş geçti |
+| 200 | `{ ok: false, ikiAdim: true, error: "iki_adim", mesaj }` | Parola doğru, hesapta iki adımlı açık, `kod` yok: kasa kodu sorar, aynı gövdeyi `kod` ile yeniden gönderir (parola yalnız bellekte) |
+| 400 | `error: "gecersiz"` | E-posta, parola ya da `kasa.kimlik` eksik / bozuk; gövde JSON değil ya da 4 KB'tan büyük |
+| 401 | `error: "hatali"`, mesaj "E-posta ya da parola hatalı" | Yanlış parola ya da kayıtsız e-posta (ayırt edilmez; iki adımlı söylenmez) |
+| 401 | `error: "kod_hatali", ikiAdim: true` | İki adımlı kod ya da kurtarma kodu tutmadı |
+| 403 | `error: "asil_yonetici_degil"`, mesaj "Kasayı yalnız asıl yönetici açar" | Parola doğru ama hesap asıl yönetici değil |
+| 403 | `error: "iki_adim_kurulmali"` | İki adımlı zorunlu (`ADMIN_2FA_REQUIRED=1`) ama hesapta kurulu değil: önce ladmin › Hesabım |
+| 429 | `error: "cok_deneme"` | IP sınırı |
+| 429 | `error: "kilitli"` (kod adımında `ikiAdim: true`) | Hesap kilitli; `mesaj` kaç dakika sonra yeniden denenebileceğini söyler |
+| 500 | `error: "sunucu"` | Panel yanıt veremedi; yeniden denenir |
+
+`belirtec`: opak metin (imzalı JWT, amaç `kasa-acilis`). **15 dakika** geçerli; kişiye (oturum sürümüyle) ve kasanın
+kimliğine bağlıdır: parola değişirse, oturumlar kapatılırsa, hesap pasifleşirse ya da başka kimlikli kasa kullanırsa
+geçmez. Oturum çerezinin yerine geçmez. Kasa onu yalnız bellekte tutar; günlüğe, denetim kaydına, `sync_state`'e yazmaz.
+
+`subeler` (Şubeler'deki sırayla): açık, fiziksel ve **hazırlanmış ya da kasa programı AsilPOS** olan şubeler.
+"Hazırlanmış": asıl yönetici o şube için Şube ekleme'de **Bilgisayara kur** demiş ya da şubeyi e-postasıyla eklemiş
+(`asilpos.hazirlik:<şube>`). Kasa programı ModPOS olup hazırlanmamış şube listede görünmez (Tuzla'nın ModPOS çekimi
+durmasın diye kasa programı ModPOS kalabilir; "Bilgisayara kur" onu kasada seçilebilir yapar).
+
+```json
+{ "id": "tuzla", "ad": "Tuzla", "kasa": { "durum": "bos", "sonGun": null }, "buKasa": false, "secilebilir": true }
+{ "id": "marina", "ad": "Marina", "kasa": { "durum": "kurulu", "sonGun": "2026-11-27" }, "buKasa": false,
+  "secilebilir": false, "neden": "Kurulu: değiştirmek için ladmin" }
+```
+
+`kasa.durum`: `"kurulu"` ya da `"bos"` (aşağıda "Kurulu sayılmak"); `sonGun`: kurulu şubenin son kabul edilen gün sonu
+(YYYY-MM-DD) ya da null. `secilebilir`: boş ya da bu kasa. Seçilemeyen satırda `neden`. Tek seçilebilir şube varsa
+kasa liste göstermez, onaylatır. Hiç seçilebilir şube yoksa kasa nedenleriyle listeyi ve "ladmin › Şube ekleme'den
+şube açın ya da kasayı serbest bırakın" cümlesini gösterir.
+
+İşlem geçmişi: "Kasa açılışı için giriş" (e-posta, kasa kimliği, sürüm) ve asıl olmayan yöneticide "Kasa açılışı
+reddedildi". Parola, kod ve belirteç hiçbir yere yazılmaz.
+
+### 2. `POST /api/asilpos/acilis/bagla`
+
+İstek: `{ "belirtec": string, "sube": string, "kasa": {…} }` (`sube`: şube kimliği, `^[a-z][a-z0-9-]{1,23}$`).
+Belirteç ve kişi yeniden doğrulanır: etkin, hâlâ asıl yönetici, oturum sürümü aynı, belirteç bu kasanın kimliğiyle.
+
+| Durum | Gövde | Anlamı |
+| --- | --- | --- |
+| 200 | `{ ok: true, sube: { id, ad }, baglanti: {…}, personel?: [Personel] }` | Bağlandı (ya da bu kasa yineledi) |
+| 400 | `error: "gecersiz"` | Gövde, şube kimliği ya da `kasa.kimlik` bozuk |
+| 401 | `error: "oturum_doldu"` | Belirteç süresi geçmiş, başka amaçlı, başka kasanın; kişi pasif ya da oturum sürümü değişmiş: girişe dönülür |
+| 403 | `error: "asil_yonetici_degil"` | Hesap artık asıl yönetici değil |
+| 404 | `error: "sube_yok"` | Böyle şube yok |
+| 409 | `error: "sube_kapali"` | Şube kapalı |
+| 409 | `error: "sube_fiziksel_degil"` | Online kanal: kasası olmaz |
+| 409 | `error: "sube_hazir_degil"` | Kasa programı ModPOS ve şube hazırlanmamış: ladmin › Şube ekleme › Bilgisayara kur |
+| 409 | `{ ok: false, error: "zaten_kurulu", mesaj, sube: { id, ad }, kasa: { sonGun } }` | Şubede başka bir kasa kurulu |
+| 429 | `error: "cok_deneme"` | IP başına 15 dakikada 30 istek |
+| 500 | `error: "sunucu"` | Yeniden denenir |
+
+- **200 yanıtı kurulum kodunun yanıtıyla aynı biçimdedir**: kasa var olan `readRedeemAnswer` ve `apply` ile işler
+  (`server/sync/kurulum-kodu.ts`). `baglanti`: `LAFMALIYET_URL`, `LAFMALIYET_SYNC_SECRET` (şubenin kendi anahtarı) ve
+  panelin ortamında tanımlıysa `LAFPOS_CLOUD_URL`, `LAFPOS_CLOUD_SECRET`, `LAFFOGATO_URL`, `LAFFOGATO_SYNC_SECRET`
+  (`kurulumBaglantilari`; Uzaktan anahtarları eski adla). Şubenin kullanılabilen anahtarı yoksa burada üretilir, varsa
+  aynen verilir (`ensurePosKey`); başka şubenin anahtarı hiçbir zaman verilmez.
+- **Kurulu şube her zaman 409 `zaten_kurulu`**: bu uç hiçbir koşulda başka kasanın anahtarını vermez, anahtarı
+  döndürmez, kaydı değiştirmez. `devral` alanı yok sayılır. Kasa listeyi yeniler, satır gri kalır.
+- **Yinelenebilir**: bu kasa (aynı kimlik ya da şubenin anahtarıyla imza) aynı şubeye yeniden bağlanabilir; anahtar
+  aynıdır, işlem geçmişi ve e-posta yinelenmez. Yanıt yolda kaybolursa kasa aynı isteği yeniden gönderir.
+- Yazılanlar: kasa kaydı `asilpos.kasa:<şube>` = `{ durum: "kurulu", kimlik, surum, at, by, yol: "acilis" }`; yeni bağda
+  işlem geçmişi "Kasa şubeye bağlandı" (şube, kasa kimliği, sürüm) ve asıl yöneticiye e-posta "<şube> kasası yeni bir
+  bilgisayara bağlandı" (e-posta kurulu değilse sessiz geçer).
+
+### 3. `POST /api/asilpos/acilis/teslim`
+
+Kasa ilk personeli aldığını onaylar. **Şubenin anahtarıyla imzalı** (bağlanınca aldığı `LAFMALIYET_SYNC_SECRET`;
+bugünkü imza); şube imzadan bulunur (`resolvePosCaller`), gövdede şube yok. Gövde boş, `{}` ya da `{ "tamam": true }`.
+
+| Durum | Gövde | Anlamı |
+| --- | --- | --- |
+| 200 | `{ ok: true, silindi: boolean }` | `silindi: true`: mühürlü PIN'ler silindi; `false`: silinecek bir şey yoktu (yinelenebilir) |
+| 400 | `error: "gecersiz"` | Gövde JSON nesnesi değil ya da 1 KB'tan büyük |
+| 401 | `error: "unauthorized"` | İmza hiçbir şubenin anahtarıyla tutmadı |
+| 429 | `error: "cok_deneme"` | IP başına 15 dakikada 30 istek |
+| 503 | `error: "not_configured"` | Hiçbir kasanın anahtarı yok |
+
+Kasa onayı personeli güvenle sakladıktan sonra gönderir; onay gitmezse sonraki açılışta yeniden dener.
+
+### İlk personel
+
+Asıl yönetici şube eklerken (Şube ekleme › Yeni şube › "İlk personel (isteğe bağlı)") ya da şube satırındaki **İlk
+personeli ayarla** ile üç kişiyi girer: **Patron** (kasada `patron`), **Müdür** (`mudur`), **Barista** (`kasiyer`,
+"Kasiyer / Barista"); her biri ad ve PIN. Bölüm isteğe bağlıdır: boşsa kasa bugünkü gibi kendi PIN akışını kullanır.
+Kurallar (`src/lib/asilpos/kasa-acilis.ts`, panel ve kasa aynı): PIN 4-6 rakam; üçü birbirinden farklı (kasada PIN
+tekil); kasanın deneme dönemindeki örnek PIN'leri (AsilPOS `server/db/seed.ts` › `DEMO_USERS`: 1897, 2468, 1111, 2222,
+3333) ve tek rakamın tekrarı (4444, 55555) reddedilir; her rol en çok bir kez; ad en çok 40 karakter.
+
+**Saklama** (göç yok): `integration_state` › `asilpos.ilk-personel:<şube>` = `{ v: 1, muhur, at, by, roller,
+gonderildi?, teslim? }`. `muhur`: `[{rol, ad, pin}]` JSON'u, `src/server/secret-box.ts` ile mühürlü (AES-256-GCM, amaç
+`asilpos-ilk-personel`). Düz PIN hiçbir sütunda, işlem geçmişinde (yalnız roller: "İlk personel ayarlandı: Tuzla ·
+Patron, Müdür, Barista") ya da forma dönen yanıtta olmaz; ekranda yalnız "İlk personel ayarlı", "kasaya gönderildi" ya
+da "teslim edildi" görünür. Yedeğe girmez (`EXCLUDED_STATE_PREFIXES`).
+
+**Taşıma:** kasa `acikAnahtar` gönderirse (bağla ya da kurulum kodu) ve kayıt mühürlüyse yanıta ek alan gelir:
+
+```json
+"personel": [
+  { "rol": "patron", "ad": "Ayşe Kaya", "pin": "<şifreli>" },
+  { "rol": "mudur", "ad": "Mehmet Demir", "pin": "<şifreli>" },
+  { "rol": "kasiyer", "ad": "Zeynep Ak", "pin": "<şifreli>" }
+]
+```
+
+- Sıra patron, mudur, kasiyer; yalnız girilmiş roller gelir (1-3 satır).
+- `pin` şifrelemesi: düz PIN'in UTF-8 baytları, kasanın açık anahtarıyla **RSA-OAEP, OAEP özeti SHA-256, MGF1 özeti
+  SHA-256, etiket yok**; sonuç standart base64 (dolgulu; 2048 bit anahtarda 344 karakter). OAEP rastgeledir: aynı PIN her
+  seferinde başka metin. Kasa AsilPOS Uzaktan'ın PIN'ini çözdüğü gibi çözer: `privateDecrypt({ key: anahtar().priv,
+  padding: RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(pin, "base64"))` (`server/sync/kontrol.ts` ›
+  `pinCoz`).
+- Kasa çözdükten sonra kuralları yeniden denetler, PIN'i hemen özetler (`hashPin`); düz PIN diske, günlüğe, denetim
+  kaydına düşmez. Sonra `teslim` ile onaylar.
+- `acikAnahtar` göndermeyen (eski) kasaya `personel` gönderilmez; kayıt yerinde kalır.
+- **Silinme** (ayrı zamanlayıcı yok; kayıt her okunuşta temizlenir): kasa onaylayınca mühür silinir, PIN'siz iz kalır
+  (`teslim`). Onay gelmezse ilk gönderimden (`gonderildi`) **24 saat** sonra mühür silinir; hiç gönderilmeyen kayıt
+  **30 gün** sonra silinir. 24 saat içinde aynı kasa yinelerse personel yeniden gelir (yanıt yolda kaybolursa PIN'ler
+  kaybolmasın).
+
+### Kurulu sayılmak
+
+`kasaDurumu` (`src/lib/asilpos/kasa-durumu.ts`, `src/server/asilpos/kasa-durumu.ts`): önce şubenin **kasa kaydı**
+(`integration_state` › `asilpos.kasa:<şube>` = `{ durum: "kurulu" | "bos", kimlik, surum, at, by, yol: "acilis" | "kod"
+| "serbest" }`); varsa o geçerli ("boş" kayıtta bekleyen kod varsa "Kurulum bekliyor"). Kayıt yoksa 28 Kasım ölçütü:
+kullanılabilen anahtar VE (kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün sonu). Kayıtsız Marina (ortamdaki
+anahtar, yakın tarihli gün) kurulu çıkar; tek bir eski deneme günü olan Tuzla boş çıkar.
+
+Kaydı yazanlar: bağla (`yol: "acilis"`), kurulum kodu (`yol: "kod"`) ve Kasayı serbest bırak (`durum: "bos"`, `yol:
+"serbest"`). Hiçbir arka plan işi ya da göç kayıt ya da anahtar yazmaz.
+
+### Kurulum kodunun eklemeleri
+
+`POST /api/asilpos/kurulum` (ve eski yolu) değişmedi; yalnız isteğe bağlı alanlar eklendi. İstek `{ kod, surum? }` olduğu
+gibi; yeni kasa ek olarak üst düzeyde `kimlik` ve `acikAnahtar` gönderebilir (biçimleri yukarıdaki `kasa` alanıyla aynı;
+bozuksa yok sayılır). Başarıda şubenin kasa kaydı yazılır (`yol: "kod"`, kimlik ve sürüm varsa onlarla; göndermeyen
+eski kasa için de). `acikAnahtar` geldiyse ve ilk personel ayarlıysa 200 yanıtına `personel` girer. Göndermeyen eski
+kasanın yanıtı bugünküyle birebir aynıdır (`{ ok, sube, baglanti }`). Kayıt ya da personel yazılamazsa da kasa yanıtını
+alır (kod ikinci kez geçmez).
+
+### Kasayı serbest bırak
+
+Ayarlar › Şube ekleme › şube satırı › **Kasayı serbest bırak** (`releaseBranchTill`): yalnız asıl yönetici
+(`requireAnaAdmin("kasaSerbest")`), yalnız kasası kurulu şubede (düğme yalnız orada görünür); şubenin adı yazılır ve
+parolayla onaylanır (`requireStepUp`, "AsilPOS"). Onay cümlesi: "Bu şubenin kasası ladmin bağlantısını kaybeder; yeni
+bilgisayar şubeyi kasada seçebilir." Son 7 günde gün sonu gelen (canlı) şubede pencere kırmızı uyarı gösterir. Tek
+işlemde:
+
+1. şubenin kasa anahtarı yeniden üretilir: eski kasanın imzası 401 alır, panelle bağlantısını kaybeder;
+2. bekleyen kurulum bağlantıları iptal olur;
+3. kasa kaydı `{ durum: "bos", yol: "serbest", at, by }` yazılır.
+
+Sonra işlem geçmişi ("Kasa serbest bırakıldı") ve asıl yöneticiye e-posta. Yeni bilgisayar şubeyi kasa açılışında
+seçebilir ya da yeni kurulum bağlantısıyla kurulur. Anahtar ortam değişkenindeyse (eski tek kasalı kurulum, Marina;
+`src/server/asilpos/branch.ts`) pencere bunu söyler: yeni anahtar panelde saklanır ve ortamdakinin önüne geçer.
+
+### Dosyalar ve testler
+
+Kurallar `src/lib/asilpos/kasa-acilis.ts`, e-postalar `kasa-acilis-mail.ts` (saf, `tests/kasa-acilis.test.ts`); uçlar
+`src/server/asilpos/acilis.ts` ve `acilis-route.ts` (üç `route.ts` onu dışa verir), ilk personel
+`src/server/asilpos/ilk-personel.ts`, kasa kaydı `src/server/asilpos/kasa-durumu.ts`, belirteç
+`src/server/auth/session.ts` (`signKasaAcilis`, `verifyKasaAcilis`), giriş korumaları `src/server/auth/giris-korumalari.ts`.
+Gerçek Postgres'te `tests/kasa-acilis-db.test.ts` (`KASA_ACILIS_TEST_DATABASE_URL`): giriş, kilit, iki adımlı, asıl
+olmayan yönetici; bağla (belirteç, kapalı ve hazırlanmamış şube, kurulu şube 409 ve anahtar aynı, yineleme, Tuzla boş,
+yanıt biçimi); ilk personel (şifreli taşıma, teslim, silinme, yedek dışı); kurulum kodu; serbest bırakma; parola,
+belirteç ve PIN hiçbir kayıtta yok; Marina'nın anahtarı değişmez.
 
 ## Açılış sırası
 

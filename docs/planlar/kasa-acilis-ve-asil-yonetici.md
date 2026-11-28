@@ -9,7 +9,9 @@ hatalıysa düzelt."
 Hiçbirinde veritabanı göçü YOK (yeni veri `integration_state` JSON'ında ve imzalı kısa ömürlü belirteçte durur).
 
 **Durum (28 Kasım 2026):** P-B1 **bitti** (dal `asil-yonetici-sube-ekleme`; yeni sayfa Ayarlar › Şube ekleme,
-`/panel/sube-ekleme`; docs/ROLLER.md › Asıl yönetici, docs/SUBE.md › Şube ekleme). P-B2 ve K5 sırada.
+`/panel/sube-ekleme`; docs/ROLLER.md › Asıl yönetici, docs/SUBE.md › Şube ekleme). P-B2 **bitti** (dal
+`kasa-acilis-uclari`; üç uç, kasa kaydı, ilk personel, "Kasayı serbest bırak"; tam sözleşme docs/ASILPOS.md › Kasa
+açılışı). K5 sırada.
 
 **Değişiklik (sahibin kararı, [istek-28-kasim.md](istek-28-kasim.md) › C):** kasadan **devralma kalktı**. Kasası kurulu
 şube kasada seçilemez; listede "Kurulu: değiştirmek için ladmin" notuyla görünür. Aşağıdaki P-B2 `bagla`'nın `devral`
@@ -87,7 +89,13 @@ Kural: **şubeyi açmak, kapatmak, silmek ve kasasını kurmak asıl yöneticini
   `npm run asistan:bilgi`. Testler: her işlem için "asıl yönetici geçer, öteki yönetici reddedilir, müdür/muhasebeci/
   personel reddedilir"; hesap koruması; kod iptali.
 
-## P-B2 (panel): kasa açılışı API'si
+## P-B2 (panel): kasa açılışı API'si (bitti, 28 Kasım 2026)
+
+Uygulanan hâl docs/ASILPOS.md › Kasa açılışı'ndadır (o bölüm sözleşmedir; aşağıdaki ilk tasarımdan farkları): `devral`
+yok, kurulu şube her zaman 409; giriş listesi açık + fiziksel + (hazırlanmış ya da AsilPOS) şubeler, `secilebilir` ve
+`neden` alanlarıyla (`sonGorulme` yok); hata gövdeleri `{ok:false, error:<kod>, mesaj}`; ilk personel (mühürlü,
+kasanın açık anahtarıyla şifreli teslim, `POST /api/asilpos/acilis/teslim` ile onay) ve "Kasayı serbest bırak" eklendi;
+belirteç kasanın kimliğine de bağlı.
 
 Ortak yardımcı `kasaDurumu(branchId)`: `{ durum: 'bos' | 'kurulu', sonGun, sonGorulme, kimlik }`. Kaynaklar: yeni kayıt
 `integration_state` anahtarı `asilpos.kasa:<şube>` (`{kimlik, surum, at, by, yol: 'acilis' | 'kod'}`), yoksa

@@ -30,6 +30,8 @@ import postgres from "postgres";
 
 import { ASILPOS_GROUP } from "../src/lib/branch-settings/groups";
 import { yalnizAsilYonetici } from "../src/lib/asil-yonetici";
+import { ENV_ONEKI } from "../src/lib/asilpos/env";
+import { ESKI_ENV_ONEKI } from "../src/lib/asilpos/eski-adlar";
 import { KURULU_NEDEN, OTURUM_DOLDU, YALNIZ_ASIL_ACAR } from "../src/lib/asilpos/kasa-acilis";
 import { TABLE_RULES } from "../src/lib/backup/format";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
@@ -105,7 +107,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     delete process.env.RESEND_API_KEY;
     delete process.env.KARAOKE_SYNC_SECRET;
     // Uzaktan ve site bağlantıları ortamda olmasın: kasaya giden bağlantılar yalnız panelinkiler
-    for (const k of Object.keys(process.env)) if (/^(ASILPOS|LAFPOS)_(CLOUD|SITE)_/.test(k)) delete process.env[k];
+    for (const k of Object.keys(process.env)) if ([ENV_ONEKI, ESKI_ENV_ONEKI].some((p) => k.startsWith(`${p}CLOUD_`) || k.startsWith(`${p}SITE_`))) delete process.env[k];
     const require = createRequire(import.meta.url);
     const stub = (id: string, exports: unknown) => {
       const p = require.resolve(id);

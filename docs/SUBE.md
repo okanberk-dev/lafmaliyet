@@ -59,24 +59,36 @@ Her değişiklik işlem geçmişine yazılır.
 
 **Ayarlar › Şube ekleme** (`/panel/sube-ekleme`, 28 Kasım 2026; yalnız asıl yönetici): menüde yalnız ona görünür
 (bayrak sunucuda hesaplanır), başka yönetici adresle açarsa içerik yerine tek cümle görür; eylemler ayrıca
-`requireAnaAdmin` ister. Üst düzey adres: `/panel/subeler/[id]` dinamik yoluyla çakışmasın. Üç bölüm:
+`requireAnaAdmin` ister. Üst düzey adres: `/panel/subeler/[id]` dinamik yoluyla çakışmasın. Bölümler:
 
 1. **Yeni şube:** ad (kimlik kendiliğinden önerilir: "Laffogato Marina" → `laffogato-marina`), tür, kasa programı, POS
-   oranı, açılış günü, şubenin e-postası. E-posta yazılırsa şubenin panel hesabı açılır ve kasa kurulum bağlantısı
-   gider ([ASILPOS.md › Şube kurulumu](ASILPOS.md#şube-kurulumu-26-kasım-2026)). Şube bugün ModPOS'la çalışıyorsa kasa
-   programı ModPOS kalır: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz.
-2. **Şubeler ve kasaları:** her fiziksel şubenin adı, kimliği, kasa programı ve kasa durumu: "Kasa kurulu değil",
-   "Kurulum bekliyor · son geçerlilik …" ya da "Kasa kurulu · son gün …". Kurulu sayılmak için kullanılabilen anahtar VE
-   (kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün sonu) gerekir; tek bir eski deneme günü yetmez
-   (`src/lib/asilpos/kasa-durumu.ts`). Marina'nın satırında yıkıcı düğme yok.
+   oranı, açılış günü, şubenin e-postası ve **İlk personel (isteğe bağlı)**: Patron, Müdür, Barista; her biri ad ve PIN
+   (4-6 rakam, üçü farklı, kasanın örnek PIN'leri olamaz). E-posta yazılırsa şubenin panel hesabı açılır ve kasa kurulum
+   bağlantısı gider ([ASILPOS.md › Şube kurulumu](ASILPOS.md#şube-kurulumu-26-kasım-2026)); şube kasa açılışında
+   seçilebilir olur. Şube bugün ModPOS'la çalışıyorsa kasa programı ModPOS kalır: AsilPOS kurulsa da deneme modunda
+   çalışır, ModPOS çekimi durmaz.
+2. **Şubeler ve kasaları:** her fiziksel şubenin adı, kimliği, kasa programı, kasa durumu ("Kasa kurulu değil",
+   "Kurulum bekliyor · son geçerlilik …" ya da "Kasa kurulu · son gün …") ve ilk personelin durumu ("İlk personel
+   ayarlı değil", "ayarlı", "kasaya gönderildi", "teslim edildi"; PIN hiçbir zaman görünmez). Kasa durumu önce şubenin
+   kasa kaydına bakar (kasa açılışı, kurulum kodu ve serbest bırakma yazar), yoksa kullanılabilen anahtar VE (kullanılmış
+   kurulum kodu ya da son 45 günde kabul edilmiş gün sonu); tek bir eski deneme günü yetmez
+   (`src/lib/asilpos/kasa-durumu.ts`).
 3. **Bilgisayara kur** (`sendBranchInstall`): şubenin e-postası sorulur (kayıtlıdan dolar), bağlantı gönderilir. Şubede
    kurulu kasa varsa önce onay: "Bu şubede kurulu bir kasa var (son gün …). Yeni kurulum eski kasanın yerine geçer."
    (sunucu da sorar). Sonuç penceresi şubenin adı ve kimliği, şubenin e-postası, kasada girişte kullanılacak hesap (asıl
    yöneticinin e-postası), indirme bağlantısı ve son geçerliliği, dört adımlık yönerge ve e-postanın gidip gitmediğini
    gösterir.
 
-İlk personel ve PIN, "Kasayı serbest bırak" ve kasa kaydı sonraki adımdadır (P-B2;
-[planlar/kasa-acilis-ve-asil-yonetici.md](planlar/kasa-acilis-ve-asil-yonetici.md)).
+4. **İlk personeli ayarla** (`saveBranchStaff`, açık fiziksel şubede): Patron, Müdür ve Barista'nın ad ve PIN'i. PIN'ler
+   panelde mühürlü durur, kasa bağlanınca kasanın açık anahtarıyla şifreli gider, kasa onaylayınca silinir; yeni
+   değerler eskisinin yerine geçer, hepsi boş kaydedilirse kayıt silinir. İşlem geçmişine yalnız roller yazılır.
+5. **Kasayı serbest bırak** (`releaseBranchTill`, yalnız kasası kurulu şubede): bilgisayar değişecekse kasa bağını
+   çözer. Şubenin adı yazılır, parolayla onaylanır; son 7 günde gün sonu gelen şubede uyarı kırmızı, anahtarı ortam
+   değişkeninde olan şubede (Marina) bunu söyleyen not. Kasa anahtarı yenilenir (eski kasa ladmin bağlantısını kaybeder),
+   bekleyen kurulum bağlantıları iptal olur, kasa kaydı "boş" yazılır; işlem geçmişi ve asıl yöneticiye e-posta.
+
+Kasası kurulu şube kasada seçilemez; yeni kasa gerçek kullanıma geçerken asıl yöneticinin hesabıyla girer ve boş ya da
+hazırlanmış şubeyi seçer ([ASILPOS.md › Kasa açılışı](ASILPOS.md#kasa-açılışı-28-kasım-2026)).
 
 **Şube kapatılınca** bekleyen kurulum kodları aynı işlemde iptal olur; kapalı şubenin kodu kasaya
 `410 {ok:false, error}` döner (bugünkü "geçersiz / süresi geçmiş kod" yanıtıyla aynı biçim). Kurulu kasanın anahtarı
