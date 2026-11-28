@@ -69,6 +69,11 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
         if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
         return { ...me, email: `${me.name}@test.local`, active: true };
       },
+      // Şube kapatma, silme ve kasa anahtarı asıl yöneticinin (requireAnaAdmin); testin yöneticisi asıl yönetici sayılır
+      requireAnaAdmin: async () => {
+        if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
+        return { ...me, email: `${me.name}@test.local`, active: true };
+      },
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
     });

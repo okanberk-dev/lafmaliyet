@@ -70,6 +70,11 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
         if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
         return { ...me, email: `${me.name}@test.local`, active: true };
       },
+      // Şube kapatma, silme ve kasa anahtarı asıl yöneticinin (requireAnaAdmin); testin yöneticisi asıl yönetici sayılır
+      requireAnaAdmin: async () => {
+        if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
+        return { ...me, email: `${me.name}@test.local`, active: true };
+      },
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
     });
