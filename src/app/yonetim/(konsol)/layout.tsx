@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 /**
  * Yönetim konsolunun kabuğu (docs/planlar/yonetim-konsolu.md › K-A): panelin kabuğunu (menü, asistan, şube seçici)
- * almaz. Üstte "Yönetim konsolu", kişinin adı, "ladmin'e git" (APP_URL) ve Çıkış; altında iki sekme. Kişi satırı
+ * almaz. Üstte "Yönetim konsolu", kişinin adı, "ladmin'e git" (APP_URL) ve Çıkış; altında üç sekme. Kişi satırı
  * requireYonetim ister; sayfalar da ayrıca ister (layout sayfa geçişinde yeniden koşmaz, ona güvenilmez).
  */
 export default function KonsolLayout({ children }: { children: React.ReactNode }) {

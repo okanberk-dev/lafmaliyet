@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { KONSOL_SEKMELERI, sekmeAcik } from "@/lib/yonetim-host";
 
 /**
- * Konsolun iki sekmesi (şubenin işlem sayfasında Şubeler ve kasalar seçili); telefonda sığmazsa yatay kayar (sayfa
+ * Konsolun üç sekmesi (şubenin işlem sayfasında Şubeler ve kasalar seçili); telefonda sığmazsa yatay kayar (sayfa
  * taşmaz). Kabuk bunu Suspense içinde çizer: /yonetim/sube/[id] dinamik yolunda usePathname ön çizimde bilinmez (Next 16
  * cacheComponents; node_modules/next/dist/docs › use-pathname), o sırada seçimsiz aynı sekmeler görünür
  */

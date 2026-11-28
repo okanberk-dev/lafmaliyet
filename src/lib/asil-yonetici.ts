@@ -99,9 +99,6 @@ export function asilYoneticiNotu(is: AsilYoneticiIsi): string {
   return `${metin.charAt(0).toLocaleUpperCase("tr-TR")}${metin.slice(1)} yalnız asıl yöneticinin işidir.`;
 }
 
-/** Kullanıcılar & roller: asıl yöneticinin hesabı korunur (öteki yöneticiye pencerede) */
-export const ASIL_HESAP_KORUNUR = "Asıl yöneticinin hesabı korunur: e-postasını, parolasını, rolünü ve erişimini yalnız kendisi değiştirir.";
-
 /**
  * İş bir yönetici hesabına dokunuyor mu: işlemden önceki ya da sonraki rol yönetici (docs/ROLLER.md › Yönetici
  * hesapları). Dokunuyorsa eylem, parola sorusundan önce `requireAnaAdmin(yonetici…)` ister

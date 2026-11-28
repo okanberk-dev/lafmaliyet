@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, KeyRound, LockOpen, LogOut, Minus, Pencil, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
+import { Check, ExternalLink, KeyRound, LockOpen, LogOut, Minus, Pencil, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
 import { createContext, useContext, useEffect, useOptimistic, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -8,7 +8,7 @@ import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button, buttonClass, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -16,13 +16,13 @@ import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryTex
 import { Field, Input, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { DotList, EmptyState } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { twoFactorRequiredFor, twoFactorResetTextFor } from "@/lib/admin-security";
-import { ASIL_EPOSTA_SABIT, ASIL_HESAP_KORUNUR, ASIL_YONETICI } from "@/lib/asil-yonetici";
+import { ASIL_EPOSTA_SABIT, ASIL_YONETICI, YONETICI_KONSOLDA, YONETICI_ROLU_KAPALI } from "@/lib/asil-yonetici";
 import { ROLE_ORDER, ROLES, type Role } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
@@ -176,10 +176,7 @@ export type UserRow = {
   invite: "none" | "pending" | "expired";
   /** Kullanılmamış, süresi geçmemiş davet ya da sıfırlama bağlantısı ("20.10.2026 14:30"a kadar) */
   liveLink: { kind: "invite" | "reset"; until: string } | null;
-  /**
-   * Asıl yöneticinin hesabı (adresi LADMIN_ANA_ADMIN; sunucuda hesaplanır): satırda "Asıl yönetici" etiketi; başka
-   * yönetici e-postasını, parolasını, rolünü, erişimini, iki adımlısını, kilidini ve oturumlarını değiştiremez
-   */
+  /** Asıl yöneticinin hesabı (adresi LADMIN_ANA_ADMIN; sunucuda hesaplanır): satırda "Asıl yönetici" etiketi */
   anaAdmin?: boolean;
 };
 
@@ -206,13 +203,40 @@ export function UsersEditor({
   branches?: readonly UserBranchOption[];
   /** Zorunluluk açık (ADMIN_2FA_REQUIRED=1; src/lib/admin-security.ts): hedef yönetici, müdür ya da muhasebeciyse sıfırlama penceresi kurulum ekranını söyler */
   twoFactorRequired?: boolean;
-  /** Sayfayı açan asıl yönetici mi (asıl yöneticinin hesabını yalnız kendisi değiştirir; sunucu aynı denetimi yapar) */
-  meAnaAdmin?: boolean;
+  /**
+   * Yönetim konsolunun Yöneticiler sekmesi (yalnız sayfayı açan asıl yöneticiyse; başkasına null): yönetici satırlarında
+   * ve rol seçiminde "Yönetici hesapları Yönetim konsolunda yönetilir" cümlesinin bağlantısı
+   */
+  konsolUrl?: string | null;
 }) {
   return (
     <BranchesContext.Provider value={branches}>
       <UsersList {...props} />
     </BranchesContext.Provider>
+  );
+}
+
+/**
+ * Yönetici satırlarının ve rol seçiminin tek cümlesi (docs/ROLLER.md › Yönetici hesapları); asıl yöneticiye konsolun
+ * Yöneticiler sekmesine bağlantıyla. Satır tıklanınca pencere açılır: bağlantı tıklaması satıra geçmez
+ */
+function KonsolNotu({ konsolUrl, text = YONETICI_KONSOLDA }: { konsolUrl: string | null; text?: string }) {
+  return (
+    <span className="text-xs leading-5 text-ink-mute">
+      {text}
+      {konsolUrl ? (
+        <>
+          {" "}
+          <a
+            href={konsolUrl}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink"
+          >
+            Yönetim konsolunu aç <ExternalLink size={12} aria-hidden />
+          </a>
+        </>
+      ) : null}
+    </span>
   );
 }
 
@@ -222,17 +246,21 @@ function UsersList({
   emailConfigured,
   loginUrl,
   twoFactorRequired = false,
-  meAnaAdmin = false,
+  konsolUrl = null,
 }: {
   users: UserRow[];
   meId: number;
   emailConfigured: boolean;
   loginUrl: string;
   twoFactorRequired?: boolean;
-  meAnaAdmin?: boolean;
+  konsolUrl?: string | null;
 }) {
-  /** Asıl yöneticinin hesabı ve sayfayı açan başka bir yönetici: korunan alanlar kapalı */
-  const guardedRow = (u: UserRow) => Boolean(u.anaAdmin) && !meAnaAdmin;
+  /**
+   * Yönetici satırı herkese (asıl yönetici dahil) salt okunur: yönetici hesaplarını yalnız asıl yönetici Yönetim
+   * konsolunda yönetir (docs/ROLLER.md › Yönetici hesapları; sunucu aynı kuralı denetler). Müdür, muhasebeci ve
+   * personel satırları bugünkü gibi
+   */
+  const guardedRow = (u: UserRow) => u.role === "admin";
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [access, setAccess] = useState<AccessInfo | null>(null);
   const [confirmOff, setConfirmOff] = useState<UserRow | null>(null);
@@ -396,6 +424,11 @@ function UsersList({
                     </button>
                     <RowActions user={u} me={me} guarded={guardedRow(u)} pending={pending} onToggle={(next) => toggle(u, next)} onEdit={() => setEditing(u)} />
                   </div>
+                  {guardedRow(u) ? (
+                    <p className="mt-2 pl-12">
+                      <KonsolNotu konsolUrl={konsolUrl} />
+                    </p>
+                  ) : null}
                   {u.invite !== "none" && u.active && !guardedRow(u) ? (
                     <Button variant="secondary" className={cn(TAP, "mt-3 w-full")} disabled={linkBusy === u.id} onClick={() => newLink(u)}>
                       <Send size={15} /> {linkBusy === u.id ? "Oluşturuluyor…" : u.invite === "expired" ? "Yeni davet bağlantısı oluştur" : "Yeni davet bağlantısı (eskisi iptal)"}
@@ -444,6 +477,11 @@ function UsersList({
                             {u.anaAdmin ? <Badge tone="violet">{ASIL_YONETICI}</Badge> : null}
                             <BranchBadge user={u} />
                           </div>
+                          {guardedRow(u) ? (
+                            <p className="mt-1 max-w-[16rem]">
+                              <KonsolNotu konsolUrl={konsolUrl} />
+                            </p>
+                          ) : null}
                         </TD>
                         <TD>
                           <div className="flex flex-col items-start gap-1.5">
@@ -495,6 +533,7 @@ function UsersList({
       )}
       {editing === "new" ? (
         <NewUserDialog
+          konsolUrl={konsolUrl}
           onClose={() => setEditing(null)}
           onCreated={(info) => {
             setEditing(null);
@@ -507,6 +546,7 @@ function UsersList({
           user={rows.find((u) => u.id === editing.id) ?? editing}
           meId={meId}
           guarded={guardedRow(editing)}
+          konsolUrl={konsolUrl}
           loginUrl={loginUrl}
           twoFactorRequired={twoFactorRequired}
           linkBusy={linkBusy === editing.id}
@@ -600,7 +640,7 @@ function RowActions({
 }: {
   user: UserRow;
   me: boolean;
-  /** Asıl yöneticinin hesabı, sayfayı açan başka yönetici: anahtar kapalı */
+  /** Yönetici satırı (Yönetim konsolunda yönetilir): anahtar kapalı */
   guarded?: boolean;
   pending: boolean;
   linkBusy?: boolean;
@@ -610,7 +650,7 @@ function RowActions({
 }) {
   return (
     <div className="flex shrink-0 items-center justify-end gap-2">
-      <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : guarded ? ASIL_HESAP_KORUNUR : undefined} onClick={(e) => e.stopPropagation()}>
+      <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : guarded ? YONETICI_KONSOLDA : undefined} onClick={(e) => e.stopPropagation()}>
         <Switch
           checked={user.active}
           disabled={me || guarded || pending}
@@ -815,7 +855,7 @@ const NEW_IDS = { name: "nu-n", email: "nu-e", password: "nu-p" } as const;
  * Kullanıcı ekle (telefon önce, tek sütun): 1 Kişi (ad, giriş e-postası) · 2 Rol · 3 Parola: "Parolayı ben
  * belirleyeyim" (hazır güçlü parola, göster/gizle, kopyala) ya da "Davet bağlantısı gönder" (72 saat).
  */
-function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (info: AccessInfo) => void }) {
+function NewUserDialog({ konsolUrl, onClose, onCreated }: { konsolUrl: string | null; onClose: () => void; onCreated: (info: AccessInfo) => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("staff");
@@ -924,8 +964,11 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
           </fieldset>
           <fieldset>
             <StepLegend n={2}>Rol</StepLegend>
-            <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
-            {role === "admin" ? <p className="mt-1.5 text-xs text-ink-mute">Yönetici eklerken kendi parolanız sorulur.</p> : null}
+            {/* Yönetici hesabını yalnız asıl yönetici Yönetim konsolunda açar (sunucu da reddeder) */}
+            <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => v === "admin"} />
+            <p className="mt-1.5">
+              <KonsolNotu konsolUrl={konsolUrl} text={YONETICI_ROLU_KAPALI} />
+            </p>
             {hasBranch(role) ? (
               <div className="mt-3">
                 <UserBranchField id="nu-branch" value={branchId} onChange={setBranchId} required={branchRequired(role)} />
@@ -1003,6 +1046,7 @@ function UserDialog({
   user,
   meId,
   guarded = false,
+  konsolUrl,
   loginUrl,
   twoFactorRequired,
   linkBusy,
@@ -1012,8 +1056,9 @@ function UserDialog({
 }: {
   user: UserRow;
   meId: number;
-  /** Asıl yöneticinin hesabı, sayfayı açan başka yönetici: yalnız ad değişir */
+  /** Yönetici satırı: pencere salt okunur (Yönetim konsolunda yönetilir) */
   guarded?: boolean;
+  konsolUrl: string | null;
   loginUrl: string;
   twoFactorRequired: boolean;
   linkBusy: boolean;
@@ -1049,6 +1094,8 @@ function UserDialog({
   // Formun şu anki hâli bir yönetici hesabını etkiliyor mu (kaydederken parola sorulur; sunucu da aynı kurala bakar)
   const change: Extract<StepUpCase, { kind: "save" }> = { kind: "save", before: user, after: { role, active, email, password: password !== "" } };
   const asksPassword = needsStepUp(change);
+  // Yönetici hesabı: salt okunur pencere (hook'lardan sonra)
+  if (guarded) return <AdminAccountDialog user={user} self={self} konsolUrl={konsolUrl} onClose={onClose} />;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -1184,7 +1231,7 @@ function UserDialog({
         onClose={requestClose}
         title="Kullanıcıyı düzenle"
         footerStart={
-          !self && !guarded && !askDiscard ? (
+          !self && !askDiscard ? (
             <Button variant="ghost" className={cn(TAP, "text-bad hover:bg-bad-soft hover:text-bad sm:pointer-fine:h-9")} disabled={pending} onClick={() => ask("delete")}>
               <Trash2 size={15} /> Sil
             </Button>
@@ -1212,7 +1259,6 @@ function UserDialog({
         }
       >
         <form id="user-form" onSubmit={submit} noValidate className="space-y-4 pb-2">
-          {guarded ? <Notice tone="neutral" size="sm" title={ASIL_HESAP_KORUNUR} /> : null}
           <NameEmailFields
             ids={EDIT_IDS}
             name={name}
@@ -1226,20 +1272,22 @@ function UserDialog({
               setEmail(v);
               setErrors((x) => ({ ...x, email: undefined }));
             }}
-            emailLocked={guarded ? ASIL_HESAP_KORUNUR : self && user.anaAdmin ? ASIL_EPOSTA_SABIT : self}
+            emailLocked={self && user.anaAdmin ? ASIL_EPOSTA_SABIT : self}
           />
           <fieldset>
             <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Rol</legend>
-            {/* Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder) */}
-            <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => guarded || (self && v !== "admin")} />
-            {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
+            {/* Yöneticilik burada verilmez: Yönetim konsolunda, yalnız asıl yönetici (sunucu da reddeder) */}
+            <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => v === "admin"} />
+            <p className="mt-1.5">
+              <KonsolNotu konsolUrl={konsolUrl} text={YONETICI_ROLU_KAPALI} />
+            </p>
             {hasBranch(role) ? (
               <div className="mt-3">
                 <UserBranchField id="u-branch" value={branchId} onChange={setBranchId} required={branchRequired(role)} />
               </div>
             ) : null}
           </fieldset>
-          {self || guarded ? null : (
+          {self ? null : (
             <PasswordField
               id={EDIT_IDS.password}
               label={user.invite !== "none" ? "Parola (davet yerine siz belirleyin)" : "Yeni parola (değiştirmek için)"}
@@ -1259,7 +1307,7 @@ function UserDialog({
           )}
           {self ? (
             <Notice tone="neutral" size="sm" title="Kendi hesabınızı pasif yapamazsınız" />
-          ) : guarded ? null : (
+          ) : (
             <ToggleRow
               title={invited ? "Aktif" : "Aktif (giriş yapabilir)"}
               description={
@@ -1275,7 +1323,7 @@ function UserDialog({
             />
           )}
           {asksPassword ? <p className="px-1 text-xs leading-5 text-ink-mute">Bu değişiklik bir yönetici hesabını etkiliyor; kaydederken kendi parolanız sorulur.</p> : null}
-          {guarded ? null : user.locked || !self ? security : null}
+          {user.locked || !self ? security : null}
         </form>
       </Dialog>
       {/* Onay penceresi düzenleme penceresinin içinde değil yanında: React içteki <dialog>'un close/cancel olayını
@@ -1290,6 +1338,48 @@ function UserDialog({
       />
       {stepUp.dialog}
     </>
+  );
+}
+
+/**
+ * Yönetici satırının penceresi: salt okunur (docs/ROLLER.md › Yönetici hesapları). Yönetici hesaplarını yalnız asıl
+ * yönetici Yönetim konsolunda yönetir; kişinin kendi hesabı Hesabım'da
+ */
+function AdminAccountDialog({ user, self, konsolUrl, onClose }: { user: UserRow; self: boolean; konsolUrl: string | null; onClose: () => void }) {
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={user.name}
+      description={user.email}
+      footer={
+        <Button onClick={onClose} className="max-sm:h-11 max-sm:w-full">
+          Kapat
+        </Button>
+      }
+    >
+      <div className="space-y-4 pb-2">
+        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+          <Badge tone="solid">{ROLES[user.role]}</Badge>
+          {user.anaAdmin ? <Badge tone="violet">{ASIL_YONETICI}</Badge> : null}
+          <StatusBadge user={user} />
+          {user.invite === "none" ? <TwoFactorMark on={user.twoFactor} labelled /> : null}
+        </p>
+        <p className="text-[13px] text-ink-mute tabular">{lastLoginText(user)}</p>
+        <Notice
+          tone="neutral"
+          size="sm"
+          title={`${YONETICI_KONSOLDA}.`}
+          text={self ? "Kendi parolanızı, e-postanızı, iki adımlı doğrulamanızı ve oturumlarınızı Hesabım'dan yönetin." : "Bu hesabı yalnız asıl yönetici değiştirir."}
+          action={self ? <NoticeLink href="/panel/hesap">Hesabım</NoticeLink> : undefined}
+        />
+        {konsolUrl ? (
+          <a href={konsolUrl} className={cn(buttonClass("secondary", "md"), "w-full sm:w-auto")}>
+            Yönetim konsolunu aç <ExternalLink size={15} aria-hidden />
+          </a>
+        ) : null}
+      </div>
+    </Dialog>
   );
 }
 
@@ -1316,7 +1406,7 @@ export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: b
       <CardHeader
         icon={<ShieldCheck />}
         title="Roller"
-        description={`Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Müdür yalnız şubesini görür (şubesi zorunlu); muhasebeci salt okur, hiçbir kaydı değiştiremez. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister.${
+        description={`Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Müdür yalnız şubesini görür (şubesi zorunlu); muhasebeci salt okur, hiçbir kaydı değiştiremez. Yönetici hesaplarını yalnız asıl yönetici Yönetim konsolunda açar ve yönetir.${
           twoFactorRequired
             ? " Yönetici, müdür ve muhasebeci hesaplarında iki adımlı doğrulama zorunludur: kurmamış kişi girişten sonra kurulum ekranına gider."
             : " İki adımlı doğrulama herkeste isteğe bağlıdır."
