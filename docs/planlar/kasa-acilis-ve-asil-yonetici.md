@@ -8,6 +8,17 @@ hatalıysa düzelt."
 Üç PR, bu sırayla: **P-B1** (panel: yetki), **P-B2** (panel: açılış API'si), **K5** (kasa: açılış akışı).
 Hiçbirinde veritabanı göçü YOK (yeni veri `integration_state` JSON'ında ve imzalı kısa ömürlü belirteçte durur).
 
+**Durum (28 Kasım 2026):** P-B1 **bitti** (dal `asil-yonetici-sube-ekleme`; yeni sayfa Ayarlar › Şube ekleme,
+`/panel/sube-ekleme`; docs/ROLLER.md › Asıl yönetici, docs/SUBE.md › Şube ekleme). P-B2 ve K5 sırada.
+
+**Değişiklik (sahibin kararı, [istek-28-kasim.md](istek-28-kasim.md) › C):** kasadan **devralma kalktı**. Kasası kurulu
+şube kasada seçilemez; listede "Kurulu: değiştirmek için ladmin" notuyla görünür. Aşağıdaki P-B2 `bagla`'nın `devral`
+alanı ve K5'teki "Bu bilgisayar onun yerine geçsin mi?" adımı uygulanmayacak: kurulu şubede `bagla` her zaman 409
+`zaten_kurulu` döner ve hiçbir koşulda anahtar döndürmez. Bilgisayar değişikliği yalnız ladmin › Şube ekleme ›
+"Kasayı serbest bırak" ile (asıl yönetici; anahtar döner, bekleyen kodlar iptal olur). "Kurulu" ölçütü P-B1'de
+yazıldı: kullanılabilen anahtar VE (kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün sonu); tek bir eski
+deneme günü yetmez (`src/lib/asilpos/kasa-durumu.ts`).
+
 ## Bugünkü durum (inceleme, dosya:satır)
 
 Kasa (`lafpos`):
@@ -45,7 +56,12 @@ Bulunan boşluklar:
 5. (Dokunulmayacak, rapora yazılacak) Kapalı şubenin kasa anahtarı imza doğrulamasında hâlâ geçerli
    (`branch.ts:60`, `{ closed: true }`): bilerek öyle görünüyor (kapanan şubenin son günleri gelsin).
 
-## P-B1 (panel): asıl yönetici, şube açma ve kasa kurma
+## P-B1 (panel): asıl yönetici, şube açma ve kasa kurma (bitti, 28 Kasım 2026)
+
+Uygulananlar: aşağıdaki yetki ve hesap koruması (ek olarak `unlockUser`, `signOutUserEverywhere`, `createAccessLink`);
+adres boştayken o adresle hesap açılabilir (kilitlenme olmasın), hesap açıldıktan sonra devralınamaz; yeni Şube ekleme
+sayfası (yeni şube, kasa durumu, "Bilgisayara kur" ve kurulu kasada onay); Şubeler'deki kurulum kartı kalktı. Göç ve
+yeni uç yok.
 
 Kural: **şubeyi açmak, kapatmak, silmek ve kasasını kurmak asıl yöneticinindir.** Öteki yöneticiler şubenin ayrıntısını
 (ad, sıra, POS oranı, özellikler, e-posta) düzenler.

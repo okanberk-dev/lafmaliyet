@@ -1331,21 +1331,31 @@ kural: yeniden gelmesi için Gönder). Günün Kasadan çıkanlar'daki AsilPOS s
 
 Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsun. Akış:
 
-1. **Şubeyi yalnız ana yönetici ekler** (`info@nextgenlab.com.tr`; ortamda `LADMIN_ANA_ADMIN` ile değişir;
-   `isAnaAdmin`, `requireAnaAdmin`). Öbür yöneticiler Şubeler'i görür ve düzenler, "Şube ekle" ve kurulum bağlantısı
-   onlarda yoktur; eylem de sunucuda reddeder (`createBranch`, `sendBranchInstall`).
-2. Ayarlar › Şubeler › **Şube ekle**'de fiziksel şubeye **e-posta** yazılırsa (`branches.email`):
+1. **Şubeyi yalnız asıl yönetici açar ve kasasını kurar** (`info@nextgenlab.com.tr`; ortamda `LADMIN_ANA_ADMIN` ile
+   değişir; `isAnaAdmin`, `requireAnaAdmin`; [ROLLER.md › Asıl yönetici](ROLLER.md#asıl-yönetici)). 28 Kasım 2026'dan
+   beri şubeyi kapatmak, silmek, kasa programını değiştirmek, kasa anahtarını döndürmek ya da silmek ve geçiş gününü
+   değiştirmek de yalnız onda. Öbür yöneticiler Şubeler'i görür, ad, POS oranı ve e-posta gibi alanları düzenler;
+   eylemler sunucuda reddeder (`createBranch`, `sendBranchInstall`, `deleteBranch`, `updateBranch`'in `active` ve
+   `posSource` değişikliği, `saveAsilposSecret`, `saveAsilposSwitchDay`).
+2. Ayarlar › **Şube ekleme**'de (`/panel/sube-ekleme`, yalnız asıl yöneticinin menüsünde; [SUBE.md › Şube
+   ekleme](SUBE.md#şube-ekleme)) yeni fiziksel şubeye **e-posta** yazılırsa (`branches.email`):
    - şubenin panel hesabı açılır (personel, şubede kilitli, ad "<Şube> şubesi"; davetle, 72 saat; adres zaten şubesiz
      ya da aynı şubedeki bir personel hesabındaysa hesap yeniden açılmaz; başka şubedeki personelde, yöneticide,
      müdürde ya da muhasebecide ise eklenmez, `branchEmailTaken`: kurulum bağlantısı kasanın eşitleme anahtarını verir);
    - şubeye özel **AsilPOS kurulum bağlantısı** üretilir (`asilpos_installs`, 32 bayt kod, 14 gün; yeni bağlantı eskisini
      iptal eder);
    - ikisi tek e-postayla gider (`kurulumMail`; Resend kurulu değilse gitmez, bağlantı ekranda gösterilir, elle iletilir).
-   Var olan şubeye (Marina gibi) şubenin düzenleme penceresinden **AsilPOS kurulum bağlantısı gönder**.
-   Kısa yol: Şubeler'in üstündeki **AsilPOS kasası kur** kartı (yalnız ana yönetici). "Kasa kur" penceresinde **kasanın
-   bağlanacağı şube** listeden seçilir ya da **+ Yeni şube ekle** ile aynı pencerede eklenir (ad, kimlik, kasa kaynağı,
-   açılış günü), e-posta yazılır; bağlantı gider. Kartta her açık fiziksel şubenin kurulum durumu ve "Bağlantı gönder" /
-   "Yeniden kur" düğmesi durur (`src/app/panel/subeler/asilpos-install.tsx`).
+   Var olan şubeye (Marina gibi) aynı sayfanın şube listesinden **Bilgisayara kur** (`sendBranchInstall`): şubenin
+   e-postası sorulur (kayıtlıdan dolar), bağlantı gider. Listede her fiziksel şubenin kasa durumu durur: "Kasa kurulu
+   değil", "Kurulum bekliyor · son geçerlilik …", "Kasa kurulu · son gün …" (kurulu = kullanılabilen anahtar VE
+   kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün sonu; tek bir eski deneme günü yetmez;
+   `src/lib/asilpos/kasa-durumu.ts`, `src/server/asilpos/kasa-durumu.ts`). Kurulu kasası olan şubede önce onay sorulur
+   ("Bu şubede kurulu bir kasa var (son gün …). Yeni kurulum eski kasanın yerine geçer."; sunucu da sorar,
+   `confirmReplace`). Sonuç penceresi şubenin adı ve kimliği, şubenin e-postası, kasada girişte kullanılacak hesap (asıl
+   yöneticinin e-postası), bağlantı ve son geçerliliği, dört adım ve e-postanın gidip gitmediğini gösterir. Eskiden
+   Şubeler'in üstündeki "AsilPOS kasası kur" kartı ve düzenleme penceresindeki düğme vardı; ikisi de kalktı (28 Kasım
+   2026). **Şube kapatılınca** bekleyen kurulum kodları aynı işlemde iptal olur (`revokePendingInstalls`); kurulu
+   kasanın anahtarı değişmez.
 3. Şube hesabı girince **Hesabım › AsilPOS kurulumu** kartında bağlantı ve durum (Kurulum bekliyor / Kasa kuruldu).
    Kartı **yalnız şubenin kendi hesabı** görür: bağlantının gittiği adresteki, o şubeye kilitli personel hesabı
    (`isBranchAccount`, `installForAccount`). Şubenin öbür personeli (ortak tablette sırayla giren baristalar), müdürü,
@@ -1360,7 +1370,9 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
    `{ "kod": "…" }` → 200 `{ ok: true, sube: { id, ad }, baglanti: { LAFMALIYET_URL, LAFMALIYET_SYNC_SECRET,
    LAFPOS_CLOUD_URL?, LAFPOS_CLOUD_SECRET?, LAFFOGATO_URL?, LAFFOGATO_SYNC_SECRET? } }` (Uzaktan anahtarları kasanın
    ayarlar dosyasının adlarıyla, eski adla gider: kurulu kasanın beyaz listesi onları tanır); 404 kod yok, 410 kullanılmış /
-   iptal / süresi dolmuş, 400 biçim, 429 çok deneme (IP başına 15 dk'da 20). Kod koşullu güncellemeyle bir kez geçer.
+   iptal / süresi dolmuş / şubesi kapalı (28 Kasım 2026: "Şube kapatıldı; bu kurulum bağlantısı geçersiz", aynı
+   `{ ok: false, error }` biçimi; kasa 404 ve 410'u kalıcı sayar), 400 biçim, 429 çok deneme (IP başına 15 dk'da 20).
+   Kod koşullu güncellemeyle bir kez geçer ve yalnız şube açıkken.
    Anahtar **şubenin kendi anahtarıdır** (çok şube, 27 Kasım 2026; `posKeyOf`): kod üretilirken şubenin kullanılabilen
    anahtarı yoksa yenisi üretilip şubenin ayarına şifreli saklanır (`ensurePosKey`), var olan anahtar değişmez (kurulu
    kasa çalışmaya devam eder). Anahtar grubun kilidinin altında okunur ya da üretilir ve kasaya o işlemin anahtarı gider:

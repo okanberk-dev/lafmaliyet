@@ -107,10 +107,8 @@ Sıra:
 28 Kasım'da eklenen kalanlar (sıraya girecek):
 - Kasada gerçek açılış (sahibin isteği): önce ladmin kullanıcı adı ve şifresi, sonra hangi şubenin açılacağı; şube zaten
   kuruluysa "emin misin / başka şube" sorusu.
-- Panelde asıl yöneticinin şube açma, kapatma, silme ve kasa kurma yetkisi baştan sona. Bugün yalnız şube açma ve kurulum
-  gönderme asıl yöneticide; şube kapatma ve silme, kasa kaynağı (posSource), kasa anahtarını döndürme ve geçiş günü her
-  yöneticide; asıl yöneticinin hesabını (e-posta, parola, rol) başka yönetici değiştirebiliyor; kapatılan şubenin kurulum
-  kodu geçerli kalıyor; kasası olan şubeye ikinci kurulumda uyarı yok.
+- Panelde asıl yöneticinin şube açma, kapatma, silme ve kasa kurma yetkisi: bitti (P-B1, dal
+  `asil-yonetici-sube-ekleme`; aşağıda "28 Kasım: asıl yönetici ve Şube ekleme").
 - Kasa: "Kurulumu yap" fiş yazıcısını da bulup denetebilsin (sahibin isteği).
 - Kasa deposunun PR'ları: #192 Token sürücüsünün sessiz kurulumu, #193 müşteri ekranında çeviri balonu, yenileme simgesi
   PR'ı.
@@ -121,6 +119,17 @@ Sahibin bildirimi: "WhatsApp kopyala gitmiş ladmin'de, o olsun". Marina'da (Asi
 kartında WhatsApp ile gönder ve Metni kopyala geri geldi; metin sayımsız (`whatsappText(…, { blind: true })`; açılış,
 sayılan, teslim, olması gereken, fark ve devir yok), sunucunun eylemi reddetmek yerine aynı metni verir. Yönetici ve Tuzla
 değişmedi. Göç yok. Yukarıdaki sıra değişmedi.
+
+## 28 Kasım: asıl yönetici ve Şube ekleme (dal asil-yonetici-sube-ekleme; P-B1)
+
+Tasarım [kasa-acilis-ve-asil-yonetici.md](kasa-acilis-ve-asil-yonetici.md) › P-B1, istek
+[istek-28-kasim.md](istek-28-kasim.md) › B. Şube açma, kapatma, silme, kasa programı, kasa kurma, kasa anahtarı ve geçiş
+günü yalnız asıl yöneticide (`requireAnaAdmin`, `src/lib/asil-yonetici.ts`); asıl yöneticinin hesabı öteki yöneticilere
+karşı korunur (adres boştayken hesap açılabilir: kilitlenme olmasın); kapanan şubenin bekleyen kurulum kodları iptal,
+kapalı şubenin kodu 410. Yeni sayfa Ayarlar › Şube ekleme (`/panel/sube-ekleme`): yeni şube, kasa durumu, "Bilgisayara
+kur". Göç yok; yeni uç yok; `resolvePosCaller`, `readKeys`, `ensurePosKey` değişmedi. Sıradaki: P-B2 (açılış uçları,
+ilk personel, "Kasayı serbest bırak", kasa kaydı), sonra kasada K5. Canlıya almadan önce: `info@nextgenlab.com.tr`
+hesabı canlıda var, etkin ve yönetici mi (değilse hesap koruması onu da kilitler; docs/ROLLER.md › Asıl yönetici).
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 

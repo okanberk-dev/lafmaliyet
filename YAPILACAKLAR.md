@@ -11,6 +11,21 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
+- **Asıl yönetici ve Şube ekleme sayfası** (bu PR, 28 Kasım; P-B1, docs/planlar/kasa-acilis-ve-asil-yonetici.md):
+  şube açmak, kapatmak, silmek, kasa programını değiştirmek, kasa kurmak, kasa anahtarını döndürmek ve geçiş gününü
+  değiştirmek yalnız asıl yöneticide (`requireAnaAdmin`; öteki yönetici "Bu işlemi yalnız asıl yönetici yapar: …" alır,
+  ekranda alanlar kapalı ve nedeni yazılı). Asıl yöneticinin hesabı korunur: başka yönetici e-postasını, parolasını,
+  rolünü, erişimini değiştiremez, silemez, iki adımlısını sıfırlayamaz, kilidini açamaz, oturumlarını kapatamaz, ona
+  bağlantı üretemez; hiçbir hesap adresini asıl yöneticinin adresine çeviremez; o hesap açıldıktan sonra o adresle
+  hesap açılamaz. Kullanıcılar & roller'de "Asıl yönetici" etiketi; Hesabım'da asıl yöneticinin e-postası sabit. Şube
+  kapatılınca bekleyen kurulum kodları iptal olur, kapalı şubenin kodu 410 alır (yanıt biçimi aynı). Yeni **Ayarlar ›
+  Şube ekleme** (`/panel/sube-ekleme`, yalnız asıl yöneticinin menüsünde): yeni şube, şubelerin kasa durumu ("Kasa
+  kurulu değil" / "Kurulum bekliyor" / "Kasa kurulu · son gün"), "Bilgisayara kur" (kurulu kasa varsa önce onay; sonuç
+  penceresinde şube, e-posta, giriş hesabı, bağlantı, son geçerlilik, dört adım). Şubeler'deki "AsilPOS kasası kur"
+  kartı ve "Şube ekle" düğmesi kalktı; düzenleme penceresinin e-postası şubenin kendisinden dolar ve her yöneticide
+  kaydedilir. Göç yok, kasanın çağırdığı uçların yolu ve gövdesi değişmedi. docs/ROLLER.md › Asıl yönetici,
+  docs/SUBE.md › Şube ekleme, docs/ASILPOS.md › Şube kurulumu (`tests/asil-yonetici.test.ts`,
+  `tests/asil-yonetici-db.test.ts`).
 - **Personele kör sayımlı WhatsApp metni** (bu PR, 28 Kasım; sahibin bildirimi: "WhatsApp kopyala gitmiş ladmin'de, o
   olsun"): Marina'da (AsilPOS günü, kör kasa) personelin Kasa raporu kartında **WhatsApp ile gönder** ve **Metni
   kopyala** yine var. Metin sayımsız: açılış, sayılan nakit, teslim, olması gereken, kasa farkı, ertesi güne devir,
@@ -210,10 +225,8 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
   ekleyebilecek, biri ötekini düşürmeyecek. DevHub uygulaması açıldı.
 - **Kasada gerçek açılış** (sahibin isteği, 28 Kasım): önce ladmin kullanıcı adı ve şifresi, sonra hangi şubenin
   açılacağı; şube zaten kuruluysa "emin misin / başka şube" sorusu.
-- **Asıl yöneticinin şube ve kasa yetkisi baştan sona.** Bugün yalnız şube açma ve kurulum gönderme asıl yöneticide.
-  Şube kapatma ve silme, kasa kaynağı (posSource), kasa anahtarını döndürme ve geçiş günü her yöneticide; asıl
-  yöneticinin hesabını (e-posta, parola, rol) başka yönetici değiştirebiliyor; kapatılan şubenin kurulum kodu geçerli
-  kalıyor; kasası olan şubeye ikinci kurulumda uyarı yok.
+- **Kasa açılışı uçları (P-B2)**: kasada ladmin girişi ve şube seçimi için panel uçları, ilk personel ve PIN, Şube
+  ekleme'de "Kasayı serbest bırak", kasa kaydı (`integration_state`). Kasadan devralma yok (sahibin kararı, 28 Kasım).
 - **Kasa: "Kurulumu yap" fiş yazıcısını da bulup denetebilsin** (sahibin isteği).
 - **Kasa deposunun PR'ları:** #192 Token sürücüsünün sessiz kurulumu, #193 müşteri ekranında çeviri balonu, yenileme
   simgesi PR'ı.
