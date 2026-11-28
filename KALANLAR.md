@@ -1,7 +1,7 @@
-# Kalanlar ve devam (28 Kasım 2026, 14:35)
+# Kalanlar ve devam (28 Kasım 2026, 15:10)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
-(ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
+(ya da kullanım limiti %98'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
 YAPILACAKLAR.md › Bitenler'e yazılır, yeni iş sıraya girer. Bu dosya main'de durur; değişikliği belge PR'ıyla gider.
 
 okanberk-dev/lafmaliyet, okanberk-dev/lafpos ve okanberk-dev/laffogato depolarında kaldığım yerden devam et.
@@ -45,8 +45,16 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
 - Uyumluluk her şeyden önce: canlıdaki kasa, Uzaktan (lafpos.laffogato.net) ve site kopmamalı; eski adlar, yollar ve
   değişkenler tanınmaya devam eder.
 - Sır değerlerini asla yazdırma; yalnız zaman ya da var/yok. Vercel takım kapsamı: `okans-projects-fcf7250e`.
-- Her önemli adımda günlüğe saatli satır. Kullanım limiti %95'i geçerse yarım işi "ARA KAYIT (yarım)" diye commit'le,
-  push'la, günlüğe yaz ve dur.
+- Her önemli adımda günlüğe saatli satır. Kullanım limiti %98'e kadar iş yapılır (sahibin kararı, 28 Kas); yaklaşınca yarım
+  iş "ARA KAYIT (yarım)" diye commit'lenir, push'lanır, günlüğe yazılır. Limit yenilenince iş kendiliğinden sürer (§3).
+- **Kararlar (sahibin talimatı, 28 Kas 15:05):** "Bana sorman gereken her kararı sen önerdiğin gibi al." Karar gerektiğinde
+  önerilen seçenek uygulanır ve gerekçesiyle günlüğe yazılır (sahip sonradan çevirebilsin). Geri alınamayan bir işten önce
+  (canlı veriyi silmek, anahtar döndürmek, alan adı) geri dönüş yolu hazırlanır; iş sahibe raporda açıkça söylenir.
+- **Anahtarlar okunabilir eklenir (sahibin talimatı, 28 Kas):** yeni ortam değişkenleri Vercel'e "sensitive" olarak
+  EKLENMEZ; ileride kendi sunucumuza kolay taşınsın. Değer yine hiçbir dosyaya, günlüğe, commit'e ve sohbete yazılmaz.
+- **Büyüyecek sistem, taşınabilirlik:** bu sistem çok şubeli ve satılabilir bir ürüne büyüyecek ve ileride Vercel'den
+  kendi sunucusuna taşınabilir. Vercel'e özgü bir özellik eklenirken taşınabilir karşılığı düşünülür; ortam değişkenleri
+  ve zamanlanmış işler belgelenir; şube, kasa ve sahip kavramları tek işletmeye gömülmez.
 
 ## 3. Şu anki durum (28 Kasım 14:35)
 
@@ -78,14 +86,17 @@ kasalar, Lisans ve güncelleme), `requireAnaAdmin`'in konsol oturumunu da kabul 
 **Kararlar (sahip onayladı):** kasadan devralma yok (kurulu şube kasada seçilemez; değişiklik yalnız asıl yöneticinin
 "Kasayı serbest bırak" işlemiyle); yeni açılış akışı yalnız yeni kasada (Marina'da hiçbir şey çıkmaz); kurulum hiçbir şey
 sormaz; yönetici hesaplarını yalnız asıl yönetici yönetir (konsol çıkınca); P5 sırada kalır (konsol ve açılış akışından
-sonra, gündüz ve provayla); "Kasa bilgisayarı modu" yeni kurulumda açık, Marina'da tek dokunuşla.
+sonra, gündüz ve provayla; SGK işveren oranı konusu kapandı: P5 bu orana dokunmaz, sorulmaz); "Kasa bilgisayarı modu"
+yeni kurulumda açık, Marina'da tek dokunuşla. **Marina'da ModPOS artık yok** (sahip, 28 Kas: tamamen AsilPOS'a geçildi;
+26 Kas veri kopyasında Marina'nın kasa programı AsilPOS); Tuzla ModPOS'ta. Lisans ve güncelleme şimdilik Merkez'e
+bağlantıyla; konsolun arayüzdeki adı "Yönetim konsolu".
 
 **Limit ve süreklilik:** büyük ajan dalgaları 5 saatlik limiti hızla yer; iş küçük PR'larla, aynı anda en çok iki
 uygulayıcıyla sürer. Limit artı tahmini maliyet %90'ı geçecekse yeni iş başlatılmaz; ajanlar her adımda push eder; yarım
 iş çalışma ağacında durur ve "ARA KAYIT (yarım)" diye gönderilir. Kalıcı zamanlanmış görevler: `asilpos-limit-sonrasi-devam`
 (sıfırlanmadan sonra oturumu dürter) ve `asilpos-bekci` (üç saatte bir).
 
-**Sahibe sorulacak / hatırlatılacak:** Token denemesinin sonucu; 29 Kas sabah ilk fişte yazıcı (açılış sırası değişti);
+**Sahibe hatırlatılacak (karar beklenmez):** Token denemesinin sonucu; 29 Kas sabah ilk fişte yazıcı (açılış sırası değişti);
 asıl yönetici hesabında iki adımlı doğrulama kapalı (açması önerildi); üç depo GitHub'da herkese açık ve main korumasız.
 
 ## 4. Sıradaki işler, bu sırayla
@@ -114,8 +125,15 @@ Aynı anda en çok iki iş: biri panel, biri kasa.
 10. Panel P4'ün kalanı (CI'a şema ve göç denetimi; asistan bilgisi derlemede üretilsin), P7 dönem kapanışı.
 11. **Basitleştirme:** önce envanter belgesi (`SADELESTIRME.md`, henüz yok), sahibin onayı, sonra küçük PR'lar.
 12. **P5** (dal `p5-ay-ayarlari` bayat: main'le on dosyada çakışıyor): main'den yeni dal, commit'ler seçilerek; göç
-    `0102_ay_ayarlari`; gündüz ve canlı kopyada provayla. SGK işveren oranı varsayılanı değişmez; oran sahibe sorulur.
-13. ModPOS API anahtarı ekranları: panelde anahtar girilen ekran yok, yalnız durum ve yönerge kartları var; kapsamı sahibe sor.
+    `0102_ay_ayarlari`; gündüz ve canlı kopyada provayla. SGK işveren oranına dokunulmaz (sahibin kararı, 28 Kas).
+13. **Marina'da ModPOS kalıntıları** (kapsam netleşti, 28 Kas): ModPOS'u olmayan şubede ModPOS kartı ve yönergesi
+    görünmez (panel: Ayarlar › ModPOS API, Şubeler › şube kartı, zil metinleri); Vercel'den `MODPOS_API_KEY_MARINA`
+    silinir (sahip onayladı); Tuzla'nın çekimi, "Bu günü çek" ve ay yedeği aynen kalır. Marina'nın geçiş günü panelde
+    girilmiş mi bakılır.
+13b. **Anahtar envanteri ve taşınabilirlik:** iki Vercel projesinin ortam değişkenleri (ad, hedef, tür: okunabilir /
+    sensitive; değer yazdırılmaz); kasa deposundaki `scripts/vercel/baglanti-kur.sh` yeni anahtarı `--sensitive` ile
+    ekliyor: kaldırılır; sensitive olanların okunabilir hâle gelmesi için iki değerli sırayla döndürme planı (kasa
+    kopmadan); `docs/DEPLOY.md`'ye "kendi sunucuya taşıma" bölümü (veritabanı, ortam, zamanlanmış işler, alan adları).
 14. Ürün görselleri (panel şema ve yükleme, panel ucu, kasa, site: dört PR), P8 (örnek Z fotoğrafı gerekir), P6, P9.
 15. A3 eski adları kaldıran daraltma göçü: en erken 4 Aralık, bütün kasalar yeni sürümdeyken.
 16. asil-platform (ayrı depo `okanberk-dev/posyazilim`) satışa hazırlık; Merkez'in lisans ve güncelleme ekranlarını
@@ -130,8 +148,8 @@ başlanmadıysa sahibe hatırlat.
 
 - GitHub'da lafmaliyet ve `lafpos` depolarını gizli yapmak; main için koruma kuralları.
 - `ANTHROPIC_API_KEY` depo sırrını yeni anahtarla güncellemek (şu anki 23 Ekim tarihli).
-- Vercel'den `MODPOS_API_KEY_MARINA`'yı silmek; panelde kullanılmayan `PARASUT_USERNAME/PASSWORD` (sitedekiler SİLİNMEZ).
-- Muhasebeciyle SGK işveren oranı (%15,75 / %19,75).
+- Panelde kullanılmayan `PARASUT_USERNAME/PASSWORD` (sitedekiler SİLİNMEZ). (`MODPOS_API_KEY_MARINA`'yı oturum siler: §4 madde 13.)
+- Asıl yönetici hesabında iki adımlı doğrulamayı açmak ve kurtarma kodlarını saklamak (konsol bu hesaba bağlı).
 - Kasa #192 yayımlanınca: kasada Yönetim › Güncelleme › "Şimdi güncelle", sonra Yazarkasa POS › Token kablolu ›
   "Kurulumu yap". Cihaz yine görünmezse kabloyu çıkarıp takmak; 300TR'de Harici Cihaz Modu › GMP3 › TOKENX CONNECT,
   X30TR'de "TokenX Connect Uygulaması (Kablolu)" açık olmalı.
