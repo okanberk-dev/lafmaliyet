@@ -23,7 +23,7 @@ import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/request";
 import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import type { StepUpConfirm } from "@/lib/step-up";
 import { PRESET_KEYS, PRESET_LABELS, presetHours, presetText, shiftPresetsError, shiftPresetsOf, type SavedShiftPreset } from "@/lib/vardiya";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireAdmin, requireAnaAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { setBranchFeatureTx } from "@/server/branch-features";
 import { linkBranchSetting, lockGroup, logSetting, putBranchSetting, resolveBranchSetting, unlinkBranchSetting } from "@/server/branch-settings";
@@ -258,11 +258,12 @@ const secretInput = z.object({
  * güven kökü: açık kalmış bir oturum sahte gün sonu imzalayamasın, gerçek kasayı 401'e düşüremesin). Çok şube: yeni anahtar
  * kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şubeye yazılır (kurulu kasanın deneme günleri için); başka şubenin
  * anahtarıyla ya da ortamdaki eski kurulum anahtarıyla aynı olamaz (anahtar şubeyi tanıtır: aynı anahtar bir şubenin
- * günlerini öbürüne yazdırırdı). Silme her şubede (kasa kaynağı değiştiyse eski şubede kalan anahtar silinebilsin)
+ * günlerini öbürüne yazdırırdı). Silme her şubede (kasa kaynağı değiştiyse eski şubede kalan anahtar silinebilsin).
+ * Döndürmek ve silmek yalnız asıl yöneticide (docs/ROLLER.md › Asıl yönetici; 28 Kasım 2026)
  */
 export async function saveAsilposSecret(input: z.input<typeof secretInput>, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = await requireAnaAdmin("kasaAnahtari");
     const d = secretInput.parse(input);
     const db = getDb();
     if (d.secret !== null) {

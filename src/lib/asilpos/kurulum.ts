@@ -1,4 +1,4 @@
-// Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): ana yönetici şubeyi e-postasıyla ekler; şubenin panel hesabı açılır,
+// Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): asıl yönetici şubeyi e-postasıyla ekler; şubenin panel hesabı açılır,
 // şubeye özel AsilPOS kurucusunun indirme bağlantısı e-postayla gider ve şube hesabının Hesabım sayfasında durur. Kurucu
 // (AsilPOS-Kur.cmd) içinde panelin adresi ve tek kullanımlık kurulum kodu taşır; kasa ilk açılışta kodu bir kez verip
 // şubesini ve bağlantı bilgilerini alır (POST /api/asilpos/kurulum; kurulu eski kasalar eski yolu çağırır, ikisi aynı
@@ -7,7 +7,10 @@
 import { posEnv, type PosEnvKey } from "./env";
 import { ESKI_WEB_KURUCU, KANAL_ALANI, TEL_UZAK_ADRES_ENV, TEL_UZAK_ANAHTAR_ENV } from "./eski-adlar";
 
-/** Şube ekleyebilen tek hesap (sahibin kararı, 26 Kasım 2026). Ortamda LADMIN_ANA_ADMIN ile değişir */
+/**
+ * Asıl yöneticinin adresi (sahibin kararı, 26 ve 28 Kasım 2026; docs/ROLLER.md › Asıl yönetici): şube açan, kapatan ve
+ * kasasını kuran tek hesap. Ortamda LADMIN_ANA_ADMIN ile değişir. Kurallar src/lib/asil-yonetici.ts'te
+ */
 export const ANA_ADMIN_EMAIL = "info@nextgenlab.com.tr";
 
 export function anaAdminEmail(env: Record<string, string | undefined> = process.env): string {
@@ -15,19 +18,20 @@ export function anaAdminEmail(env: Record<string, string | undefined> = process.
   return v && v.includes("@") ? v : ANA_ADMIN_EMAIL;
 }
 
-/** Ana yönetici mi: yönetici rolünde ve e-postası ana yöneticininki (büyük-küçük harf fark etmez) */
+/** Asıl yönetici mi: yönetici rolünde ve e-postası asıl yöneticininki (büyük-küçük harf fark etmez) */
 export function isAnaAdmin(user: { role: string; email: string } | null | undefined, env: Record<string, string | undefined> = process.env): boolean {
   return !!user && user.role === "admin" && user.email.trim().toLowerCase() === anaAdminEmail(env);
 }
 
-export const ANA_ADMIN_ONLY = "Şube yalnız ana yönetici hesabıyla eklenir";
+/** Şube açmanın ret cümlesi (src/lib/asil-yonetici.ts yalnizAsilYonetici("subeAcma") ile aynı) */
+export const ANA_ADMIN_ONLY = "Bu işlemi yalnız asıl yönetici yapar: şube açmak";
 
 /**
  * Hesabım › AsilPOS kurulumu kartını gören tek hesap: şubenin kendi hesabı, yani bağlantının gittiği adresteki, o şubeye
  * kilitli personel hesabı (büyük-küçük harf ve boşluk fark etmez). Şubenin öbür personeli (ortak tablette sırayla giren
  * baristalar), müdürü, muhasebeci ve yönetici görmez: bağlantıdaki kod kasanın eşitleme anahtarını verir
  * (POST /api/asilpos/kurulum) ve tek kullanımlıktır. Şube hesabı yalnız personel olabilir (`branchEmailTaken`); yönetici
- * bağlantıyı Şubeler'de görür (yalnız ana yönetici)
+ * bağlantıyı Şube ekleme sayfasında görür (yalnız asıl yönetici)
  */
 export function isBranchAccount(user: { role: string; email: string; branchId?: string | null }, install: { branchId: string; email: string }): boolean {
   const norm = (v: string) => v.trim().toLowerCase();

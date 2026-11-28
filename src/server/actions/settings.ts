@@ -5,6 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
+import { asilAdresRet, asilHesapRet } from "@/lib/asil-yonetici";
 import { DEFAULT_SETTINGS, FIFO_OFF, ROLES, settingsFromRows, type Role } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 import { blockReasonOf, oldAddressNotice, userListNotice } from "@/lib/notify-recipients";
@@ -256,7 +257,9 @@ const STALE_USER = "Bu kullanıcı bu arada değişti; liste yenilendi, pencerey
  * değişikliği ve personel işleri sormaz. Başkasına parola verildiyse "Giriş bilgileri"nin e-posta düğmesi için mühürlü
  * kopya döner (accessMailHandle). Pencerenin açıldığı andaki ad, e-posta, rol, erişim ve şube (`seen`) veritabanındakiyle
  * tutmazsa yazılmaz: eski form bu arada yapılan değişikliği sessizce geri almasın (YO-01). Listedeki anahtar
- * setUserActive'i kullanır.
+ * setUserActive'i kullanır. Asıl yöneticinin hesabı korunur (docs/ROLLER.md › Asıl yönetici): başka yönetici onun
+ * e-postasını, parolasını, rolünü ve erişimini değiştiremez (adı değişebilir); hiçbir hesabın adresi asıl yöneticinin
+ * adresine çevrilemez.
  */
 export async function saveUser(input: z.input<typeof userSchema>, confirm?: StepUpConfirm) {
   return attempt(async () => {
@@ -267,6 +270,14 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
       if (problem) throw new UserError(problem);
     }
     const db = getDb();
+    const [current] = await db.select({ email: s.users.email, role: s.users.role, active: s.users.active }).from(s.users).where(eq(s.users.id, data.id)).limit(1);
+    if (current) {
+      const touches = current.email !== data.email || Boolean(data.password) || current.role !== data.role || current.active !== data.active;
+      const guarded = touches ? asilHesapRet(me, current, "hesapDuzenleme") : null;
+      if (guarded) throw new UserError(guarded);
+      const address = asilAdresRet({ next: data.email, before: current.email, accountExists: true });
+      if (address) throw new UserError(address);
+    }
     const [{ dup }] = await db
       .select({ dup: count() })
       .from(s.users)
@@ -352,6 +363,8 @@ export async function setUserActive(id: number, active: boolean, confirm?: StepU
     const db = getDb();
     const [before] = await db.select().from(s.users).where(eq(s.users.id, userId)).limit(1);
     if (!before) throw new UserError("Kullanıcı bulunamadı");
+    const guarded = asilHesapRet(me, before, "hesapErisimi");
+    if (guarded) throw new UserError(guarded);
     if (before.active === next) {
       refresh();
       return { notice: null };
@@ -416,6 +429,9 @@ export async function createUser(input: z.input<typeof createSchema>, confirm?: 
     }
     const db = getDb();
     const [{ dup }] = await db.select({ dup: count() }).from(s.users).where(eq(s.users.email, data.email));
+    // Asıl yöneticinin adresiyle hesap açılamaz, ama yalnız o hesap varken (yoksa bugünkü gibi açılır; docs/ROLLER.md)
+    const address = asilAdresRet({ next: data.email, before: null, accountExists: dup > 0 });
+    if (address) throw new UserError(address);
     if (dup > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
     const branch = await userBranch(data.role, data.branchId ?? null);
     const change: StepUpCase = { kind: "create", role: data.role };
@@ -453,6 +469,8 @@ export async function deleteUser(id: number, confirm?: StepUpConfirm) {
     const db = getDb();
     const [u] = await db.select({ id: s.users.id, name: s.users.name, email: s.users.email, role: s.users.role, active: s.users.active }).from(s.users).where(eq(s.users.id, userId)).limit(1);
     if (!u) throw new UserError("Kullanıcı bulunamadı");
+    const guarded = asilHesapRet(me, u, "hesapSilme");
+    if (guarded) throw new UserError(guarded);
     if (u.role === "admin" && u.active) {
       const [{ n }] = await db
         .select({ n: count() })
@@ -492,6 +510,8 @@ export async function resetUserTwoFactor(id: number, confirm?: StepUpConfirm) {
     const db = getDb();
     const [target] = await db.select({ email: s.users.email, role: s.users.role }).from(s.users).where(eq(s.users.id, userId)).limit(1);
     if (!target) throw new UserError("Kullanıcı bulunamadı");
+    const guarded = asilHesapRet(me, target, "hesapIkiAdim");
+    if (guarded) throw new UserError(guarded);
     const change: StepUpCase = { kind: "2fa", targetRole: target.role };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${target.email}`);
     const [u] = await db
@@ -516,6 +536,10 @@ export async function unlockUser(id: number) {
     const me = await requireAdmin();
     const userId = z.number().int().positive().parse(id);
     const db = getDb();
+    const [target] = await db.select({ email: s.users.email }).from(s.users).where(eq(s.users.id, userId)).limit(1);
+    if (!target) throw new UserError("Kullanıcı bulunamadı");
+    const guarded = asilHesapRet(me, target, "hesapKilidi");
+    if (guarded) throw new UserError(guarded);
     const [u] = await db.update(s.users).set({ failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, userId)).returning({ email: s.users.email });
     if (!u) throw new UserError("Kullanıcı bulunamadı");
     await db.delete(s.loginDeviceLocks).where(eq(s.loginDeviceLocks.userId, userId));
@@ -531,6 +555,10 @@ export async function signOutUserEverywhere(id: number) {
     const me = await requireAdmin();
     const userId = z.number().int().positive().parse(id);
     if (userId === me.id) throw new UserError("Kendi oturumlarınız için Hesabım'daki parola değişikliğini kullanın");
+    const [target] = await getDb().select({ email: s.users.email }).from(s.users).where(eq(s.users.id, userId)).limit(1);
+    if (!target) throw new UserError("Kullanıcı bulunamadı");
+    const guarded = asilHesapRet(me, target, "hesapOturumlari");
+    if (guarded) throw new UserError(guarded);
     const [u] = await getDb()
       .update(s.users)
       .set({ sessionVersion: sql`${s.users.sessionVersion} + 1` })

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
 
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 
 import { accessLink, formatExpiry } from "@/app/panel/kullanicilar/access";
 import { KURULUM_SIFRE_AMACI } from "@/lib/asilpos/eski-adlar";
@@ -51,6 +51,20 @@ export async function issueInstallCode(db: DB, o: { branchId: string; email: str
   });
   forgetPosKeys();
   return { raw, expiresAt, link: kurulumLink(appUrl(), raw) };
+}
+
+/**
+ * Şubenin bekleyen kurulum kodlarını iptal eder (şube kapatıldı; asıl yönetici, 28 Kasım 2026): bağlantı indirmez,
+ * kasa kodu veremez. Kullanılmış kodlar olduğu gibi kalır (kurulu kasa çalışmaya devam eder; anahtar değişmez). Döner:
+ * iptal edilen kod sayısı. Eylemin işleminin içinden çağrılır
+ */
+export async function revokePendingInstalls(tx: Pick<DB, "update">, branchId: string, now = new Date()): Promise<number> {
+  const rows = await tx
+    .update(s.asilposInstalls)
+    .set({ revokedAt: now })
+    .where(and(eq(s.asilposInstalls.branchId, branchId), isNull(s.asilposInstalls.usedAt), isNull(s.asilposInstalls.revokedAt)))
+    .returning({ id: s.asilposInstalls.id });
+  return rows.length;
 }
 
 /** Kurulum e-postası: indirme bağlantısı ve (varsa) şube hesabının davet bağlantısı. E-posta kurulu değilse gönderilmez */
@@ -108,23 +122,42 @@ export type RedeemResult =
   | { status: 200; body: { ok: true; sube: { id: string; ad: string }; baglanti: Record<string, string> } }
   | { status: 404 | 410; body: { ok: false; error: string } };
 
+/** Kapalı şubenin kodu (kasaya 410, "geçersiz / süresi geçmiş kod"la aynı biçim; kasa 404 ve 410'u kalıcı sayar) */
+export const KURULUM_SUBE_KAPALI = "Şube kapatıldı; bu kurulum bağlantısı geçersiz";
+
 /**
  * Kasa kodu verir: kod bir kez geçer (koşullu güncelleme; aynı anda iki kasa veremez). Yanıt: şube (kimlik, ad) ve
  * bağlantılar (lafmaliyet adresi ve şubenin kendi anahtarı; ortamda tanımlıysa AsilPOS Uzaktan ve site). Başka şubenin
  * anahtarı hiçbir zaman verilmez (çok şube): şubenin anahtarı yoksa (kod göç öncesi üretildi) burada üretilir. 404 kod
- * yok, 410 kullanılmış, iptal ya da süresi dolmuş
+ * yok, 410 kullanılmış, iptal, süresi dolmuş ya da şubesi kapalı (asıl yönetici, 28 Kasım 2026: şube kapatılınca bekleyen
+ * kodları iptal olur, kapalı şubenin kodu hiçbir koşulda geçmez). Yanıtın yolu, biçimi ve durum kodları değişmedi
  */
 export async function redeemInstallCode(raw: string, db: DB = getDb(), now = new Date()): Promise<RedeemResult> {
   const hash = hashOf(raw);
+  const openBranches = db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.active, true));
   const [row] = await db
     .update(s.asilposInstalls)
     .set({ usedAt: now })
-    .where(and(eq(s.asilposInstalls.tokenHash, hash), isNull(s.asilposInstalls.usedAt), isNull(s.asilposInstalls.revokedAt), gt(s.asilposInstalls.expiresAt, now)))
+    .where(
+      and(
+        eq(s.asilposInstalls.tokenHash, hash),
+        isNull(s.asilposInstalls.usedAt),
+        isNull(s.asilposInstalls.revokedAt),
+        gt(s.asilposInstalls.expiresAt, now),
+        inArray(s.asilposInstalls.branchId, openBranches),
+      ),
+    )
     .returning({ branchId: s.asilposInstalls.branchId });
   if (!row) {
-    const [known] = await db.select({ usedAt: s.asilposInstalls.usedAt, revokedAt: s.asilposInstalls.revokedAt, expiresAt: s.asilposInstalls.expiresAt }).from(s.asilposInstalls).where(eq(s.asilposInstalls.tokenHash, hash)).limit(1);
+    const [known] = await db
+      .select({ usedAt: s.asilposInstalls.usedAt, revokedAt: s.asilposInstalls.revokedAt, expiresAt: s.asilposInstalls.expiresAt, active: s.branches.active })
+      .from(s.asilposInstalls)
+      .leftJoin(s.branches, eq(s.branches.id, s.asilposInstalls.branchId))
+      .where(eq(s.asilposInstalls.tokenHash, hash))
+      .limit(1);
     if (!known) return { status: 404, body: { ok: false, error: "Kurulum kodu bulunamadı" } };
     const d = kurulumDurumu(known, now);
+    if (d !== "kuruldu" && known.active !== true) return { status: 410, body: { ok: false, error: KURULUM_SUBE_KAPALI } };
     return { status: 410, body: { ok: false, error: d === "kuruldu" ? "Bu kurulum bağlantısı kullanılmış" : d === "iptal" ? "Bu kurulum bağlantısı yenisiyle değiştirildi" : "Kurulum bağlantısının süresi dolmuş" } };
   }
   const [branch] = await db.select({ id: s.branches.id, name: s.branches.name }).from(s.branches).where(eq(s.branches.id, row.branchId)).limit(1);
