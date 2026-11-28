@@ -690,9 +690,14 @@ describe("sunucu eylemleri: her biri bir yetki kapısından geçer; muhasebeciye
     for (const n of ["saveShiftWeekAction", "draftShiftWeekAction"]) assert.equal(gate(n), "requireCan(vardiya.yaz)", n);
     for (const n of ["markClosedDay", "deleteCashReport"]) assert.equal(gate(n), "requireCan(isletme.yonet)", n);
     // Yalnız yöneticinin kalanlardan örnekler
-    for (const n of ["saveUser", "createUser", "createAccessLink", "updateCashSettings", "reviewKaraokeDeleteRequest", "reviewRecipeChange", "clearOkcCumulative"]) {
+    for (const n of ["updateCashSettings", "reviewKaraokeDeleteRequest", "reviewRecipeChange", "clearOkcCumulative"]) {
       assert.equal(gate(n), "requireAdmin()", n);
     }
+    // Kullanıcı eylemleri: yönetici kapısı, yönetici hesabına dokunan işte ayrıca asıl yönetici kapısı (requireAnaAdmin
+    // yönetici sayılır; docs/ROLLER.md › Yönetici hesapları)
+    assert.equal(gate("saveUser"), "requireAdmin() requireAdmin(is)");
+    assert.equal(gate("createUser"), "requireAdmin() requireAdmin(yoneticiAcma)");
+    assert.equal(gate("createAccessLink"), "requireAdmin() requireAdmin(yoneticiBaglantisi)");
   });
 });
 
