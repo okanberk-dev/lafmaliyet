@@ -178,8 +178,8 @@ test("kapalı şubenin kurulum kodu: koşullu güncellemede şube açık olmalı
 test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki yöneticiye kapalı ve nedeni yazılı", () => {
   const page = read("src/app/panel/sube-ekleme/page.tsx");
   assert.match(page, /const me = await requireAdmin\(\);\s*if \(!isAnaAdmin\(me\)\) \{\s*return <Notice tone="neutral" title="Şube ekleme ve kasa kurulumu yalnız asıl yöneticinin hesabında açılır\." \/>;/);
-  assert.ok(existsSync(join(ROOT, "src/app/panel/sube-ekleme/sube-ekleme-client.tsx")));
-  const client = read("src/app/panel/sube-ekleme/sube-ekleme-client.tsx");
+  assert.ok(existsSync(join(ROOT, "src/components/sube-ekleme/sube-ekleme-client.tsx")));
+  const client = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   // Kurulu kasada önce onay (ekranın ve sunucunun sorusu), sonuç penceresi istenen bilgilerle
   assert.match(client, /yeniKurulumOnayi\(d\)/);
   assert.match(client, /r\.error\.startsWith\(YENI_KURULUM_ONEKI\)/);
@@ -215,7 +215,7 @@ test("yeni metinde uzun tire yok; Şube ekleme sayfa, uç değil; kasa açılı�
     "src/server/asilpos/ilk-personel.ts",
     "src/server/auth/giris-korumalari.ts",
     "src/app/panel/sube-ekleme/page.tsx",
-    "src/app/panel/sube-ekleme/sube-ekleme-client.tsx",
+    "src/components/sube-ekleme/sube-ekleme-client.tsx",
   ]) {
     assert.doesNotMatch(read(f), /[–—]/, f);
   }

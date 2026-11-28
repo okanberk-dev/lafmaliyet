@@ -234,7 +234,7 @@ test("kaynak: ilk personel mühürlü, yedek dışı; serbest bırakma asıl yö
   assert.match(actions, /await writeHazirlik\(db, b\.id, me\.name\);/);
   // İşlem geçmişine PIN ve ad yazılmaz: yalnız roller
   assert.match(actions, /const rollerMetni = \(list: readonly IlkPersonel\[\]\) => list\.map\(\(p\) => rolEtiketi\(p\.rol\)\)\.join\(", "\);/);
-  const client = read("src/app/panel/sube-ekleme/sube-ekleme-client.tsx");
+  const client = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   for (const s of ["İlk personeli ayarla", "Kasayı serbest bırak", "SERBEST_ONAY", "İlk personel (isteğe bağlı)"]) assert.ok(client.includes(s), s);
   assert.match(client, /d\.durum === "kurulu" \? \(\s*<Button size="sm" variant="ghost" onClick=\{\(\) => setBirak\(b\)\}/, "düğme yalnız kurulu kasada");
 });
