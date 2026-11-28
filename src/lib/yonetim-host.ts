@@ -9,6 +9,9 @@
  * kasa yanlışlıkla konsol adresine ayarlanırsa 404 ve `yanlis_adres` alır.
  */
 
+import { posEnv } from "./asilpos/env";
+import { KANAL_ALANI } from "./asilpos/eski-adlar";
+
 type Env = Record<string, string | undefined>;
 
 /**
@@ -105,6 +108,33 @@ export function yonetimLink(yol: string, env: Env = process.env): string {
 export function panelBaglantilari(env: Env = process.env) {
   const app = panelUrl(env);
   return { ladmin: `${app}/panel`, giris: `${app}/giris`, parolaUnuttum: `${app}/giris?parola=unuttum` } as const;
+}
+
+/** Konsolun sekmeleri (kabuk: src/app/yonetim/(konsol)/layout.tsx) */
+export const KONSOL_SEKMELERI = [
+  { href: YONETIM_YOLU, label: "Şubeler ve kasalar" },
+  { href: `${YONETIM_YOLU}/lisans`, label: "Lisans ve güncelleme" },
+] as const;
+
+/** Lisans ve güncelleme sekmesinin sabit açıklaması */
+export const LISANS_ACIKLAMA =
+  "Lisans, dükkânlar ve güncelleme gönderme AsilPOS Merkez'de; AsilPOS Uzaktan'daki üye girişinizle girilir, ladmin parolasıyla değil.";
+
+/**
+ * AsilPOS Merkez'in adresi (lisans, dükkânlar, güncelleme gönderme; AsilPOS Uzaktan'ın `/merkez`'i, üye girişiyle):
+ * Uzaktan'ın ortamdaki adresi (`ASILPOS_CLOUD_URL` ya da eski adı, src/lib/asilpos/env.ts), yoksa kanalın alan adı
+ * (KANAL_ALANI). Yalnız https kökeni alınır
+ */
+export function merkezUrl(env: Env = process.env): string {
+  const varsayilan = `https://${KANAL_ALANI}`;
+  let kok = varsayilan;
+  try {
+    const u = new URL(posEnv("CLOUD_URL", env)?.trim() || varsayilan);
+    if (u.protocol === "https:" && !u.username && !u.password) kok = u.origin;
+  } catch {
+    // geçersiz adres: varsayılan
+  }
+  return `${kok}/merkez`;
 }
 
 /** Yol `taban`ın kendisi ya da altında mı (yol parçası sınırında: "/yonetim" ve "/yonetim/…" evet, "/yonetimx" hayır) */
