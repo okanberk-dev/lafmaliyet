@@ -6,7 +6,6 @@ import { panelYonetimYonlendirmesi } from "./src/lib/yonetim-host";
 /** Panelin tek adresi; Vercel'in proje adresi (lafmaliyet.vercel.app) buraya yönlenir */
 const PANEL_HOST = "ladmin.laffogato.net";
 
-
 /**
  * Content-Security-Policy (src/lib/csp.ts; docs/DEPLOY.md › Güvenlik başlıkları): çekirdek (çerçeve, base, form hedefi)
  * uygulanır, kaynak politikası `CSP_ENFORCE=1` olana dek Report-Only. Derlemede kurulur (değişken değişince yeniden
