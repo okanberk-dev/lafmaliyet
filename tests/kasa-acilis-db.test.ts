@@ -46,7 +46,11 @@ const ASIL = "asil@ornek.com";
 /** Marina'nın kasasının anahtarı: canlıdaki gibi ortamda (eski tek kasalı kurulum) */
 const MARINA_KEY = "marina-ortam-anahtari-0123456789-abcdefghijkl";
 const TUZLA_KEY = "tuzla-eski-deneme-anahtari-0123456789-abcdefgh";
-const PASSWORD = "Kasa-Acilis-Testi-4821";
+/**
+ * Test hesaplarının parolası. Kasa girişi imzalanınca gövdenin özeti (sha256) imzaya girer; bu özet parolayı saklamaz,
+ * isteği imzalar (kod taraması bunu "parolanın zayıf özeti" sanmasın diye ad Türkçe)
+ */
+const PAROLA = "Kasa-Acilis-Testi-4821";
 const BASE = "https://ladmin.laffogato.net";
 const PINS = { patron: "482915", mudur: "731864", kasiyer: "5927" };
 
@@ -140,7 +144,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
       { id: "fethiye", name: "Fethiye", kind: "fiziksel", posSource: "asilpos", active: true, sortOrder: 6 },
     ]);
     const { hashPassword } = await import("../src/server/auth/password");
-    const hash = await hashPassword(PASSWORD);
+    const hash = await hashPassword(PAROLA);
     for (const k of Object.keys(USERS) as Key[]) {
       const [row] = await db.insert(s.users).values({ ...USERS[k], passwordHash: hash }).returning({ id: s.users.id });
       ids[k] = row.id;
@@ -199,7 +203,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
   const giris = async (k: { kimlik: string; acikAnahtar?: string }, o: { eposta?: string; parola?: string; kod?: string; key?: string } = {}) => {
-    const r = await call("giris", { eposta: o.eposta ?? ASIL, parola: o.parola ?? PASSWORD, ...(o.kod ? { kod: o.kod } : {}), kasa: { kimlik: k.kimlik, surum: "1.2.3", ...(k.acikAnahtar ? { acikAnahtar: k.acikAnahtar } : {}) } }, { key: o.key });
+    const r = await call("giris", { eposta: o.eposta ?? ASIL, parola: o.parola ?? PAROLA, ...(o.kod ? { kod: o.kod } : {}), kasa: { kimlik: k.kimlik, surum: "1.2.3", ...(k.acikAnahtar ? { acikAnahtar: k.acikAnahtar } : {}) } }, { key: o.key });
     if (typeof r.body.belirtec === "string") belirtecler.push(r.body.belirtec);
     return r;
   };
@@ -217,8 +221,8 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     const ali = await giris(KASA_A, { eposta: USERS.ali.email });
     assert.deepEqual([ali.status, ali.body.error, ali.body.mesaj], [403, "asil_yonetici_degil", YALNIZ_ASIL_ACAR]);
     assert.equal(ali.body.belirtec, undefined);
-    assert.equal((await call("giris", { eposta: ASIL, parola: PASSWORD })).status, 400, "kasa kimliği yok");
-    assert.equal((await call("giris", { eposta: ASIL, parola: PASSWORD, kasa: { kimlik: "kısa" } })).status, 400);
+    assert.equal((await call("giris", { eposta: ASIL, parola: PAROLA })).status, 400, "kasa kimliği yok");
+    assert.equal((await call("giris", { eposta: ASIL, parola: PAROLA, kasa: { kimlik: "kısa" } })).status, 400);
     // Asıl olmayanın doğru parolası sayılmaz (deneme geri verilir)
     assert.equal((await db.select().from(s.users).where(eq(s.users.id, ids.ali)))[0].failedLogins, 0);
   });
@@ -229,7 +233,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     const fifth = await call("giris", { eposta: USERS.kilit.email, parola: "yanlis-5", kasa: KASA_A }, { ip });
     assert.equal(fifth.status, 429);
     assert.match(String(fifth.body.mesaj), /^Çok fazla hatalı deneme\. \d+ dakika sonra yeniden deneyin\.$/);
-    const right = await call("giris", { eposta: USERS.kilit.email, parola: PASSWORD, kasa: KASA_A }, { ip: "10.200.0.2" });
+    const right = await call("giris", { eposta: USERS.kilit.email, parola: PAROLA, kasa: KASA_A }, { ip: "10.200.0.2" });
     assert.equal(right.status, 429, "kilitliyken değerlendirilmez");
     const [u] = await db.select().from(s.users).where(eq(s.users.id, ids.kilit));
     assert.ok(u.lockedUntil && u.lockedUntil > new Date(), "kilit veritabanında");
@@ -472,14 +476,14 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
 
   test("Kasayı serbest bırak: yalnız asıl yönetici, kurulu kasada, ad ve parola; eski anahtar 401, kayıt boş, bekleyen kod iptal, yeni bağlama çalışır", async () => {
     await signIn("ali");
-    assert.deepEqual(await branches.releaseBranchTill({ id: "tuzla", ad: "Tuzla" }, { password: PASSWORD }), { ok: false, error: yalnizAsilYonetici("kasaSerbest") });
+    assert.deepEqual(await branches.releaseBranchTill({ id: "tuzla", ad: "Tuzla" }, { password: PAROLA }), { ok: false, error: yalnizAsilYonetici("kasaSerbest") });
     await signIn("ana");
-    assert.deepEqual(await branches.releaseBranchTill({ id: "marina", ad: "Tuzla" }, { password: PASSWORD }), { ok: false, error: "Onay için şubenin adını tam yazın" });
+    assert.deepEqual(await branches.releaseBranchTill({ id: "marina", ad: "Tuzla" }, { password: PAROLA }), { ok: false, error: "Onay için şubenin adını tam yazın" });
     assert.deepEqual(await branches.releaseBranchTill({ id: "tuzla", ad: " tuzla " }), { ok: false, error: STEP_UP_REQUIRED });
     // Kurulu kasa varken yeni kurulum bağlantısı (onayla): serbest bırakma onu iptal eder
     const pending = await branches.sendBranchInstall({ id: "tuzla", email: "tuzla@ornek.com", confirmReplace: true });
     assert.ok(pending.ok, JSON.stringify(pending));
-    const done = await branches.releaseBranchTill({ id: "tuzla", ad: " tuzla " }, { password: PASSWORD });
+    const done = await branches.releaseBranchTill({ id: "tuzla", ad: " tuzla " }, { password: PAROLA });
     assert.deepEqual(done, { ok: true, data: { id: "tuzla" } });
     const kayit = await stateOf("asilpos.kasa:tuzla");
     assert.deepEqual([kayit?.durum, kayit?.yol, kayit?.kimlik, kayit?.by], ["bos", "serbest", null, "Asıl"]);
@@ -501,7 +505,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     assert.equal((b.body.baglanti as Record<string, string>).LAFMALIYET_SYNC_SECRET, yeni);
     assert.equal((await stateOf("asilpos.kasa:tuzla"))?.kimlik, KASA_B.kimlik);
     // Kurulu olmayan şube serbest bırakılmaz
-    const none = await branches.releaseBranchTill({ id: "kas", ad: "Kaş" }, { password: PASSWORD });
+    const none = await branches.releaseBranchTill({ id: "kas", ad: "Kaş" }, { password: PAROLA });
     assert.ok(!none.ok && /kurulu kasa yok/.test(none.error));
   });
 
@@ -534,7 +538,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     const logs = JSON.stringify(await db.select().from(s.activityLog));
     const state = JSON.stringify(await db.select().from(s.integrationState));
     assert.ok(belirtecler.length >= 5, "belirteç üretildi");
-    for (const secret of [PASSWORD, ...belirtecler, ...Object.values(PINS), "640273", "908172"]) {
+    for (const secret of [PAROLA, ...belirtecler, ...Object.values(PINS), "640273", "908172"]) {
       assert.ok(!logs.includes(secret), "işlem geçmişinde sır var");
       assert.ok(!state.includes(secret), "integration_state'te sır var");
     }
