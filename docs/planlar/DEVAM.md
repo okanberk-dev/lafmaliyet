@@ -182,6 +182,28 @@ girdikten sonra).
   `yonetim-host`. Göç yok; kasanın uçları ve anahtar çözümü değişmedi.
 - Sıradaki: K-C (ladmin'den ayırma; konsol canlıda denendikten sonra).
 
+## 28 Kasım: ladmin'den ayırma (dal ladminden-ayirma; K-C)
+
+- Kapı: `src/server/auth/dal.ts` › `requireAnaAdmin` yalnız `getYonetimUser` (konsol oturumu) kabul eder; panel
+  oturumuyla asıl yönetici `KONSOLDA_YAPILIR` ("Bu iş Yönetim konsolunda yapılır", `src/lib/asil-yonetici.ts`), öteki
+  yönetici `yalnizAsilYonetici(iş)`. Karışık eylemler (`updateBranch`, kullanıcı eylemleri, `createAccessLink`,
+  `emailAccess`) iki oturumu da kabul eder; korunan kısım için `requireAnaAdmin` ister. Sahip konsola girebildiğini
+  doğruladı (28 Kasım).
+- ladmin: `src/components/panel/konsol-notu.tsx` (tek cümle, asıl yöneticiye `panelden(...)` bağlantısı); Şubeler
+  (`branches-admin.tsx`; pencere tür, kasa programı ve açık / kapalı göndermez, `changedGuardedFields` kalktı),
+  Şubeler › şube › AsilPOS bağlantısı (`kasa-anahtari.tsx`, `yer="ladmin"` salt okunur), Ayarlar › AsilPOS (geçiş günü
+  salt okunur; `gecis-gunu.tsx`'in kilit seçeneği kalktı). Menü ve palet: "Şube ekleme" ve asıl yönetici bayrağı
+  (`anaAdmin`) kabuktan kalktı. `/panel/sube-ekleme` → `icerik.tsx` (asıl yönetici konsola yönlenir, öteki tek cümle).
+- Konsol: Şube ekleme bileşeninin `yer` seçeneği kalktı (yalnız konsolda); Yöneticiler › İşlemler'e "Adı ve giriş
+  e-postası" (e-posta değişikliği parolayla).
+- Yardım, asistan kılavuzu (`guides.ts`: yeni `kasa-anahtari` konusu; yollar `/panel/subeler`, adımlar konsolu anar),
+  docs/ASISTAN-ISLEMLER.md, docs/ROLLER.md, docs/SUBE.md, docs/ASILPOS.md, plan (K-C bitti); `npm run asistan:bilgi`.
+- Test: `tests/ladmin-ayirma-db.test.ts` (`LADMIN_AYIRMA_TEST_DATABASE_URL`); bilerek güncellenenler `asil-yonetici`,
+  `asil-yonetici-db`, `hesap-yetki-db`, `kasa-acilis-db`, `roller-db`, `yonetici-hesaplari-db`, `kenar-cubugu`,
+  `asilpos-kurulum`, `asilpos-sube`, `sube-ayarlari-2`, `subeler`, `yonetim-host`. Göç yok, yeni uç yok; kasanın uçları,
+  anahtar çözümü ve kasa açılışının e-posta ve parolalı uçları değişmedi.
+- Sıradaki: KALANLAR.md › §4 (taşıma paketi ve anahtarlar).
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)

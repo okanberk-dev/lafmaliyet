@@ -29,7 +29,7 @@ import type { NextRequest } from "next/server";
 import postgres from "postgres";
 
 import { ASILPOS_GROUP } from "../src/lib/branch-settings/groups";
-import { yalnizAsilYonetici } from "../src/lib/asil-yonetici";
+import { KONSOLDA_YAPILIR, yalnizAsilYonetici } from "../src/lib/asil-yonetici";
 import { ENV_ONEKI } from "../src/lib/asilpos/env";
 import { ESKI_ENV_ONEKI } from "../src/lib/asilpos/eski-adlar";
 import { KURULU_NEDEN, OTURUM_DOLDU, YALNIZ_ASIL_ACAR } from "../src/lib/asilpos/kasa-acilis";
@@ -185,6 +185,13 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     await dal.startSession(u);
     reqHeaders = new Headers({ "next-action": "test" });
   };
+  /** Asıl yönetici Yönetim konsolunda (yalnız konsol çerezi): şube ve kasa işleri yalnız bununla geçer (K-C) */
+  const konsol = async () => {
+    jar = new Jar();
+    const [u] = await db.select().from(s.users).where(eq(s.users.id, ids.ana));
+    await dal.startYonetimSession(u);
+    reqHeaders = new Headers({ "next-action": "test" });
+  };
 
   /** Uca istek: gövde JSON; `key` verilirse şubenin anahtarıyla imzalı; her çağrı ayrı IP (IP sınırı testleri bozmasın) */
   async function call(yol: "giris" | "bagla" | "teslim", body: unknown, o: { key?: string; ip?: string } = {}) {
@@ -260,7 +267,11 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
   });
 
   test("Bilgisayara kur Tuzla'yı hazırlar: kasa programı ModPOS kalsa da listede, eski tek deneme günü 'boş'", async () => {
+    // ladmin'den reddedilir, hiçbir şey yazılmaz (K-C); konsoldan geçer
     await signIn("ana");
+    assert.deepEqual(await branches.sendBranchInstall({ id: "tuzla", email: "tuzla@ornek.com" }), { ok: false, error: KONSOLDA_YAPILIR });
+    assert.equal(await stateOf("asilpos.hazirlik:tuzla"), undefined, "ladmin'den hazırlık yazılmadı");
+    await konsol();
     const r = await branches.sendBranchInstall({ id: "tuzla", email: "tuzla@ornek.com" });
     assert.ok(r.ok, JSON.stringify(r));
     assert.equal((await db.select().from(s.branches).where(eq(s.branches.id, "tuzla")))[0].posSource, "modpos", "kasa programı değişmedi");
@@ -358,6 +369,8 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     await signIn("ali");
     assert.deepEqual(await branches.saveBranchStaff({ id: "fethiye", personel: staff }), { ok: false, error: yalnizAsilYonetici("ilkPersonel") });
     await signIn("ana");
+    assert.deepEqual(await branches.saveBranchStaff({ id: "fethiye", personel: staff }), { ok: false, error: KONSOLDA_YAPILIR });
+    await konsol();
     const sample = await branches.saveBranchStaff({ id: "fethiye", personel: [{ rol: "patron", ad: "A", pin: "1111" }] });
     assert.ok(!sample.ok && /örnek PIN/.test(sample.error) && !sample.error.includes("1111"), JSON.stringify(sample));
     const same = await branches.saveBranchStaff({ id: "fethiye", personel: [staff[0], { ...staff[1], pin: PINS.patron }] });
@@ -432,7 +445,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
   });
 
   test("kurulum kodu: kasa kaydı yazılır; eski kasanın yanıtı bugünküyle aynı, yeni kasa açık anahtarla personeli alır; biçim bağla ile aynı", async () => {
-    await signIn("ana");
+    await konsol();
     const k = kasaAnahtari();
     // Yeni şube ilk personeliyle ve e-postayla (kurulum bağlantısı ve hazırlık)
     const created = await branches.createBranch({
@@ -478,7 +491,11 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
   test("Kasayı serbest bırak: yalnız asıl yönetici, kurulu kasada, ad ve parola; eski anahtar 401, kayıt boş, bekleyen kod iptal, yeni bağlama çalışır", async () => {
     await signIn("ali");
     assert.deepEqual(await branches.releaseBranchTill({ id: "tuzla", ad: "Tuzla" }, { password: PAROLA }), { ok: false, error: yalnizAsilYonetici("kasaSerbest") });
+    // Asıl yönetici ladmin'den: parola sorulmadan, hiçbir şey yazılmadan reddedilir (K-C)
     await signIn("ana");
+    assert.deepEqual(await branches.releaseBranchTill({ id: "tuzla", ad: "Tuzla" }, { password: "yanlis-parola" }), { ok: false, error: KONSOLDA_YAPILIR });
+    assert.equal((await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Hatalı parola onayı (AsilPOS)"))).length, 0, "parola denenmedi");
+    await konsol();
     assert.deepEqual(await branches.releaseBranchTill({ id: "marina", ad: "Tuzla" }, { password: PAROLA }), { ok: false, error: "Onay için şubenin adını tam yazın" });
     assert.deepEqual(await branches.releaseBranchTill({ id: "tuzla", ad: " tuzla " }), { ok: false, error: STEP_UP_REQUIRED });
     // Kurulu kasa varken yeni kurulum bağlantısı (onayla): serbest bırakma onu iptal eder

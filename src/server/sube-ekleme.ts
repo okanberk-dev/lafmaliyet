@@ -7,10 +7,9 @@ import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
- * Şube ekleme ekranının verisi (docs/SUBE.md › Şube ekleme): ladmin'de /panel/sube-ekleme ve Yönetim konsolunda
- * "Şubeler ve kasalar" (/yonetim) aynı veriyi aynı bileşene (src/components/sube-ekleme) verir. Şubeler, kayıtlı
- * e-postaları, fiziksel şubelerin kasa durumu, ilk personel durumu (PIN'siz) ve kurulu kasaların serbest bırakma bilgisi.
- * Yetki denetimi burada değil: çağıran sayfa ister (panelde asıl yönetici, konsolda requireYonetim)
+ * Şube ekleme ekranının verisi (docs/SUBE.md › Şube ekleme): Yönetim konsolu › "Şubeler ve kasalar" (/yonetim; bileşen
+ * src/components/sube-ekleme). Şubeler, kayıtlı e-postaları, fiziksel şubelerin kasa durumu, ilk personel durumu
+ * (PIN'siz) ve kurulu kasaların serbest bırakma bilgisi. Yetki denetimi burada değil: çağıran sayfa requireYonetim ister
  */
 export async function subeEklemeVerisi(db: DB = getDb()) {
   const [rows, emailRows] = await Promise.all([listBranches(db), db.select({ id: s.branches.id, email: s.branches.email }).from(s.branches)]);

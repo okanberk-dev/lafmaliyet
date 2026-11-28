@@ -64,21 +64,18 @@ interface BranchPick {
 
 /**
  * `assistant`: alt menüde panel asistanının sekmesi (yalnız yönetici ve asistan açıkken; panel düzeni sunucuda verir,
- * docs/ASISTAN.md). `anaAdmin`: kişi asıl yönetici (sunucuda hesaplanır: tarayıcı LADMIN_ANA_ADMIN'i göremez; Şube
- * ekleme satırı kenar çubuğunda, çekmecede ve paletde yalnız ona)
+ * docs/ASISTAN.md)
  */
 export function Sidebar({
   user,
   index = [],
   branch,
   assistant = false,
-  anaAdmin = false,
 }: {
   user: User;
   index?: SearchEntry[];
   branch?: BranchPick;
   assistant?: boolean;
-  anaAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -172,11 +169,11 @@ export function Sidebar({
   // Seçili kapsamda açık şube özellikleri (karaoke, uygulama siparişi, garson çağır, yemek kartı; docs/SUBE.md › Şube
   // özellikleri): kapalı özelliğin ekranı kenar çubuğunda, çekmecede, alt menüde ve paletde yok
   const features = branch ? BRANCH_FEATURE_IDS.filter((f) => featureInScope(f, branch.scope, branch.branches)) : undefined;
-  const tree = navTreeFor(user.role, features, anaAdmin);
+  const tree = navTreeFor(user.role, features);
   const title = mobileTitleFor(pathname);
   // Telefonun üst çubuğunda görülen şube (tek şube açıkken yok)
   const barBranch = branch ? topBarBranchLabel(branch.scope, branch.branches) : null;
-  const allowed = (i: NavItem) => i.roles.includes(user.role) && (!i.anaAdmin || anaAdmin) && screenFeatureOn(i.href, features);
+  const allowed = (i: NavItem) => i.roles.includes(user.role) && screenFeatureOn(i.href, features);
   const pages = [...NAV_GROUPS.flatMap((g) => g.items.filter(allowed)), ...NAV_FOOTER.filter(allowed)];
 
   // Yardım iki rolde: her rol kendi sayfasına (personelinkinde yönetici bölümleri yok)

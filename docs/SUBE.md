@@ -46,28 +46,32 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 
 ## Ekran
 
-**Ayarlar › Şubeler** (`/panel/subeler`, yalnız yönetici): liste ve satıra dokununca düzenleme penceresi (ad, tür,
-kasa kaynağı, POS oranı, açılış günü, şubenin e-postası, açık / kapalı). **28 Kasım 2026:** şubeyi kapatmak, yeniden
-açmak, silmek ve kasa programını (türünü) değiştirmek yalnız asıl yöneticide ([ROLLER.md › Asıl
-yönetici](ROLLER.md#asıl-yönetici)); öteki yöneticiye bu alanlar kapalı ve nedeni yazılı, sunucu da reddeder. Ad, POS
-oranı, açılış günü ve şubenin e-postası her yöneticide. Düzenleme penceresinin e-postası şubenin kendi kaydından dolar
-(eskiden son kurulum bağlantısından doluyordu); kaydetmek hesap açmaz, bağlantı göndermez. Listenin başındaki "AsilPOS
-kasası kur" kartı ve "Şube ekle" düğmesi kalktı: yerine asıl yöneticiye **Şube ekleme** bağlantısı, ötekine açıklama.
-Her değişiklik işlem geçmişine yazılır. Pencere açık / kapalı durumu, türü ve kasa programını yalnız kullanıcı onları
-pencerede değiştirdiyse gönderir (`changedGuardedFields`, `src/lib/branches.ts`); `updateBranch` verilmeyen alanın
-eskisini korur. Konsolda kapatılan şube ladmin'deki ad düzenlemesiyle yeniden açılmaz.
+**Ayarlar › Şubeler** (`/panel/subeler`, yalnız yönetici): liste ve satıra dokununca düzenleme penceresi (ad, POS
+oranı, açılış günü, şubenin e-postası; her yönetici). **28 Kasım 2026 (K-C):** şubeyi açmak, kapatmak, yeniden açmak,
+silmek, türü ve kasa programını değiştirmek asıl yöneticinin işidir ve yalnız **Yönetim konsolunda** yapılır
+([ROLLER.md › Asıl yönetici](ROLLER.md#asıl-yönetici); aşağıda [Şube işlemleri](#şube-işlemleri-yönetim-konsolu)).
+Pencerede tür, kasa programı ve açık / kapalı salt okunur, silme düğmesi yok; yerlerinde "Bu iş Yönetim konsolunda
+yapılır" (asıl yöneticiye şubenin konsoldaki sayfasına bağlantı). Listenin başlığında da aynı cümle, şube açmak ve kasa
+kurmak için (asıl yöneticiye konsolun Şubeler ve kasalar sayfasına bağlantı). Sunucu da reddeder: asıl yönetici
+ladmin'in oturumuyla gelirse "Bu iş Yönetim konsolunda yapılır", öteki yönetici "Bu işlemi yalnız asıl yönetici yapar:
+…". Düzenleme penceresinin e-postası şubenin kendi kaydından dolar; kaydetmek hesap açmaz, bağlantı göndermez. Her
+değişiklik işlem geçmişine yazılır. Pencere açık / kapalı durumu, türü ve kasa programını hiç göndermez; `updateBranch`
+verilmeyen alanın eskisini korur, konsolda kapatılan şube ladmin'deki ad düzenlemesiyle yeniden açılmaz.
 
 ### Şube ekleme
 
-**Ayarlar › Şube ekleme** (`/panel/sube-ekleme`, 28 Kasım 2026; yalnız asıl yönetici): menüde yalnız ona görünür
-(bayrak sunucuda hesaplanır), başka yönetici adresle açarsa içerik yerine tek cümle görür; eylemler ayrıca
-`requireAnaAdmin` ister. Üst düzey adres: `/panel/subeler/[id]` dinamik yoluyla çakışmasın. Bölümler:
+**Yönetim konsolu › Şubeler ve kasalar** (`https://yonetim.laffogato.net/yonetim`, 28 Kasım 2026; yalnız asıl
+yönetici, konsolun kendi girişiyle): bileşen `src/components/sube-ekleme`, veri `src/server/sube-ekleme.ts`, eylemler
+`requireAnaAdmin` ister (yalnız konsol oturumu). Yön gösteren metin konsolun kendi adlarını kullanır (ladmin'e
+göndermez) ve her şube satırında **Şube işlemleri** vardır (aşağıda). Konsolun öteki sekmeleri **Yöneticiler** ve
+**Lisans ve güncelleme** (AsilPOS Merkez'e bağlantı ve şubelerin kasa durumu özeti, salt okunur).
 
-Aynı ekran **Yönetim konsolu › Şubeler ve kasalar**'da (`https://yonetim.laffogato.net/yonetim`) da açılır: aynı
-bileşen (`src/components/sube-ekleme`), aynı veri (`src/server/sube-ekleme.ts`) ve aynı eylemler. Konsolda yön gösteren
-metin konsolun kendi adlarını kullanır (ladmin'e göndermez) ve her şube satırında **Şube işlemleri** vardır (aşağıda).
-Konsolun öteki sekmesi **Lisans ve güncelleme**: AsilPOS Merkez'e bağlantı (Uzaktan'ın adresi) ve şubelerin kasa
-durumu özeti (salt okunur).
+**ladmin'deki eski adres** (`/panel/sube-ekleme`, eskiden Ayarlar › Şube ekleme; K-C ile kalktı): menüde ve komut
+paletinde yok. Eski bağlantılar kırılmasın diye adres durur: asıl yönetici konsolun Şubeler ve kasalar sayfasına
+yönlenir (`YONETIM_URL` tanımlıysa konsolun adresi, değilse aynı adresteki `/yonetim`), öteki yönetici tek cümle görür
+("Bu iş Yönetim konsolunda yapılır").
+
+Konsoldaki ekranın bölümleri:
 
 1. **Yeni şube:** ad (kimlik kendiliğinden önerilir: "Laffogato Marina" → `laffogato-marina`), tür, kasa programı, POS
    oranı, açılış günü, şubenin e-postası ve **İlk personel (isteğe bağlı)**: Patron, Müdür, Barista; her biri ad ve PIN
@@ -107,23 +111,24 @@ değişmez.
 **Yönetim konsolu › Şubeler ve kasalar › şube** (`/yonetim/sube/[id]`, 28 Kasım 2026; yalnız asıl yönetici, sayfa
 `requireYonetim` ister): fiziksel şubenin satırındaki ve "Online kanallar" listesindeki **Şube işlemleri** düğmesiyle
 açılır (kapalı şubede de). Tasarımdaki K-A'nın ikinci yarısı ([planlar/yonetim-konsolu.md](planlar/yonetim-konsolu.md)).
-Var olan sunucu eylemleri, aynı kurallar ve aynı onaylar; ladmin'deki düğmeler de bu aşamada yerinde durur.
+Var olan sunucu eylemleri, aynı kurallar ve aynı onaylar. K-C'den (28 Kasım 2026) beri bu işler yalnız burada: ladmin'de
+düğmelerin yerinde salt okunur durum ve "Bu iş Yönetim konsolunda yapılır".
 
 | Kart | Eylem ve kural |
 |---|---|
 | Açık / kapalı | `updateBranch({id, active})`; onay penceresi. Sabit kayıt (Tuzla, laffogato.net) ve son açık şube kapatılmaz (`branchChangeError`, ekran önceden söyler) |
 | Tür ve kasa programı | `updateBranch({id, kind, posSource})`; onay penceresi ne değişeceğini söyler. AsilPOS'tan ModPOS'a dönüşte şube AsilPOS'u kullanıyorsa sunucunun onayı (`posOffConfirmText`), onaylanınca geçiş günü silinir |
-| AsilPOS'a geçiş günü | Yalnız kasa programı AsilPOS olan şubede; ladmin'in Ayarlar › AsilPOS'undaki form (`src/components/sube-islemleri/gecis-gunu.tsx`, `saveAsilposSwitchDay`); onay penceresi etkileri ve ayları sayar, kapalı dönemi etkileyen değişiklik yazılmaz |
-| AsilPOS bağlantısı (kasa anahtarı) | Kasası AsilPOS olan ya da kurulumu yapılmış şubede; ladmin'in Şube ayarları kartı (`src/components/sube-islemleri/kasa-anahtari.tsx`, `saveAsilposSecret`). Döndürme ve silme parolayla (`requireStepUp`, konsol oturumuyla) |
+| AsilPOS'a geçiş günü | Yalnız kasa programı AsilPOS olan şubede; form `src/components/sube-islemleri/gecis-gunu.tsx` (`saveAsilposSwitchDay`); onay penceresi etkileri ve ayları sayar, kapalı dönemi etkileyen değişiklik yazılmaz. ladmin'in Ayarlar › AsilPOS'u günü yalnız gösterir |
+| AsilPOS bağlantısı (kasa anahtarı) | Kasası AsilPOS olan ya da kurulumu yapılmış şubede; kart `src/components/sube-islemleri/kasa-anahtari.tsx` (`saveAsilposSecret`). Döndürme ve silme parolayla (`requireStepUp`, konsol oturumuyla). ladmin'in Şube ayarları kartı yalnız durumu gösterir |
 | Eski AsilPOS anahtarı | Kasası artık AsilPOS olmayan şubede panelde kalan anahtar: yalnız silinir, parolayla |
 | Şubeyi sil | `deleteBranch`; yalnız hiç kaydı olmayan şube. Silinemezse neden önceden yazılı, düğme kapalı |
 
 **Canlı şube:** son 7 günde kasadan gün sonu gelen şubede (bugün Marina) sayfanın başında kırmızı uyarı; kapatma,
 kasa programı, kasa anahtarı ve silme pencerelerinde de aynı uyarı (`canliBaslik`, `src/lib/asilpos/kasa-acilis.ts`).
-Veri `src/server/sube-islemleri.ts`'ten (anahtarın değeri dönmez, yalnız kaynağı ve sorunu). İki yerde kullanılan
-bileşenler ladmin'in klasöründen `src/components/sube-islemleri/`'ye taşındı; ladmin'deki metinler aynı kaldı, konsolda
-yön gösteren metin ladmin'e göndermez. Testler: `tests/konsol-sube-db.test.ts` (`KONSOL_SUBE_TEST_DATABASE_URL`),
-`tests/yonetim-host.test.ts`.
+Veri `src/server/sube-islemleri.ts`'ten (anahtarın değeri dönmez, yalnız kaynağı ve sorunu). Bileşenler
+`src/components/sube-islemleri/`'de; kasa anahtarı kartı ladmin'de salt okunur çizilir (`yer="ladmin"`), konsolda yön
+gösteren metin ladmin'e göndermez. Testler: `tests/konsol-sube-db.test.ts` (`KONSOL_SUBE_TEST_DATABASE_URL`),
+`tests/ladmin-ayirma-db.test.ts` (`LADMIN_AYIRMA_TEST_DATABASE_URL`), `tests/yonetim-host.test.ts`.
 
 ## Dalga 2'nin kararları (4 Kasım 2026)
 
@@ -478,15 +483,16 @@ yazma `src/server/branch-settings.ts`.
     şubenin sürelerini kullanıyorsa: "X şubesinde düzenle" boş sayfaya çıkmasın; ModPOS kartı da öyle).
   - **AsilPOS**: her kasanın (şubenin) kendi geçiş günü ve anahtarı (çok şube, 27 Kasım 2026; okuyucu
     `src/server/pos/tills.ts` `loadPosTills` / `switchDayOf`, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`).
-    Ayarlar › AsilPOS geçiş gününü o şubenin bölümünden bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü
-    ona geçmez. Anahtar şubeyi tanıtır: panel isteğin şubesini imzanın tuttuğu anahtardan bulur (`resolvePosCaller`);
+    Geçiş günü bu satıra yazılır (Yönetim konsolu › şube › Şube işlemleri; ladmin'in Ayarlar › AsilPOS'u yalnız
+    gösterir); kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez. Anahtar şubeyi tanıtır: panel isteğin şubesini imzanın tuttuğu anahtardan bulur (`resolvePosCaller`);
     iki şubenin anahtarı aynı olamaz, ortamdaki anahtar yalnız Marina'nın ve yalnız Marina'nın saklanan anahtarı yokken.
     Anahtarlar önbellekli (kayıtta düşer; önbellek ön süzgeç: imza tutunca anahtarlar veritabanından yeniden okunur,
     döndürülen eski anahtar başka sunucu örneğinde de hemen geçmez, [ASILPOS.md](ASILPOS.md); veritabanı okunamazsa uç
-    503), tarayıcıya, işlem geçmişine ve yedeğe gitmez. Kaydetme ve silme yöneticinin parolasıyla (anahtar gün sonu
-    yazımlarının güven kökü). Kart kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şubede; geçiş günü orada
-    gösterilir, Ayarlar › AsilPOS'ta değişir. Ayarlar › AsilPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır.
-    Kasa kaynağı başka şubeye geçerse eski şubede kalan anahtar o şubenin sayfasından silinir ("Eski AsilPOS anahtarı").
+    503), tarayıcıya, işlem geçmişine ve yedeğe gitmez. Kaydetme ve silme asıl yöneticinin parolasıyla, yalnız Yönetim
+    konsolunda (anahtar gün sonu yazımlarının güven kökü). ladmin'de kart kasası AsilPOS olan ya da AsilPOS kurulumu
+    yapılmış şubede durumu ve geçiş gününü gösterir, alan ve düğme yerine "Bu iş Yönetim konsolunda yapılır". Ayarlar ›
+    AsilPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır. Kasa kaynağı başka şubeye geçerse eski şubede
+    kalan anahtar konsoldaki şube sayfasından silinir ("Eski AsilPOS anahtarı").
     Kütükte AsilPOS'un şubesi yoksa (tek şubeli eski kurulum) geçiş günü eski genel kayda yazılır, okuyan da oradan okur.
   - **ModPOS**: ay rakamına yedek şube başına; föy yalnız anahtarı açık şubenin föyüyse aya girer, hiçbir şubede açık
     değilse föy tablosu okunmaz. Ayarlar › ModPOS API'de her şube bölümünün kendi anahtarı (bağlıysa salt okunur). Kart

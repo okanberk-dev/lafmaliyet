@@ -303,7 +303,10 @@ test("src/app/panel altındaki her ekran menüden ya da bir menü öğesinin alt
   };
   walk(join(process.cwd(), "src/app/panel"), "/panel");
   assert.ok(routes.length > 40, `${routes.length} ekran`);
-  for (const route of routes) {
+  // Eski adresler: menüde yok, yalnız eski bağlantılar kırılmasın diye duran sayfalar (Şube ekleme Yönetim konsoluna
+  // taşındı; asıl yönetici oraya yönlenir, öteki yönetici tek cümle görür)
+  const ESKI_ADRESLER = new Set(["/panel/sube-ekleme"]);
+  for (const route of routes.filter((r) => !ESKI_ADRESLER.has(r))) {
     // Dört rolün ağacı (docs/ROLLER.md): muhasebecinin ana ekranı (/panel/muhasebe) yalnız onun ağacında
     const ok = ROLE_ORDER.some((r) => reaches(navTreeFor(r), route)) || NAV_FOOTER.some((i) => pathMatches(route, i.href, i.match));
     assert.ok(ok, `${route} menüde yok`);
@@ -524,24 +527,24 @@ test("bölüm sekmeleri: Raporlar grubundan türer (Vergi'nin sekmeleri kalktı)
   );
 });
 
-test("Şube ekleme yalnız asıl yöneticinin menüsünde: Ayarlar grubunda, Şubeler'in ardında; bayrak sunucuda", () => {
-  const ana = navTreeFor("admin", undefined, true);
-  const ayarlar = ana.find((n) => n.id === "ayarlar")!;
-  const ids = ayarlar.children!.map((c) => c.id);
-  assert.equal(ids[ids.indexOf("subeler") + 1], "sube-ekleme", ids.join(", "));
-  assert.ok(reaches(ana, "/panel/sube-ekleme"));
-  // Asıl yönetici olmayan yönetici ve öteki roller görmez (varsayılan: yok)
+test("Şube ekleme menüde ve komut paletinde yok (Yönetim konsolunda); asıl yönetici bayrağı kabukta yok", () => {
+  // K-C (docs/planlar/yonetim-konsolu.md): şube açma ve kasa kurma yalnız Yönetim konsolunda. Hiçbir rolün ağacında,
+  // paletin listesinde (NAV_GROUPS, NAV_FOOTER) ya da Yardım'ın ekran listesinde yok
   for (const role of ROLE_ORDER) assert.ok(!reaches(navTreeFor(role), "/panel/sube-ekleme"), role);
-  for (const role of ROLE_ORDER.filter((r) => r !== "admin")) assert.ok(!reaches(navTreeFor(role, undefined, true), "/panel/sube-ekleme"), role);
-  // Palet kaydı da yalnız asıl yöneticiye (sidebar.tsx allowed); sayfanın başlığı Ayarlar grubunu söyler
-  const item = NAV_FOOTER.find((i) => i.href === "/panel/sube-ekleme");
-  assert.equal(item?.anaAdmin, true);
-  assert.equal(groupLabelOf("/panel/sube-ekleme", "admin"), "Ayarlar");
+  assert.ok(![...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER].some((i) => i.href.startsWith("/panel/sube-ekleme")), "palet");
+  assert.deepEqual(
+    navTreeFor("admin")
+      .find((n) => n.id === "ayarlar")!
+      .children!.map((c) => c.id),
+    ["genel-ayarlar", "kullanicilar", "subeler", "parasut"],
+  );
+  assert.equal(groupLabelOf("/panel/sube-ekleme", "admin"), undefined);
+  // Menüde asıl yöneticiye özel satır kalmadı: bayrak kabuktan da kalktı (sunucu ve sayfalar kendi denetimini yapar)
   const sidebar = src("sidebar.tsx");
-  assert.match(sidebar, /navTreeFor\(user\.role, features, anaAdmin\)/);
-  assert.match(sidebar, /\(!i\.anaAdmin \|\| anaAdmin\)/);
-  // Tarayıcı LADMIN_ANA_ADMIN'i göremez: bayrak düzende (sunucu) hesaplanır
-  assert.match(readFileSync(join(process.cwd(), "src/app/panel/layout.tsx"), "utf8"), /anaAdmin=\{isAnaAdmin\(user\)\}/);
-  // Telefonun üst çubuk başlığı
+  assert.match(sidebar, /navTreeFor\(user\.role, features\)/);
+  assert.doesNotMatch(sidebar, /anaAdmin/);
+  assert.doesNotMatch(readFileSync(join(process.cwd(), "src/app/panel/layout.tsx"), "utf8"), /anaAdmin|isAnaAdmin/);
+  assert.doesNotMatch(src("nav.ts"), /anaAdmin/);
+  // Eski adresin telefon başlığı (asıl yönetici konsola yönlenir, öteki yönetici tek cümle görür)
   assert.equal(mobileTitleFor("/panel/sube-ekleme"), "Şube ekleme");
 });

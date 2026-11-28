@@ -5,8 +5,9 @@
 //   e-postası, parolası, erişimi, silme, iki adımlı, kilit, oturumlar, bağlantı) okunur ret; ret parola sorusundan önce
 //   (parolasız, yanlış ve doğru parolayla aynı ret; parola denenmez, işlem geçmişine "Hatalı parola" düşmez); hiçbir
 //   satır yazılmaz. Başka bir yöneticinin yalnız adını değiştirebilir.
-// - Asıl yönetici: panel oturumuyla ve konsol oturumuyla (panel çerezi yok) aynı işler parolayla geçer; konsoldan gelen
-//   kendi ad değişikliği panel oturumu açmaz; öteki yöneticinin konsol çerezi geçmez.
+// - Asıl yönetici: yalnız konsol oturumuyla (panel çerezi yok) işler parolayla geçer (K-C; panel oturumuyla "Bu iş
+//   Yönetim konsolunda yapılır": tests/ladmin-ayirma-db.test.ts); konsoldan gelen kendi ad değişikliği panel oturumu
+//   açmaz; öteki yöneticinin konsol çerezi geçmez.
 // - Öteki yönetici müdür, muhasebeci ve personel hesaplarında bugünkü her şeyi yapar (parolasız), kendi hesabında
 //   Hesabım işleri çalışır.
 // - Kendini pasif yapma, yöneticiliğini alma ve silme kuralları aynen.
@@ -24,7 +25,7 @@ import { asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { yalnizAsilYonetici, type AsilYoneticiIsi } from "../src/lib/asil-yonetici";
+import { KONSOLDA_YAPILIR, yalnizAsilYonetici, type AsilYoneticiIsi } from "../src/lib/asil-yonetici";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { STEP_UP_REQUIRED, WRONG_PASSWORD } from "../src/lib/step-up";
 import * as s from "../src/server/db/schema";
@@ -221,9 +222,13 @@ describe("Yönetici hesapları: veritabanında", { skip: !SERVER_URL && "YONETIC
     assert.equal((await row("veli")).name, "Veli K.");
   });
 
-  test("asıl yönetici, panel oturumuyla: yönetici hesabına dokunan her iş parolayla geçer", async () => {
+  test("asıl yönetici, konsol oturumuyla: yönetici hesabına dokunan her iş parolayla geçer (ladmin'den değil)", async () => {
     await veliHazir();
+    // ladmin'in oturumuyla reddedilir, parola sorulmaz (K-C; bütün işlerin tablosu tests/ladmin-ayirma-db.test.ts)
     await signIn("ana");
+    const invite0 = { mode: "invite", name: "Yeni Yönetici", email: "yeni@ornek.com", role: "admin", active: true, branchId: null } as const;
+    assert.deepEqual(await settings.createUser(invite0, PW), { ok: false, error: KONSOLDA_YAPILIR });
+    await konsol();
     // Kapı geçer, parola sorulur (parolasız: STEP_UP_REQUIRED)
     const invite = { mode: "invite", name: "Yeni Yönetici", email: "yeni@ornek.com", role: "admin", active: true, branchId: null } as const;
     assert.deepEqual(await settings.createUser(invite), { ok: false, error: STEP_UP_REQUIRED });
@@ -340,14 +345,21 @@ describe("Yönetici hesapları: veritabanında", { skip: !SERVER_URL && "YONETIC
   test("kendi hesabı ve son yönetici: asıl yönetici kendini pasif yapamaz, yöneticiliğini alamaz, silemez", async () => {
     // Öteki yöneticiler pasif: asıl yönetici tek etkin yönetici
     await db.update(s.users).set({ active: false }).where(inArray(s.users.id, [ids.ali, ids.veli]));
-    for (const oturum of [() => signIn("ana"), () => konsol()]) {
-      await oturum();
-      assert.deepEqual(await settings.setUserActive(ids.ana, false, PW), { ok: false, error: "Kendi hesabınızı pasif yapamazsınız" });
-      assert.deepEqual(await save("ana", { role: "staff", branchId: null }, PW), { ok: false, error: "Kendi yönetici yetkinizi kaldıramazsınız" });
-      assert.deepEqual(await save("ana", { active: false }, PW), { ok: false, error: "Kendi yönetici yetkinizi kaldıramazsınız" });
-      assert.deepEqual(await settings.deleteUser(ids.ana, PW), { ok: false, error: "Kendi hesabınızı silemezsiniz" });
-      assert.deepEqual(await settings.signOutUserEverywhere(ids.ana), { ok: false, error: "Kendi oturumlarınız için Hesabım'daki parola değişikliğini kullanın" });
-    }
+    // ladmin'den: kendi rolünü ve erişimini değiştirmek yönetici hesabına dokunur, önce "konsolda" reddi (K-C); öteki
+    // kurallar bugünkü gibi
+    await signIn("ana");
+    assert.deepEqual(await settings.setUserActive(ids.ana, false, PW), { ok: false, error: "Kendi hesabınızı pasif yapamazsınız" });
+    assert.deepEqual(await save("ana", { role: "staff", branchId: null }, PW), { ok: false, error: KONSOLDA_YAPILIR });
+    assert.deepEqual(await save("ana", { active: false }, PW), { ok: false, error: KONSOLDA_YAPILIR });
+    assert.deepEqual(await settings.deleteUser(ids.ana, PW), { ok: false, error: "Kendi hesabınızı silemezsiniz" });
+    assert.deepEqual(await settings.signOutUserEverywhere(ids.ana), { ok: false, error: "Kendi oturumlarınız için Hesabım'daki parola değişikliğini kullanın" });
+    // Konsoldan: kurallar aynen
+    await konsol();
+    assert.deepEqual(await settings.setUserActive(ids.ana, false, PW), { ok: false, error: "Kendi hesabınızı pasif yapamazsınız" });
+    assert.deepEqual(await save("ana", { role: "staff", branchId: null }, PW), { ok: false, error: "Kendi yönetici yetkinizi kaldıramazsınız" });
+    assert.deepEqual(await save("ana", { active: false }, PW), { ok: false, error: "Kendi yönetici yetkinizi kaldıramazsınız" });
+    assert.deepEqual(await settings.deleteUser(ids.ana, PW), { ok: false, error: "Kendi hesabınızı silemezsiniz" });
+    assert.deepEqual(await settings.signOutUserEverywhere(ids.ana), { ok: false, error: "Kendi oturumlarınız için Hesabım'daki parola değişikliğini kullanın" });
     const a = await row("ana");
     assert.deepEqual([a.role, a.active], ["admin", true]);
   });

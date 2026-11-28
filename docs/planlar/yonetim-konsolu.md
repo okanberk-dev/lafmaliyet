@@ -135,6 +135,21 @@ sayfasına ilk personeli ve "Kasayı serbest bırak"ı ekliyor.
    düğmeler yerine salt okunur durum ve not; menü, komut paleti, yardım, asistan kılavuzu, belgeler; `/panel/sube-ekleme`
    yönlendirmesi. (`updateBranch` alanlarının isteğe bağlı olması ve kasaya giden metinler K-A'nın ikinci yarısında
    yapıldı.) Konsol canlıda denenmeden bu PR birleşmez.
+   **Yapıldı (28 Kasım 2026, dal `ladminden-ayirma`; sahip konsola kendi hesabıyla girebildiğini doğruladı):**
+   `requireAnaAdmin` yalnız geçerli konsol oturumunu (`getYonetimUser`) kabul eder; panel oturumuyla gelen istek, kişi
+   asıl yönetici bile olsa, "Bu iş Yönetim konsolunda yapılır" (`KONSOLDA_YAPILIR`) alır, öteki yönetici bugünkü "Bu
+   işlemi yalnız asıl yönetici yapar: …" cümlesini; ret ilk yazımdan ve parola sorusundan önce. Karışık eylemlerde
+   (`updateBranch`, kullanıcı eylemleri, `createAccessLink`) sıradan işler (şubenin adı, açılış günü, oranı, e-postası;
+   müdür, muhasebeci, personel hesapları; başka yöneticinin adı) panel oturumuyla aynen çalışır. ladmin'de: Şubeler'in
+   başlığında şube ekleme düğmesi yerine cümle, düzenleme penceresinde tür, kasa programı ve açık / kapalı salt okunur,
+   silme yok; Şubeler › şube › AsilPOS bağlantısı kartında alan ve düğmeler yerine cümle; Ayarlar › AsilPOS'ta geçiş
+   günü salt okunur. Asıl yöneticiye her cümlenin yanında konsolun ilgili sayfasına bağlantı (`panelden`). Menüden ve
+   komut paletinden "Şube ekleme" kalktı (asıl yönetici bayrağı kenar çubuğundan da kalktı); `/panel/sube-ekleme` asıl
+   yöneticiyi konsolun Şubeler ve kasalar sayfasına yönlendirir, öteki yönetici tek cümle görür. Konsolda eksik kalan
+   iş: Yöneticiler › İşlemler penceresine "Adı ve giriş e-postası" eklendi (ladmin'de yönetici satırları K-B'den beri
+   salt okunur). Yardım, asistan kılavuzu ve belgeler konsolu gösterir. Göç yok, yeni uç yok; kasanın uçları, anahtar
+   çözümü ve kasa açılışının e-posta ve parolalı uçları değişmedi. Test: `tests/ladmin-ayirma-db.test.ts`
+   (`LADMIN_AYIRMA_TEST_DATABASE_URL`). K-C bununla bitti.
 5. **Kasa (ayrı depo):** panel adresi olarak konsol adresinin reddi; açılış akışının metinleri (kasa K5 PR'ıyla).
 6. **Sonra, ayrı iş:** Merkez'in lisans ve güncelleme ekranlarını konsolda tek ekrana almak; yeni cihaz e-postasında
    adresin adı; konsolda "Oturumlar" bölümü.

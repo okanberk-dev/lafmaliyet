@@ -1,20 +1,19 @@
 import { Store } from "lucide-react";
 import Link from "next/link";
 
-import { AsilposSwitchDayForm } from "@/components/sube-islemleri/gecis-gunu";
+import { KonsolNotu } from "@/components/panel/konsol-notu";
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
-import { asilYoneticiNotu } from "@/lib/asil-yonetici";
 import { durumMetni, hedefUyumlu, KASA_RAPORU_GUN } from "@/lib/asilpos/anahtar-uyumu";
 import { clearedText, isUnverifiedAfterOk, asilposCardSummary, rejectionText, unverifiedText } from "@/lib/asilpos/status";
-import { ASILPOS_SWITCH_MAX_AHEAD, ASILPOS_SWITCH_MIN, switchEffects } from "@/lib/asilpos/switch";
+import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import type { BranchRow } from "@/lib/branches";
 import { asilposCardView } from "@/lib/pos-cards";
-import { STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
-import { addDays, longDateTR } from "@/lib/reminders";
+import { longDateTR } from "@/lib/reminders";
+import { konsolSubeYolu, panelden } from "@/lib/yonetim-host";
 import { loadAnahtarUyumuKarti, type AnahtarUyumuKarti } from "@/server/asilpos/anahtar-uyumu";
 import { loadAsilposCard, type AsilposCardData } from "@/server/asilpos/status";
 
@@ -55,7 +54,10 @@ export async function AsilposCard({
   products: ProductOption[];
   scope: string;
   branches: readonly BranchRow[];
-  /** Asıl yönetici: geçiş gününü değiştirir (docs/ROLLER.md › Asıl yönetici); öteki yöneticiye alan kapalı, nedeni yazılı */
+  /**
+   * Asıl yönetici: geçiş günü cümlesinin yanında Yönetim konsoluna bağlantı (gün yalnız konsolda değişir; docs/ROLLER.md
+   * › Asıl yönetici). Öteki yöneticiye yalnız cümle
+   */
   anaAdmin?: boolean;
 }) {
   const view = asilposCardView(scope, branches);
@@ -116,11 +118,6 @@ export async function AsilposCard({
             now={now}
             products={products}
             branchName={view.named ? nameOf(data.branchId) : null}
-            effects={switchEffects({
-              branchName: nameOf(data.branchId),
-              modposNames: branches.filter((b) => b.active && b.kind === "fiziksel" && b.posSource === "modpos").map((b) => b.name),
-              stockEstimate: data.branchId === STOCK_ESTIMATE_BRANCH,
-            })}
           />
         ))}
       </CardContent>
@@ -183,14 +180,12 @@ function TillSection({
   now,
   products,
   branchName,
-  effects,
   anaAdmin,
 }: {
   data: AsilposCardData;
   now: Date;
   products: ProductOption[];
   branchName: string | null;
-  effects: string[];
   anaAdmin: boolean;
 }) {
   const sum = asilposCardSummary(data);
@@ -217,11 +212,11 @@ function TillSection({
               {l}
             </p>
           ))}
-          {/* Anahtarın nereden okunduğu; panelde saklama ve silme şubenin sayfasında (Şube ayarları › AsilPOS bağlantısı) */}
+          {/* Anahtarın nereden okunduğu; kartı şubenin sayfasında (Şube ayarları › AsilPOS bağlantısı), değiştirmek Yönetim konsolunda */}
           <p className="text-[13px] leading-5 text-pretty text-ink-mute">
             {SECRET_SOURCE_TEXT[data.secretSource ?? "yok"]}{" "}
             <Link href={`/panel/subeler/${encodeURIComponent(data.branchId)}#asilpos`} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
-              {data.secretSource === "panel" ? "Şube ayarlarında değiştir" : "Şube ayarlarında panelde sakla"}
+              Şube ayarları › AsilPOS bağlantısı
             </Link>
           </p>
         </div>
@@ -255,16 +250,13 @@ function TillSection({
           <Notice tone={unverifiedLoud ? "warn" : "neutral"} size="sm" title={`${unverifiedText(unverified)}${unverifiedLoud ? "" : " O günden beri gün sonları geliyor."}`} />
         ) : null}
 
-        <AsilposSwitchDayForm
-          branchId={data.branchId}
-          effects={effects}
-          value={data.switchDay}
-          today={today}
-          min={ASILPOS_SWITCH_MIN}
-          max={addDays(today, ASILPOS_SWITCH_MAX_AHEAD)}
-          linked={linked}
-          locked={anaAdmin ? null : asilYoneticiNotu("gecisGunu")}
-        />
+        {/* Geçiş günü burada salt okunur: değiştirmek Yönetim konsolunda (K-C; saveAsilposSwitchDay yalnız konsol oturumuyla) */}
+        <div className="space-y-1 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
+          <p className="text-ink">
+            <span className="text-ink-mute">AsilPOS&apos;a geçiş günü:</span> {data.switchDay ? dayMonthYearTR(data.switchDay) : "yok (kasa ModPOS sayılır)"}
+          </p>
+          <KonsolNotu href={anaAdmin ? panelden(`${konsolSubeYolu(data.branchId)}#gecis-gunu`) : null} konu="Geçiş gününü değiştirmek" />
+        </div>
 
         {data.days.length ? (
           <div className="space-y-2">

@@ -2,7 +2,7 @@
 // "Denemeyi bitir" derken asıl yöneticinin ladmin hesabıyla girer (POST /api/asilpos/acilis/giris), şubesini seçer
 // (POST /api/asilpos/acilis/bagla) ve ilk personelin PIN'lerini aldığını onaylar (POST /api/asilpos/acilis/teslim).
 // Kasası kurulu şube seçilemez; bilgisayar değişikliği yalnız asıl yöneticinin "Kasayı serbest bırak"ıyla (Yönetim
-// konsolu › Şubeler ve kasalar; ladmin › Şube ekleme'de de). Kasaya giden metinler adres yazmaz, "Yönetim konsolu" der
+// konsolu › Şubeler ve kasalar; ladmin'de yok). Kasaya giden metinler adres yazmaz, "Yönetim konsolu" der
 // (docs/planlar/yonetim-konsolu.md). Kurallar ve metinler burada; bu dosya saf (tests/kasa-acilis.test.ts). Sunucu
 // tarafı src/server/asilpos/acilis.ts.
 

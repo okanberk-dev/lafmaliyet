@@ -18,7 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { yalnizAsilYonetici } from "../src/lib/asil-yonetici";
+import { KONSOLDA_YAPILIR, yalnizAsilYonetici } from "../src/lib/asil-yonetici";
 import { ACCOUNTANT_HOME } from "../src/lib/roles";
 import { STEP_UP_REQUIRED } from "../src/lib/step-up";
 import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "../src/lib/two-factor-setup";
@@ -148,6 +148,14 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     jar = new Jar();
     await dal.startSession(await row(k));
   };
+  /**
+   * Ali (asıl yönetici) Yönetim konsolunda (yeni çerez kutusu, yalnız konsol çerezi): bir yönetici hesabına dokunan iş
+   * yalnız bununla geçer (K-C, docs/planlar/yonetim-konsolu.md); ladmin'in oturumuyla "Bu iş Yönetim konsolunda yapılır"
+   */
+  const konsol = async () => {
+    jar = new Jar();
+    await dal.startYonetimSession(await row("ali"));
+  };
   const actions = async () => (await db.select({ action: s.activityLog.action, detail: s.activityLog.detail }).from(s.activityLog)).map((r) => r.action);
 
   test("listedeki anahtar yalnız erişimi yazar: bu arada değişen ad, e-posta ve rol geri dönmez (YO-01)", async () => {
@@ -161,8 +169,11 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     assert.equal(k.sessionVersion, sv + 1, "açık oturumları kapanır");
     assert.deepEqual(await actions(), ["Kullanıcı pasif yapıldı"]);
 
-    // Bu arada yönetici yapılan kişi: kural veritabanındaki role bakar, parola ister; onaylanınca rolü yönetici kalır
+    // Bu arada yönetici yapılan kişi: kural veritabanındaki role bakar. Yönetici hesabı: ladmin'den reddedilir (K-C),
+    // konsolda parola ister; onaylanınca rolü yönetici kalır
     await db.update(s.users).set({ role: "admin", active: true }).where(eq(s.users.id, ids.kemal));
+    assert.deepEqual(await settings.setUserActive(ids.kemal, false), { ok: false, error: KONSOLDA_YAPILIR });
+    await konsol();
     assert.deepEqual(await settings.setUserActive(ids.kemal, false), { ok: false, error: STEP_UP_REQUIRED });
     assert.equal((await row("kemal")).active, true, "parolasız yazılmadı");
     assert.equal((await settings.setUserActive(ids.kemal, false, { password: PASSWORD })).ok, true);
@@ -193,6 +204,10 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     assert.equal((await settings.setUserActive(ids.kemal, false)).ok, true);
     const live = await db.select().from(s.userTokens).where(and(eq(s.userTokens.userId, ids.kemal), sql`${s.userTokens.expiresAt} > now()`));
     assert.equal(live.length, 0, "bağlantı yeniden aktif yapılınca canlanmaz");
+    // Yöneticiyi (Veli) pasif yapmak: ladmin'den reddedilir (K-C), parola sorulmaz; konsolda parola ister
+    assert.deepEqual(await settings.setUserActive(ids.veli, false, { password: "yanlis-parola" }), { ok: false, error: KONSOLDA_YAPILIR });
+    assert.ok(!(await actions()).some((a) => a.startsWith("Hatalı parola onayı")), "ladmin'de parola hiç denenmedi");
+    await konsol();
     assert.deepEqual(await settings.setUserActive(ids.veli, false), { ok: false, error: STEP_UP_REQUIRED });
     // Öteki yönetici (Veli) bir yöneticinin erişimine dokunamaz: ret parola sorusundan önce (Kemal bu arada yönetici
     // yapıldı; Ali'nin hesabında asıl yöneticinin hesap koruması önce gelir)
@@ -217,8 +232,12 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     assert.equal(stale.ok, false);
     assert.match(stale.ok ? "" : stale.error, /bu arada değişti/);
     assert.deepEqual(seenOf(await row("kemal")), { ...seen, email: "kemal.yeni@laffogato.net" });
-    // Rol değişti (bu arada yönetici yapıldı): eski form onu personele indiremez; parola da sorulmaz
+    // Rol değişti (bu arada yönetici yapıldı): ladmin'den hiç yazılmaz (yönetici hesabı, K-C); konsoldaki eski form da onu
+    // personele indiremez, parola da sorulmaz
     await db.update(s.users).set({ role: "admin" }).where(eq(s.users.id, ids.kemal));
+    const ladmin = await settings.saveUser({ id: ids.kemal, name: seen.name, email: "kemal.yeni@laffogato.net", role: "staff", active: true, seen: { ...seen, email: "kemal.yeni@laffogato.net" } });
+    assert.deepEqual(ladmin, { ok: false, error: KONSOLDA_YAPILIR });
+    await konsol();
     const demote = await settings.saveUser({ id: ids.kemal, name: seen.name, email: "kemal.yeni@laffogato.net", role: "staff", active: true, seen: { ...seen, email: "kemal.yeni@laffogato.net" } });
     assert.match(demote.ok ? "" : demote.error, /bu arada değişti/);
     assert.equal((await row("kemal")).role, "admin");

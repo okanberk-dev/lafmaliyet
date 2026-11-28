@@ -235,8 +235,8 @@ test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bil
   // AsilPOS kartı kasası AsilPOS olan ya da kurulumu yapılmış şubede (çok şube; sunucu aynı kurala bakar)
   assert.match(page, /const asilposHere = tillHere \|\| Boolean\(installed\);/);
   assert.match(page, /sourceModpos: branch\.posSource !== "asilpos",/);
-  // Silmek yalnız asıl yöneticide (docs/ROLLER.md › Asıl yönetici): öteki yöneticiye düğme kapalı
-  assert.match(page, /<AsilposOldSecretCard branchId=\{branch\.id\} anaAdmin=\{isAnaAdmin\(me\)\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
+  // Silmek Yönetim konsolunda (K-C): ladmin'de kart salt okunur, asıl yöneticiye konsola bağlantı
+  assert.match(page, /<AsilposOldSecretCard branchId=\{branch\.id\} konsolUrl=\{konsolUrl\} \/>/, "öbür şubede kalan eski anahtar görünür");
   // "X şubesinde düzenle" bağlantısı kartı olan sayfaya çıkar: başka şube bu şubenin ayarını kullanıyorsa kart çizilir
   assert.match(page, /\{modposHere \|\| modpos\.link\?\.sharedWith\.length \? \(/);
   assert.match(page, /\{hasFeature\(branch, "yemek_karti"\) \|\| commission\.link\?\.sharedWith\.length \? \(/);
@@ -250,10 +250,10 @@ test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bil
   const toggle = read("src/components/panel/same-as-toggle.tsx");
   assert.match(toggle, /<ToggleRow/);
   assert.match(toggle, /setBranchSettingLink\(\{ branchId, group, sameAs: to === "link" \? target : null \}\)/);
-  // Anahtar alanı parola kutusu, değer bir daha gösterilmez
+  // Anahtar alanı parola kutusu, değer bir daha gösterilmez; yalnız konsolda (ladmin'de kart salt okunur)
   // Kart ladmin'in Şube ayarları ve konsolun Şube işlemleri için ortak bileşende
   const pos = read("src/components/sube-islemleri/kasa-anahtari.tsx");
-  assert.match(pos, /<PasswordInput\s+id="asilpos-anahtar"/);
+  assert.match(pos, /\{yer === "konsol" \? \(\s*<Field[\s\S]*?<PasswordInput\s+id="asilpos-anahtar"/);
   // Kaydetme ve silme parola penceresiyle
   assert.match(pos, /await saveAsilposSecret\(\{ branchId: data\.branchId, secret: value \}, \{ password \}\)/);
   assert.match(pos, /await saveAsilposSecret\(\{ branchId, secret: null \}, \{ password \}\)/);

@@ -87,7 +87,7 @@ export const EXCLUDED_STATE_PREFIXES: Readonly<Record<string, string>> = {
   "parasut.settings:": "öbür şubelerin Paraşüt bağlantı ayarları (client_secret şifreli); geri yüklemeden sonra yeniden girilir",
   "parasut.connect": "yarım kalmış Paraşüt bağlanma istekleri ve onay bekleyen bağlantı (şifreli, 10 dakika geçerli)",
   // Kasa açılışı (docs/ASILPOS.md › Kasa açılışı): kasaya teslim edilene kadar mühürlü PIN'ler; geçicidir
-  "asilpos.ilk-personel:": "kasaya teslimi bekleyen ilk personelin PIN'leri (şifreli; teslimle ya da en geç 30 günde silinir); geri yüklemeden sonra Şube ekleme'den yeniden girilir",
+  "asilpos.ilk-personel:": "kasaya teslimi bekleyen ilk personelin PIN'leri (şifreli; teslimle ya da en geç 30 günde silinir); geri yüklemeden sonra Yönetim konsolu › Şubeler ve kasalar'dan yeniden girilir",
 };
 
 const sqlList = (keys: string[]) => keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");

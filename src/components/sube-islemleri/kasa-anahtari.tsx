@@ -5,13 +5,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
+import { KonsolNotu } from "@/components/panel/konsol-notu";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
-import { asilYoneticiNotu } from "@/lib/asil-yonetici";
 import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/secret-rules";
 import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import { isStepUpError } from "@/lib/step-up";
@@ -19,11 +19,13 @@ import { saveAsilposSecret } from "@/server/actions/branch-settings";
 import type { SecretState } from "@/server/branch-settings";
 
 /*
- * Şubenin kasa anahtarı (docs/SUBE.md › Şube başına ayarlar, docs/ASILPOS.md › Şubeler): iki yerde aynı bileşen ve aynı
- * sunucu eylemi (saveAsilposSecret, parolayla), ladmin'de Şubeler › şube › AsilPOS bağlantısı (/panel/subeler/[id]),
- * Yönetim konsolunda Şubeler ve kasalar › şube (/yonetim/sube/[id]). `yer` yalnız metni ve bağlantıyı seçer: konsolda
- * ladmin'e bağlantı yok, geçiş günü aynı sayfada kendi kartında. `canli`: son günlerde kasadan gün sonu gelen şubede
- * (konsol) kartta ve parola penceresinde belirgin uyarı.
+ * Şubenin kasa anahtarı (docs/SUBE.md › Şube başına ayarlar, docs/ASILPOS.md › Şubeler): iki yerde aynı bileşen. Yönetim
+ * konsolunda Şubeler ve kasalar › şube (/yonetim/sube/[id]) anahtar döndürülür ve silinir (saveAsilposSecret,
+ * parolayla; yalnız konsol oturumuyla geçer). ladmin'de Şubeler › şube › AsilPOS bağlantısı (/panel/subeler/[id])
+ * yalnız durumu gösterir: alan ve düğmeler yerine "Bu iş Yönetim konsolunda yapılır" (docs/planlar/yonetim-konsolu.md ›
+ * K-C), asıl yöneticiye konsolun şube sayfasına bağlantı (`konsolUrl`). Konsolda ladmin'e bağlantı yok, geçiş günü aynı
+ * sayfada kendi kartında. `canli`: son günlerde kasadan gün sonu gelen şubede (konsol) kartta ve parola penceresinde
+ * belirgin uyarı.
  */
 
 /** Bileşenin çizildiği yer: ladmin (Şube ayarları) ya da Yönetim konsolu (Şube işlemleri) */
@@ -79,23 +81,24 @@ const dropText = (legacy: boolean) => (legacy ? "Sunucudaki anahtar kullanılır
 
 /**
  * Şube ayarları › AsilPOS (şube ayarı SUBE_AYAR_GRUBU; docs/SUBE.md › Şube başına ayarlar): kasası AsilPOS olan ya da
- * AsilPOS kurulumu yapılmış şubede. ladmin'de geçiş günü Ayarlar › AsilPOS'ta değişir (denetimleri orada); burada yalnız
- * gösterilir. Konsolda geçiş günü aynı sayfada kendi kartında. Anahtar panelde şifreli saklanır, AsilPOS'taki
- * LAFMALIYET_SYNC_SECRET ile aynı olmalıdır; her şubenin kasası kendi anahtarını kullanır (çok şube). Ortamdaki
- * ASILPOS_SYNC_SECRET yalnız eski kurulumun şubesine (Marina) hizmet eder, onun da saklanan anahtarı yokken (`legacy`);
- * öbür şubede anahtar silinirse kasa bağlantısız kalır. Saklanan anahtar bir daha gösterilmez; yalnız "kayıtlı" der,
- * değiştirilir ya da silinir. "Diğer şubeyle aynı" yok: anahtar şubeyi tanıtır. Değiştirmek ve silmek yalnız asıl
- * yöneticide (`anaAdmin`; sunucu aynı denetimi yapar): öteki yöneticiye alan ve düğmeler kapalı, nedeni yazılı.
+ * AsilPOS kurulumu yapılmış şubede. ladmin'de geçiş günü yalnız gösterilir (değiştirmek konsolda). Konsolda geçiş günü
+ * aynı sayfada kendi kartında. Anahtar panelde şifreli saklanır, AsilPOS'taki LAFMALIYET_SYNC_SECRET ile aynı olmalıdır;
+ * her şubenin kasası kendi anahtarını kullanır (çok şube). Ortamdaki ASILPOS_SYNC_SECRET yalnız eski kurulumun şubesine
+ * (Marina) hizmet eder, onun da saklanan anahtarı yokken (`legacy`); öbür şubede anahtar silinirse kasa bağlantısız
+ * kalır. Saklanan anahtar bir daha gösterilmez; yalnız "kayıtlı" der, değiştirilir ya da silinir. "Diğer şubeyle aynı"
+ * yok: anahtar şubeyi tanıtır. Değiştirmek ve silmek yalnız konsolda (`yer="konsol"`; sunucu da yalnız konsol oturumunu
+ * kabul eder): ladmin'de alan ve düğmeler yok, yerinde tek cümle.
  */
 export function AsilposBranchCard({
   data,
-  anaAdmin = false,
   yer = "ladmin",
+  konsolUrl = null,
   canli = null,
 }: {
   data: AsilposBranchData;
-  anaAdmin?: boolean;
   yer?: SubeIslemYeri;
+  /** ladmin: şubenin Yönetim konsolundaki sayfası (yalnız asıl yöneticiye; öteki yöneticiye null) */
+  konsolUrl?: string | null;
   /** Canlı şubenin uyarı başlığı (canliBaslik); kartta ve parola penceresinde */
   canli?: string | null;
 }) {
@@ -165,24 +168,25 @@ export function AsilposBranchCard({
             tech="AUTH_SECRET değişti"
           />
         ) : null}
-        <Field
-          label={data.stored === "saved" ? "Anahtarı değiştir" : "Anahtarı panelde sakla"}
-          htmlFor="asilpos-anahtar"
-          hint={anaAdmin ? `En az ${ASILPOS_SECRET_MIN} karakter; AsilPOS'taki bağlantı anahtarıyla aynı. Şifreli saklanır, bir daha gösterilmez.` : asilYoneticiNotu("kasaAnahtari")}
-          error={short ? `En az ${ASILPOS_SECRET_MIN} karakter` : undefined}
-        >
-          <PasswordInput
-            id="asilpos-anahtar"
-            toggleLabels={{ show: "Anahtarı göster", hide: "Anahtarı gizle" }}
-            autoComplete="new-password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            spellCheck={false}
-            autoCapitalize="none"
-            disabled={!anaAdmin}
-            aria-invalid={short ? true : undefined}
-          />
-        </Field>
+        {yer === "konsol" ? (
+          <Field
+            label={data.stored === "saved" ? "Anahtarı değiştir" : "Anahtarı panelde sakla"}
+            htmlFor="asilpos-anahtar"
+            hint={`En az ${ASILPOS_SECRET_MIN} karakter; AsilPOS'taki bağlantı anahtarıyla aynı. Şifreli saklanır, bir daha gösterilmez.`}
+            error={short ? `En az ${ASILPOS_SECRET_MIN} karakter` : undefined}
+          >
+            <PasswordInput
+              id="asilpos-anahtar"
+              toggleLabels={{ show: "Anahtarı göster", hide: "Anahtarı gizle" }}
+              autoComplete="new-password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              spellCheck={false}
+              autoCapitalize="none"
+              aria-invalid={short ? true : undefined}
+            />
+          </Field>
+        ) : null}
         {data.legacy ? (
           <Notice tone="neutral" size="sm" title="Anahtar nereden okunur" text="Panelde saklanan anahtar sunucudakinin önüne geçer; silinirse sunucudaki kullanılır." tech={secretTech(data.envName)} />
         ) : (
@@ -193,16 +197,20 @@ export function AsilposBranchCard({
             text="Yalnız burada saklanan anahtar kullanılır. Silinirse kasa bağlantısız kalır: yeni anahtar ya da kurulum kodu gerekir."
           />
         )}
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setAsk("save")} disabled={!anaAdmin || !secret.trim() || short} className="max-sm:w-full">
-            Kaydet
-          </Button>
-          {data.stored !== "none" ? (
-            <Button variant="secondary" onClick={() => setAsk("drop")} disabled={!anaAdmin} className="max-sm:w-full">
-              Paneldeki anahtarı sil
+        {yer === "konsol" ? (
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setAsk("save")} disabled={!secret.trim() || short} className="max-sm:w-full">
+              Kaydet
             </Button>
-          ) : null}
-        </div>
+            {data.stored !== "none" ? (
+              <Button variant="secondary" onClick={() => setAsk("drop")} className="max-sm:w-full">
+                Paneldeki anahtarı sil
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <KonsolNotu href={konsolUrl} konu="Anahtarı değiştirmek ya da silmek" />
+        )}
       </div>
       {ask ? (
         <ConfirmPasswordDialog
@@ -228,18 +236,22 @@ export function AsilposBranchCard({
 
 /**
  * Kasası artık AsilPOS olmayan (ve kurulumu olmayan) şubede kalan, panelde saklanmış AsilPOS anahtarı: kullanılmaz ama
- * kasa kaynağı AsilPOS'a dönerse yine geçerli olurdu. Burada yalnız silinir (parolayla); öbür şubelerin anahtarları değişmez
+ * kasa kaynağı AsilPOS'a dönerse yine geçerli olurdu. Konsolda yalnız silinir (parolayla); öbür şubelerin anahtarları
+ * değişmez. ladmin'de düğme yerine "Bu iş Yönetim konsolunda yapılır"
  */
-export function AsilposOldSecretCard({ branchId, anaAdmin = false }: { branchId: string; anaAdmin?: boolean }) {
+export function AsilposOldSecretCard({ branchId, yer = "ladmin", konsolUrl = null }: { branchId: string; yer?: SubeIslemYeri; konsolUrl?: string | null }) {
   const [open, setOpen] = useState(false);
   return (
     <Card id="asilpos" className="scroll-mt-20">
       <CardHeader icon={<KeyRound />} title="Eski AsilPOS anahtarı" description="Bu şubenin kasası artık AsilPOS değil, ama panelde saklanan AsilPOS anahtarı duruyor. Kullanılmıyor; silebilirsiniz." />
       <div className="space-y-2 px-5 pb-5">
-        <Button variant="secondary" onClick={() => setOpen(true)} disabled={!anaAdmin} className="max-sm:w-full">
-          Paneldeki eski AsilPOS anahtarını sil
-        </Button>
-        {anaAdmin ? null : <p className="text-[13px] text-ink-mute">{asilYoneticiNotu("kasaAnahtari")}</p>}
+        {yer === "konsol" ? (
+          <Button variant="secondary" onClick={() => setOpen(true)} className="max-sm:w-full">
+            Paneldeki eski AsilPOS anahtarını sil
+          </Button>
+        ) : (
+          <KonsolNotu href={konsolUrl} konu="Eski anahtarı silmek" />
+        )}
       </div>
       {open ? (
         <ConfirmPasswordDialog

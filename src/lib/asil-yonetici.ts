@@ -5,7 +5,8 @@
 // yöneticilere karşı korunur. Yönetici hesaplarını da yalnız o yönetir (yonetici* işleri; Yönetim konsolu › Yöneticiler):
 // öteki yöneticiler müdür, muhasebeci ve personel hesaplarını bugünkü gibi yönetir, başka bir yöneticinin yalnız adını
 // değiştirebilir. Tek tanım burada: sunucu eylemleri `requireAnaAdmin` (src/server/auth/dal.ts) ve buradaki ret
-// metinleriyle, arayüz aynı `isAnaAdmin` ile karar verir. Bu dosya saf (tests/asil-yonetici.test.ts).
+// metinleriyle, arayüz aynı `isAnaAdmin` ile karar verir. Bu işler yalnız Yönetim konsolunun oturumuyla yapılır (K-C):
+// asıl yönetici ladmin'den gelirse KONSOLDA_YAPILIR alır. Bu dosya saf (tests/asil-yonetici.test.ts).
 //
 // Kodda eski ad ("ana yönetici": isAnaAdmin, LADMIN_ANA_ADMIN) kalır; arayüzde ve belgede tek ad "Asıl yönetici".
 
@@ -60,6 +61,13 @@ export function yalnizAsilYonetici(is: AsilYoneticiIsi): string {
   return `Bu işlemi yalnız asıl yönetici yapar: ${ASIL_YONETICI_ISLERI[is]}`;
 }
 
+/**
+ * Asıl yöneticinin işleri yalnız Yönetim konsolunun oturumuyla yapılır (docs/planlar/yonetim-konsolu.md › K-C): asıl
+ * yönetici ladmin'in (panel) oturumuyla gelirse eylem bu cümleyle reddeder; ladmin'de taşınan düğmelerin yerinde de bu
+ * cümle durur (asıl yöneticiye konsolun ilgili sayfasına bağlantıyla). Öteki yönetici yalnizAsilYonetici'yi alır
+ */
+export const KONSOLDA_YAPILIR = "Bu iş Yönetim konsolunda yapılır";
+
 /** Adres asıl yöneticinin adresi mi (büyük-küçük harf ve boşluk fark etmez) */
 export function isAnaAdminEmail(email: string | null | undefined, env: Env = process.env): boolean {
   return !!email && email.trim().toLowerCase() === anaAdminEmail(env);
@@ -92,12 +100,6 @@ export function asilAdresRet(o: { next: string; before: string | null }, env: En
 
 /** Asıl yönetici kendi e-postasını değiştiremez (Hesabım): yetki bu adrese bağlı, değişirse yetki giderdi */
 export const ASIL_EPOSTA_SABIT = "Asıl yöneticinin e-postası değişmez: asıl yönetici yetkisi bu adrese bağlıdır";
-
-/** Arayüzde, asıl yönetici olmayan yöneticiye korunan düğmenin yanında (tek cümle) */
-export function asilYoneticiNotu(is: AsilYoneticiIsi): string {
-  const metin = ASIL_YONETICI_ISLERI[is];
-  return `${metin.charAt(0).toLocaleUpperCase("tr-TR")}${metin.slice(1)} yalnız asıl yöneticinin işidir.`;
-}
 
 /**
  * İş bir yönetici hesabına dokunuyor mu: işlemden önceki ya da sonraki rol yönetici (docs/ROLLER.md › Yönetici

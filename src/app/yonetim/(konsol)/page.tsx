@@ -15,11 +15,11 @@ import { subeEklemeVerisi } from "@/server/sube-ekleme";
 export const metadata: Metadata = { title: "Şubeler ve kasalar" };
 
 /**
- * Konsol › Şubeler ve kasalar (docs/planlar/yonetim-konsolu.md › K-A): ladmin'deki /panel/sube-ekleme ile aynı bileşen,
- * aynı veri ve aynı eylemler (yeni şube, kasa durumu, Bilgisayara kur, ilk personel, Kasayı serbest bırak); konsolda her
- * şube satırında "Şube işlemleri" (/yonetim/sube/[id]: kapatma, silme, tür, kasa programı, geçiş günü, kasa anahtarı).
- * Online kanallar ayrı listede (kasaları yok). Eylemler requireAnaAdmin'le konsol oturumunu da kabul eder
- * (src/server/auth/dal.ts); sayfa ayrıca requireYonetim ister
+ * Konsol › Şubeler ve kasalar (docs/planlar/yonetim-konsolu.md › K-A, K-C): yeni şube, kasa durumu, Bilgisayara kur, ilk
+ * personel, Kasayı serbest bırak; her şube satırında "Şube işlemleri" (/yonetim/sube/[id]: kapatma, silme, tür, kasa
+ * programı, geçiş günü, kasa anahtarı). Online kanallar ayrı listede (kasaları yok). ladmin'deki eski Şube ekleme adresi
+ * (/panel/sube-ekleme) asıl yöneticiyi buraya yönlendirir. Eylemler asıl yöneticinin işini yalnız konsol oturumuyla kabul
+ * eder (requireAnaAdmin, src/server/auth/dal.ts); sayfa ayrıca requireYonetim ister
  */
 export default function SubelerVeKasalarPage() {
   return (
@@ -49,7 +49,6 @@ async function Icerik() {
         installAction={sendBranchInstall}
         staffAction={saveBranchStaff}
         releaseAction={releaseBranchTill}
-        yer="konsol"
       />
       {kanallar.length ? (
         <Card>

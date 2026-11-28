@@ -1117,16 +1117,19 @@ kopyaladı. Okuyan her yer `src/server/pos/tills.ts`'ten geçer (`loadPosTills`,
   `modposListCounts`, `asilposSalesFrom`, `asilposCountFrom`);
   okuma kuralı `src/lib/constants.ts` › `readAsilposSwitchDay` (takvimde olan gün, 1 Ekim 2026'dan önce değil; bozuk değer
   `null`). Geçiş gününü okuyan her yer bu yardımcılardan geçer.
-- **Kim, nasıl:** yalnız yönetici (`saveAsilposSwitchDay({ branchId, day })`, `src/server/actions/asilpos.ts`; rol
-  çekirdekte de denetlenir, `src/server/asilpos/admin.ts`), yalnız kasası AsilPOS olan şubeye. Kaydetmeden önce onay
+- **Kim, nasıl:** yalnız asıl yönetici, yalnız Yönetim konsolunda (şube › Şube işlemleri; 28 Kasım 2026, K-C;
+  `saveAsilposSwitchDay({ branchId, day })`, `src/server/actions/asilpos.ts`, `requireAnaAdmin("gecisGunu")`; rol
+  çekirdekte de denetlenir, `src/server/asilpos/admin.ts`), yalnız kasası AsilPOS olan şubeye. ladmin'in Ayarlar ›
+  AsilPOS kartı günü yalnız gösterir. Kaydetmeden önce onay
   penceresi: neyin değiştiği (`switchEffects`, şubenin adıyla; son madde hangi kasaların ModPOS'ta kaldığını söyler) ve
   kaynağı değişen günlerin ayları. Etkilenen aylardan biri kapalı dönemdeyse ([DONEM-KAPANISI.md](DONEM-KAPANISI.md))
   kaydedilmez: kapanmış ayların rakamı değişirdi. En erken 1 Ekim 2026, en çok 90 gün ileride. FIFO başlangıcı gibi
   parola istemez; işlem geçmişine "Marina: AsilPOS'a geçiş günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak
   günü siler (şube ayarına `null`).
-- **Her kasanın kendi anahtarı** (çok şube, 27 Kasım 2026): anahtar Şube ayarları › AsilPOS bağlantısı'nda (Yönetim
-  konsolunda şubenin Şube işlemleri sayfasında aynı kart; kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şube;
-  yalnız asıl yönetici, **parolasıyla**) `secret-box` ile şifreli saklanır.
+- **Her kasanın kendi anahtarı** (çok şube, 27 Kasım 2026): anahtar Yönetim konsolunda şubenin Şube işlemleri
+  sayfasındaki AsilPOS bağlantısı kartında (kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şube; yalnız asıl
+  yönetici, **parolasıyla**; ladmin'in Şube ayarları › AsilPOS bağlantısı kartı yalnız durumu gösterir, K-C) `secret-box`
+  ile şifreli saklanır.
   Panel kasanın şubesini **anahtardan** tanır (`resolvePosCaller`, `src/server/asilpos/branch.ts`): imza hangi şubenin
   anahtarıyla tutuyorsa istek o şubenindir; kurulu kasa devir, ürün ve gider kategorisi isteklerinde şube göndermeyebilir.
   Ortamdaki `ASILPOS_SYNC_SECRET` (eski adı da okunur) yalnız eski tek kasalı kurulumun şubesinindir (Marina) ve yalnız
@@ -1339,11 +1342,12 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
 1. **Şubeyi yalnız asıl yönetici açar ve kasasını kurar** (`info@nextgenlab.com.tr`; ortamda `LADMIN_ANA_ADMIN` ile
    değişir; `isAnaAdmin`, `requireAnaAdmin`; [ROLLER.md › Asıl yönetici](ROLLER.md#asıl-yönetici)). 28 Kasım 2026'dan
    beri şubeyi kapatmak, silmek, kasa programını değiştirmek, kasa anahtarını döndürmek ya da silmek ve geçiş gününü
-   değiştirmek de yalnız onda. Öbür yöneticiler Şubeler'i görür, ad, POS oranı ve e-posta gibi alanları düzenler;
-   eylemler sunucuda reddeder (`createBranch`, `sendBranchInstall`, `deleteBranch`, `updateBranch`'in `active` ve
-   `posSource` değişikliği, `saveAsilposSecret`, `saveAsilposSwitchDay`).
-2. Ayarlar › **Şube ekleme**'de (`/panel/sube-ekleme`, yalnız asıl yöneticinin menüsünde; [SUBE.md › Şube
-   ekleme](SUBE.md#şube-ekleme)) yeni fiziksel şubeye **e-posta** yazılırsa (`branches.email`):
+   değiştirmek de yalnız onda, hepsi yalnız **Yönetim konsolunda** (K-C): asıl yönetici ladmin'in oturumuyla gelirse
+   "Bu iş Yönetim konsolunda yapılır". Öbür yöneticiler Şubeler'i görür, ad, POS oranı ve e-posta gibi alanları
+   düzenler; eylemler sunucuda reddeder (`createBranch`, `sendBranchInstall`, `deleteBranch`, `updateBranch`'in
+   `active` ve `posSource` değişikliği, `saveAsilposSecret`, `saveAsilposSwitchDay`).
+2. Yönetim konsolu › **Şubeler ve kasalar**'da ([SUBE.md › Şube ekleme](SUBE.md#şube-ekleme); ladmin'deki eski adres
+   `/panel/sube-ekleme` asıl yöneticiyi oraya yönlendirir) yeni fiziksel şubeye **e-posta** yazılırsa (`branches.email`):
    - şubenin panel hesabı açılır (personel, şubede kilitli, ad "<Şube> şubesi"; davetle, 72 saat; adres zaten şubesiz
      ya da aynı şubedeki bir personel hesabındaysa hesap yeniden açılmaz; başka şubedeki personelde, yöneticide,
      müdürde ya da muhasebecide ise eklenmez, `branchEmailTaken`: kurulum bağlantısı kasanın eşitleme anahtarını verir);
@@ -1484,7 +1488,7 @@ Sahibin isteği ([planlar/istek-28-kasim.md](planlar/istek-28-kasim.md) › C; t
 modunda açılır; "Denemeyi bitir, gerçek kullanıma başla" derken **asıl yöneticinin ladmin hesabıyla** girilir, şube
 seçilir, kasa şubeye bağlanır ve ilk personelin PIN'leri kasaya iner. **Kasası kurulu şube kasadan seçilemez**
 ("Kurulu: değiştirmek için Yönetim konsolu"); kasadan devralma yoktur. Bilgisayar değişecekse önce Yönetim konsolu ›
-Şubeler ve kasalar › **Kasayı serbest bırak** (ladmin › Ayarlar › Şube ekleme'de de var). Kasaya giden metinler adres
+Şubeler ve kasalar › **Kasayı serbest bırak** (yalnız orada; K-C). Kasaya giden metinler adres
 yazmaz, "Yönetim konsolu" der (28 Kasım 2026). Göç yok: yeni veri `integration_state`'te ve imzalı kısa ömürlü
 belirteçte durur.
 
@@ -1545,7 +1549,7 @@ kimliğine bağlıdır: parola değişirse, oturumlar kapatılırsa, hesap pasif
 geçmez. Oturum çerezinin yerine geçmez. Kasa onu yalnız bellekte tutar; günlüğe, denetim kaydına, `sync_state`'e yazmaz.
 
 `subeler` (Şubeler'deki sırayla): açık, fiziksel ve **hazırlanmış ya da kasa programı AsilPOS** olan şubeler.
-"Hazırlanmış": asıl yönetici o şube için Şube ekleme'de **Bilgisayara kur** demiş ya da şubeyi e-postasıyla eklemiş
+"Hazırlanmış": asıl yönetici o şube için Yönetim konsolunda **Bilgisayara kur** demiş ya da şubeyi e-postasıyla eklemiş
 (`asilpos.hazirlik:<şube>`). Kasa programı ModPOS olup hazırlanmamış şube listede görünmez (Tuzla'nın ModPOS çekimi
 durmasın diye kasa programı ModPOS kalabilir; "Bilgisayara kur" onu kasada seçilebilir yapar).
 
@@ -1612,7 +1616,7 @@ Kasa onayı personeli güvenle sakladıktan sonra gönderir; onay gitmezse sonra
 
 ### İlk personel
 
-Asıl yönetici şube eklerken (Şube ekleme › Yeni şube › "İlk personel (isteğe bağlı)") ya da şube satırındaki **İlk
+Asıl yönetici şube eklerken (Yönetim konsolu › Şubeler ve kasalar › Yeni şube › "İlk personel (isteğe bağlı)") ya da şube satırındaki **İlk
 personeli ayarla** ile üç kişiyi girer: **Patron** (kasada `patron`), **Müdür** (`mudur`), **Barista** (`kasiyer`,
 "Kasiyer / Barista"); her biri ad ve PIN. Bölüm isteğe bağlıdır: boşsa kasa bugünkü gibi kendi PIN akışını kullanır.
 Kurallar (`src/lib/asilpos/kasa-acilis.ts`, panel ve kasa aynı): PIN 4-6 rakam; üçü birbirinden farklı (kasada PIN
@@ -1671,12 +1675,11 @@ alır (kod ikinci kez geçmez).
 
 ### Kasayı serbest bırak
 
-Yönetim konsolu › Şubeler ve kasalar (ve ladmin › Ayarlar › Şube ekleme) › şube satırı › **Kasayı serbest bırak**
-(`releaseBranchTill`): yalnız asıl yönetici
-(`requireAnaAdmin("kasaSerbest")`), yalnız kasası kurulu şubede (düğme yalnız orada görünür); şubenin adı yazılır ve
-parolayla onaylanır (`requireStepUp`, "AsilPOS"). Onay cümlesi: "Bu şubenin kasası ladmin bağlantısını kaybeder; yeni
-bilgisayar şubeyi kasada seçebilir." Son 7 günde gün sonu gelen (canlı) şubede pencere kırmızı uyarı gösterir. Tek
-işlemde:
+Yönetim konsolu › Şubeler ve kasalar › şube satırı › **Kasayı serbest bırak** (`releaseBranchTill`; ladmin'de yok,
+K-C): yalnız asıl yönetici, yalnız konsol oturumuyla (`requireAnaAdmin("kasaSerbest")`), yalnız kasası kurulu şubede
+(düğme yalnız orada görünür); şubenin adı yazılır ve parolayla onaylanır (`requireStepUp`, "AsilPOS"). Onay cümlesi:
+"Bu şubenin kasası ladmin bağlantısını kaybeder; yeni bilgisayar şubeyi kasada seçebilir." Son 7 günde gün sonu gelen
+(canlı) şubede pencere kırmızı uyarı gösterir. Tek işlemde:
 
 1. şubenin kasa anahtarı yeniden üretilir: eski kasanın imzası 401 alır, panelle bağlantısını kaybeder;
 2. bekleyen kurulum bağlantıları iptal olur;

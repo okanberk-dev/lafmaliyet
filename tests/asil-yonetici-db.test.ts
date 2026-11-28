@@ -1,8 +1,9 @@
 // Asıl yönetici, gerçek Postgres'te (docs/ROLLER.md › Asıl yönetici; src/lib/asil-yonetici.ts): oturum gerçek
 // src/server/auth/dal.ts'le, çerezler ve istek başlıkları taklit edilerek.
 // - Korunan her şube eylemi (şube açma, kapatma, kasa programı, silme, kasa kurma, kasa anahtarı, geçiş günü): asıl
-//   yönetici geçer, öteki yönetici okunur hata alır, müdür ve personel kendi ana ekranına yönlenir, muhasebeci "salt
-//   okunur" alır; reddedilen işlem hiçbir satır yazmaz. Şubenin öteki alanları (ad, POS oranı, e-posta) her yöneticide.
+//   yönetici Yönetim konsolunun oturumuyla geçer, ladmin'in oturumuyla "Bu iş Yönetim konsolunda yapılır" alır (K-C);
+//   öteki yönetici okunur hata alır, müdür ve personel kendi ana ekranına yönlenir, muhasebeci "salt okunur" alır;
+//   reddedilen işlem hiçbir satır yazmaz. Şubenin öteki alanları (ad, POS oranı, e-posta) her yöneticide, ladmin'den.
 // - Hesap koruması: başka yönetici asıl yöneticinin e-postasını, parolasını, rolünü, erişimini değiştiremez, silemez, iki
 //   adımlısını sıfırlayamaz, kilidini açamaz, oturumlarını kapatamaz, ona bağlantı üretemez; hiçbir hesap adresini asıl
 //   yöneticinin adresine çeviremez; asıl yönetici kendi e-postasını değiştiremez. O adresle hesap, hesap yokken de
@@ -24,7 +25,7 @@ import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { ASIL_ADRES_ALINAMAZ, ASIL_EPOSTA_SABIT, yalnizAsilYonetici, type AsilYoneticiIsi } from "../src/lib/asil-yonetici";
+import { ASIL_ADRES_ALINAMAZ, ASIL_EPOSTA_SABIT, KONSOLDA_YAPILIR, yalnizAsilYonetici, type AsilYoneticiIsi } from "../src/lib/asil-yonetici";
 import { YENI_KURULUM_ONEKI } from "../src/lib/asilpos/kasa-durumu";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { READ_ONLY_TEXT } from "../src/lib/roles";
@@ -148,12 +149,22 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     await dal.startSession(u);
     reqHeaders = new Headers({ "next-action": "test" });
   };
+  /** Asıl yöneticinin Yönetim konsolu oturumu (panel çerezi yok): asıl yönetici işleri yalnız bununla geçer (K-C) */
+  const konsol = async () => {
+    jar = new Jar();
+    const [u] = await db.select().from(s.users).where(eq(s.users.id, ids.ana));
+    await dal.startYonetimSession(u);
+    reqHeaders = new Headers({ "next-action": "test" });
+  };
   const refused = (is: AsilYoneticiIsi) => ({ ok: false, error: yalnizAsilYonetici(is) });
   /**
-   * Korunan eylemin kapısı: öteki yönetici okunur hata alır, müdür ve personel kendi ana ekranına yönlenir, muhasebeci
-   * "salt okunur" alır. `call` her rolde yeniden çağrılır
+   * Korunan eylemin kapısı: asıl yönetici ladmin'in oturumuyla "Bu iş Yönetim konsolunda yapılır" alır, öteki yönetici
+   * okunur hata alır, müdür ve personel kendi ana ekranına yönlenir, muhasebeci "salt okunur" alır. `call` her rolde
+   * yeniden çağrılır
    */
   async function onlyAna(call: () => Promise<unknown>, is: AsilYoneticiIsi, what: string) {
+    await signIn("ana");
+    assert.deepEqual(await call(), { ok: false, error: KONSOLDA_YAPILIR }, `${what}: asıl yönetici ladmin'den`);
     await signIn("ali");
     assert.deepEqual(await call(), refused(is), `${what}: öteki yönetici`);
     for (const k of ["mehmet", "ayse"] as const) {
@@ -171,7 +182,7 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
   test("şube açmak, kapatmak, kasa programı ve silmek yalnız asıl yöneticide; ad, oran ve e-posta her yöneticide", async () => {
     await onlyAna(() => branches.createBranch(bodrum), "subeAcma", "şube açma");
     assert.equal(await branchRow("bodrum"), undefined, "reddedilen eylem şube yazmadı");
-    await signIn("ana");
+    await konsol();
     const created = await branches.createBranch(bodrum);
     assert.equal(created.ok, true, JSON.stringify(created));
 
@@ -194,8 +205,8 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     assert.deepEqual(await installsOf("bodrum"), []);
     assert.deepEqual(await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, "bodrum@ornek.com")), []);
 
-    // Asıl yönetici kasa programını değiştirir ve geri alır
-    await signIn("ana");
+    // Asıl yönetici kasa programını konsoldan değiştirir ve geri alır
+    await konsol();
     assert.equal((await update({ posSource: "asilpos" })()).ok, true);
     assert.equal((await update({ posSource: "modpos" })()).ok, true);
 
@@ -204,7 +215,7 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     assert.equal((await branches.createBranch(kas)).ok, true);
     await onlyAna(() => branches.deleteBranch({ id: "kas" }), "subeSilme", "silme");
     assert.ok(await branchRow("kas"), "reddedilen silme şubeyi silmedi");
-    await signIn("ana");
+    await konsol();
     assert.equal((await branches.deleteBranch({ id: "kas" })).ok, true);
     assert.equal(await branchRow("kas"), undefined);
   });
@@ -214,7 +225,7 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     await onlyAna(send(), "kasaKurma", "kasa kurma");
     assert.deepEqual(await installsOf("bodrum"), [], "reddedilen eylem bağlantı üretmedi");
 
-    await signIn("ana");
+    await konsol();
     const r = await send()();
     assert.ok(r.ok, JSON.stringify(r));
     assert.deepEqual([r.data.branch, r.data.email, r.data.girisHesabi], [{ id: "bodrum", name: "Bodrum" }, "bodrum@ornek.com", ASIL]);
@@ -269,7 +280,7 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     });
     assert.equal((await kasa.loadKasaDurumu("marina", db)).durum, "kurulu");
     assert.equal((await kasa.loadKasaDurumu("tuzla", db)).durum, "yok");
-    await signIn("ana");
+    await konsol();
     const ask = await branches.sendBranchInstall({ id: "marina", email: "marina@ornek.com" });
     assert.ok(!ask.ok && ask.error.startsWith(YENI_KURULUM_ONEKI), JSON.stringify(ask));
     const ok = await branches.sendBranchInstall({ id: "marina", email: "marina@ornek.com", confirmReplace: true });
@@ -281,14 +292,14 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     const secret = () => branchSettings.saveAsilposSecret({ branchId: "marina", secret: "y".repeat(40) });
     await onlyAna(secret, "kasaAnahtari", "kasa anahtarı");
     await onlyAna(() => branchSettings.saveAsilposSecret({ branchId: "marina", secret: null }), "kasaAnahtari", "anahtarı silme");
-    // Asıl yönetici kapıdan geçer, parola sorulur (anahtar değişmez)
-    await signIn("ana");
+    // Asıl yönetici konsoldan kapıdan geçer, parola sorulur (anahtar değişmez)
+    await konsol();
     assert.deepEqual(await secret(), { ok: false, error: STEP_UP_REQUIRED });
     assert.equal(await keys.posKeyOf("marina", db), MARINA_KEY);
 
     const day = () => asilpos.saveAsilposSwitchDay({ branchId: "marina", day: null });
     await onlyAna(day, "gecisGunu", "geçiş günü");
-    await signIn("ana");
+    await konsol();
     assert.deepEqual(await day(), { ok: true, data: { change: null } }, "geçiş günü zaten boş: değişiklik yok");
   });
 
@@ -331,10 +342,13 @@ describe("Asıl yönetici: veritabanında", { skip: !SERVER_URL && "ASIL_YONETIC
     assert.deepEqual(await auth.updateProfile({ name: "Ali", email: ASIL, password: PASSWORD }), { ok: false, error: ASIL_ADRES_ALINAMAZ }, "Hesabım");
     assert.equal((await db.select().from(s.users).where(eq(s.users.id, ids.ali)))[0].email, BASE.ali.email);
 
-    // Asıl yönetici kendi e-postasını değiştiremez; başkasının hesabında bugünkü gibi
+    // Asıl yönetici kendi e-postasını değiştiremez (Hesabım, ladmin); başka bir yöneticinin hesabında iş konsolda (K-C)
     await signIn("ana");
     assert.deepEqual(await auth.updateProfile({ name: "Asıl", email: "baska@ornek.com", password: PASSWORD }), { ok: false, error: ASIL_EPOSTA_SABIT });
     assert.equal((await db.select().from(s.users).where(eq(s.users.id, ids.ana)))[0].email, ASIL);
+    assert.deepEqual(await settings.unlockUser(ids.ali), { ok: false, error: KONSOLDA_YAPILIR });
+    assert.deepEqual(await settings.signOutUserEverywhere(ids.ali), { ok: false, error: KONSOLDA_YAPILIR });
+    await konsol();
     assert.equal((await settings.unlockUser(ids.ali)).ok, true);
     assert.equal((await settings.signOutUserEverywhere(ids.ali)).ok, true);
   });

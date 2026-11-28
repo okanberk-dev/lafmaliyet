@@ -1,4 +1,5 @@
-// Şubenin AsilPOS kasası kurulu mu (Şube ekleme sayfası, kasa açılışı; docs/ASILPOS.md › Şube kurulumu, › Kasa açılışı).
+// Şubenin AsilPOS kasası kurulu mu (konsolun Şubeler ve kasalar sayfası, kasa açılışı; docs/ASILPOS.md › Şube
+// kurulumu, › Kasa açılışı).
 // Önce açık kayıt (integration_state `asilpos.kasa:<şube>`; kasa açılışı, kurulum kodu ve "Kasayı serbest bırak" yazar):
 // varsa o geçerli. Yoksa eldeki veriden: şubenin kullanılabilen anahtarı, kurulum kodları ve son kabul edilen gün sonu.
 // Tek bir eski deneme günü "kurulu" saymaya yetmez (Tuzla'nın eski deneme günü onu kilitlemesin; sahibin kararı, 28 Kasım

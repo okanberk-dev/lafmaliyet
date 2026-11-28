@@ -29,7 +29,6 @@ import {
   ListChecks,
   ListTodo,
   MicVocal,
-  MonitorDown,
   Package,
   Percent,
   Plug,
@@ -60,8 +59,6 @@ export interface NavItem {
   match?: string[];
   /** Komut paletinde bulunsun diye ek arama sözcükleri */
   keywords?: string;
-  /** Yalnız asıl yöneticiye (docs/ROLLER.md › Asıl yönetici; bayrak sunucuda hesaplanır, layout.tsx → sidebar) */
-  anaAdmin?: true;
 }
 
 /**
@@ -305,14 +302,6 @@ export const NAV_FOOTER: NavItem[] = [
   { href: "/panel/ayarlar#yedek", label: "Yedek", icon: HardDriveDownload, roles: ["admin"], keywords: "yedek indir dışa aktar xlsx çalışma kitabı" },
   { href: "/panel/kullanicilar", label: "Kullanıcılar & roller", icon: Users, roles: ["admin"], keywords: "kullanıcı rol yetki personel yönetici parola iki adımlı 2fa güvenlik" },
   { href: "/panel/subeler", label: "Şubeler", icon: Building2, roles: ["admin"], keywords: "şube sube marina tuzla kanal laffogato.net online kasa kaynağı modpos asilpos" },
-  {
-    href: "/panel/sube-ekleme",
-    label: "Şube ekleme",
-    icon: MonitorDown,
-    roles: ["admin"],
-    anaAdmin: true,
-    keywords: "yeni şube ekle aç kasa kur bilgisayara kur asilpos kurulum bağlantısı asıl yönetici",
-  },
   { href: "/panel/yardim", label: "Yardım", icon: HelpCircle, roles: ["admin"], keywords: "nasıl kullanılır" },
   { href: "/panel/hesap", label: "Hesabım", icon: UserRound, roles: ["admin", "manager", "staff", "accountant"], keywords: "parola şifre e-posta iki adımlı doğrulama 2fa authenticator" },
 ];
@@ -333,8 +322,7 @@ export interface NavNode {
   labelFor?: Partial<Record<Role, string>>;
   /** Satırda canlı sayı: "orders" açık uygulama siparişi ve masa çağrısı (canlı veriden; orders-badge.tsx) */
   badge?: "orders";
-  /** `anaAdmin`: yalnız asıl yöneticiye (navTreeFor'un `anaAdmin` seçeneği) */
-  children?: { id: string; label: string; href: string; roles: Role[]; match?: string[]; badge?: "orders"; anaAdmin?: true }[];
+  children?: { id: string; label: string; href: string; roles: Role[]; match?: string[]; badge?: "orders" }[];
 }
 
 /**
@@ -476,9 +464,8 @@ export const NAV_TREE: NavNode[] = [
     children: [
       { id: "genel-ayarlar", label: "Genel ayarlar", href: "/panel/ayarlar", roles: ["admin"] },
       { id: "kullanicilar", label: "Kullanıcılar & roller", href: "/panel/kullanicilar", roles: ["admin"] },
+      // Şube açma ve kasa kurma Yönetim konsolunda (28 Kas 2026, K-C; docs/SUBE.md › Şube ekleme): menüde ve palette yok
       { id: "subeler", label: "Şubeler", href: "/panel/subeler", roles: ["admin"] },
-      // Şube açma ve kasa kurma (28 Kas 2026; docs/SUBE.md › Şube ekleme): yalnız asıl yöneticinin menüsünde
-      { id: "sube-ekleme", label: "Şube ekleme", href: "/panel/sube-ekleme", roles: ["admin"], anaAdmin: true },
       { id: "parasut", label: "Paraşüt entegrasyonu", href: "/panel/parasut", roles: ["admin"] },
     ],
   },
@@ -559,13 +546,12 @@ export function screenFeatureOn(href: string, on?: readonly BranchFeature[]): bo
 
 /**
  * Ağacı role (ve verilirse seçili kapsamın şube özelliklerine, `screenFeatureOn`) göre süzer; tek alt sayfası kalan grup
- * doğrudan o sayfaya bağlanır. `anaAdmin`: kişi asıl yönetici (sunucuda hesaplanır; yalnız ona görünen satırlar, Şube
- * ekleme); verilmezse o satırlar yok
+ * doğrudan o sayfaya bağlanır
  */
-export function navTreeFor(role: Role, features?: readonly BranchFeature[], anaAdmin = false): NavNode[] {
+export function navTreeFor(role: Role, features?: readonly BranchFeature[]): NavNode[] {
   return NAV_TREE.filter((n) => n.roles.includes(role) && (!n.href || screenFeatureOn(n.href, features)))
     .map((n) => (n.labelFor?.[role] ? { ...n, label: n.labelFor[role] } : n))
-    .map((n) => (n.children ? { ...n, children: n.children.filter((c) => c.roles.includes(role) && (!c.anaAdmin || anaAdmin) && screenFeatureOn(c.href, features)) } : n))
+    .map((n) => (n.children ? { ...n, children: n.children.filter((c) => c.roles.includes(role) && screenFeatureOn(c.href, features)) } : n))
     .map((n) => (n.children && n.children.length === 1 ? { ...n, label: n.children[0].label, href: n.children[0].href, children: undefined } : n))
     .filter((n) => n.href || n.children?.length);
 }
@@ -587,8 +573,7 @@ export function activeChildOf(children: NonNullable<NavNode["children"]>, pathna
 
 /** Sayfa başlığının bağlam satırı: rolün ağacında bu adresi açan grubun adı; üst düzey ekranda ya da ağaçta yoksa undefined */
 export function groupLabelOf(pathname: string, role: Role): string | undefined {
-  // Yalnız asıl yöneticinin satırları da (Şube ekleme): bağlam satırı yalnız ekranı açabilene çizilir
-  const tree = navTreeFor(role, undefined, true);
+  const tree = navTreeFor(role);
   const id = activeGroupOf(tree, pathname);
   return tree.find((n) => n.id === id)?.label;
 }
@@ -812,6 +797,8 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",
   "/panel/muhasebe": "Muhasebe",
+  // Eski adres: menüde yok, asıl yönetici Yönetim konsoluna yönlenir, öteki yönetici tek cümle görür (K-C)
+  "/panel/sube-ekleme": "Şube ekleme",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

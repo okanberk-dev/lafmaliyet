@@ -176,13 +176,18 @@ test("bağlantılar kurulu: şube eklemek asıl yöneticide, uçlar herkese aç�
   assert.ok(!hesap.includes("listInstalls("), "Hesabım listInstalls'u çağırmaz");
 });
 
-test("Bilgisayara kur Şube ekleme sayfasında (yalnız asıl yönetici); Şubeler'deki kurulum kartı kalktı", () => {
-  // Şubeler: "AsilPOS kasası kur" kartı ve "Şube ekle" düğmesi yok, asıl yöneticiye Şube ekleme bağlantısı
+test("Bilgisayara kur Yönetim konsolunda (yalnız asıl yönetici); ladmin'de kurulum düğmesi yok, yerinde tek cümle", () => {
+  // Şubeler: "AsilPOS kasası kur" kartı, "Şube ekle" düğmesi ve Şube ekleme bağlantısı yok; yerinde "Bu iş Yönetim
+  // konsolunda yapılır", asıl yöneticiye konsolun Şubeler ve kasalar sayfasına bağlantı (K-C)
   const page = read("src/app/panel/subeler/page.tsx");
   assert.ok(!page.includes("AsilposInstallCard") && !page.includes("createBranch") && !page.includes("sendBranchInstall"));
   assert.ok(!existsSync(join(__dirname, "..", "src/app/panel/subeler/asilpos-install.tsx")), "eski kart dosyası silindi");
-  assert.ok(read("src/app/panel/subeler/branches-admin.tsx").includes('href="/panel/sube-ekleme"'));
-  // Şube ekleme: yeni şube (e-postayla kurulum da gider) ve var olan şubeye bağlantı
+  const admin = read("src/app/panel/subeler/branches-admin.tsx");
+  assert.ok(!admin.includes("/panel/sube-ekleme"), "Şube ekleme bağlantısı kalktı");
+  assert.ok(admin.includes('konu="Şube açmak ve kasa kurmak"'));
+  // Konsol › Şubeler ve kasalar: yeni şube (e-postayla kurulum da gider) ve var olan şubeye bağlantı; ladmin'de çizilmez
+  assert.ok(read("src/app/yonetim/(konsol)/page.tsx").includes("installAction={sendBranchInstall}"));
+  assert.ok(!read("src/app/panel/sube-ekleme/page.tsx").includes("sendBranchInstall"));
   const client = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   assert.match(client, /createAction\(\{[\s\S]*?\.\.\.\(email \? \{ email \} : \{\}\)/);
   assert.match(client, /installAction\(\{ id: b\.id, \.\.\.\(email\.trim\(\) \? \{ email: email\.trim\(\) \} : \{\}\)/);
