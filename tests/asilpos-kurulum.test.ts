@@ -183,12 +183,12 @@ test("Bilgisayara kur Şube ekleme sayfasında (yalnız asıl yönetici); Şubel
   assert.ok(!existsSync(join(__dirname, "..", "src/app/panel/subeler/asilpos-install.tsx")), "eski kart dosyası silindi");
   assert.ok(read("src/app/panel/subeler/branches-admin.tsx").includes('href="/panel/sube-ekleme"'));
   // Şube ekleme: yeni şube (e-postayla kurulum da gider) ve var olan şubeye bağlantı
-  const client = read("src/app/panel/sube-ekleme/sube-ekleme-client.tsx");
+  const client = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   assert.match(client, /createAction\(\{[\s\S]*?\.\.\.\(email \? \{ email \} : \{\}\)/);
   assert.match(client, /installAction\(\{ id: b\.id, \.\.\.\(email\.trim\(\) \? \{ email: email\.trim\(\) \} : \{\}\)/);
   assert.ok(client.includes("Bilgisayara kur"));
   // Bayat ipucu ("AsilPOS bugün yalnız bir şubenin gün sonunu alır") hiçbir ekranda kalmadı
-  for (const f of ["src/app/panel/sube-ekleme/sube-ekleme-client.tsx", "src/app/panel/subeler/branches-admin.tsx"]) assert.ok(!read(f).includes("yalnız bir şubenin gün sonunu"), f);
+  for (const f of ["src/components/sube-ekleme/sube-ekleme-client.tsx", "src/app/panel/subeler/branches-admin.tsx"]) assert.ok(!read(f).includes("yalnız bir şubenin gün sonunu"), f);
 });
 
 test("var olan kasalara giden bağlantılar: Uzaktan ve site (lafmaliyet hariç), sürüm değerlerin özeti", async () => {

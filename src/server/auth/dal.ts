@@ -10,6 +10,7 @@ import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security
 import type { Role } from "@/lib/constants";
 import { isAnaAdmin, yalnizAsilYonetici, type AsilYoneticiIsi } from "@/lib/asil-yonetici";
 import { BRANCH_ROLES, can, homeFor, managerWithoutBranch, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
+import { YONETIM_GIRIS, YONETIM_OTURUM_BITTI } from "@/lib/yonetim-host";
 import { getDb, schema as s } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -28,8 +29,13 @@ import {
   signDevice,
   signPending,
   signSession,
+  signYonetim,
+  signYonetimPending,
   verifyDevice,
   verifySession,
+  verifyYonetim,
+  YONETIM_COOKIE,
+  YONETIM_PENDING_COOKIE,
   type DeviceToken,
   type SessionPayload,
 } from "./session";
@@ -188,9 +194,90 @@ export async function requireCan(cap: Capability): Promise<CurrentUser> {
  * ile düğmeleri kapatır
  */
 export async function requireAnaAdmin(is: AsilYoneticiIsi = "subeAcma"): Promise<CurrentUser> {
+  // Yönetim konsolunun oturumu (asıl yönetici) varsa onunla: konsoldan çağrılan şube eylemleri. Bu aşamada panel yolu da
+  // kalır (ladmin değişmez; docs/planlar/yonetim-konsolu.md › K-A); panel adresinde konsol çerezi olmadığı için orada
+  // davranış aynı. Sonraki adımda (K-C) yalnız konsol oturumu kalır
+  const konsol = await getYonetimUser();
+  if (konsol) return konsol;
   const user = await requireAdmin();
   if (!isAnaAdmin(user)) throw new UserError(yalnizAsilYonetici(is));
   return user;
+}
+
+// ---------------------------------------------------------------- Yönetim konsolu
+
+/**
+ * Konsol oturumunun kullanıcısı (docs/planlar/yonetim-konsolu.md; çerez ve belirteç src/server/auth/session.ts): konsol
+ * çerezi geçerli, hesap var ve etkin, oturum sürümü aynı, oturum kapatılmamış, rol yönetici ve asıl yönetici
+ * (`isAnaAdmin`; LADMIN_ANA_ADMIN değişirse eski asıl yönetici düşer), iki adımlı zorunluyken kurulmuş. Değilse null;
+ * yan etkisi yok (çerezi silmez)
+ */
+export async function getYonetimUser(): Promise<CurrentUser | null> {
+  const session = await verifyYonetim((await cookies()).get(YONETIM_COOKIE)?.value);
+  if (!session || typeof session.sv !== "number") return null;
+  const jti = typeof session.jti === "string" ? session.jti : null;
+  const [u] = await getDb()
+    .select({
+      id: s.users.id,
+      name: s.users.name,
+      email: s.users.email,
+      role: s.users.role,
+      active: s.users.active,
+      sessionVersion: s.users.sessionVersion,
+      totpEnabled: s.users.totpEnabled,
+      revoked: s.revokedSessions.id,
+    })
+    .from(s.users)
+    .leftJoin(s.revokedSessions, jti ? eq(s.revokedSessions.id, jti) : sql`false`)
+    .where(eq(s.users.id, Number(session.sub)))
+    .limit(1);
+  if (!u || !u.active || session.sv !== u.sessionVersion || u.revoked) return null;
+  if (u.role !== "admin" || !isAnaAdmin(u) || needsTwoFactorSetup(u)) return null;
+  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: null };
+}
+
+/**
+ * Konsolun her sayfası ve konsoldan çağrılan her eylem (layout'a güvenilmez: Next sayfa geçişinde layout'u yeniden
+ * koşturmaz). Oturum yoksa konsol girişine; çerez duruyor ama geçersizse (LADMIN_ANA_ADMIN değişti, hesap pasif, parola
+ * değişti, çıkış yapıldı) çerezi silen yola (/yonetim/oturum-bitti, çerezin özetiyle), oradan girişe: döngü olmaz,
+ * giriş sayfası da yalnız geçerli konsol oturumunu /yonetim'e gönderir
+ */
+export async function requireYonetim(): Promise<CurrentUser> {
+  const user = await getYonetimUser();
+  if (user) return user;
+  const token = (await cookies()).get(YONETIM_COOKIE)?.value;
+  redirect(token ? `${YONETIM_OTURUM_BITTI}?${await expiredLoginQuery(token)}` : YONETIM_GIRIS);
+}
+
+/** Konsola yeni oturum: bu tarayıcıdaki önceki konsol oturumu kapatılır; panelin çerezine dokunulmaz */
+export async function startYonetimSession(user: { id: number; name: string; role: Role; sessionVersion: number }) {
+  const token = await signYonetim({ sub: String(user.id), name: user.name, role: user.role, sv: user.sessionVersion });
+  const jar = await cookies();
+  await revokeSession(await verifyYonetim(jar.get(YONETIM_COOKIE)?.value));
+  jar.set(YONETIM_PENDING_COOKIE, "", { ...COOKIE_BASE, maxAge: 0 });
+  jar.set(YONETIM_COOKIE, token, { ...COOKIE_BASE, sameSite: "lax", maxAge: SESSION_DAYS * 24 * 60 * 60 });
+}
+
+/** Konsoldan çıkış: konsol oturumu sunucuda kapatılır, yalnız konsol çerezleri silinir (panel oturumu açık kalır) */
+export async function endYonetimSession() {
+  const jar = await cookies();
+  await revokeSession(await verifyYonetim(jar.get(YONETIM_COOKIE)?.value));
+  jar.set(YONETIM_COOKIE, "", { ...COOKIE_BASE, maxAge: 0 });
+  jar.set(YONETIM_PENDING_COOKIE, "", { ...COOKIE_BASE, maxAge: 0 });
+}
+
+/** Konsolda parola doğru; iki adımlı kod istenecek */
+export async function startYonetimPending(user: { id: number; sessionVersion: number }) {
+  const token = await signYonetimPending({ sub: String(user.id), sv: user.sessionVersion });
+  (await cookies()).set(YONETIM_PENDING_COOKIE, token, { ...COOKIE_BASE, sameSite: "strict", maxAge: PENDING_MINUTES * 60 });
+}
+
+export async function readYonetimPending(): Promise<string | undefined> {
+  return (await cookies()).get(YONETIM_PENDING_COOKIE)?.value;
+}
+
+export async function clearYonetimPending() {
+  (await cookies()).set(YONETIM_PENDING_COOKIE, "", { ...COOKIE_BASE, maxAge: 0 });
 }
 
 /**

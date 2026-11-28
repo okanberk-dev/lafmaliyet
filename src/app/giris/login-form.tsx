@@ -34,9 +34,22 @@ function SubmitButton({ pending, idle, busy, className }: { pending: boolean; id
   );
 }
 
-/** İkinci adım: doğrulama uygulamasındaki kod ya da kurtarma kodu */
-function CodeStep({ email, onBack, onExpired }: { email?: string; onBack: () => void; onExpired: (message: string) => void }) {
-  const [state, action, pending] = useActionState<TotpState, FormData>(verifyCode, {});
+/**
+ * İkinci adım: doğrulama uygulamasındaki kod ya da kurtarma kodu. `verifyAction`: Yönetim konsolunun girişi kendi kod
+ * eylemini verir (src/app/yonetim/giris); verilmezse panelinki
+ */
+export function CodeStep({
+  email,
+  onBack,
+  onExpired,
+  verifyAction = verifyCode,
+}: {
+  email?: string;
+  onBack: () => void;
+  onExpired: (message: string) => void;
+  verifyAction?: (prev: TotpState, formData: FormData) => Promise<TotpState>;
+}) {
+  const [state, action, pending] = useActionState<TotpState, FormData>(verifyAction, {});
   const [mode, setMode] = useState<"app" | "recovery">("app");
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -168,7 +181,8 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
   const expired = params.get("oturum") === "bitti";
   // /davet'te parola kaydedildi
   const passwordSet = params.get("parola") === "yeni";
-  const [view, setView] = useState<"login" | "forgot">("login");
+  // Yönetim konsolunun "Parolamı unuttum" bağlantısı (?parola=unuttum) sıfırlama adımını açar
+  const [view, setView] = useState<"login" | "forgot">(params.get("parola") === "unuttum" ? "forgot" : "login");
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [forgotEmail, setForgotEmail] = useState("");

@@ -116,6 +116,65 @@ export async function verifyPending(token: string | undefined): Promise<{ sub: s
   }
 }
 
+/*
+ * Yönetim konsolunun oturumu (docs/planlar/yonetim-konsolu.md; src/lib/yonetim-host.ts): ayrı belirteç türü ve ayrı
+ * çerez. Panel oturumu konsolu, konsol oturumu paneli açmaz: verifySession `typ: "yonetim"`i, verifyYonetim panelin
+ * `typ: "session"`ini (ve türsüz eski oturumu) reddeder; iki adımlı bekleme belirteci de ayrı tür. Süre, sürüm (`sv`),
+ * kimlik (`jti`, çıkışta revoked_sessions) ve çerez öznitelikleri panel oturumuyla aynı düzende. Çerez __Host- önekli
+ * olduğu için yalnız kendi alan adına gider; panel adresinde açılan konsol çerezi de ayrıdır (adı farklı).
+ */
+
+/** Konsol oturumunun çerezi (panelinkinden ayrı ad) */
+export const YONETIM_COOKIE = `${PREFIX}laf_yonetim`;
+/** Konsolda parola doğru, iki adımlı kod bekleniyor (PENDING_MINUTES) */
+export const YONETIM_PENDING_COOKIE = `${PREFIX}laf_yonetim_2fa`;
+/** Belirteç türleri: panel oturumu ve panelin iki adım belirteciyle karışmaz */
+export const YONETIM_TYP = "yonetim";
+export const YONETIM_PENDING_TYP = "yonetim-2fa";
+
+export async function signYonetim(payload: { sub: string; name: string; role: Role; sv: number }) {
+  return new SignJWT({ name: payload.name, role: payload.role, sv: payload.sv, typ: YONETIM_TYP })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(payload.sub)
+    .setJti(crypto.randomUUID())
+    .setIssuedAt()
+    .setExpirationTime(`${SESSION_DAYS}d`)
+    .sign(secretKey());
+}
+
+/** Konsol belirteci: imza geçerli, tür tam "yonetim" (türsüz eski panel oturumu da geçmez), rol tanınır */
+export async function verifyYonetim(token: string | undefined): Promise<SessionPayload | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
+    if (payload.typ !== YONETIM_TYP || !payload.sub || !isRole(payload.role)) return null;
+    return payload as SessionPayload;
+  } catch {
+    return null;
+  }
+}
+
+/** Konsolda parolası doğrulanmış, kodu beklenen kullanıcı (oturum sayılmaz; yalnız konsolun kod adımında okunur) */
+export async function signYonetimPending(payload: { sub: string; sv: number }) {
+  return new SignJWT({ sv: payload.sv, typ: YONETIM_PENDING_TYP })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(payload.sub)
+    .setIssuedAt()
+    .setExpirationTime(`${PENDING_MINUTES}m`)
+    .sign(secretKey());
+}
+
+export async function verifyYonetimPending(token: string | undefined): Promise<{ sub: string; sv: number } | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
+    if (payload.typ !== YONETIM_PENDING_TYP || !payload.sub || typeof payload.sv !== "number") return null;
+    return { sub: payload.sub, sv: payload.sv };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Kasa açılışının belirteci (docs/ASILPOS.md › Kasa açılışı): asıl yönetici kasada ladmin girişini geçince verilir,
  * şubeye bağlama ucu ister. Oturum değildir, çerez olmaz (verifySession `typ` başka olduğu için kabul etmez); kişinin

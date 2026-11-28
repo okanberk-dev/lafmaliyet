@@ -65,6 +65,11 @@ const SKIP = new Set([
   "logoutAction",
   "setPasswordWithToken",
   "requestPasswordReset",
+  // Yönetim konsolunun girişi ve çıkışı (oturumsuz; tests/yonetim-konsolu-db.test.ts ayrıca dener)
+  "yonetimGirisAction",
+  "yonetimKodAction",
+  "yonetimKodVazgecAction",
+  "yonetimCikisAction",
   "approveConnection",
   "denyConnection",
   "loadPanelNotifications",

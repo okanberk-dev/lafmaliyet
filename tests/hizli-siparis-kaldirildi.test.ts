@@ -53,7 +53,7 @@ test("proxy eski adresi oturumdan önce, sorgusuz ve geçici olarak yönlendirir
   assert.ok(at > 0 && at < body.indexOf("verifySession("), "oturum okunmadan önce");
   // new URL(hedef, request.url): sorgu ve çapa düşer (eski ?durum=fark sayımın süzgecine karışmaz); NextResponse.redirect varsayılanı 307
   assert.match(body, /if \(retired\) return NextResponse\.redirect\(new URL\(retired, request\.url\)\);/);
-  assert.match(proxy, /matcher: \["\/panel\/:path\*",/);
+  assert.match(proxy, /matcher: \[\s*"\/panel\/:path\*",/);
   // Kalıcı yönlendirme (308) yok: tarayıcı önbelleğe almasın, adres ileride yeniden kullanılabilsin
   assert.doesNotMatch(proxy, /\b308\b|permanent/);
   assert.doesNotMatch(read("next.config.ts"), /hizli-sayim|mal-siparisi/);

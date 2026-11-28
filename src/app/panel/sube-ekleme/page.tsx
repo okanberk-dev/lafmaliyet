@@ -4,15 +4,11 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
-import { anaAdminEmail, isAnaAdmin } from "@/lib/asil-yonetici";
+import { SubeEkleme } from "@/components/sube-ekleme/sube-ekleme-client";
+import { isAnaAdmin } from "@/lib/asil-yonetici";
 import { createBranch, releaseBranchTill, saveBranchStaff, sendBranchInstall } from "@/server/actions/branches";
 import { requireAdmin } from "@/server/auth/dal";
-import { ilkPersonelDurumlari } from "@/server/asilpos/ilk-personel";
-import { loadKasaDurumlari, loadSerbestBilgileri } from "@/server/asilpos/kasa-durumu";
-import { listBranches } from "@/server/branches";
-import { getDb, schema as s } from "@/server/db";
-
-import { SubeEkleme } from "./sube-ekleme-client";
+import { subeEklemeVerisi } from "@/server/sube-ekleme";
 
 export const metadata: Metadata = { title: "Şube ekleme" };
 
@@ -44,26 +40,10 @@ async function BranchSetupContent() {
   if (!isAnaAdmin(me)) {
     return <Notice tone="neutral" title="Şube ekleme ve kasa kurulumu yalnız asıl yöneticinin hesabında açılır." />;
   }
-  const db = getDb();
-  const [rows, emailRows] = await Promise.all([listBranches(db), db.select({ id: s.branches.id, email: s.branches.email }).from(s.branches)]);
-  const fiziksel = rows.filter((b) => b.kind === "fiziksel").map((b) => b.id);
-  const durum = await loadKasaDurumlari(fiziksel, db);
-  // İlk personelin durumu (PIN'siz) ve kurulu kasaların serbest bırakma bilgisi (canlı şube, ortamdaki anahtar)
-  const [personel, serbest] = await Promise.all([
-    ilkPersonelDurumlari(fiziksel, db),
-    loadSerbestBilgileri(
-      fiziksel.filter((id) => durum[id]?.durum === "kurulu"),
-      db,
-    ),
-  ]);
+  const veri = await subeEklemeVerisi();
   return (
     <SubeEkleme
-      rows={rows}
-      emails={Object.fromEntries(emailRows.map((r) => [r.id, r.email]))}
-      durum={durum}
-      personel={personel}
-      serbest={serbest}
-      girisHesabi={anaAdminEmail()}
+      {...veri}
       createAction={createBranch}
       installAction={sendBranchInstall}
       staffAction={saveBranchStaff}

@@ -131,7 +131,8 @@ test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / k
   assert.match(update, /return closing \? revokePendingInstalls\(tx, d\.id\) : 0;/);
   // Kapı tek tanımdan: dal.ts isAnaAdmin + yalnizAsilYonetici
   const dal = read("src/server/auth/dal.ts");
-  assert.match(dal, /export async function requireAnaAdmin\(is: AsilYoneticiIsi = "subeAcma"\): Promise<CurrentUser> \{\s*const user = await requireAdmin\(\);\s*if \(!isAnaAdmin\(user\)\) throw new UserError\(yalnizAsilYonetici\(is\)\);/);
+  // Yönetim konsolunun oturumu (yalnız asıl yönetici, getYonetimUser) da geçer; yoksa panelin bugünkü yolu
+  assert.match(dal, /export async function requireAnaAdmin\(is: AsilYoneticiIsi = "subeAcma"\): Promise<CurrentUser> \{\s*(?:\/\/[^\n]*\n\s*)*const konsol = await getYonetimUser\(\);\s*if \(konsol\) return konsol;\s*const user = await requireAdmin\(\);\s*if \(!isAnaAdmin\(user\)\) throw new UserError\(yalnizAsilYonetici\(is\)\);/);
   // Eylem kapısı taraması requireAnaAdmin'i yönetici kapısı sayar (muhasebeci "salt okunur", tests/roller.test.ts)
   for (const [file, name] of KORUNAN) assert.ok(actionGatesOf(ROOT, file).find((g) => g.name === name)?.gates.some((g) => g.kind === "requireAdmin"), name);
 });
@@ -178,8 +179,8 @@ test("kapalı şubenin kurulum kodu: koşullu güncellemede şube açık olmalı
 test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki yöneticiye kapalı ve nedeni yazılı", () => {
   const page = read("src/app/panel/sube-ekleme/page.tsx");
   assert.match(page, /const me = await requireAdmin\(\);\s*if \(!isAnaAdmin\(me\)\) \{\s*return <Notice tone="neutral" title="Şube ekleme ve kasa kurulumu yalnız asıl yöneticinin hesabında açılır\." \/>;/);
-  assert.ok(existsSync(join(ROOT, "src/app/panel/sube-ekleme/sube-ekleme-client.tsx")));
-  const client = read("src/app/panel/sube-ekleme/sube-ekleme-client.tsx");
+  assert.ok(existsSync(join(ROOT, "src/components/sube-ekleme/sube-ekleme-client.tsx")));
+  const client = read("src/components/sube-ekleme/sube-ekleme-client.tsx");
   // Kurulu kasada önce onay (ekranın ve sunucunun sorusu), sonuç penceresi istenen bilgilerle
   assert.match(client, /yeniKurulumOnayi\(d\)/);
   assert.match(client, /r\.error\.startsWith\(YENI_KURULUM_ONEKI\)/);
@@ -215,7 +216,7 @@ test("yeni metinde uzun tire yok; Şube ekleme sayfa, uç değil; kasa açılı�
     "src/server/asilpos/ilk-personel.ts",
     "src/server/auth/giris-korumalari.ts",
     "src/app/panel/sube-ekleme/page.tsx",
-    "src/app/panel/sube-ekleme/sube-ekleme-client.tsx",
+    "src/components/sube-ekleme/sube-ekleme-client.tsx",
   ]) {
     assert.doesNotMatch(read(f), /[–—]/, f);
   }

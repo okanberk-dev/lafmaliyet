@@ -61,6 +61,10 @@ Her değişiklik işlem geçmişine yazılır.
 (bayrak sunucuda hesaplanır), başka yönetici adresle açarsa içerik yerine tek cümle görür; eylemler ayrıca
 `requireAnaAdmin` ister. Üst düzey adres: `/panel/subeler/[id]` dinamik yoluyla çakışmasın. Bölümler:
 
+Aynı ekran **Yönetim konsolu › Şubeler ve kasalar**'da (`https://yonetim.laffogato.net/yonetim`) da açılır: aynı
+bileşen (`src/components/sube-ekleme`), aynı veri (`src/server/sube-ekleme.ts`) ve aynı eylemler. Konsolun öteki sekmesi
+**Lisans ve güncelleme**: AsilPOS Merkez'e bağlantı (Uzaktan'ın adresi) ve şubelerin kasa durumu özeti (salt okunur).
+
 1. **Yeni şube:** ad (kimlik kendiliğinden önerilir: "Laffogato Marina" → `laffogato-marina`), tür, kasa programı, POS
    oranı, açılış günü, şubenin e-postası ve **İlk personel (isteğe bağlı)**: Patron, Müdür, Barista; her biri ad ve PIN
    (4-6 rakam, üçü farklı, kasanın örnek PIN'leri olamaz). E-posta yazılırsa şubenin panel hesabı açılır ve kasa kurulum

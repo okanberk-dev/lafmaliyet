@@ -608,6 +608,11 @@ describe("sunucu eylemleri: her biri bir yetki kapısından geçer; muhasebeciye
     logoutAction: null,
     setPasswordWithToken: null,
     requestPasswordReset: null,
+    // Yönetim konsolunun girişi (oturumsuz; yalnız asıl yönetici geçer, src/server/actions/yonetim-giris.ts) ve çıkışı
+    yonetimGirisAction: null,
+    yonetimKodAction: null,
+    yonetimKodVazgecAction: null,
+    yonetimCikisAction: null,
     approveConnection: /if \(me\.role !== "admin"\) throw new UserError/,
     denyConnection: /if \(me\.role !== "admin"\) throw new UserError/,
     // Zil: yalnız okur; muhasebeciye yalnız kendi hesabının yeni cihaz uyarısı

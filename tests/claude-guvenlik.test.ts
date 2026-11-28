@@ -215,7 +215,11 @@ test("girişten sonra /baglan?… kabul edilir; //, \\ ve başka site reddedilir
     assert.equal(safeNext(bad, "admin"), homeFor("admin"), String(bad));
   }
   // Oturum ve 2FA adımı aynı yolu kullanır; proxy bu adreslere dokunmaz
-  assert.match(read("src/proxy.ts"), /matcher: \["\/panel\/:path\*", "\/giris", "\/api\/export\/:path\*"\]/);
+  // Panel adresindeki kapsam bu üç kalıp; sonraki girdiler yalnız Yönetim konsolunun alan adında eşleşir
+  // (tests/yonetim-host.test.ts Next'in eşleştiricisiyle dener)
+  const matcher = read("src/proxy.ts").match(/matcher: \[([\s\S]*?)\n {2}\],/)?.[1] ?? "";
+  assert.match(matcher, /^\s*"\/panel\/:path\*",\s*"\/giris",\s*"\/api\/export\/:path\*",/);
+  for (const girdi of matcher.split("\n").filter((l) => l.trim().startsWith("{"))) assert.match(girdi, /has: \[\{ type: "host", value: "yonetim\\\\\.(laffogato\\\\\.net|localhost)" \}\]/);
 });
 
 test("anahtar, kod ve istek: veritabanına yalnız özet; mühür amacı ayrı; parola onayının yeri", () => {

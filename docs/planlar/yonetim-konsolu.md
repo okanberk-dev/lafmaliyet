@@ -95,6 +95,11 @@ sayfasına ilk personeli ve "Kasayı serbest bırak"ı ekliyor.
    bu aşamada asıl yönetici işleri iki yerden de yapılabilir. Testler: adres ve izin matrisi; konsolda `/api/pos/gun`
    404, panelde proxy'ye girmediği; iki oturum türünün birbirini reddi; asıl yönetici dışındaki e-postada aynı yanıt ve
    kilit sayacının değişmediği; `LADMIN_ANA_ADMIN` değişince döngü olmadığı; Marina'nın anahtarının değişmediği.
+   **Durum (28 Kasım 2026):** ilk yarısı yapıldı (dal `yonetim-konsolu-oturum`): `yonetim-host.ts`, konsol belirteci ve
+   çerezi, `requireYonetim`, konsol girişi (iki adımlı dahil), alan adı kuralı (proxy, yalnız konsolun alan adına bağlı
+   eşleşmelerle), kabuk, Şubeler ve kasalar (Şube ekleme'nin ortak bileşeni) ve Lisans ve güncelleme. Kalan ikinci yarı:
+   kapatma / açma / silme, tür ve kasa programı, geçiş günü ve kasa anahtarı düğmelerinin konsola taşınması. Testler
+   `tests/yonetim-host.test.ts` ve `tests/yonetim-konsolu-db.test.ts` (`YONETIM_KONSOLU_TEST_DATABASE_URL`).
 2. **Canlı adım:** K-A canlıya çıkar, sonra alan adı Vercel projesine eklenir (önce kod, sonra alan adı: tersi olursa
    konsol adresi tam paneli sunardı). Konsolda giriş, yanlış hesap, iki adımlı, çıkış, üç sekme ve `/api/pos/gun` 404
    denenir; Marina'nın bağlantı sorgusu 200 kalır.

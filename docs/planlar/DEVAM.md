@@ -142,6 +142,14 @@ Kasa kaydı ve hazırlık `integration_state`'te; ilk personel mühürlü, yedek
 `/api/panel/pos/baglanti` değişmedi. Tam sözleşme docs/ASILPOS.md › Kasa açılışı. Sıradaki: kasada K5 (P-B2 canlıya
 girdikten sonra).
 
+## 28 Kasım: Yönetim konsolu, ayrı oturum ve giriş (dal yonetim-konsolu-oturum; K-A ilk yarı)
+
+- Konsol: `src/lib/yonetim-host.ts` (adres, izin listesi, bağlantılar), `src/server/auth/session.ts` (`typ: "yonetim"`,
+  ayrı çerez ve iki adım belirteci), `src/server/auth/dal.ts` (`getYonetimUser`, `requireYonetim`; `requireAnaAdmin`
+  şimdilik iki oturumu da kabul eder), `src/server/actions/yonetim-giris.ts`, `src/app/yonetim/**`.
+- Alan adı kuralı proxy'de, yalnız konsolun alan adına bağlı eşleşmelerle; panel adresindeki kapsam testle aynı.
+- Sıradaki: kod canlıya çıkınca alan adını Vercel'e eklemek (sahip), sonra K-A'nın ikinci yarısı (kalan şube düğmeleri).
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)

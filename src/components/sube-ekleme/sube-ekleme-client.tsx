@@ -48,7 +48,9 @@ import type { KurulumSonucu } from "@/server/actions/branches";
 import type { ActionResult } from "@/server/actions/util";
 
 /*
- * Şube ekleme (/panel/sube-ekleme; yalnız asıl yönetici; docs/SUBE.md › Şube ekleme). Yeni şube formu (isteğe bağlı ilk
+ * Şube ekleme (yalnız asıl yönetici; docs/SUBE.md › Şube ekleme): iki sayfada aynı bileşen ve aynı sunucu eylemleri,
+ * ladmin'de /panel/sube-ekleme, Yönetim konsolunda "Şubeler ve kasalar" (/yonetim; veri src/server/sube-ekleme.ts).
+ * Metinler iki yerde de doğru olsun diye ladmin'in ekranlarını "ladmin › …" diye anar. Yeni şube formu (isteğe bağlı ilk
  * personeliyle), fiziksel şubelerin kasa durumu (src/lib/asilpos/kasa-durumu.ts), "Bilgisayara kur" (kurulum bağlantısı;
  * kurulu kasa varsa önce onay), "İlk personeli ayarla" ve "Kasayı serbest bırak" (docs/ASILPOS.md › Kasa açılışı).
  * Kurallar saf dosyalardan okunur, sunucu aynısını denetler. PIN'ler yalnız formda durur: sunucu onları geri vermez,
@@ -495,7 +497,7 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
             error={goster(kaynakHata)}
             hint={
               fiziksel
-                ? "Gün sonu hangi programdan gelir. Şube bugün ModPOS'la çalışıyorsa ModPOS seçin: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz; AsilPOS'a geçiş sonra Şubeler'de."
+                ? "Gün sonu hangi programdan gelir. Şube bugün ModPOS'la çalışıyorsa ModPOS seçin: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz; AsilPOS'a geçiş sonra ladmin › Şubeler'de."
                 : "Online kanalın kasası yok."
             }
           >
@@ -511,7 +513,7 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
             </Select>
           </Field>
           {fiziksel ? (
-            <Field label="Banka POS oranı (%)" htmlFor="se-oran" error={goster(oranHata)} hint="Bankanın kart satışından kestiği oran; sonradan Şubeler'de değişir.">
+            <Field label="Banka POS oranı (%)" htmlFor="se-oran" error={goster(oranHata)} hint="Bankanın kart satışından kestiği oran; sonradan ladmin › Şubeler'de değişir.">
               <NumberInput id="se-oran" value={t.posRate} onChange={(e) => setT((o) => ({ ...o, posRate: e.target.value }))} />
             </Field>
           ) : null}
