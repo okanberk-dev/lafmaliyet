@@ -169,7 +169,7 @@ test("kaynakta: ölçüm pg_database_size; e-posta sistem uyarısı kabuğuyla, 
   const card = read("src/app/panel/ayarlar/database-card.tsx");
   assert.match(card, /id="veritabani"/);
   assert.match(card, /role="meter"/);
-  assert.match(read("src/app/panel/ayarlar/page.tsx"), /async function SettingsContent\(\) \{\s*await requireAdmin\(\);/);
+  assert.match(read("src/app/panel/ayarlar/page.tsx"), /async function SettingsContent\(\) \{\s*(const me = )?await requireAdmin\(\);/);
   // Bildirim zil ve şeride sistem uyarısı olarak (yalnız yönetici) gider
   assert.match(read("src/server/jobs/alerts.ts"), /systemAlerts\(\{ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt, dbQuota, runs \}\)/);
 });

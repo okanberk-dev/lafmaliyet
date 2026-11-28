@@ -522,6 +522,8 @@ async function SettingsContent() {
       <ErrorLogCard />
       <SiteLinksCard />
       <AsilposCard
+        // AsilPOS'a geçiş gününü değiştirmek yalnız asıl yöneticide (saveAsilposSwitchDay aynı denetimi yapar)
+        anaAdmin={isAnaAdmin(me)}
         products={model.products.map((p) => ({
           id: p.product.id,
           name: p.product.name,
@@ -533,8 +535,6 @@ async function SettingsContent() {
         }))}
         scope={scope}
         branches={branches}
-        // AsilPOS'a geçiş gününü değiştirmek yalnız asıl yöneticide (saveAsilposSwitchDay aynı denetimi yapar)
-        anaAdmin={isAnaAdmin(me)}
       />
       <ModposCard scope={scope} branches={branches} />
       <PhotoReadingCard />

@@ -338,7 +338,7 @@ function BranchDialog({
           disabled={sabit || !anaAdmin}
           onChange={(e) => setT((o) => ({ ...o, active: e.target.checked }))}
         />
-        {!anaAdmin && !sabit ? <Notice tone="neutral" size="sm" title="Şubeyi kapatmak, silmek ve kasa programını değiştirmek yalnız asıl yöneticinin işidir." /> : null}
+        {!anaAdmin && !sabit ? <Notice tone="neutral" size="sm" title="Kapatmak, silmek ve kasa programını değiştirmek asıl yöneticinin işidir." /> : null}
       </div>
     </Dialog>
   );

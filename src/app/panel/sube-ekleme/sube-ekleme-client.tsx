@@ -164,6 +164,7 @@ export function SubeEkleme({
 
       {kur ? (
         <KurDialog
+          key={kur.branch.id}
           branch={kur.branch}
           email={emails[kur.branch.id] ?? ""}
           bekliyor={bekliyor}
