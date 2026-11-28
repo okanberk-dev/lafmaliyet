@@ -228,6 +228,7 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
   bulgu düzeltilecek, ikinci inceleme, sonra PR.
 - P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi, rol × ekran duman testi).
+  CI süre sınırı 25 dakikaya çıktı (28 Kasım, dal ci-sure-siniri).
 - P5 Ayarlar ay bazlı + 2027 bordro ve stopaj değerleri (`src/lib/bordro/rules-2026.ts`'in 2027'si: asgari ücret, gelir
   vergisi tarifesi, SGK oranları ve PEK sınırları, kira stopajı; Ocak'tan önce, yoksa 2027 2026 değerleriyle hesaplanır;
   vergi kuralları Vergi bölümüyle kalktı); P6 Excel'den kalan sabit listeler (fatura / hammadde

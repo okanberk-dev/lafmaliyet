@@ -6,8 +6,9 @@
 # migration uygular (boş yerel veritabanına başlangıç verisini de yükler); CI canlı ya da kalıcı hiçbir veritabanına
 # dokunmaz. Aşağıdaki ortam değişkenleri yalnız yer tutucudur, gerçek sırlar Vercel'de kalır.
 #
-# Squash merge edilen PR'ın ağacı PR'da zaten denendi; main'de "(#N)" başlıklı commit'te iş atlanır (atlanan iş
-# Actions dakikası harcamaz). "(#" içermeyen doğrudan push yine denenir.
+# Squash ile birleşen PR'ın ağacı PR'da zaten denendi; main'de "(#N)" başlıklı commit'te iş atlanır (atlanan iş
+# Actions dakikası harcamaz). Bu depoda PR'lar merge commit ile birleşir ("Merge pull request #N": "(#" içermez), yani
+# birleşen PR main'de bir kez daha denenir; "(#" içermeyen doğrudan push da denenir.
 name: CI
 
 on:
@@ -27,7 +28,8 @@ jobs:
     name: Tip · Lint · Test · Derleme
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '(#')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Son koşular 14-15 dakika sürüyordu (28 Kasım 2026); sınıra takılan koşu yarıda iptal olur. Pay bırakıldı
+    timeout-minutes: 25
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       DATABASE_URL: postgres://ci:ci@localhost:5432/ci

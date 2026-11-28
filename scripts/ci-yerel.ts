@@ -1,5 +1,6 @@
-// Birleştirmeden önce yerel denetim: `npm run ci:yerel -- <PR no>` (GitHub Actions faturası yüzünden CI'ın Postgres işi
-// koşmuyor; predeploy göçleri canlı Neon'a uygular, yani göç yolu birleştirmeden önce burada denenir).
+// Birleştirmeden önce yerel denetim: `npm run ci:yerel -- <PR no>`. CI veritabanı testlerini de koşar
+// (.github/workflows/ci.yml); burada ek olarak şema ve göç tutarlılığı denenir (CI'da bu adım henüz yok). Predeploy
+// göçleri canlı Neon'a uygular, yani göç yolu birleştirmeden önce burada denenir.
 //
 // 1. Bu bilgisayardaki Postgres'te boş `lm_pr<no>` veritabanını açar (varsa önce siler).
 // 2. `TEST_DATABASE_URL` onu gösterecek şekilde `npm run test:db` koşar (göçlerin hepsi baştan, seed, veritabanı testleri).
