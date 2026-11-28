@@ -8,7 +8,7 @@ import { panelBaglantilari } from "@/lib/yonetim-host";
 import { yonetimCikisAction } from "@/server/actions/yonetim-giris";
 import { requireYonetim } from "@/server/auth/dal";
 
-import { KonsolSekmeleri } from "./sekmeler";
+import { KonsolSekmeleri, KonsolSekmeleriYedek } from "./sekmeler";
 
 export const metadata: Metadata = {
   title: { default: "Yönetim konsolu", template: "%s · Yönetim konsolu" },
@@ -40,7 +40,10 @@ export default function KonsolLayout({ children }: { children: React.ReactNode }
           </Suspense>
         </div>
         <div className="mx-auto w-full max-w-[1100px] px-4 sm:px-6">
-          <KonsolSekmeleri />
+          {/* Dinamik yolda (/yonetim/sube/[id]) usePathname ön çizimde bilinmez: Suspense olmadan derleme durur */}
+          <Suspense fallback={<KonsolSekmeleriYedek />}>
+            <KonsolSekmeleri />
+          </Suspense>
         </div>
       </header>
       <main id="icerik" tabIndex={-1} className="mx-auto w-full max-w-[1100px] min-w-0 px-4 py-6 outline-none sm:px-6 lg:py-8">

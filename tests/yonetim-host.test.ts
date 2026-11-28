@@ -234,7 +234,9 @@ test("şube işlemleri konsolda: şube satırından işlem sayfasına; var olan 
   assert.equal(sekmeAcik("/yonetim", "/yonetim/lisans"), false);
   assert.equal(sekmeAcik("/yonetim", "/yonetim/subex"), false);
   assert.deepEqual(konsolYolu("/yonetim/sube/marina"), { tur: "gec" }, "konsol adresinde açık");
-  assert.match(read("src/app/yonetim/(konsol)/sekmeler.tsx"), /const acik = sekmeAcik\(s\.href, yol\);/);
+  assert.match(read("src/app/yonetim/(konsol)/sekmeler.tsx"), /const acik = yol !== null && sekmeAcik\(s\.href, yol\);/);
+  // Dinamik yolda usePathname ön çizimde bilinmez (Next 16): sekmeler kabukta Suspense içinde, yedeği seçimsiz aynı liste
+  assert.match(read("src/app/yonetim/(konsol)/layout.tsx"), /<Suspense fallback=\{<KonsolSekmeleriYedek \/>\}>\s*<KonsolSekmeleri \/>\s*<\/Suspense>/);
   // Şubeler ve kasalar: aynı bileşen konsol metinleriyle; satırda "Şube işlemleri"; online kanallar da listede
   const ana = read("src/app/yonetim/(konsol)/page.tsx");
   assert.match(ana, /releaseAction=\{releaseBranchTill\}\s*yer="konsol"/);
