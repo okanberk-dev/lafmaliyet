@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 
 import { cspEnforced, cspHeaders } from "./src/lib/csp";
+import { panelYonetimYonlendirmesi } from "./src/lib/yonetim-host";
 
 /** Panelin tek adresi; Vercel'in proje adresi (lafmaliyet.vercel.app) buraya yönlenir */
 const PANEL_HOST = "ladmin.laffogato.net";
+
 
 /**
  * Content-Security-Policy (src/lib/csp.ts; docs/DEPLOY.md › Güvenlik başlıkları): çekirdek (çerçeve, base, form hedefi)
@@ -97,6 +99,9 @@ const nextConfig: NextConfig = {
         destination: `https://${PANEL_HOST}/:path`,
         permanent: true,
       },
+      // Panel adresindeki /yonetim: yalnız ortamda YONETIM_URL açıkça tanımlıysa konsolun adresine (src/lib/yonetim-host.ts).
+      // Derlemede okunur: değişken değişince yeniden deploy (docs/DEPLOY.md › Yönetim konsolu alan adı)
+      ...panelYonetimYonlendirmesi(PANEL_HOST, process.env),
     ];
   },
 };
