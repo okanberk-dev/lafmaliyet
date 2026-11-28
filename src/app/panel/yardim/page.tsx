@@ -749,18 +749,14 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
       },
       {
         id: "sube-ekleme",
-        q: "Şube ekleme, kasa kurma ve kasayı serbest bırakma (asıl yönetici)",
+        q: "Şube ekleme ve kasa kurma (asıl yönetici)",
         a: (
           <>
             Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasayı bilgisayara kurmak yalnız asıl yöneticinin işidir; öteki yöneticiler
             şubenin adını, POS oranını ve e-postasını düzenler. <Path href="/panel/sube-ekleme" /> yalnız asıl yöneticinin menüsünde: yeni şube,
             şubelerin kasa durumu ve Bilgisayara kur. Bilgisayara kur, şubenin e-postasına 14 gün geçerli, tek kurulumluk bir bağlantı gönderir;
-            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Yeni kasa gerçek kullanıma geçerken
-            asıl yöneticinin ladmin e-postası ve parolasıyla girip şubesini seçer; kasası kurulu şube kasada seçilemez. Bilgisayar değişecekse
-            şubenin satırında Kasayı serbest bırak (şubenin adı ve parolanızla): eski kasa ladmin bağlantısını kaybeder, yeni bilgisayar şubeyi
-            seçebilir. İlk personeli ayarla ile patron, müdür ve baristanın adı ve PIN&apos;i girilir; PIN&apos;ler şifreli durur, kasa aldığını
-            onaylayınca silinir. Asıl yöneticinin hesabını başka yönetici değiştiremez; Kullanıcılar &amp; roller&apos;de satırı &quot;Asıl
-            yönetici&quot; etiketlidir.
+            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Asıl yöneticinin hesabını başka
+            yönetici değiştiremez; Kullanıcılar &amp; roller&apos;de satırı &quot;Asıl yönetici&quot; etiketlidir.
           </>
         ),
         icon: MonitorDown,
@@ -768,6 +764,20 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           { href: "/panel/sube-ekleme", label: "Şube ekleme" },
           { href: "/panel/kullanicilar", label: "Kullanıcılar & roller" },
         ],
+      },
+      {
+        id: "kasa-acilis",
+        q: "Kasanın gerçek açılışı, ilk personel ve kasayı serbest bırakma",
+        a: (
+          <>
+            Yeni kasa gerçek kullanıma geçerken asıl yöneticinin ladmin e-postası ve parolasıyla girip şubesini seçer; kasası kurulu şube kasada
+            seçilemez. Bilgisayar değişecekse <Path href="/panel/sube-ekleme" /> › şubenin satırı › Kasayı serbest bırak (şubenin adı ve
+            parolanızla): eski kasa ladmin bağlantısını kaybeder, yeni bilgisayar şubeyi seçebilir. İlk personeli ayarla ile patron, müdür ve
+            baristanın adı ve PIN&apos;i girilir; PIN&apos;ler şifreli durur, kasa aldığını onaylayınca silinir.
+          </>
+        ),
+        icon: MonitorDown,
+        links: [{ href: "/panel/sube-ekleme", label: "Şube ekleme" }],
       },
       {
         id: "iki-kar",
