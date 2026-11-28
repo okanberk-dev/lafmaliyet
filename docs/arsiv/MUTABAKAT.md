@@ -1,5 +1,16 @@
 # Mutabakat (banka ve tedarikçi ekstresi, POS hakedişi)
 
+> **Arşiv: Mutabakat bölümü 28 Kasım 2026'da kaldırıldı (sahibin isteği: "ladmin'deki Mutabakat kısmını kaldır").**
+> Ekran (Kâr & ödemeler › Mutabakat), sunucu eylemleri, okuma yolu ve `src/lib/mutabakat` silindi; eski adresler
+> (`/panel/mutabakat` ve alt adresleri, sorgulularla) Gelir-gider'e kısa notla yönlenir (`?kaldirildi=mutabakat`).
+> Tablolar (`recon_statements`, `recon_lines`) ve ayar (`settings.mutabakatPosBlokeGunu`) yerinde; yedek onları taşır,
+> göç yok. Yerinde kalan tek kod KVKK saklama süresi: yüklenmiş ekstreler yüklendiği gün + 90'da günlük işte eskisi gibi
+> silinir (`src/server/mutabakat/store.ts` › `purgeExpiredStatements`). Nakit planı, Ödemeler ve Gelir-gider değişmedi;
+> Mutabakat onlara hiçbir rakam vermiyordu. **Geri getirmek:** kaldıran PR'ın ("Mutabakat bölümü kaldırıldı")
+> birleştirme commit'i geri alınır (`git revert -m 1`); menü satırı, yetki satırı, şube görünümünün `mutabakat` alanı geri
+> gelir, `RETIRED_PATHS` girdisi ve notu düşer. Göç gerekmez: tablolar ve son 90 günün ekstreleri yerinde. Aşağısı kaldırılan
+> bölümün o günkü belgesidir; içindeki dosya yolları artık yok.
+
 Ekran: **Kâr & ödemeler › Mutabakat** (`/panel/mutabakat`, yalnız yönetici; ⌘K'da "mutabakat", "banka ekstresi", "cari
 ekstre", "POS hakediş"). İki sekme:
 
@@ -103,7 +114,7 @@ yazılır ("Mutabakat"). Ekstre silinince hareketleri ve kararları gider; panel
 
 - **Kart satışı:** kasa raporundan, şube şube: banka gün sonu fişi yazıldıysa o (POS cihazından geçen), yoksa Z
   raporunun kart satırı (tabloda "(Z)"). Yemek kartı ve platform hakedişi burada değil, Komisyon & hakediş'te
-  ([KOMISYON.md](KOMISYON.md)).
+  ([KOMISYON.md](../KOMISYON.md)).
 - **Beklenen net** = kart satışı × (1 − şubenin banka POS oranı; Şubeler'de, `branches.pos_rate`, varsayılan %2).
 - **Valör günü** = satış günü + **bloke günü** (sekmenin altındaki "Hesap" kartında; varsayılan 1, 0–60; ayar
   `settings.mutabakatPosBlokeGunu`); cumartesi ya da pazara denk gelirse pazartesi. Resmi tatiller bilinmez: tatil
@@ -139,11 +150,11 @@ En tutucu, geri alınabilir varsayılan seçildi:
 
 ## Şube
 
-Ekstre işletme genelidir ([SUBE.md](SUBE.md) › Neyi süzer): banka hesabı ve cari hesap şubeye bölünmez, eşleşme her
+Ekstre işletme genelidir ([SUBE.md](../SUBE.md) › Neyi süzer): banka hesabı ve cari hesap şubeye bölünmez, eşleşme her
 zaman bütün şubelerin kayıtlarıyla yapılır. POS hakedişinde kart satışı şube şube kendi oranıyla hesaplanır, "Tümü"de
 valör satırı birden çok şubenin satışını gösterir.
 
-27 Kasım 2026'dan beri (şube ayrımı parça 5, [SUBE.md › Alanlar: Tutarlılık, Mutabakat, Stok değeri](SUBE.md#alanlar-tutarlılık-mutabakat-stok-değeri-parça-5))
+27 Kasım 2026'dan beri (şube ayrımı parça 5, [SUBE.md › Alanlar: Tutarlılık, Mutabakat, Stok değeri](../SUBE.md#alanlar-tutarlılık-mutabakat-stok-değeri-parça-5))
 şube seçiliyken ekran kişinin şube görünümüyle (Mutabakat alanı; "firma geneli" notunun yerinde görünüm çipi). Firma
 geneli kipinde bugünkü gibi. **Yalnız şube** kipinde eşleşme aynıdır, gösterim ayrılır (`src/lib/mutabakat/branch.ts`):
 

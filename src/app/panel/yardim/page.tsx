@@ -1,5 +1,4 @@
 import {
-  ArrowLeftRight,
   ArrowUpRight,
   Bell,
   Bot,
@@ -567,23 +566,6 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ],
       },
       {
-        id: "mutabakat",
-        q: "Banka ve tedarikçi ekstresi panelle tutuyor mu?",
-        a: (
-          <>
-            <Path href="/panel/mutabakat" /> ekranında Ekstre yükle&apos;ye dokunun: bankanın hesap hareketlerini ya da tedarikçinin cari ekstresini .xlsx ya da CSV
-            dosyası olarak seçin. Sütunlar kendiliğinden tanınır, tanınmazsa siz seçersiniz. Hareketler harcamalar, tedarikçi ödemeleri, ödendi işaretli faturalar ve
-            kasadan teslimlerle (tedarikçide faturalar ve ödemelerle) eşleşir; eşleşmeyeni Eşleştir ile elle bağlayın ya da Yok say deyin. POS hakediş sekmesi kasa
-            raporlarının kart satışını bankaya gelen POS parasıyla gün gün karşılaştırır. Dosya saklanmaz, hareketler 90 gün sonra silinir; panel kaydı değişmez.
-          </>
-        ),
-        icon: ArrowLeftRight,
-        links: [
-          { href: "/panel/mutabakat", label: "Mutabakat" },
-          { href: "/panel/mutabakat?sekme=pos", label: "POS hakediş" },
-        ],
-      },
-      {
         id: "odendi-geri-al",
         q: "Yanlışlıkla “Ödedim”e bastım",
         a: (
@@ -724,7 +706,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             kilitli personel yalnız kendi şubesini görür. Ödemeler, Nakit planı, Tutarlılık, Raporlar gibi ekranlarda üstteki düğme ya da{" "}
             <strong className="font-semibold text-ink">Hesabım › Şube görünümü</strong> yalnız şubeyi ya da firmanın tamamını seçer; işletme geneli
             giderler varsayılan olarak yalnız notla yazılır. Dışa aktar ve muhasebeci paketi seçili şubenin dosyasını indirir. Vergi ve SGK şubeye
-            bölünmez, hep firmanındır; banka ekstresi ve tam yedek de. Siparişler ve Tükendi &quot;Bütün şubeler&quot; yazar.
+            bölünmez, hep firmanındır; tam yedek de. Siparişler ve Tükendi &quot;Bütün şubeler&quot; yazar.
           </>
         ),
         icon: Globe,

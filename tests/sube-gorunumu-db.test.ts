@@ -132,24 +132,24 @@ describe("şube görünümü: veritabanında", { skip: !SERVER_URL && "SUBE_GORU
   test("yönetici: tek alan yazılır, öteki alanlar korunur; kapsam firma kipinde Tümü, şube kipinde seçim", async () => {
     await signIn("ali");
     asAction();
-    assert.deepEqual(await action.saveBranchView({ area: "mutabakat", mode: "firma" }), { ok: true, data: { prefs: { mutabakat: "firma" } } });
-    assert.deepEqual(await action.saveBranchView({ area: "nakit", mode: "firma" }), { ok: true, data: { prefs: { mutabakat: "firma", nakit: "firma" } } });
-    assert.deepEqual(await action.saveBranchView({ area: "mutabakat", mode: "sube" }), { ok: true, data: { prefs: { mutabakat: "sube", nakit: "firma" } } });
-    assert.deepEqual(await stored("ali"), { mutabakat: "sube", nakit: "firma" });
+    assert.deepEqual(await action.saveBranchView({ area: "tutarlilik", mode: "firma" }), { ok: true, data: { prefs: { tutarlilik: "firma" } } });
+    assert.deepEqual(await action.saveBranchView({ area: "nakit", mode: "firma" }), { ok: true, data: { prefs: { tutarlilik: "firma", nakit: "firma" } } });
+    assert.deepEqual(await action.saveBranchView({ area: "tutarlilik", mode: "sube" }), { ok: true, data: { prefs: { tutarlilik: "sube", nakit: "firma" } } });
+    assert.deepEqual(await stored("ali"), { tutarlilik: "sube", nakit: "firma" });
     // Başkasının satırı değişmedi
     assert.deepEqual(await stored("zeynep"), {});
     // İstekte okunur: Marina seçili
-    assert.deepEqual(await scope.userBranchView(), { mutabakat: "sube", nakit: "firma" });
+    assert.deepEqual(await scope.userBranchView(), { tutarlilik: "sube", nakit: "firma" });
     assert.equal(await scope.currentBranchView("nakit"), "firma");
     assert.equal(await scope.currentBranchView("tutarlilik"), "sube", "yazılmamış alan yöneticinin varsayılanı");
     assert.equal(await scope.areaScope("nakit"), ALL_BRANCHES);
-    assert.equal(await scope.areaScope("mutabakat"), "marina");
+    assert.equal(await scope.areaScope("tutarlilik"), "marina");
     assert.equal(await scope.areaScope("tutarlilik"), "marina");
     // Alanın kapsamıyla açılan okuma: firma kipinde Tümü'yü görür
     assert.equal(await scope.withBranchScope(await scope.areaScope("nakit"), () => scope.currentBranchScope()), ALL_BRANCHES);
     // Tümü seçiliyken kip anlamsız: hep Tümü
     await signIn("ali", ALL_BRANCHES);
-    assert.equal(await scope.areaScope("mutabakat"), ALL_BRANCHES);
+    assert.equal(await scope.areaScope("tutarlilik"), ALL_BRANCHES);
   });
 
   test("toplu: hepsi firma geneli, hepsi yalnız şube, varsayılanlara dön", async () => {
@@ -168,21 +168,23 @@ describe("şube görünümü: veritabanında", { skip: !SERVER_URL && "SUBE_GORU
   test("geçersiz girdi ve bozuk kayıt: eylem reddeder, okuma bilinmeyeni düşürür", async () => {
     await signIn("ali");
     asAction();
-    // Vergi'nin alanı yok (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez): eski çip ya da sekmeden gelen yazım da reddedilir
-    for (const bad of [{ area: "bilinmeyen", mode: "firma" }, { area: "vergi", mode: "firma" }, { area: "nakit", mode: "tumu" }, { area: "nakit", mode: "firma", extra: 1 }, { all: "hepsi" }, null, "nakit"]) {
+    // Vergi'nin alanı yok (sahibin kararı 27 Kasım 2026: vergi şubeye bölünmez), Mutabakat'ınki bölümle kalktı (28 Kasım
+    // 2026): eski çip ya da sekmeden gelen yazım da reddedilir
+    for (const bad of [{ area: "bilinmeyen", mode: "firma" }, { area: "vergi", mode: "firma" }, { area: "mutabakat", mode: "firma" }, { area: "nakit", mode: "tumu" }, { area: "nakit", mode: "firma", extra: 1 }, { all: "hepsi" }, null, "nakit"]) {
       const r = await action.saveBranchView(bad);
       assert.equal(r.ok, false, JSON.stringify(bad));
     }
     assert.deepEqual(await stored("ali"), {}, "hiçbir şey yazılmadı");
-    // Eski sürümün yazdığı Vergi tercihi sessizce düşer; öbür alanlar okunur
-    await db.execute(sql`UPDATE users SET branch_view = '{"vergi":"firma","mutabakat":"firma","nakit":"bilgi","x":"firma"}'::jsonb WHERE id = ${ids.ali}`);
-    assert.deepEqual(await scope.userBranchView(), { mutabakat: "firma" });
+    // Eski sürümün yazdığı Vergi ve Mutabakat tercihi sessizce düşer (bölümler kaldırıldı); öbür alanlar okunur
+    await db.execute(sql`UPDATE users SET branch_view = '{"vergi":"firma","mutabakat":"sube","tutarlilik":"firma","nakit":"bilgi","x":"firma"}'::jsonb WHERE id = ${ids.ali}`);
+    assert.deepEqual(await scope.userBranchView(), { tutarlilik: "firma" });
     assert.equal(await scope.currentBranchView("nakit"), "sube");
-    assert.equal(await scope.areaScope("mutabakat"), ALL_BRANCHES);
+    assert.equal(await scope.areaScope("tutarlilik"), ALL_BRANCHES);
     // Toplu düğme eski anahtarı yazmaz; Varsayılanlara dön hepsini siler
     asAction();
     await action.saveBranchView({ all: "sube" });
     assert.equal((await stored("ali") as Record<string, string>).vergi, "firma", "eski anahtar yerinde kalır (okunmaz)");
+    assert.equal((await stored("ali") as Record<string, string>).mutabakat, "sube", "Mutabakat'ın eski tercihi de yerinde (okunmaz)");
     assert.deepEqual(await scope.userBranchView(), Object.fromEntries(VIEW_AREA_KEYS.map((a) => [a, "sube"])));
     await action.saveBranchView({ all: "varsayilan" });
     assert.deepEqual(await stored("ali"), {});
@@ -207,39 +209,39 @@ describe("şube görünümü: veritabanında", { skip: !SERVER_URL && "SUBE_GORU
     await db.update(s.users).set({ branchView: Object.fromEntries(VIEW_AREA_KEYS.map((a) => [a, "firma"])) }).where(eq(s.users.id, ids.mehmet));
     await signIn("mehmet", ALL_BRANCHES);
     asAction();
-    assert.deepEqual(await action.saveBranchView({ area: "mutabakat", mode: "firma" }), { ok: false, error: BRANCH_VIEW_LOCKED });
+    assert.deepEqual(await action.saveBranchView({ area: "tutarlilik", mode: "firma" }), { ok: false, error: BRANCH_VIEW_LOCKED });
     assert.deepEqual(await action.saveBranchView({ all: "varsayilan" }), { ok: false, error: BRANCH_VIEW_LOCKED });
     for (const a of VIEW_AREA_KEYS) {
       assert.equal(await scope.currentBranchView(a), "sube", a);
       assert.equal(await scope.areaScope(a), "tuzla", a);
     }
     // Tercih verilse de (bağlantı anahtarı yolu) kilit kalır; "Tümü" ile açılan okuma şubesine daralır
-    assert.equal(await scope.withBranchView({ mutabakat: "firma" }, () => scope.currentBranchView("mutabakat")), "sube");
+    assert.equal(await scope.withBranchView({ tutarlilik: "firma" }, () => scope.currentBranchView("tutarlilik")), "sube");
     assert.equal(await scope.withBranchScope(ALL_BRANCHES, () => scope.currentBranchScope()), "tuzla");
-    assert.equal(await scope.withBranchScope("marina", () => scope.withBranchView({ mutabakat: "firma" }, () => scope.areaScope("mutabakat"))), "tuzla");
+    assert.equal(await scope.withBranchScope("marina", () => scope.withBranchView({ tutarlilik: "firma" }, () => scope.areaScope("tutarlilik"))), "tuzla");
   });
 
   test("şubesine kilitli ve şubesiz personel: eylem reddeder, her alan şube", async () => {
     for (const k of ["ayse", "fatma"] as const) {
       await signIn(k);
       asAction();
-      assert.deepEqual(await action.saveBranchView({ area: "mutabakat", mode: "firma" }), { ok: false, error: BRANCH_VIEW_LOCKED }, k);
-      assert.equal(await scope.currentBranchView("mutabakat"), "sube", k);
+      assert.deepEqual(await action.saveBranchView({ area: "tutarlilik", mode: "firma" }), { ok: false, error: BRANCH_VIEW_LOCKED }, k);
+      assert.equal(await scope.currentBranchView("tutarlilik"), "sube", k);
     }
     assert.deepEqual(await stored("ayse"), {});
     assert.deepEqual(await stored("fatma"), {});
     // Kilitli personelin seçimi şubesinde: çerez Tuzla dese de kapsam Marina
     await signIn("ayse", "tuzla");
-    assert.equal(await scope.areaScope("mutabakat"), "marina");
+    assert.equal(await scope.areaScope("tutarlilik"), "marina");
   });
 
   test("istek dışında (test, bağlantı anahtarı): withBranchView'ın tercihi geçer, yoksa yöneticinin varsayılanı", async () => {
     jar = new Jar();
     assert.deepEqual(await scope.userBranchView(), {}, "oturum yok");
-    const run = (prefs: Parameters<typeof scope.withBranchView>[0]) => scope.withBranchScope("marina", () => scope.withBranchView(prefs, () => scope.areaScope("mutabakat")));
-    assert.equal(await run({ mutabakat: "firma" }), ALL_BRANCHES);
-    assert.equal(await run({ mutabakat: "sube" }), "marina");
+    const run = (prefs: Parameters<typeof scope.withBranchView>[0]) => scope.withBranchScope("marina", () => scope.withBranchView(prefs, () => scope.areaScope("tutarlilik")));
+    assert.equal(await run({ tutarlilik: "firma" }), ALL_BRANCHES);
+    assert.equal(await run({ tutarlilik: "sube" }), "marina");
     assert.equal(await run({}), "marina");
-    assert.equal(await scope.withBranchScope("marina", () => scope.areaScope("mutabakat")), "marina");
+    assert.equal(await scope.withBranchScope("marina", () => scope.areaScope("tutarlilik")), "marina");
   });
 });

@@ -23,6 +23,7 @@
 // sekiz sızıntısı (Faturalar'ın cari bağları, sabah e-postasının fatura bölümü, Mutabakat POS'un şube karoları, Maaşlar'ın
 // hesap seçicisi, Kullanıcılar & roller, Site menüsü ve Reçete defterinin bekleyen yeni ürün önerileri, ekstre yükleme
 // penceresinin tedarikçileri) 27 Kasım 2026'da kapandı ("Şube ayrımı: doğrulama düzeltmeleri"); bugün işaretli yok.
+// Mutabakat bölümü 28 Kasım 2026'da kaldırıldı: ekranları ve ekstre tohumu bu listeden çıktı.
 //
 // SUBE_AYRIMI_TEST_DATABASE_URL verilmezse atlanır (npm run test:db onu TEST_DATABASE_URL'e bağlar). Bir Postgres
 // sunucusunun adresi: test kendi geçici veritabanını açar, migration'ları ve başlangıç verisini uygular, sonunda siler.
@@ -43,7 +44,7 @@ import { addDays, todayTR } from "../src/lib/reminders";
 import { businessDate } from "../src/lib/cash-report";
 import * as s from "../src/server/db/schema";
 
-import { deleteBranchRows, seedSubeAyrimi, type SubeTohum, tzLeaks, tzTextLeak } from "./helpers/sube-ayrimi-tohum";
+import { deleteBranchRows, seedSubeAyrimi, type SubeTohum, tzLeaks } from "./helpers/sube-ayrimi-tohum";
 
 const SERVER_URL = process.env.SUBE_AYRIMI_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_sube_ayrimi_${process.pid}`;
@@ -145,8 +146,6 @@ const ORTAK = {
   elsewhere: /\.elsewhere$/,
   /** loadUpcoming'in iç eşlemesi (fatura → şube); ekrana çıkmaz, nakit planının işletme geneli kimlikleri için */
   invoiceBranches: /\.invoiceBranches$/,
-  /** Mutabakat: eşleşme firmanın bütün kayıtlarıyla, öbür şubenin kaydı adsız (parça 5) */
-  recon: /\.(summary|branch\.shared|branch\.otherMissing)$|\.rows\[\d+\]\.(status|candidate|basis)$/,
   /** Tedarikçi kütüğü (ortak veri) ve cari takibi (firmanın tek hesabı) */
   cariIndex: /^\.(cards|tracked|credit|entries|refs)$/,
 } as const;
@@ -157,8 +156,6 @@ interface Screen {
   run: () => Promise<unknown>;
   /** Fark bakışında atlanan yollar (tasarımın firmanın bıraktığı yer, gerekçesiyle `ORTAK`ta) */
   shared?: readonly RegExp[];
-  /** Yalnız metin işareti aranır (tutar tasarımda firmanın: ekstrenin satırı) */
-  textOnly?: boolean;
   /** Bilinen sızıntı (todo): dosya:satır ve kısa açıklama */
   leak?: string;
   /** Bilinen fark (yalnız fark bakışında; todo) */
@@ -417,31 +414,6 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
     { name: "Kontrol listeleri › gün (loadChecklistDay)", run: async () => (await import("../src/server/data/checklists")).loadChecklistDay(seed.d1, "admin") },
     { name: "Kontrol listeleri › Geçmiş (loadChecklistHistory)", run: async () => (await import("../src/server/data/checklists")).loadChecklistHistory(`${month()}-01`, today, "admin") },
     { name: "Kontrol listeleri › düzenle (loadChecklistTemplates scoped)", run: async () => (await import("../src/server/data/checklists")).loadChecklistTemplates({ scoped: true }) },
-    // Mutabakat
-    {
-      // Şube kipinde ekran (BranchPos): şubenin satırları ve karoları (beklenen, geciken, bekleyen), bankaya gelen para
-      // (firmanın, öbür şubenin satışına bağlı değil). Firmanın toplamları (fark, geciken) şube kipinde dönmez
-      name: "Mutabakat › POS hakedişi (loadPosView, alan.mutabakat)",
-      run: async () => {
-        const v = await (await import("../src/server/mutabakat/load")).loadPosView(today, await area("mutabakat"));
-        return v.branch ? { branch: v.branch, result: v.result } : v;
-      },
-    },
-    {
-      name: "Mutabakat › ekstre (loadRecon, alan.mutabakat)",
-      // Ekstrenin satırı ve tutarı firmanın (tasarım); öbür şubenin kaydı adsız olmalı
-      textOnly: true,
-      run: async () => {
-        const r = await (await import("../src/server/mutabakat/load")).loadRecon(await area("mutabakat"));
-        return r.statements;
-      },
-      shared: [ORTAK.recon],
-    },
-    {
-      // Sayfa alanın kapsamıyla çağırır (src/app/panel/mutabakat/page.tsx)
-      name: "Mutabakat › ekstre yükleme penceresinin tedarikçileri (loadSupplierOptions, alan.mutabakat)",
-      run: async () => (await import("../src/server/mutabakat/load")).loadSupplierOptions(await area("mutabakat")),
-    },
     // Raporlar
     { name: "Raporlar › Şube karşılaştırma (loadBranchCompare)", run: async () => (await import("../src/server/data/sube-karsilastirma")).loadBranchCompare(month(), 3) },
     { name: "Raporlar › İşçilik / ciro (loadLaborReport)", run: async () => (await import("../src/server/data/iscilik")).loadLaborReport(month()) },
@@ -595,7 +567,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         const out = await sc.run();
         const shown = prune(norm(out), sc.shared ?? []);
         results.set(sc.name, norm(out));
-        const hit = sc.textOnly ? tzTextLeak(shown) : tzLeaks(shown);
+        const hit = tzLeaks(shown);
         await signIn(seed.users.admin, ALL_BRANCHES);
         allBefore.set(sc.name, norm(await sc.run().catch((e: Error) => ({ hata: e.message }))));
         assert.equal(hit, null, `Tuzla'nın verisi görünüyor: …${hit}…`);
@@ -608,7 +580,7 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       test(sc.name, sc.leak ? { todo: sc.leak } : {}, async () => {
         await signIn(seed.users.marinaManager, "tuzla", FIRMA);
         const out = prune(norm(await sc.run().catch((e: Error) => ({ hata: e.message }))), sc.shared ?? []);
-        const hit = sc.textOnly ? tzTextLeak(out) : tzLeaks(out);
+        const hit = tzLeaks(out);
         assert.equal(hit, null, `Tuzla'nın verisi görünüyor: …${hit}…`);
       });
     }
@@ -655,12 +627,6 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
         async () => (await import("../src/server/data/suppliers")).loadSupplierLedger(await area("tedarikciler")),
         (l: unknown) => l,
       ));
-    test("Mutabakat › POS (loadPosView)", () =>
-      same(
-        "mutabakat",
-        async () => (await import("../src/server/mutabakat/load")).loadPosView(today, await area("mutabakat")),
-        (p: unknown) => p,
-      ));
     test("Tutarlılık (veri kümesi)", () =>
       same(
         "tutarlilik",
@@ -694,12 +660,6 @@ describe("şube ayrımı doğrulaması: Marina seçiliyken Tuzla'nın verisi hi�
       same(
         "stok_degeri",
         async () => (await import("../src/server/data/purchase-lots-query")).queryPurchaseLots(db, await area("stok_degeri")),
-        (l: unknown) => l,
-      ));
-    test("Mutabakat › ekstre (loadRecon)", () =>
-      same(
-        "mutabakat",
-        async () => (await (await import("../src/server/mutabakat/load")).loadRecon(await area("mutabakat"))).statements.map((x) => ({ summary: x.summary, rows: x.rows })),
         (l: unknown) => l,
       ));
     test("Ödemeler › Son ödenenler (loadRecentPaid)", () =>

@@ -41,11 +41,11 @@ test("Türkçe belirtme hâli: şube adlarının eki (çipin “Yalnız Marina'y
   );
 });
 
-test("alanlar: dokuz alan (Vergi'nin alanı yok: vergi şubeye bölünmez), sırası ve iki alanın kendi seçenek adları", () => {
-  assert.deepEqual([...VIEW_AREA_KEYS], ["odemeler", "nakit", "tutarlilik", "mutabakat", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"]);
+test("alanlar: sekiz alan (Vergi'nin alanı yok: vergi şubeye bölünmez; Mutabakat bölümüyle kalktı), sırası ve iki alanın kendi seçenek adları", () => {
+  assert.deepEqual([...VIEW_AREA_KEYS], ["odemeler", "nakit", "tutarlilik", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"]);
   assert.deepEqual(
     VIEW_AREA_KEYS.map((a) => VIEW_AREAS[a].label),
-    ["Ödemeler ve faturalar", "Nakit planı", "Tutarlılık", "Mutabakat", "Tedarikçi bakiyeleri", "Stok değeri (FIFO)", "Komisyon ve hakediş", "Şubeleri yan yana", "İşletme geneli giderler"],
+    ["Ödemeler ve faturalar", "Nakit planı", "Tutarlılık", "Tedarikçi bakiyeleri", "Stok değeri (FIFO)", "Komisyon ve hakediş", "Şubeleri yan yana", "İşletme geneli giderler"],
   );
   // Sahibin kararı (27 Kasım 2026): Vergi şubeye bölünmez; hiçbir alanın ekranı Vergi değil
   assert.equal((VIEW_AREA_KEYS as readonly string[]).includes("vergi"), false);
@@ -68,7 +68,6 @@ test("varsayılanlar: yönetici her alanda yalnız şube; muhasebeci tasarımdak
     odemeler: "sube",
     nakit: "firma",
     tutarlilik: "firma",
-    mutabakat: "firma",
     tedarikciler: "firma",
     stok_degeri: "firma",
     komisyon: "sube",
@@ -113,7 +112,7 @@ test("tercihin okunması: bilinmeyen anahtar ve değer düşer, nesne olmayan bo
   assert.deepEqual(parseBranchView(JSON.parse('{"__proto__":{"vergi":"firma"},"nakit":"firma"}')), { nakit: "firma" });
 });
 
-test("kartın satırları: yönetici dokuz alan, muhasebeci açabildiği ekranların alanları (işletme geneli giderler; Vergi hep firma geneli)", () => {
+test("kartın satırları: yönetici sekiz alan, muhasebeci açabildiği ekranların alanları (işletme geneli giderler; Vergi hep firma geneli)", () => {
   assert.deepEqual(viewAreasFor("admin"), [...VIEW_AREA_KEYS]);
   assert.deepEqual(viewAreasFor("accountant"), ["ortak_gider"]);
   for (const a of viewAreasFor("accountant")) assert.ok(VIEW_AREAS[a].screens.some((p) => canOpen("accountant", p)), a);

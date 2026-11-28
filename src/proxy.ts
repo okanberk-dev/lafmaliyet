@@ -12,8 +12,8 @@ export async function proxy(request: NextRequest) {
   // Yönetim konsolunun adresi (yalnız aşağıdaki, alan adına bağlı eşleşmelerle gelir): yalnız izin listesi açılır
   if (isYonetimHost(request.headers.get("host"))) return konsol(request);
   const { pathname, search } = request.nextUrl;
-  // Kaldırılan ekranların eski adresleri (Hızlı sayım, Mal siparişi → Stok sayımı; Vergi → Genel bakış, notuyla): 404
-  // yerine yaşayan ekrana, eski sorgusuz (oturum yoksa oradan girişe)
+  // Kaldırılan ekranların eski adresleri (Hızlı sayım, Mal siparişi → Stok sayımı; Vergi → Genel bakış, Mutabakat →
+  // Gelir-gider, notuyla): 404 yerine yaşayan ekrana, eski sorgusuz (oturum yoksa oradan girişe)
   const retired = retiredRedirect(pathname);
   if (retired) return NextResponse.redirect(new URL(retired, request.url));
   const token = readCookie(request.cookies, SESSION_COOKIE, LEGACY_COOKIES.session.name);

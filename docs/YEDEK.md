@@ -75,6 +75,9 @@ vergiyi muhasebeci yürütüyor, "veriler silinmesin"; [arsiv/VERGI.md](arsiv/VE
 devreden KDV artık okunmaz ve yazılmaz; silinmedikleri için dosyaya girer ve geri yüklenir. `fixed_expenses.tax_withholding`
 (stopaj profili; Giderler'in sabit gider penceresinde "Ödemeden kesilen stopaj") ve `tax.settings` (bordronun hesap
 dönemi, asgari ücret desteği, SGK işveren payının elle değeri) nakit planında hâlâ okunur (`src/lib/bordro/`).
+Mutabakat bölümü 28 Kasım 2026'da kaldırıldı (sahibin isteği; [arsiv/MUTABAKAT.md](arsiv/MUTABAKAT.md)): tabloları
+`recon_statements`, `recon_lines` ve ayarı `settings.mutabakatPosBlokeGunu` artık ekranda okunmaz ve yazılmaz; dosyaya
+girer ve geri yüklenir. Yüklenmiş ekstreler KVKK saklama süresiyle (yüklendiği gün + 90) günlük işte eskisi gibi silinir.
 
 Adı parola, anahtar, belirteç, özet gibi görünen yeni bir sütun ya da durum anahtarı eklenirse `tests/yedek.test.ts`
 düşer: ya `TABLE_RULES` / `EXCLUDED_STATE_KEYS`'e eklenir ya da testte gizli olmadığı nedeniyle yazılır.

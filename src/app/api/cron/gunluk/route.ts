@@ -40,8 +40,8 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay ve
 // önceki iki ay: geç iadeler; salesMonthsToPull, docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
 // Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), saklama süresi dolan
-// mutabakat ekstrelerinin silinmesi (docs/MUTABAKAT.md), hata kaydının 30 günden eski satırları (docs/HATA-KAYDI.md), ayın son günü ay sonu
-// stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
+// mutabakat ekstrelerinin silinmesi (bölüm kaldırıldı, süre işler; docs/arsiv/MUTABAKAT.md), hata kaydının 30 günden
+// eski satırları (docs/HATA-KAYDI.md), ayın son günü ay sonu stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Süresi dolan personel istekleri (kasadan
 // çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). Cuma–Pazar gelecek haftanın vardiyası yazılmamış
 // şube için yöneticilere bildirim (docs/VARDIYA.md › Bildirimler). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
@@ -155,8 +155,9 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
-  // Mutabakat ekstrelerinin saklama süresi (KVKK; docs/MUTABAKAT.md › Saklama): yüklendikten 90 gün sonra ekstre ve
-  // satırları silinir. En çok 3 sn, sonucu yalnız yanıtta (body.mutabakat); iş adımı değil, aksarsa ertesi gün yeniden
+  // Mutabakat ekstrelerinin saklama süresi (KVKK; docs/arsiv/MUTABAKAT.md › Saklama): yüklendikten 90 gün sonra ekstre ve
+  // satırları silinir. Bölüm 28 Kasım 2026'da kaldırıldı; daha önce yüklenenler için süre işlemeye devam eder. En çok
+  // 3 sn, sonucu yalnız yanıtta (body.mutabakat); iş adımı değil, aksarsa ertesi gün yeniden
   const reconTask = () =>
     capped<number | "error" | "süre doldu">(
       purgeExpiredStatements(getDb(), todayTR()).catch((e: Error) => {

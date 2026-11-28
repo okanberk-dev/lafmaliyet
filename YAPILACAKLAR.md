@@ -11,6 +11,15 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
+- **Mutabakat bölümü kaldırıldı** (bu PR, 28 Kasım; sahibin isteği: "ladmin'deki Mutabakat kısmını kaldır"): Kâr &
+  ödemeler › Mutabakat (banka ve tedarikçi ekstresi eşleştirmesi, POS hakediş karşılaştırması), ekranı, eylemleri, okuma
+  yolu ve saf modülü gitti; menüden, ⌘K'dan, yetki tablosundan, Yardım'dan, Hesabım › Şube görünümü'nden (Mutabakat
+  alanı) ve asistanın bilgi tabanından çıktı. Eski adresler (`/panel/mutabakat`, `?sekme=pos` gibi sorgulular dahil)
+  Gelir-gider'e "Mutabakat bölümü kaldırıldı" notuyla yönlenir. **Nakit planı, Ödemeler ve Gelir-gider aynı**: Mutabakat
+  onlara rakam vermiyordu, testleri değişmedi. Tablolar (`recon_statements`, `recon_lines`) ve bloke günü ayarı
+  silinmedi, yedek taşır; göç yok. Yüklenmiş ekstreler KVKK saklama süresiyle (yüklendiği gün + 90) günlük işte eskisi
+  gibi silinir. Belge arşivde: [docs/arsiv/MUTABAKAT.md](docs/arsiv/MUTABAKAT.md).
+
 - **Yönetici hesaplarını yalnız asıl yönetici yönetir; konsolda Yöneticiler sekmesi** (bu PR, 28 Kasım; K-B,
   docs/planlar/yonetim-konsolu.md, docs/ROLLER.md › Yönetici hesapları): bir yönetici hesabına dokunan iş (önceki ya da
   sonraki rol yönetici: yönetici açmak, yöneticilik vermek ve almak, yöneticinin e-postası, parolası, erişimi, silme,
@@ -312,8 +321,8 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 - [x] [Ladmin] "Müdür" ve salt okunur "Muhasebeci" rolleri. (27 Kasım, #163; docs/ROLLER.md)
 - [x] [Ladmin] Marina ay sonu kaçak raporu: tahmini stokla sayım arasındaki fark TL olarak, en çok kaçan kalemlerle. (26 Kasım; Raporlar › Kaçak; ilk gerçek rapor Aralık sonu sayımıyla)
 - [ ] [İkisi] Kişi bazında kayıp önleme özeti: kasa farkı, iptal, ikram ve indirimin kişiye göre sapması. AsilPOS iptali yapanı ve ikram edeni göndermiyorsa AsilPOS'a da ekleme gerekir. (26 Kasım: panel tarafı bitti, Raporlar › Kayıp önleme; kasa farkı sayana, zayi / ikram girene göre. AsilPOS'un iptal ve ikramı kişiyle göndermesi sahibin onayını bekliyor)
-- [x] [Ladmin] Banka ve tedarikçi ekstresiyle mutabakat. (26 Kasım; Kâr & ödemeler › Mutabakat, docs/MUTABAKAT.md)
-- [x] [Ladmin] Banka POS hakediş mutabakatı: kart satışı ile bankaya gelen para karşılaştırılır. (26 Kasım; Mutabakat › POS hakediş)
+- [x] [Ladmin] Banka ve tedarikçi ekstresiyle mutabakat. (26 Kasım; Kâr & ödemeler › Mutabakat. 28 Kasım: sahibin isteğiyle bölüm kaldırıldı, docs/arsiv/MUTABAKAT.md)
+- [x] [Ladmin] Banka POS hakediş mutabakatı: kart satışı ile bankaya gelen para karşılaştırılır. (26 Kasım; Mutabakat › POS hakediş. 28 Kasım: bölümle kaldırıldı)
 - [x] [Ladmin] Muhasebeciye aylık tek paket ve ay kapanış e-postası. (26 Kasım; Ayarlar › Muhasebeci paketi, docs/MUHASEBE-PAKETI.md)
 - [x] [Ladmin] Kontrol listelerinin denetime hazır aylık PDF'i. (26 Kasım; Kontrol › Geçmiş › Aylık PDF)
 - [x] [Ladmin] Asistana fiş fotoğrafı: telefonda çekince kart hazırlanır. (26 Kasım; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı)

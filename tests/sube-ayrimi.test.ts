@@ -271,7 +271,8 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
 
 /**
  * Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon), parça 5 üçünü
- * (tutarlilik, mutabakat, stok_degeri), parça 6 son ikisini (karsilastirma, ortak_gider) bağladı: boş
+ * (tutarlilik, mutabakat, stok_degeri; Mutabakat 28 Kasım 2026'da bölümüyle kalktı), parça 6 son ikisini (karsilastirma,
+ * ortak_gider) bağladı: boş
  */
 const BEKLEYEN_ALANLAR: readonly ViewArea[] = [];
 /**
@@ -328,7 +329,9 @@ test("(d) yöneticinin varsayılanı her alanda şube; kilitli hesap her alanda 
     assert.equal(effectiveView(a, "admin", false, {}), "sube", a);
     for (const role of ["admin", "manager", "staff", "accountant"] as const) assert.equal(effectiveView(a, role, true, { [a]: "firma" }), "sube", `${role} ${a}`);
   }
-  assert.deepEqual(parseBranchView({ mutabakat: "firma", bilinmeyen: "firma", nakit: "tumu" }), { mutabakat: "firma" });
-  // Kalkan Vergi alanının eski tercihi de düşer (sahibin kararı 27 Kasım 2026)
+  assert.deepEqual(parseBranchView({ tutarlilik: "firma", bilinmeyen: "firma", nakit: "tumu" }), { tutarlilik: "firma" });
+  // Kalkan Vergi alanının eski tercihi de düşer (sahibin kararı 27 Kasım 2026); Mutabakat'ınki de (bölüm 28 Kasım 2026'da
+  // kaldırıldı; veritabanındaki tercih silinmez, okunmaz)
   assert.deepEqual(parseBranchView({ vergi: "firma", nakit: "firma" }), { nakit: "firma" });
+  assert.deepEqual(parseBranchView({ mutabakat: "firma", nakit: "firma" }), { nakit: "firma" });
 });

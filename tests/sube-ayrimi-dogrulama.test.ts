@@ -1,7 +1,7 @@
 // Şube ayrımının doğrulama düzeltmeleri (27 Kasım 2026; docs/SUBE.md › Şube ayrımı › Doğrulama düzeltmeleri): bağımsız
-// doğrulamanın (tests/sube-ayrimi-db.test.ts) bulduğu sekiz sızıntı. Saf kurallar (sabah e-postasının şube grubu, POS'un
-// şube karoları, öbür şubenin yeni ürün önerisi) ve kaynağın biçimi (ekranlar seçimle okur). Gerçek Postgres'teki sınama
-// doğrulamanın kendisi.
+// doğrulamanın (tests/sube-ayrimi-db.test.ts) bulduğu sekiz sızıntı. Saf kurallar (sabah e-postasının şube grubu, öbür
+// şubenin yeni ürün önerisi) ve kaynağın biçimi (ekranlar seçimle okur). Mutabakat'ın iki düzeltmesi (POS'un şube
+// karoları, ekstre yükleme penceresi) bölümle kalktı (28 Kasım 2026). Gerçek Postgres'teki sınama doğrulamanın kendisi.
 // Çalıştırma: npx tsx --test tests/sube-ayrimi-dogrulama.test.ts
 
 import assert from "node:assert/strict";
@@ -9,7 +9,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { branchPos } from "../src/lib/mutabakat/branch";
 import { pendingProposalIssue } from "../src/lib/recipe-change";
 import { groupInvoiceSection, type DigestInvoiceRefs, type DigestInvoices } from "../src/server/notify/digest-template";
 
@@ -81,44 +80,6 @@ test("kaynak: gönderim ve önizleme grubun bölümünü kurar, grubun fatura ha
   assert.match(read("src/server/actions/reminders.ts"), /loadDigestInvoices\(\)\.then\(\(r\) => \(\{ invoices: groupDigestInvoices\(r, group \? \[group\.id\] : \[\]\) \}\)\),/);
 });
 
-// ---------------------------------------------------------------- Mutabakat POS: şube kipinin karoları
-
-test("POS şube kipi: geciken ve bekleyen şubenin valör günleri, şubenin beklenen netiyle", () => {
-  const days = [
-    { date: "2026-11-02", branchId: "marina", card: 1_000, source: "z" as const },
-    { date: "2026-11-02", branchId: "tuzla", card: 91_916, source: "z" as const },
-    { date: "2026-11-03", branchId: "marina", card: 500, source: "z" as const },
-    { date: "2026-11-04", branchId: "marina", card: 200, source: "z" as const },
-  ];
-  const settings = { blockDays: 1, rates: { marina: 0.02, tuzla: 0.02 }, defaultRate: 0.02 };
-  const b = branchPos({
-    branch: "marina",
-    days,
-    settings,
-    coverage: { from: "2026-11-01", to: "2026-11-04" },
-    today: "2026-11-27",
-    firmRows: [
-      { due: "2026-11-03", status: "gecikti" },
-      { due: "2026-11-04", status: "tamam" },
-    ],
-  });
-  assert.equal(b.totals.lateCount, 1);
-  assert.equal(b.totals.lateAmount, 980, "Marina'nın o günkü beklenen neti (firmanınki değil)");
-  assert.equal(b.totals.waitingAmount, 196, "ekstrenin kapsamadığı valör günü");
-  assert.equal(JSON.stringify(b).includes("91916"), false);
-});
-
-test("kaynak: POS'un şube kipinde firmanın toplamları dönmez, karolar şubenin", () => {
-  const load = read("src/server/mutabakat/load.ts");
-  assert.match(load, /result: branchRow \? \{ rows: \[\], totals: NO_POS_TOTALS \} : result,/);
-  assert.match(load, /branch: branchRow \? \{ name: branchRow\.name, received, \.\.\.branchPos\(/);
-  const page = read("src/app/panel/mutabakat/page.tsx");
-  assert.match(page, /<BranchPos branch=\{view\.branch\} \/>/);
-  const pos = page.slice(page.indexOf("function BranchPos("), page.indexOf("function SalesCell("));
-  assert.doesNotMatch(pos, /firm\.|totals\.diff/, "şube kipinde firmanın farkı ve geciken tutarı yok");
-  assert.match(pos, /value=\{money\(branch\.received\)\}/);
-});
-
 // ---------------------------------------------------------------- Yeni ürün önerileri
 
 test("yeni ürün önerisi: öbür şubenin önerisi denetimde engeller, önereni yazılmaz", () => {
@@ -142,9 +103,9 @@ test("kaynak: ekranlar önerileri önerenin şubesiyle, eylemler bütün şubele
   assert.match(data, /const mine = \(r: \(typeof rows\)\[number\]\) => scope === ALL_BRANCHES \|\| r\.requestedBy === null \|\| !r\.branchId \|\| r\.branchId === scope;/);
 });
 
-// ---------------------------------------------------------------- Faturalar, Maaşlar, Kullanıcılar, ekstre yükleme
+// ---------------------------------------------------------------- Faturalar, Maaşlar, Kullanıcılar
 
-test("kaynak: Faturalar'ın cari bağları, Maaşlar'ın seçicisi, Kullanıcılar ve ekstre yükleme penceresi seçimle", () => {
+test("kaynak: Faturalar'ın cari bağları, Maaşlar'ın seçicisi ve Kullanıcılar seçimle (Mutabakat'ın yükleme penceresi bölümle kalktı)", () => {
   const cari = read("src/server/data/cari.ts");
   const links = cari.slice(cari.indexOf("export async function loadInvoiceCariLinks"), cari.indexOf("/** Kasa'da yöneticinin satır ipucu"));
   assert.match(links, /const shown = invoiceScopeWhere\(scope \?\? \(await currentBranchScope\(\)\)\);/);
@@ -159,7 +120,4 @@ test("kaynak: Faturalar'ın cari bağları, Maaşlar'ın seçicisi, Kullanıcıl
   assert.doesNotMatch(users, /\.from\(s\.users\)/, "hesap listesi sayfada değil, yükleyicide (doğrulama okuyabilsin)");
   assert.match(read("src/server/data/users.ts"), /\.where\(scope === ALL_BRANCHES \? undefined : or\(isNull\(u\.branchId\), eq\(u\.branchId, scope\)\)\)/);
 
-  const recon = read("src/app/panel/mutabakat/page.tsx");
-  assert.match(recon, /const suppliers = await loadSupplierOptions\(scope\);/);
-  assert.match(read("src/server/mutabakat/load.ts"), /return invoices \|\| scope === ALL_BRANCHES \? \[\{ slug: g\.slug, name: g\.name, invoices \}\] : \[\];/);
 });

@@ -189,8 +189,8 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Stok › Stok sayımı, Zayi & ikram, Tutarlılık",
     "Satış › Satışlar, Komisyon & hakediş, Analiz & senaryo",
     "Alış & gider › Faturalar, Tedarikçiler, Giderler & maaşlar",
-    // "Finans" → "Kâr & ödemeler"; Nakit planı kendi satırında
-    "Kâr & ödemeler › Gelir-gider, Ödemeler, Nakit planı, Mutabakat",
+    // "Finans" → "Kâr & ödemeler"; Nakit planı kendi satırında. Mutabakat 28 Kas 2026'da kaldırıldı (sahibin isteği)
+    "Kâr & ödemeler › Gelir-gider, Ödemeler, Nakit planı",
     // 26 Kas 2026 (docs/RAPORLAR.md): dört rapor kendi grubunda, yalnız yöneticide
     "Raporlar › Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme",
     // Vergi, KDV, SGK grubu 27 Kas 2026'da kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor)
@@ -252,14 +252,14 @@ test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve 
   // Vergi dalga 12'de eklendi, 27 Kas 2026'da kaldırıldı (eski adresleri Genel bakış'a yönlenir:
   // tests/vergi-kaldirildi.test.ts); 29 Eki 2026'da Fiyatlar ve Nakit planı kendi satırlarında;
   // Şubeler 4 Kas 2026'da Ayarlar altına (docs/SUBE.md); Siparişler 6 Kas 2026'da Kafe altına (docs/SITE-SIPARIS.md)
-  // Vardiya 22 Kas 2026'da üst düzeye (docs/VARDIYA.md); Mutabakat 26 Kas 2026'da Kâr & ödemeler altına (docs/MUTABAKAT.md)
+  // Vardiya 22 Kas 2026'da üst düzeye (docs/VARDIYA.md); Mutabakat 26 Kas 2026'da Kâr & ödemeler altına geldi, 28 Kas
+  // 2026'da kaldırıldı (eski adresleri Gelir-gider'e yönlenir: tests/mutabakat-kaldirildi.test.ts)
   const ADMIN_PAGES = [
     "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/siparisler", "/panel/karaoke", "/panel/ozel-gunler", "/panel/vardiya",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
     "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/hatirlaticilar", "/panel/sayim",
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/subeler", "/panel/parasut", "/panel/yardim",
     "/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit",
-    "/panel/mutabakat",
     // Raporlar 26 Kas 2026'da (docs/RAPORLAR.md)
     "/panel/raporlar", "/panel/raporlar/iscilik", "/panel/raporlar/kacak", "/panel/raporlar/kayip",
   ];

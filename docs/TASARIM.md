@@ -82,7 +82,8 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   · Bugün · Onaylar · Kasa raporu**; gerisi konu başlıkları altında: **Kafe** (Karaoke, Kontrol listeleri, Satış
   tahmini, Hatırlatıcılarım) · **Menü** (Ürünler & kârlılık, Fiyatlar, Hammaddeler, Reçete defteri) · **Stok** (Stok
   sayımı, Zayi & ikram, Tutarlılık) · **Satış** (Satışlar, Komisyon & hakediş, Analiz & senaryo) · **Alış & gider**
-  (Faturalar, Tedarikçiler, Giderler & maaşlar) · **Kâr & ödemeler** (Gelir-gider, Ödemeler, Nakit planı, Mutabakat) ·
+  (Faturalar, Tedarikçiler, Giderler & maaşlar) · **Kâr & ödemeler** (Gelir-gider, Ödemeler, Nakit planı; Mutabakat
+  28 Kas 2026'da kaldırıldı, [arsiv/MUTABAKAT.md](arsiv/MUTABAKAT.md)) ·
   **Raporlar** (Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme; 26 Kas 2026, [RAPORLAR.md](RAPORLAR.md)) ·
   **Ayarlar** (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım. "Kâr & ödemeler" kapalıyken de
   kesilmeden sığar. Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, kâr). **Vergi, KDV, SGK** grubu 27 Kas

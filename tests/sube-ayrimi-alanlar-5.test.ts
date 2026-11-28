@@ -1,8 +1,8 @@
-// Şube ayrımı parça 5 (27 Kasım 2026; docs/SUBE.md › Şube ayrımı › Alanlar: Tutarlılık, Mutabakat, Stok değeri): üç
-// alan kişinin şube görünümüyle okur, ekstre ve gelen POS parası her kipte firmanın. Vergi şubeye bölünmez (sahibin
-// kararı 27 Kasım 2026): parça 5'in Vergi alanı kalktı, Vergi'nin üç sekmesi her kipte firmanın. Saf kurallar
-// (mutabakatın şube ayrımı, POS'un şube kipi, FIFO havuzu ve ek kalem fiyatı, tahmini stoğun faturaları, fiyat önerileri,
-// tedarikçi fiyatları, su dökümü, ürünün şube fiyatı) ve kaynağın biçimi.
+// Şube ayrımı parça 5 (27 Kasım 2026; docs/SUBE.md › Şube ayrımı › Alanlar: Tutarlılık, Mutabakat, Stok değeri): alanlar
+// kişinin şube görünümüyle okur. Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026): parça 5'in Vergi alanı kalktı,
+// Vergi'nin üç sekmesi her kipte firmanın. Mutabakat bölümü 28 Kasım 2026'da kaldırıldı (alanı da). Saf kurallar (FIFO
+// havuzu ve ek kalem fiyatı, tahmini stoğun faturaları, fiyat önerileri, tedarikçi fiyatları, su dökümü, ürünün şube
+// fiyatı) ve kaynağın biçimi.
 // Veritabanındaki sınama: tests/sube-ayrimi-alanlar-5-db.test.ts.
 // Çalıştırma: npx tsx --test tests/sube-ayrimi-alanlar-5.test.ts
 
@@ -17,8 +17,6 @@ import { COMPANY_WIDE_READS } from "../src/lib/branch-view";
 import { ALL_BRANCHES } from "../src/lib/branches";
 import { priceProduct, type WaterCost } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
-import { branchPos, branchRecon, candidatePlace, OTHER_BRANCH_RECORD, redactCandidate } from "../src/lib/mutabakat/branch";
-import type { Candidate } from "../src/lib/mutabakat/match";
 import { holdInScope, holdsElsewhereText } from "../src/lib/price-hold";
 import { economicsAtPrice, productBranchPrice, type BranchPriceRef } from "../src/lib/prices/branch-view";
 import { receiptsElsewhereText, receiptsInScope } from "../src/lib/stock-estimate";
@@ -26,7 +24,6 @@ import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (f: string) => readFileSync(join(root, f), "utf8");
-const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 
 const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
 const excel: Dataset = datasetFromSeed(data);
@@ -37,47 +34,11 @@ test("Vergi şubeye bölünmez (sahibin kararı 27 Kasım 2026); aynı gün Verg
   for (const p of ["src/lib/tax", "src/app/panel/vergi", "src/server/data/tax.ts"]) assert.equal(existsSync(join(root, p)), false, `${p} kalktı`);
 });
 
-// ---------------------------------------------------------------- Mutabakat
+// ---------------------------------------------------------------- Mutabakat: bölüm kaldırıldı
 
-const cand = (kind: Candidate["kind"], id: number, branchId: string | null | undefined, label = `${kind} ${id}`): Candidate => ({ kind, id, date: "2026-11-10", amount: -100, label, href: `/x/${id}`, ref: "F-1", names: [label], branchId });
-
-test("Mutabakat şube kipi: kaydın yeri; öbür şubenin kaydı adsız", () => {
-  assert.equal(candidatePlace(cand("harcama", 1, "marina"), "marina"), "sube");
-  assert.equal(candidatePlace(cand("harcama", 2, null), "marina"), "isletme");
-  assert.equal(candidatePlace(cand("odeme", 3, undefined), "marina"), "isletme", "şubesi bilinmeyen kayıt işletme geneli");
-  assert.equal(candidatePlace(cand("teslim", 4, "tuzla"), "marina"), "baska");
-  const r = redactCandidate(cand("harcama", 5, "tuzla", "IZ-TUZLA Kira"));
-  assert.equal(r.label, OTHER_BRANCH_RECORD);
-  assert.deepEqual([r.href, r.ref, r.names], [null, null, []]);
-  assert.equal(r.amount, -100);
-});
-
-test("Mutabakat şube kipi: şubenin kaydıyla eşleşenler üstte, gerisi İşletme geneli; eksikler yalnız şubenin", () => {
-  const row = (id: number, candidate: Candidate | null) => ({ line: { id }, candidate, status: candidate ? "eslesti" : "yok", pos: false });
-  const rows = [row(1, cand("harcama", 1, "marina")), row(2, cand("fatura-odeme", 2, "tuzla", "IZ-TUZLA Gıda")), row(3, null), row(4, cand("odeme", 4, null))];
-  const missing = [cand("harcama", 10, "marina"), cand("teslim", 11, "tuzla"), cand("odeme", 12, null)];
-  const b = branchRecon(rows, missing, "marina");
-  assert.deepEqual(b.own.map((r) => r.line.id), [1]);
-  assert.deepEqual(b.shared.map((r) => r.line.id), [2, 3, 4]);
-  assert.equal(JSON.stringify(b).includes("IZ-TUZLA"), false, "öbür şubenin kaydının adı yok");
-  assert.equal(b.shared[0].candidate?.label, OTHER_BRANCH_RECORD);
-  assert.deepEqual(b.missing.map((c) => c.id), [10]);
-  assert.equal(b.otherMissing, 2);
-});
-
-test("POS hakediş şube kipi: şubenin kart satışı ve beklenen neti; günün durumu firmanın", () => {
-  const days = [
-    { date: "2026-11-02", branchId: "marina", card: 1_000, source: "z" as const },
-    { date: "2026-11-02", branchId: "tuzla", card: 77_777.77, source: "z" as const },
-    { date: "2026-11-03", branchId: "marina", card: 500, source: "banka-fisi" as const },
-  ];
-  const settings = { blockDays: 1, rates: { marina: 0.02, tuzla: 0.03 }, defaultRate: 0.02 };
-  const b = branchPos({ branch: "marina", days, settings, coverage: { from: "2026-11-01", to: "2026-11-30" }, today: "2026-11-27", firmRows: [{ due: "2026-11-03", status: "tamam" }] });
-  assert.equal(JSON.stringify(b).includes("77777"), false, "Tuzla'nın satışı yok");
-  assert.deepEqual(b.rows.map((r) => r.due), ["2026-11-03", "2026-11-04"]);
-  close(b.totals.gross, 1_500, "kart satışı");
-  close(b.totals.expected, 1_470, "kart × (1 − %2)");
-  assert.deepEqual(b.rows.map((r) => r.firmStatus), ["tamam", "bekleniyor"], "firmanın satırı yoksa bekleniyor");
+test("Mutabakat bölümü kaldırıldı (28 Kasım 2026, sahibin isteği): parça 5'in Mutabakat alanı, şube ayrımı ve POS'un şube kipi de yok", () => {
+  for (const p of ["src/lib/mutabakat", "src/app/panel/mutabakat", "src/server/mutabakat/load.ts"]) assert.equal(existsSync(join(root, p)), false, `${p} kalktı`);
+  assert.equal(COMPANY_WIDE_READS.some((r) => r.id === "alan.mutabakat"), false);
 });
 
 // ---------------------------------------------------------------- Tutarlılık
@@ -160,23 +121,16 @@ test("Ürünün şube fiyatı: şubenin kendi satırı varsa o fiyat, kâr ve or
 
 // ---------------------------------------------------------------- Kaynak
 
-test("kaynak: üç alan areaScope ile okur, ekranlar çipini çizer, firma geneli notu kalktı; ekstre firmanın", () => {
+test("kaynak: iki alan areaScope ile okur, ekranlar çipini çizer, firma geneli notu kalktı", () => {
   const tut = read("src/app/panel/tutarlilik/page.tsx");
   assert.match(tut, /const scope = await areaScope\("tutarlilik"\);/);
   assert.match(tut, /loadDataset\(\{ scope \}\)/);
   assert.match(tut, /pendingWasteSummary\(\{ month, scope \}\)/);
   assert.match(tut, /scopeBadge=\{branchMode \? "Firma geneli" : null\}/);
-  const mut = read("src/app/panel/mutabakat/page.tsx");
-  assert.match(mut, /const scope = await areaScope\("mutabakat"\);/);
-  assert.match(mut, /loadRecon\(scope\)/);
-  assert.match(mut, /<PosSection scope=\{scope\} \/>/);
-  // Elle eşleştirmenin havuzu firmanın: eylem loadRecon'u kapsamsız çağırır (loadLinePool)
-  assert.match(read("src/server/mutabakat/load.ts"), /const \{ pools, poolOfStatement \} = await loadRecon\(\);/);
   assert.match(read("src/server/data/dataset.ts"), /\/\/ şube-ayrımı: alan\.stok_degeri\n {4}areaScope\("stok_degeri"\)\.then\(loadPurchaseLots\),/);
   assert.match(read("src/server/data/purchase-lots-query.ts"), /invoiceScopeWhere\(scope\)\)\)/);
   for (const [file, area] of [
     ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
-    ["src/app/panel/mutabakat/page.tsx", "mutabakat"],
     ["src/app/panel/sayim/page.tsx", "stok_degeri"],
   ] as const) {
     assert.match(read(file), new RegExp(`<BranchViewChip area="${area}"`), file);
@@ -189,7 +143,7 @@ test("kaynak: kayıt parça 5'in alanlarını taşır, parça 5'in bekleyenleri 
   // Vergi şubeye bölünmez: alanın kaydı yok; Vergi bölümü kaldırılınca okuma kaydı (vergi.beyan) da kalktı
   assert.equal(ids.has("alan.vergi"), false);
   assert.equal(ids.has("vergi.beyan"), false);
-  for (const area of ["tutarlilik", "mutabakat", "stok_degeri"] as const) {
+  for (const area of ["tutarlilik", "stok_degeri"] as const) {
     const r = ids.get(`alan.${area}`);
     assert.ok(r, `alan.${area}`);
     assert.equal(r.kind, "alan");

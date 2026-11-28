@@ -170,11 +170,8 @@ test("firma geneli ekranların notu kalktı (Vergi bölümüyle, 27 Kasım 2026)
   // Not yalnız Vergi'nin üç sekmesinde kalmıştı; bileşen ve kuralı Vergi'yle birlikte kalktı
   assert.equal(existsSync(join(process.cwd(), "src/components/panel/company-wide-notice.tsx")), false);
   // Alanı bağlanan ekranlarda notun yerini görünüm çipi aldı (şube ayrımı parça 4: Tedarikçiler, Nakit planı; parça 5:
-  // Tutarlılık, Mutabakat)
-  for (const [file, area] of [
-    ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
-    ["src/app/panel/mutabakat/page.tsx", "mutabakat"],
-  ] as const) {
+  // Tutarlılık; Mutabakat bölümü 28 Kasım 2026'da kaldırıldı)
+  for (const [file, area] of [["src/app/panel/tutarlilik/page.tsx", "tutarlilik"]] as const) {
     assert.match(read(file), new RegExp(`<BranchViewChip area="${area}"`), file);
     assert.doesNotMatch(read(file), /<CompanyWideNotice/, file);
   }
