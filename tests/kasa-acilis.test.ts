@@ -16,7 +16,9 @@ import {
   acilistaListelenir,
   BELIRTEC_DAKIKA,
   buKasaMi,
+  canliBaslik,
   doluSatirlar,
+  hazirDegilMesaji,
   ILK_PERSONEL_ROLLERI,
   ilkPersonelDurumu,
   ilkPersonelHatasi,
@@ -82,7 +84,8 @@ test("şube listesi: açık + fiziksel + (hazırlanmış ya da AsilPOS); kurulu 
   assert.deepEqual(acilisSubesi({ id: "marina", name: "Marina" }, kurulu, false), { id: "marina", ad: "Marina", kasa: { durum: "kurulu", sonGun: "2026-11-27" }, buKasa: false, secilebilir: false, neden: KURULU_NEDEN });
   assert.deepEqual(acilisSubesi({ id: "marina", name: "Marina" }, kurulu, true), { id: "marina", ad: "Marina", kasa: { durum: "kurulu", sonGun: "2026-11-27" }, buKasa: true, secilebilir: true });
   assert.deepEqual(acilisSubesi({ id: "tuzla", name: "Tuzla" }, { durum: "bekliyor", sonGecerlilik: "x" }, false), { id: "tuzla", ad: "Tuzla", kasa: { durum: "bos", sonGun: null }, buKasa: false, secilebilir: true });
-  assert.equal(KURULU_NEDEN, "Kurulu: değiştirmek için ladmin");
+  // Kasaya giden metin adres yazmaz, "Yönetim konsolu" der (docs/planlar/yonetim-konsolu.md)
+  assert.equal(KURULU_NEDEN, "Kurulu: değiştirmek için Yönetim konsolu");
   const kayit = { durum: "kurulu" as const, kimlik: "kasa-a", surum: null, at: "", by: "", yol: "acilis" as const };
   assert.equal(buKasaMi({ kayit, kimlik: "kasa-a", imzaSubesi: null, subeId: "tuzla" }), true);
   assert.equal(buKasaMi({ kayit, kimlik: "kasa-b", imzaSubesi: null, subeId: "tuzla" }), false);
@@ -171,6 +174,25 @@ test("metinler: onay cümlesi, 409 cümlesi, e-postalar sır içermez; uzun tire
   assert.equal(serbestMail({ sube: "Tuzla", kim: "asil@ornek.com", zaman: "z" }).subject, "Tuzla kasası serbest bırakıldı");
   assert.equal(BELIRTEC_DAKIKA, 15);
   assert.deepEqual(ACILIS_YOLLARI, { giris: "/api/asilpos/acilis/giris", bagla: "/api/asilpos/acilis/bagla", teslim: "/api/asilpos/acilis/teslim" });
+});
+
+test("kasaya giden metinler adres yazmaz, \"Yönetim konsolu\" der (docs/planlar/yonetim-konsolu.md)", () => {
+  assert.equal(KURULU_NEDEN, "Kurulu: değiştirmek için Yönetim konsolu");
+  assert.equal(zatenKuruluMesaji("Marina"), "Marina şubesinde kurulu bir kasa var. Bilgisayar değişecekse Yönetim konsolu › Şubeler ve kasalar › Kasayı serbest bırak.");
+  assert.equal(
+    hazirDegilMesaji("Bodrum"),
+    "Bodrum şubesinin kasa programı ModPOS ve şube kasa kurulumu için hazırlanmadı: Yönetim konsolu › Şubeler ve kasalar › Bilgisayara kur",
+  );
+  const m = baglandiMail({ sube: "Marina", kim: "asil@ornek.com", zaman: "28 Kasım 2026 14:05", kasa: "kasa-a" });
+  assert.ok(m.text.includes("Bunu siz yapmadıysanız Yönetim konsolu › Şubeler ve kasalar'da şubenin kasasını serbest bırakın ve parolanızı değiştirin."), m.text);
+  for (const t of [KURULU_NEDEN, zatenKuruluMesaji("Marina"), hazirDegilMesaji("Bodrum"), m.text]) {
+    assert.doesNotMatch(t, /ladmin ›|Şube ekleme/, t);
+    assert.doesNotMatch(t, /https?:\/\/|yonetim\.laffogato|\.net\b/, `adres yazılmaz: ${t}`);
+  }
+  assert.doesNotMatch(m.html, /ladmin ›|Şube ekleme/);
+  // 409 sube_hazir_degil de aynı cümleyi kullanır (uç adres yazmaz)
+  assert.match(read("src/server/asilpos/acilis.ts"), /return hata\(409, "sube_hazir_degil", hazirDegilMesaji\(branch\.name\)\);/);
+  assert.equal(canliBaslik("Marina"), "Marina canlı: son 7 günde kasadan gün sonu geldi");
 });
 
 test("kaynak: giriş panelin korumalarını (ortak modül) kullanır, çerez ve oturum yok; belirteç oturum değil", () => {

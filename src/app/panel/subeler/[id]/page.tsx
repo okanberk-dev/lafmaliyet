@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { AsilposBranchCard, AsilposOldSecretCard } from "@/components/sube-islemleri/kasa-anahtari";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -36,7 +37,7 @@ import { BlindCountCard } from "./blind-count-card";
 import { CalendarCard } from "./calendar-card";
 import { BranchFeaturesCard } from "./features-card";
 import { ParasutLinkCard } from "./parasut-card";
-import { AsilposBranchCard, AsilposOldSecretCard, ModposBranchCard } from "./pos-card";
+import { ModposBranchCard } from "./pos-card";
 import { ShiftPresetsCard } from "./shift-presets-card";
 import { TillDeviceCard } from "./till-device-card";
 

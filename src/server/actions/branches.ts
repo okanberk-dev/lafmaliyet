@@ -29,7 +29,7 @@ import { ILK_PERSONEL_ROLLERI, ilkPersonelHatasi, rolEtiketi, type IlkPersonel, 
 import { YENI_KURULUM_ONEKI, yeniKurulumOnayi } from "@/lib/asilpos/kasa-durumu";
 import { posOffConfirmText } from "@/lib/pos/tills";
 import type { StepUpConfirm } from "@/lib/step-up";
-import { requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
+import { getYonetimUser, requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { issueUserToken } from "@/server/auth/user-tokens";
@@ -316,13 +316,20 @@ export async function releaseBranchTill(input: z.input<typeof releaseInput>, con
   });
 }
 
+/**
+ * Düzenleme: kimlikten başka her alan isteğe bağlı, verilmeyen alanın eskisi kalır (docs/planlar/yonetim-konsolu.md ›
+ * Teknik çerçeve). ladmin'in penceresi açık / kapalı durumu, türü ve kasa programını yalnız kullanıcı pencerede
+ * değiştirdiyse gönderir (konsolda kapatılan şubeyi ladmin'deki ad düzenlemesi yeniden açmasın; asıl yönetici olmayan
+ * yönetici ad değiştirirken ret almasın); konsol yalnız kendi alanlarını gönderir (ad ve açılış günü gitmez)
+ */
 const updateInput = z.object({
   id: z.string().trim().min(1),
-  name: zText("Şube adı", BRANCH_NAME_MAX),
-  kind,
-  posSource,
-  openedOn,
-  active: z.boolean(),
+  name: zText("Şube adı", BRANCH_NAME_MAX).optional(),
+  kind: kind.optional(),
+  posSource: posSource.optional(),
+  /** Açılış günü: verilmezse (undefined) eskisi kalır, null siler */
+  openedOn: zDate.nullish(),
+  active: z.boolean().optional(),
   posRate,
   /**
    * Şubenin e-postası (fiziksel şube; her yönetici). Verilmezse (undefined) eskisi kalır; boş metin siler. Hesap açmaz,
@@ -335,38 +342,48 @@ const updateInput = z.object({
 
 /**
  * Adı, türü, kasa kaynağını, açılış gününü, banka POS oranını, e-postasını ve açık / kapalı durumunu değiştirir (kimlik
- * değişmez). POS oranı ve e-posta verilmezse eskisi kalır. Açık / kapalı durumu ve kasa programı (tür değişikliği de kasa
- * programını değiştirir) yalnız asıl yöneticide; öteki alanlar her yöneticide. Kasa AsilPOS'tan ModPOS'a dönerken şube
- * AsilPOS'u kullanıyorsa (geçiş günü ya da kayıtlı gün) onay istenir; onaylanınca şubenin geçiş günü aynı işlemde silinir
- * (çok şube, 27 Kasım 2026). Şube kapatılınca bekleyen kurulum kodları aynı işlemde iptal olur (kasa kuramaz)
+ * değişmez). Verilmeyen alanın eskisi kalır. Açık / kapalı durumu ve kasa programı (tür değişikliği de kasa programını
+ * değiştirir) yalnız asıl yöneticide; öteki alanlar her yöneticide. Yönetim konsolunun oturumu (asıl yönetici) da geçer:
+ * konsol › Şube işlemleri bu eylemi yalnız açık / kapalı, tür ve kasa programıyla çağırır. Kasa AsilPOS'tan ModPOS'a
+ * dönerken şube AsilPOS'u kullanıyorsa (geçiş günü ya da kayıtlı gün) onay istenir; onaylanınca şubenin geçiş günü aynı
+ * işlemde silinir (çok şube, 27 Kasım 2026). Şube kapatılınca bekleyen kurulum kodları aynı işlemde iptal olur (kasa kuramaz)
  */
 export async function updateBranch(input: z.input<typeof updateInput>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Konsolun oturumu (yalnız asıl yönetici; src/server/auth/dal.ts getYonetimUser) varsa o, yoksa panelin yönetici kapısı
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const d = updateInput.parse(input);
     const db = getDb();
     const hepsi = await listBranches(db);
     const mevcut = hepsi.find((b) => b.id === d.id);
     if (!mevcut) throw new UserError("Şube bulunamadı");
+    // Verilmeyen alan eskisi kalır: ladmin'in ad düzenlemesi konsolda kapatılan şubeyi açmaz, kasa programını değiştirmez
+    const yeni = {
+      name: d.name ?? mevcut.name,
+      kind: d.kind ?? mevcut.kind,
+      posSource: d.posSource ?? mevcut.posSource,
+      active: d.active ?? mevcut.active,
+      openedOn: d.openedOn === undefined ? mevcut.openedOn : d.openedOn,
+    };
     // Asıl yöneticinin işleri (docs/ROLLER.md › Asıl yönetici): değişmeyen alan sormaz, ad ya da oran değiştiren yönetici geçer
-    if (mevcut.active !== d.active) await requireAnaAdmin("subeKapatma");
-    if (mevcut.posSource !== d.posSource) await requireAnaAdmin("kasaProgrami");
-    const emailChange = d.email !== undefined && d.kind === "fiziksel";
+    if (mevcut.active !== yeni.active) await requireAnaAdmin("subeKapatma");
+    if (mevcut.posSource !== yeni.posSource || mevcut.kind !== yeni.kind) await requireAnaAdmin("kasaProgrami");
+    const emailChange = d.email !== undefined && yeni.kind === "fiziksel";
     const hata = branchChangeError(
       mevcut,
-      { kind: d.kind, posSource: d.posSource, active: d.active },
+      { kind: yeni.kind, posSource: yeni.posSource, active: yeni.active },
       hepsi.filter((b) => b.id !== d.id),
     );
     if (hata) throw new UserError(hata);
     // AsilPOS'tan ModPOS'a dönüş: şube AsilPOS'u kullanıyorsa onay; onaylanınca geçiş günü silinir (günleri deneme olur)
-    const posOff = mevcut.posSource === "asilpos" && d.posSource !== "asilpos" && (await asilposInUse(d.id, db));
+    const posOff = mevcut.posSource === "asilpos" && yeni.posSource !== "asilpos" && (await asilposInUse(d.id, db));
     if (posOff && !d.confirmPosOff) throw new UserError(posOffConfirmText(mevcut.name));
     // Başka şube bu şubenin ayarını kullanıyorsa ("Marina ile aynı") kapatılmaz: bağ tek adımlı, bağlı şube değersiz kalırdı
-    if (mevcut.active && !d.active) {
+    if (mevcut.active && !yeni.active) {
       const bagli = await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS);
       if (bagli) throw new UserError(bagli);
     }
-    if (hepsi.some((b) => b.id !== d.id && b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
+    if (hepsi.some((b) => b.id !== d.id && b.name.localeCompare(yeni.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
     // Şubenin e-postası şube hesabı olabilecek bir adres olmalı (yönetici, müdür ya da muhasebecinin değil)
@@ -375,18 +392,18 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     if (yeniEposta) await assertBranchEmailFree(db, yeniEposta, d.id);
     // Kapatılan şubenin tek şubelik özelliği (karaoke) düşer: başka şubede açılabilsin, şube yeniden açılınca iki şubede
     // birden açık kalmasın (src/lib/branch-features.ts featureChangeError)
-    const closing = mevcut.active && !d.active;
+    const closing = mevcut.active && !yeni.active;
     const kept = closing ? BRANCH_FEATURES.filter((f) => f.single).reduce((acc, f) => withFeature(acc, f.id, false), branchFeatures(mevcut)) : null;
     const iptal = await db.transaction(async (tx) => {
       if (posOff) await putBranchSetting(tx, ASILPOS_GROUP, d.id, { switchDay: null }, me.name);
       await tx
       .update(s.branches)
       .set({
-        name: d.name,
-        kind: d.kind,
-        posSource: d.posSource,
-        openedOn: d.openedOn,
-        active: d.active,
+        name: yeni.name,
+        kind: yeni.kind,
+        posSource: yeni.posSource,
+        openedOn: yeni.openedOn,
+        active: yeni.active,
         ...(kept ? { features: kept } : {}),
         ...(d.posRate !== undefined ? { posRate: d.posRate } : {}),
         ...(yeniEposta !== undefined ? { email: yeniEposta } : {}),
@@ -399,15 +416,16 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     // Kasa kaynağı ya da durum değiştiyse AsilPOS kasaları değişmiş olabilir: bu sunucunun önbelleği hemen düşer
     forgetPosBranches();
     const degisen = [
-      mevcut.name === d.name ? null : `ad: ${mevcut.name} → ${d.name}`,
-      mevcut.posSource === d.posSource ? null : `kasa: ${mevcut.posSource} → ${d.posSource}`,
+      mevcut.name === yeni.name ? null : `ad: ${mevcut.name} → ${yeni.name}`,
+      mevcut.kind === yeni.kind ? null : `tür: ${mevcut.kind} → ${yeni.kind}`,
+      mevcut.posSource === yeni.posSource ? null : `kasa: ${mevcut.posSource} → ${yeni.posSource}`,
       d.posRate === undefined || mevcut.posRate === d.posRate ? null : `POS oranı: ${mevcut.posRate === undefined ? "?" : oranMetni(mevcut.posRate)} → ${oranMetni(d.posRate)}`,
-      mevcut.active === d.active ? null : d.active ? "açıldı" : "kapatıldı",
+      mevcut.active === yeni.active ? null : yeni.active ? "açıldı" : "kapatıldı",
       posOff ? "AsilPOS geçiş günü silindi" : null,
       yeniEposta === undefined ? null : yeniEposta ? `e-posta: ${yeniEposta}` : "e-posta silindi",
       iptal ? `${iptal} bekleyen kurulum bağlantısı iptal edildi` : null,
     ].filter(Boolean);
-    await logActivity(me, "Şube güncellendi", [d.name, ...degisen].join(" · "));
+    await logActivity(me, "Şube güncellendi", [yeni.name, ...degisen].join(" · "));
     refresh();
     return { id: d.id };
   });

@@ -116,6 +116,16 @@ export const KONSOL_SEKMELERI = [
   { href: `${YONETIM_YOLU}/lisans`, label: "Lisans ve güncelleme" },
 ] as const;
 
+/** Bir şubenin konsoldaki işlem sayfası (Şubeler ve kasalar › şube): kapatma, silme, tür, kasa programı, geçiş günü, anahtar */
+export const KONSOL_SUBE_YOLU = `${YONETIM_YOLU}/sube`;
+export const konsolSubeYolu = (id: string) => `${KONSOL_SUBE_YOLU}/${encodeURIComponent(id)}`;
+
+/** Sekme bu yolda seçili mi: Şubeler ve kasalar şubenin işlem sayfasında da seçili kalır */
+export function sekmeAcik(href: string, yol: string): boolean {
+  if (yol === href) return true;
+  return href === YONETIM_YOLU && altinda(yol, KONSOL_SUBE_YOLU);
+}
+
 /** Lisans ve güncelleme sekmesinin sabit açıklaması */
 export const LISANS_ACIKLAMA =
   "Lisans, dükkânlar ve güncelleme gönderme AsilPOS Merkez'de; AsilPOS Uzaktan'daki üye girişinizle girilir, ladmin parolasıyla değil.";

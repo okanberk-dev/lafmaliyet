@@ -150,6 +150,21 @@ girdikten sonra).
 - Alan adı kuralı proxy'de, yalnız konsolun alan adına bağlı eşleşmelerle; panel adresindeki kapsam testle aynı.
 - Sıradaki: kod canlıya çıkınca alan adını Vercel'e eklemek (sahip), sonra K-A'nın ikinci yarısı (kalan şube düğmeleri).
 
+## 28 Kasım: Yönetim konsolunda şube işlemleri (dal konsol-sube-islemleri; K-A ikinci yarı)
+
+- Konsol: `src/app/yonetim/(konsol)/sube/[id]/` (Şube işlemleri sayfası: açık / kapalı, tür ve kasa programı, geçiş
+  günü, kasa anahtarı, eski anahtar, silme), veri `src/server/sube-islemleri.ts` (anahtarın değeri dönmez), Şubeler ve
+  kasalar'da satır düğmesi ve "Online kanallar" listesi (`yer="konsol"`).
+- Ortak bileşenler `src/components/sube-islemleri/` (`kasa-anahtari.tsx` ladmin'in `pos-card.tsx`'inden,
+  `gecis-gunu.tsx` `asilpos-client.tsx`'ten taşındı); ladmin'deki metinler aynı.
+- `updateBranch`: kimlikten başka her alan isteğe bağlı (verilmezse eskisi kalır), önce konsol oturumuna bakar; ladmin'in
+  penceresi `changedGuardedFields` ile yalnız değişeni gönderir. Kasaya giden metinler (`KURULU_NEDEN`,
+  `zatenKuruluMesaji`, `hazirDegilMesaji`, bağlandı e-postası) "Yönetim konsolu" der.
+- Test: `tests/konsol-sube-db.test.ts` (`KONSOL_SUBE_TEST_DATABASE_URL`). Göç yok; kasanın uçları ve anahtar çözümü
+  değişmedi.
+- Sıradaki: K-B (yönetici hesapları kuralı ve Yöneticiler sekmesi), sonra K-C (ladmin'den ayırma; konsol canlıda
+  denendikten sonra).
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)

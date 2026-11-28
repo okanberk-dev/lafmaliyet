@@ -1,12 +1,12 @@
 "use client";
 
-import { Building2, Copy, MonitorDown, Plus, Unlink, UsersRound } from "lucide-react";
+import { Building2, Copy, MonitorDown, Plus, Settings2, Unlink, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -15,7 +15,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
 import {
-  CANLI_GUN,
+  canliBaslik,
   doluSatirlar,
   ILK_PERSONEL_ETIKET,
   ILK_PERSONEL_ROLLERI,
@@ -44,14 +44,17 @@ import {
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { isStepUpError, type StepUpConfirm } from "@/lib/step-up";
+import { konsolSubeYolu } from "@/lib/yonetim-host";
 import type { KurulumSonucu } from "@/server/actions/branches";
 import type { ActionResult } from "@/server/actions/util";
 
 /*
  * Şube ekleme (yalnız asıl yönetici; docs/SUBE.md › Şube ekleme): iki sayfada aynı bileşen ve aynı sunucu eylemleri,
  * ladmin'de /panel/sube-ekleme, Yönetim konsolunda "Şubeler ve kasalar" (/yonetim; veri src/server/sube-ekleme.ts).
- * Metinler iki yerde de doğru olsun diye ladmin'in ekranlarını "ladmin › …" diye anar. Yeni şube formu (isteğe bağlı ilk
- * personeliyle), fiziksel şubelerin kasa durumu (src/lib/asilpos/kasa-durumu.ts), "Bilgisayara kur" (kurulum bağlantısı;
+ * `yer` yalnız yön gösteren metni ve şube satırının bağlantısını seçer: ladmin'de metin ladmin'in ekranlarını anar, konsolda
+ * konsolun kendi adlarını ve her şube satırında "Şube işlemleri" (/yonetim/sube/[id]: kapatma, silme, tür, kasa programı,
+ * geçiş günü, kasa anahtarı). Yeni şube formu (isteğe bağlı ilk personeliyle), fiziksel şubelerin kasa durumu
+ * (src/lib/asilpos/kasa-durumu.ts), "Bilgisayara kur" (kurulum bağlantısı;
  * kurulu kasa varsa önce onay), "İlk personeli ayarla" ve "Kasayı serbest bırak" (docs/ASILPOS.md › Kasa açılışı).
  * Kurallar saf dosyalardan okunur, sunucu aynısını denetler. PIN'ler yalnız formda durur: sunucu onları geri vermez,
  * ekranda yalnız "ayarlı" ya da "teslim edildi" görünür.
@@ -74,6 +77,23 @@ export type ReleaseAction = (input: { id: string; ad: string }, confirm?: StepUp
 
 /** Serbest bırakma penceresinin bilgisi (sunucuda: son gün sonu ve anahtarın kaynağı) */
 export type SerbestBilgisi = { canli: boolean; anahtarOrtamda: boolean };
+
+/** Bileşenin çizildiği yer: ladmin (/panel/sube-ekleme) ya da Yönetim konsolu (Şubeler ve kasalar) */
+export type SubeEklemeYeri = "ladmin" | "konsol";
+
+/** Yön gösteren metinler: ladmin'de ladmin'in ekranları, konsolda konsolun kendi adları (ladmin'e gönderme yok) */
+const YON_METNI = {
+  ladmin: {
+    kasaProgrami:
+      "Gün sonu hangi programdan gelir. Şube bugün ModPOS'la çalışıyorsa ModPOS seçin: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz; AsilPOS'a geçiş sonra ladmin › Şubeler'de.",
+    posOrani: "Bankanın kart satışından kestiği oran; sonradan ladmin › Şubeler'de değişir.",
+  },
+  konsol: {
+    kasaProgrami:
+      "Gün sonu hangi programdan gelir. Şube bugün ModPOS'la çalışıyorsa ModPOS seçin: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz; AsilPOS'a geçiş sonra şubenin Şube işlemleri sayfasında.",
+    posOrani: "Bankanın kart satışından kestiği oran; sonradan değiştirilebilir.",
+  },
+} as const;
 
 /** İlk personelin üç satırı (Patron, Müdür, Barista); boş satır gönderilmez */
 type PersonelSatiri = { rol: IlkPersonelRolu; ad: string; pin: string };
@@ -104,6 +124,7 @@ export function SubeEkleme({
   installAction,
   staffAction,
   releaseAction,
+  yer = "ladmin",
 }: {
   rows: BranchRow[];
   /** Şubelerin kayıtlı e-postası */
@@ -120,6 +141,8 @@ export function SubeEkleme({
   installAction: InstallAction;
   staffAction: StaffAction;
   releaseAction: ReleaseAction;
+  /** Çizildiği yer: konsolda konsolun metinleri ve şube satırında "Şube işlemleri" */
+  yer?: SubeEklemeYeri;
 }) {
   const subeler = rows.filter((b) => b.kind === "fiziksel").sort((a, b) => Number(b.active) - Number(a.active));
   const [sonuc, setSonuc] = useState<KurulumSonucu | null>(null);
@@ -159,7 +182,7 @@ export function SubeEkleme({
 
   return (
     <div className="space-y-4">
-      <YeniSube createAction={createAction} rows={rows} onKurulum={setSonuc} />
+      <YeniSube createAction={createAction} rows={rows} onKurulum={setSonuc} yer={yer} />
 
       <Card>
         <CardHeader
@@ -195,18 +218,28 @@ export function SubeEkleme({
                       </Badge>
                     </p>
                   </div>
-                  {b.active ? (
+                  {b.active || yer === "konsol" ? (
                     <div className="flex flex-wrap gap-2 max-sm:w-full">
-                      <Button size="sm" variant="secondary" onClick={() => kurBasla(b)} disabled={bekliyor} className="max-sm:w-full">
-                        <MonitorDown className="size-4" aria-hidden="true" /> Bilgisayara kur
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => setEkip(b)} disabled={bekliyor} className="max-sm:w-full">
-                        <UsersRound className="size-4" aria-hidden="true" /> İlk personeli ayarla
-                      </Button>
-                      {d.durum === "kurulu" ? (
-                        <Button size="sm" variant="ghost" onClick={() => setBirak(b)} disabled={bekliyor} className="max-sm:w-full">
-                          <Unlink className="size-4" aria-hidden="true" /> Kasayı serbest bırak
-                        </Button>
+                      {b.active ? (
+                        <>
+                          <Button size="sm" variant="secondary" onClick={() => kurBasla(b)} disabled={bekliyor} className="max-sm:w-full">
+                            <MonitorDown className="size-4" aria-hidden="true" /> Bilgisayara kur
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={() => setEkip(b)} disabled={bekliyor} className="max-sm:w-full">
+                            <UsersRound className="size-4" aria-hidden="true" /> İlk personeli ayarla
+                          </Button>
+                          {d.durum === "kurulu" ? (
+                            <Button size="sm" variant="ghost" onClick={() => setBirak(b)} disabled={bekliyor} className="max-sm:w-full">
+                              <Unlink className="size-4" aria-hidden="true" /> Kasayı serbest bırak
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                      {/* Konsolda: kapatma / yeniden açma, silme, tür, kasa programı, geçiş günü ve kasa anahtarı (kapalı şubede de) */}
+                      {yer === "konsol" ? (
+                        <ButtonLink href={konsolSubeYolu(b.id)} size="sm" variant="secondary" className="max-sm:w-full" aria-label={`${b.name}: şube işlemleri`}>
+                          <Settings2 className="size-4" aria-hidden="true" /> Şube işlemleri
+                        </ButtonLink>
                       ) : null}
                     </div>
                   ) : null}
@@ -388,7 +421,7 @@ function SerbestDialog({ branch, bilgi, releaseAction, onClose }: { branch: Bran
           <Notice
             tone="bad"
             size="sm"
-            title={`${branch.name} canlı: son ${CANLI_GUN} günde kasadan gün sonu geldi`}
+            title={canliBaslik(branch.name)}
             text="Serbest bırakınca bugünkü kasa gün sonunu ladmin'e gönderemez. Yalnız kasa bilgisayarı değişiyorsa ya da kasa kayıpsa devam edin."
           />
         ) : null}
@@ -413,7 +446,7 @@ function SerbestDialog({ branch, bilgi, releaseAction, onClose }: { branch: Bran
 }
 
 /** Yeni şube formu: bugünkü ekleme penceresinin alanları. E-posta yazılırsa (fiziksel) kurulum bağlantısı da gider */
-function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateAction; rows: BranchRow[]; onKurulum: (k: KurulumSonucu) => void }) {
+function YeniSube({ createAction, rows, onKurulum, yer }: { createAction: CreateAction; rows: BranchRow[]; onKurulum: (k: KurulumSonucu) => void; yer: SubeEklemeYeri }) {
   const [t, setT] = useState<Taslak>(BOS);
   const [ekip, setEkip] = useState<PersonelSatiri[]>(BOS_PERSONEL);
   const [denendi, setDenendi] = useState(false);
@@ -496,9 +529,7 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
             htmlFor="se-kasa"
             error={goster(kaynakHata)}
             hint={
-              fiziksel
-                ? "Gün sonu hangi programdan gelir. Şube bugün ModPOS'la çalışıyorsa ModPOS seçin: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz; AsilPOS'a geçiş sonra ladmin › Şubeler'de."
-                : "Online kanalın kasası yok."
+              fiziksel ? YON_METNI[yer].kasaProgrami : "Online kanalın kasası yok."
             }
           >
             <Select id="se-kasa" value={t.posSource} disabled={!fiziksel} onChange={(e) => setT((o) => ({ ...o, posSource: e.target.value as BranchPosSource }))}>
@@ -513,7 +544,7 @@ function YeniSube({ createAction, rows, onKurulum }: { createAction: CreateActio
             </Select>
           </Field>
           {fiziksel ? (
-            <Field label="Banka POS oranı (%)" htmlFor="se-oran" error={goster(oranHata)} hint="Bankanın kart satışından kestiği oran; sonradan ladmin › Şubeler'de değişir.">
+            <Field label="Banka POS oranı (%)" htmlFor="se-oran" error={goster(oranHata)} hint={YON_METNI[yer].posOrani}>
               <NumberInput id="se-oran" value={t.posRate} onChange={(e) => setT((o) => ({ ...o, posRate: e.target.value }))} />
             </Field>
           ) : null}

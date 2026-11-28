@@ -175,7 +175,7 @@ palet). Kodda eski ad ("ana yönetici": `isAnaAdmin`, `LADMIN_ANA_ADMIN`) kalır
 | Şube açmak | `createBranch` |
 | Şube silmek | `deleteBranch` |
 | Şubeyi kapatmak ya da yeniden açmak | `updateBranch` (yalnız `active` değişince) |
-| Kasa programını değiştirmek (tür değişikliği de) | `updateBranch` (yalnız `posSource` değişince) |
+| Kasa programını değiştirmek (tür değişikliği de) | `updateBranch` (yalnız `posSource` ya da `kind` değişince) |
 | Kasa kurmak (kurulum bağlantısı) | `sendBranchInstall` |
 | Şubenin kasasını serbest bırakmak (parola ve şubenin adıyla) | `releaseBranchTill` |
 | Şubenin ilk personelini (patron, müdür, barista PIN'leri) ayarlamak | `saveBranchStaff`, `createBranch` |
@@ -191,7 +191,10 @@ bağlıdır, parola değişince ya da oturumlar kapatılınca geçmez.
 
 Şubenin öteki alanları (ad, açılış günü, sıra, POS oranı, özellikler, e-posta) her yöneticide kalır. Ekranlarda asıl
 yönetici olmayan yöneticiye bu alanlar ve düğmeler kapalıdır, nedeni yanında yazılıdır (Şubeler'in düzenleme penceresi,
-Şube ayarları › AsilPOS bağlantısı, Ayarlar › AsilPOS (kasa) › geçiş günü). **Şube ekleme** sayfası
+Şube ayarları › AsilPOS bağlantısı, Ayarlar › AsilPOS (kasa) › geçiş günü). `updateBranch`'te kimlikten başka her alan
+isteğe bağlıdır, verilmeyen alanın eskisi kalır (28 Kasım 2026): Şubeler'in düzenleme penceresi açık / kapalı durumu,
+türü ve kasa programını yalnız pencerede değiştiyse gönderir. Böylece Yönetim konsolunda kapatılan şubeyi ladmin'deki
+ad düzenlemesi yeniden açmaz, asıl yönetici olmayan yönetici ad değiştirirken ret almaz. **Şube ekleme** sayfası
 (`/panel/sube-ekleme`, [SUBE.md › Şube ekleme](SUBE.md#şube-ekleme)) menüde yalnız ona görünür; başka yönetici adresle
 açarsa içerik yerine tek cümle görür.
 
@@ -219,13 +222,23 @@ bir yöneticinin doğru parolasıyla bile, kayıtsız e-posta gibi yanıtlanır 
 son girişine dokunulmaz). Asıl yöneticide panelin korumaları aynen (kilit, iki adımlı, yeni cihaz e-postası). Her konsol
 sayfası `requireYonetim` ister: konsol çerezi geçerli, hesap etkin, oturum sürümü aynı, rol yönetici ve asıl yönetici;
 değilse çerez silinip konsol girişine gidilir (`LADMIN_ANA_ADMIN` değişince de). Bu aşamada `requireAnaAdmin` iki
-oturumu da kabul eder (konsol oturumu varsa onunla, yoksa panelin bugünkü yolu); ladmin'deki ekranlar değişmedi.
+oturumu da kabul eder (konsol oturumu varsa onunla, yoksa panelin bugünkü yolu); `updateBranch` de önce konsol
+oturumuna bakar. ladmin'deki ekranlar değişmedi: asıl yönetici işleri iki yerden de yapılabilir.
+
+**Konsolda şube işlemleri** (28 Kasım 2026; [SUBE.md › Şube işlemleri](SUBE.md#şube-işlemleri-yönetim-konsolu)):
+Şubeler ve kasalar'da her şube satırından "Şube işlemleri" sayfası açılır (`/yonetim/sube/[id]`): şubeyi kapatma ve
+yeniden açma, tür ve kasa programı, AsilPOS'a geçiş günü, kasa anahtarını döndürme ve silme, eski anahtarı silme,
+şubeyi silme. Eylemler aynı (`updateBranch`, `saveAsilposSwitchDay`, `saveAsilposSecret`, `deleteBranch`), kurallar ve
+onaylar aynı; kasa anahtarının parola onayı (`requireStepUp`) konsol oturumuyla çalışır, yanlış parola asıl yöneticinin
+hesabına yazılır. Son 7 günde kasadan gün sonu gelen şubede (bugün Marina) sayfanın başında ve her yıkıcı işlemin
+penceresinde kırmızı uyarı.
 
 Testler: `tests/asil-yonetici.test.ts` (saf kurallar ve kaynak taraması), `tests/asil-yonetici-db.test.ts` (gerçek
 Postgres, `ASIL_YONETICI_TEST_DATABASE_URL`): her korunan eylemde asıl yönetici geçer, öteki yönetici okunur hata alır,
 müdür, muhasebeci ve personel reddedilir; hesap korumasının her eylemi; kapanan şubenin bekleyen kodları iptal olur ve
 kodu reddedilir; Marina'nın anahtarı bütün senaryolardan sonra baştakiyle aynı. Kasa açılışı: `tests/kasa-acilis.test.ts`
-ve `tests/kasa-acilis-db.test.ts` (`KASA_ACILIS_TEST_DATABASE_URL`).
+ve `tests/kasa-acilis-db.test.ts` (`KASA_ACILIS_TEST_DATABASE_URL`). Konsolda şube işlemleri:
+`tests/konsol-sube-db.test.ts` (`KONSOL_SUBE_TEST_DATABASE_URL`).
 
 ## Kullanıcı yönetimi ve davet
 

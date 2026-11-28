@@ -77,6 +77,8 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
       },
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
+      // Yönetim konsolunun oturumu yok (updateBranch önce ona bakar; konsol tests/konsol-sube-db.test.ts'te)
+      getYonetimUser: async () => null,
     });
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();

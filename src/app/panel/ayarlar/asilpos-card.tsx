@@ -1,6 +1,7 @@
 import { Store } from "lucide-react";
 import Link from "next/link";
 
+import { AsilposSwitchDayForm } from "@/components/sube-islemleri/gecis-gunu";
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
@@ -18,7 +19,7 @@ import { loadAnahtarUyumuKarti, type AnahtarUyumuKarti } from "@/server/asilpos/
 import { loadAsilposCard, type AsilposCardData } from "@/server/asilpos/status";
 
 import type { ProductOption } from "../satislar/product-picker";
-import { AsilposDayDelete, AsilposKeyTest, AsilposSwitchDayForm, AsilposUnmatchedList } from "./asilpos-client";
+import { AsilposDayDelete, AsilposKeyTest, AsilposUnmatchedList } from "./asilpos-client";
 import { PosElsewhereCard } from "./pos-elsewhere";
 import { SectionCard } from "./section-card";
 

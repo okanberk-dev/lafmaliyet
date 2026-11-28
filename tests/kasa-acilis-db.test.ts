@@ -287,7 +287,8 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     assert.deepEqual([kapali.status, kapali.body.error], [409, "sube_kapali"]);
     const modpos = await call("bagla", { belirtec: g.body.belirtec, sube: "bodrum", kasa: KASA_A });
     assert.deepEqual([modpos.status, modpos.body.error], [409, "sube_hazir_degil"]);
-    assert.match(String(modpos.body.mesaj), /Bilgisayara kur/);
+    // Kasaya giden metin adres yazmaz, "Yönetim konsolu" der
+    assert.equal(modpos.body.mesaj, "Bodrum şubesinin kasa programı ModPOS ve şube kasa kurulumu için hazırlanmadı: Yönetim konsolu › Şubeler ve kasalar › Bilgisayara kur");
     assert.equal((await call("bagla", { belirtec: g.body.belirtec, sube: "yok-boyle", kasa: KASA_A })).status, 404);
     assert.equal(await stateOf("asilpos.kasa:fethiye"), undefined, "hiçbir şey yazılmadı");
     // Oturum sürümü değişince (parola değişti, oturumlar kapatıldı) belirteç geçmez
@@ -300,7 +301,7 @@ describe("Kasa açılışı: veritabanında", { skip: !SERVER_URL && "KASA_ACILI
     const before = await keys.posKeyOf("marina", db);
     const r = await call("bagla", { belirtec: g.body.belirtec, sube: "marina", devral: true, kasa: KASA_B });
     assert.equal(r.status, 409);
-    assert.deepEqual(r.body, { ok: false, error: "zaten_kurulu", mesaj: "Marina şubesinde kurulu bir kasa var. Bilgisayar değişecekse ladmin › Şube ekleme › Kasayı serbest bırak.", sube: { id: "marina", ad: "Marina" }, kasa: { sonGun: "2026-11-27" } });
+    assert.deepEqual(r.body, { ok: false, error: "zaten_kurulu", mesaj: "Marina şubesinde kurulu bir kasa var. Bilgisayar değişecekse Yönetim konsolu › Şubeler ve kasalar › Kasayı serbest bırak.", sube: { id: "marina", ad: "Marina" }, kasa: { sonGun: "2026-11-27" } });
     assert.ok(!JSON.stringify(r.body).includes(MARINA_KEY), "anahtar yok");
     keys.forgetPosKeys();
     assert.equal(await keys.posKeyOf("marina", db), before);

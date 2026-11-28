@@ -87,6 +87,8 @@ describe("Şube özellikleri", { skip: !SERVER_URL && "SUBE_OZELLIK_TEST_DATABAS
         if (me.role !== "admin") throw new Error("yönetici değil");
         return session();
       },
+      // Yönetim konsolunun oturumu yok (updateBranch önce ona bakar)
+      getYonetimUser: async () => null,
     });
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
