@@ -755,10 +755,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasayı bilgisayara kurmak yalnız asıl yöneticinin işidir; öteki yöneticiler
             şubenin adını, POS oranını ve e-postasını düzenler. <Path href="/panel/sube-ekleme" /> yalnız asıl yöneticinin menüsünde: yeni şube,
             şubelerin kasa durumu ve Bilgisayara kur. Bilgisayara kur, şubenin e-postasına 14 gün geçerli, tek kurulumluk bir bağlantı gönderir;
-            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Yönetici hesaplarını (açmak,
-            yöneticilik vermek ve almak, pasif yapmak, silmek, iki adımlıyı sıfırlamak, kilidi açmak, oturumları kapatmak, giriş bağlantısı) yalnız asıl
-            yönetici Yönetim konsolu › Yöneticiler&apos;de yönetir; öteki yöneticiler müdür, muhasebeci ve personel hesaplarını yönetir, kendi hesaplarını
-            Hesabım&apos;dan. Kullanıcılar &amp; roller&apos;de asıl yöneticinin satırı &quot;Asıl yönetici&quot; etiketlidir.
+            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Yönetici hesaplarını yalnız asıl
+            yönetici Yönetim konsolu › Yöneticiler&apos;de yönetir; öteki yöneticiler müdür, muhasebeci ve personel hesaplarını yönetir.
           </>
         ),
         icon: MonitorDown,

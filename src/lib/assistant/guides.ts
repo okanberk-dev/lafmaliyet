@@ -483,6 +483,7 @@ export const OP_GUIDES: readonly OpGuide[] = [
     steps: [
       "Kullanıcılar › kişiyi açın (müdür, muhasebeci, personel).",
       "Düzenle / Aktif anahtarı / Kilidi aç (önce İşlem geçmişine bakın).",
+      "Parola istenirse ekranda girin.",
       "Yönetici satırları salt okunur: yönetici hesaplarını asıl yönetici Yönetim konsolu › Yöneticiler'de yönetir.",
     ],
     password: true,
@@ -529,7 +530,7 @@ export const OP_GUIDES: readonly OpGuide[] = [
     path: "/panel/hesap",
     steps: [
       "Kendi hesabınız için Hesabım › İki adımlı doğrulama › İki adımlı doğrulamayı aç.",
-      "Başka kullanıcı için Kullanıcılar › kişi › İki adımlıyı sıfırla; yöneticininkini yalnız asıl yönetici Yönetim konsolu › Yöneticiler'de sıfırlar.",
+      "Başka kullanıcı için Kullanıcılar › kişi › İki adımlıyı sıfırla; yöneticininkini yalnız asıl yönetici Yönetim konsolu › Yöneticiler'de, kendi parolasıyla sıfırlar.",
     ],
     password: true,
     actions: ["confirmTotpSetup", "cancelTotpSetup", "resetUserTwoFactor"],
