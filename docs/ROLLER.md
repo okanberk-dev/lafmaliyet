@@ -12,8 +12,9 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 | **Muhasebeci** (`accountant`) | Salt okunur: faturalar, gelir-gider, harcamalar, kasa raporları, muhasebeci paketi. |
 
 Yöneticilerden biri **asıl yönetici**dir: şube açma, kapatma ve kasa kurma yalnız onda; yönetici hesaplarını da yalnız
-o yönetir ([Yönetici hesapları](#yönetici-hesapları)); hesabı öteki yöneticilere karşı korunur (aşağıda
-[Asıl yönetici](#asıl-yönetici)). Bu bir rol değil, adresiyle tanımlı tek bir yönetici hesabıdır.
+o yönetir ([Yönetici hesapları](#yönetici-hesapları)). Bu işleri yalnız **Yönetim konsolunda** yapar, ladmin'de değil
+(28 Kasım 2026, K-C); hesabı öteki yöneticilere karşı korunur (aşağıda [Asıl yönetici](#asıl-yönetici)). Bu bir rol
+değil, adresiyle tanımlı tek bir yönetici hesabıdır.
 
 ## Tek kaynak: `src/lib/roles.ts`
 
@@ -166,10 +167,13 @@ Sahibin kararı (26 ve 28 Kasım 2026). Asıl yönetici, **yönetici rolündeki 
 olan** hesaptır (tanımlı değilse `info@nextgenlab.com.tr`; büyük-küçük harf fark etmez). Rol değil, adres: göç yok.
 Tek tanım `src/lib/asil-yonetici.ts` (`isAnaAdmin`, `ASIL_YONETICI_ISLERI`, ret metinleri); sunucu eylemleri
 `requireAnaAdmin(iş)` (`src/server/auth/dal.ts`) ile, ekranlar aynı `isAnaAdmin` ile karar verir. Tarayıcı ortam
-değişkenini göremez: bayrak sunucuda hesaplanıp bileşene verilir (`src/app/panel/layout.tsx` → kenar çubuğu, çekmece ve
-palet). Kodda eski ad ("ana yönetici": `isAnaAdmin`, `LADMIN_ANA_ADMIN`) kalır; arayüzde tek ad "Asıl yönetici".
+değişkenini göremez: ladmin'deki konsol bağlantıları sunucuda, yalnız asıl yöneticiye kurulur. Kodda eski ad ("ana
+yönetici": `isAnaAdmin`, `LADMIN_ANA_ADMIN`) kalır; arayüzde tek ad "Asıl yönetici".
 
-**Yalnız asıl yöneticinin işleri.** Öteki yönetici okunur bir cümle alır: "Bu işlemi yalnız asıl yönetici yapar: …".
+**Yalnız asıl yöneticinin işleri, yalnız Yönetim konsolunda** (28 Kasım 2026, K-C). `requireAnaAdmin` yalnız geçerli
+konsol oturumunu (`getYonetimUser`) kabul eder; ladmin'in (panel) oturumu hiçbir zaman geçmez. Asıl yönetici ladmin'den
+gelirse "Bu iş Yönetim konsolunda yapılır" (`KONSOLDA_YAPILIR`), öteki yönetici "Bu işlemi yalnız asıl yönetici yapar:
+…" alır; ikisinde de hiçbir şey yazılmaz ve ret parola sorusundan önce gelir.
 
 | İş | Eylem |
 | --- | --- |
@@ -190,14 +194,16 @@ aynen (IP sınırı, 5 hatada 15 dakika kilit, kayıtsız e-postada aynı söz; 
 "Kasayı yalnız asıl yönetici açar" alır. Oturum açılmaz, çerez yazılmaz: 15 dakikalık belirteç kişinin oturum sürümüne
 bağlıdır, parola değişince ya da oturumlar kapatılınca geçmez.
 
-Şubenin öteki alanları (ad, açılış günü, sıra, POS oranı, özellikler, e-posta) her yöneticide kalır. Ekranlarda asıl
-yönetici olmayan yöneticiye bu alanlar ve düğmeler kapalıdır, nedeni yanında yazılıdır (Şubeler'in düzenleme penceresi,
-Şube ayarları › AsilPOS bağlantısı, Ayarlar › AsilPOS (kasa) › geçiş günü). `updateBranch`'te kimlikten başka her alan
-isteğe bağlıdır, verilmeyen alanın eskisi kalır (28 Kasım 2026): Şubeler'in düzenleme penceresi açık / kapalı durumu,
-türü ve kasa programını yalnız pencerede değiştiyse gönderir. Böylece Yönetim konsolunda kapatılan şubeyi ladmin'deki
-ad düzenlemesi yeniden açmaz, asıl yönetici olmayan yönetici ad değiştirirken ret almaz. **Şube ekleme** sayfası
-(`/panel/sube-ekleme`, [SUBE.md › Şube ekleme](SUBE.md#şube-ekleme)) menüde yalnız ona görünür; başka yönetici adresle
-açarsa içerik yerine tek cümle görür.
+Şubenin öteki alanları (ad, açılış günü, sıra, POS oranı, özellikler, e-posta) her yöneticide kalır, ladmin'de panel
+oturumuyla da. ladmin'de taşınan işlerin yerinde salt okunur durum ve tek cümle "Bu iş Yönetim konsolunda yapılır"
+durur (`src/components/panel/konsol-notu.tsx`); asıl yöneticiye konsolun ilgili sayfasına bağlantı (adres
+`src/lib/yonetim-host.ts` › `panelden`: `YONETIM_URL` tanımlıysa konsolun adresi, değilse aynı adresteki `/yonetim`):
+Şubeler (şube ekleme; düzenleme penceresinde tür, kasa programı ve açık / kapalı salt okunur, silme yok), Şubeler › şube
+› AsilPOS bağlantısı (anahtarı döndürme ve silme, eski anahtarı silme), Ayarlar › AsilPOS (kasa) › geçiş günü.
+`updateBranch`'te kimlikten başka her alan isteğe bağlıdır, verilmeyen alanın eskisi kalır: ladmin'in penceresi açık /
+kapalı durumu, türü ve kasa programını hiç göndermez, Yönetim konsolunda kapatılan şubeyi ad düzenlemesi yeniden açmaz.
+Menüde ve komut paletinde "Şube ekleme" yok; eski adres `/panel/sube-ekleme` asıl yöneticiyi konsolun Şubeler ve kasalar
+sayfasına yönlendirir, öteki yönetici tek cümle görür ([SUBE.md › Şube ekleme](SUBE.md#şube-ekleme)).
 
 **Hesabı korunur.** Başka yönetici asıl yöneticinin hesabında şunları yapamaz (adını değiştirebilir):
 
@@ -223,10 +229,11 @@ Girişi kendi eylemiyle (`src/server/actions/yonetim-giris.ts`): asıl yönetici
 bir yöneticinin doğru parolasıyla bile, kayıtsız e-posta gibi yanıtlanır (aynı süre ve söz; o hesabın kilit sayacına ve
 son girişine dokunulmaz). Asıl yöneticide panelin korumaları aynen (kilit, iki adımlı, yeni cihaz e-postası). Her konsol
 sayfası `requireYonetim` ister: konsol çerezi geçerli, hesap etkin, oturum sürümü aynı, rol yönetici ve asıl yönetici;
-değilse çerez silinip konsol girişine gidilir (`LADMIN_ANA_ADMIN` değişince de). Bu aşamada `requireAnaAdmin` iki
-oturumu da kabul eder (konsol oturumu varsa onunla, yoksa panelin bugünkü yolu); `updateBranch` ve kullanıcı eylemleri
-de önce konsol oturumuna bakar. ladmin'deki şube ekranları değişmedi: asıl yönetici şube işlerini iki yerden de
-yapabilir. Yönetici hesapları yalnız konsolda (aşağıda).
+değilse çerez silinip konsol girişine gidilir (`LADMIN_ANA_ADMIN` değişince de). `requireAnaAdmin` yalnız konsol
+oturumunu kabul eder (K-C); karışık eylemler (`updateBranch`, kullanıcı eylemleri, `createAccessLink`, `emailAccess`)
+iki oturumu da kabul eder ama asıl yöneticiye ayrılmış kısım için `requireAnaAdmin` ister. Konsol girişinden sonra
+ladmin oturumu gerekmeden bütün asıl yönetici işleri konsolda yapılır; kendi hesabı (parola, iki adımlı) ladmin ›
+Hesabım'da kalır. Yönetici hesapları da yalnız konsolda (aşağıda).
 
 **Konsolda şube işlemleri** (28 Kasım 2026; [SUBE.md › Şube işlemleri](SUBE.md#şube-işlemleri-yönetim-konsolu)):
 Şubeler ve kasalar'da her şube satırından "Şube işlemleri" sayfası açılır (`/yonetim/sube/[id]`): şubeyi kapatma ve
@@ -241,15 +248,16 @@ penceresinde kırmızı uyarı.
 Sahibin kararı (28 Kasım 2026; [planlar/yonetim-konsolu.md](planlar/yonetim-konsolu.md) › K-B). **Bir yönetici hesabına
 dokunan iş yalnız asıl yöneticinindir.** "Dokunan": işlemden önceki ya da sonraki rol yönetici (`yoneticiHesabi`,
 `yoneticiDuzenlemeIsi`; `src/lib/asil-yonetici.ts`). Eylem hedefi okuduktan hemen sonra, parola sorusundan ve ilk
-yazımdan önce `requireAnaAdmin(yonetici…)` ister (konsol oturumunu da kabul eder); öteki yönetici okunur cümle alır
-("Bu işlemi yalnız asıl yönetici yapar: yönetici hesabı açmak"), parolası hiç sorulmaz ve denenmez.
+yazımdan önce `requireAnaAdmin(yonetici…)` ister (yalnız konsol oturumu); öteki yönetici okunur cümle alır ("Bu işlemi
+yalnız asıl yönetici yapar: yönetici hesabı açmak"), asıl yönetici ladmin'den gelirse "Bu iş Yönetim konsolunda
+yapılır"; parola hiç sorulmaz ve denenmez.
 
 | İş | Eylem | Asıl yönetici | Öteki yönetici |
 | --- | --- | --- | --- |
 | Yönetici hesabı açmak (parolalı ya da davetli) | `createUser` (rol yönetici) | ✓ (parolayla) | ✗ |
 | Var olan hesaba yöneticilik vermek | `saveUser` (rol yöneticiye çıkar) | ✓ (parolayla) | ✗ |
 | Yöneticiliği almak (müdür, muhasebeci ya da personel olur; şube kuralı aynı) | `saveUser` (rol yöneticiden iner) | ✓ (parolayla) | ✗ |
-| Yöneticinin e-postası, parolası, erişimi | `saveUser` | ✓ (parolayla) | ✗ |
+| Yöneticinin e-postası, parolası, erişimi | `saveUser` | ✓ (konsolda, parolayla) | ✗ |
 | Yöneticinin **yalnız adı** | `saveUser` | ✓ | ✓ |
 | Yöneticiyi pasif ya da yeniden aktif yapmak | `setUserActive` | ✓ (parolayla) | ✗ |
 | Yöneticiyi silmek | `deleteUser` | ✓ (parolayla) | ✗ |
@@ -266,8 +274,8 @@ hesap koruması aynen (o hesapta önce o ret gelir). Parola onayının durumlar�
 **Nerede:** Yönetim konsolu › **Yöneticiler** (`/yonetim/yoneticiler`; `src/app/yonetim/(konsol)/yoneticiler/`):
 yönetici listesi (ad, e-posta, etkin / pasif, iki adımlı, son giriş, "Asıl yönetici" rozeti), Yönetici ekle (ladmin'in
 Kullanıcı ekle akışı, rol yönetici; Giriş bilgileri penceresi aynı), Yöneticilik ver (hesap e-postasıyla bulunur),
-her yöneticinin İşlemler penceresi (yöneticiliği al, pasif / aktif, sil, iki adımlıyı sıfırla, kilidi aç, oturumları
-kapat, giriş bağlantısı). Eylemler var olan sunucu eylemleri; ladmin'in ortak parçaları (Giriş bilgileri, parola alanı,
+her yöneticinin İşlemler penceresi (adı ve giriş e-postası, yöneticiliği al, pasif / aktif, sil, iki adımlıyı sıfırla,
+kilidi aç, oturumları kapat, giriş bağlantısı; ad değişikliği parola istemez, e-posta değişikliği ister). Eylemler var olan sunucu eylemleri; ladmin'in ortak parçaları (Giriş bilgileri, parola alanı,
 onay metinleri, pencere koruması) kullanılır. Asıl yöneticinin kendi satırında işlem yok (Hesabım'a bağlantı).
 Sekmenin üstünde kendi hesabının durumu: iki adımlı kapalıysa açması önerilir (ladmin › Hesabım), açıksa kalan
 kurtarma kodu sayısı. **ladmin › Kullanıcılar:** yönetici satırları herkese (asıl yönetici dahil) salt okunur; satırda
@@ -282,9 +290,13 @@ kodu reddedilir; Marina'nın anahtarı bütün senaryolardan sonra baştakiyle a
 ve `tests/kasa-acilis-db.test.ts` (`KASA_ACILIS_TEST_DATABASE_URL`). Konsolda şube işlemleri:
 `tests/konsol-sube-db.test.ts` (`KONSOL_SUBE_TEST_DATABASE_URL`). Yönetici hesapları:
 `tests/yonetici-hesaplari-db.test.ts` (`YONETICI_HESAPLARI_TEST_DATABASE_URL`): öteki yönetici her yönetici hedefli işte
-okunur ret alır ve ret parola sorusundan önce gelir; asıl yönetici panel ve konsol oturumuyla geçer; öteki yönetici
-müdür, muhasebeci ve personel işlerini ve Hesabım'ı bugünkü gibi yapar; konsol sayfasının verisinde sır yok. Kurtarma
-betiği: `tests/asil-yonetici-kurtar-db.test.ts` (`ASIL_KURTAR_TEST_DATABASE_URL`).
+okunur ret alır ve ret parola sorusundan önce gelir; asıl yönetici konsol oturumuyla geçer; öteki yönetici müdür,
+muhasebeci ve personel işlerini ve Hesabım'ı bugünkü gibi yapar; konsol sayfasının verisinde sır yok. Kurtarma betiği:
+`tests/asil-yonetici-kurtar-db.test.ts` (`ASIL_KURTAR_TEST_DATABASE_URL`). ladmin'den ayırma (K-C):
+`tests/ladmin-ayirma-db.test.ts` (`LADMIN_AYIRMA_TEST_DATABASE_URL`): her asıl yönetici işi konsol oturumuyla geçer,
+asıl yöneticinin panel oturumuyla "Bu iş Yönetim konsolunda yapılır" reddini parola sorusundan önce ve hiçbir şey
+yazılmadan alır, öteki yönetici bugünkü reddi alır; sıradan işler iki yöneticide de panelden geçer; kasa açılışının
+uçları e-posta ve parolayla değişmeden çalışır; `/panel/sube-ekleme` yönlendirmesi; Marina'nın anahtarı aynı.
 
 ## Kullanıcı yönetimi ve davet
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, KeyRound, LockOpen, LogOut, Power, Send, ShieldCheck, ShieldOff, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
+import { ExternalLink, KeyRound, LockOpen, LogOut, Pencil, Power, Send, ShieldCheck, ShieldOff, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -36,7 +36,8 @@ import { createUser, deleteUser, resetUserTwoFactor, saveUser, setUserActive, si
  * bileşeni taşınmaz, ondan yalnız ortak parçalar alınır ("Giriş bilgileri" penceresi, parola alanı, onay metinleri,
  * pencere koruması). Eylemler var olan sunucu eylemleridir; yönetici hesabına dokunan her iş parola onayıyla çalışır
  * (kural src/lib/step-up.ts; sunucu aynı kuralı ve asıl yönetici kapısını yeniden denetler). Asıl yöneticinin kendi
- * satırında yıkıcı işlem yok: kendi hesabı ladmin › Hesabım'da.
+ * satırında yıkıcı işlem yok: kendi hesabı ladmin › Hesabım'da. Bir yöneticinin adı ve giriş e-postası da burada değişir
+ * (ladmin'de yönetici satırları herkese salt okunur; K-C): ad değişikliği parola istemez, e-posta değişikliği ister.
  */
 
 type AltRol = Exclude<Role, "admin">;
@@ -62,6 +63,8 @@ type Soru =
   | { tur: "sil"; u: UserRow }
   | { tur: "al"; u: UserRow; role: AltRol; branchId: string | null }
   | { tur: "ver"; a: AdayHesap }
+  /** Giriş e-postası değişiyor (adı da değişebilir); yalnız ad değişikliği parola istemez, doğrudan kaydedilir */
+  | { tur: "duzenle"; u: UserRow; name: string; email: string }
   | { tur: "ekle"; name: string; email: string; mode: "password" | "invite"; password: string; active: boolean };
 
 const close = (...cumleler: string[]) => [...cumleler, STEP_UP_CLOSING].join(" ");
@@ -152,6 +155,8 @@ export function Yoneticiler({
           confirmLabel: "Yöneticiliği al",
           danger: true,
         };
+      case "duzenle":
+        return stepUpText({ kind: "save", user: q.u, changes: ["email"], name: q.name, email: q.email });
       case "ver":
         return {
           title: `${q.a.name} yönetici yapılsın mı?`,
@@ -209,6 +214,11 @@ export function Yoneticiler({
         else hata = r.error;
         break;
       }
+      case "duzenle": {
+        const r = await adEpostaKaydet(q, confirm);
+        if (!r.ok) hata = r.error;
+        break;
+      }
       case "ekle": {
         const payload =
           q.mode === "password"
@@ -229,6 +239,25 @@ export function Yoneticiler({
     }
     setSoru(null);
     return null;
+  }
+
+  /** Adı ve giriş e-postası (sunucu: saveUser; rol, erişim ve şube aynı kalır, pencerenin açıldığı hâl `seen`) */
+  async function adEpostaKaydet(q: { u: UserRow; name: string; email: string }, confirm?: StepUpConfirm) {
+    const { u } = q;
+    const seen = { name: u.name, email: u.email, role: u.role, active: u.active, branchId: null };
+    const r = await saveUser({ id: u.id, name: q.name, email: q.email, role: "admin", active: u.active, branchId: null, seen }, confirm);
+    if (r.ok) toast.success(q.email === u.email ? "Ad kaydedildi" : "Ad ve e-posta kaydedildi", r.data.notice ? { description: r.data.notice } : undefined);
+    return r;
+  }
+
+  /** Pencerenin Kaydet'i: e-posta değiştiyse parola sorulur (hesap başkasına geçebilir), yalnız ad değiştiyse sorulmaz */
+  function duzenle(q: { u: UserRow; name: string; email: string }) {
+    if (q.email !== q.u.email) return setSoru({ tur: "duzenle", ...q });
+    basla(async () => {
+      const r = await adEpostaKaydet(q);
+      if (!r.ok) return void toast.error(r.error);
+      setSecili(null);
+    });
   }
 
   /** Parola istemeyen savunma araçları: kilidi aç, oturumları kapat (ladmin'deki gibi) */
@@ -310,6 +339,7 @@ export function Yoneticiler({
           bekliyor={bekliyor}
           onClose={() => setSecili(null)}
           onSoru={setSoru}
+          onDuzenle={duzenle}
           onKilit={() => kilidiAc(acik)}
           onCikis={() => setCikis(acik)}
         />
@@ -391,6 +421,7 @@ function YoneticiPenceresi({
   bekliyor,
   onClose,
   onSoru,
+  onDuzenle,
   onKilit,
   onCikis,
 }: {
@@ -399,11 +430,24 @@ function YoneticiPenceresi({
   bekliyor: boolean;
   onClose: () => void;
   onSoru: (q: Soru) => void;
+  onDuzenle: (q: { u: UserRow; name: string; email: string }) => void;
   onKilit: () => void;
   onCikis: () => void;
 }) {
   const [rol, setRol] = useState<AltRol | null>(null);
   const [sube, setSube] = useState("");
+  const [ad, setAd] = useState(u.name);
+  const [eposta, setEposta] = useState(u.email);
+  const adTemiz = ad.trim();
+  const epostaTemiz = eposta.trim().toLowerCase();
+  const adEpostaHata = !adTemiz ? "Ad gerekli" : !EMAIL_RE.test(epostaTemiz) ? "Geçerli bir e-posta girin" : null;
+  const adEpostaDegisti = adTemiz !== u.name || epostaTemiz !== u.email;
+
+  function adEposta(e: FormEvent) {
+    e.preventDefault();
+    if (adEpostaHata) return void toast.error(adEpostaHata);
+    if (adEpostaDegisti) onDuzenle({ u, name: adTemiz, email: epostaTemiz });
+  }
   const davetli = u.invite !== "none";
   const btn = `${TAP} w-full justify-start sm:pointer-fine:h-9`;
   const subeGerekli = rol === "manager";
@@ -468,6 +512,20 @@ function YoneticiPenceresi({
             <Power size={15} /> {u.active ? "Pasif yap (kapat)" : "Yeniden aktif yap (aç)"}
           </Button>
         </div>
+        <form onSubmit={adEposta} className="space-y-3 rounded-2xl bg-panel p-3">
+          <p className="flex items-center gap-1.5 text-[13px] font-medium text-ink-soft">
+            <Pencil size={15} aria-hidden /> Adı ve giriş e-postası
+          </p>
+          <Field label="Ad" htmlFor="yk-ad">
+            <Input id="yk-ad" value={ad} maxLength={80} autoComplete="off" onChange={(e) => setAd(e.target.value)} />
+          </Field>
+          <Field label="Giriş e-postası" htmlFor="yk-eposta" hint="E-posta değişince bekleyen davet ve sıfırlama bağlantıları iptal olur; kendi parolanızı ister.">
+            <Input id="yk-eposta" type="email" inputMode="email" autoComplete="off" value={eposta} onChange={(e) => setEposta(e.target.value)} />
+          </Field>
+          <Button type="submit" variant="secondary" disabled={!adEpostaDegisti || bekliyor} className="max-sm:w-full">
+            Kaydet
+          </Button>
+        </form>
         <form onSubmit={al} className="space-y-3 rounded-2xl bg-panel p-3">
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-ink-soft">
             <UserMinus size={15} aria-hidden /> Yöneticiliği al

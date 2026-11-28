@@ -156,23 +156,6 @@ export function branchEmailTaken(dup: { role: string; branchId: string | null } 
   return !!dup && (dup.role !== "staff" || (dup.branchId !== null && dup.branchId !== branchId));
 }
 
-/** Asıl yöneticinin şube alanları: açık / kapalı durumu, tür ve kasa programı (docs/ROLLER.md › Asıl yönetici) */
-export type BranchGuardedFields = Pick<BranchRow, "kind" | "posSource" | "active">;
-
-/**
- * Düzenleme penceresinin gönderdiği korunan alanlar (ladmin › Şubeler, updateBranch): yalnız pencerede gerçekten
- * değişenler. Değişmeyen alan gönderilmez, sunucuda eskisi kalır: konsolda kapatılan şubeyi ladmin'deki ad düzenlemesi
- * yeniden açmaz, asıl yönetici olmayan yönetici ad değiştirirken ret almaz. Tür değişince kasa programı da gider (ikisi
- * birlikte denetlenir, branchSourceError)
- */
-export function changedGuardedFields(before: BranchGuardedFields, after: BranchGuardedFields): Partial<BranchGuardedFields> {
-  const turVeKasa = before.kind !== after.kind || before.posSource !== after.posSource;
-  return {
-    ...(turVeKasa ? { kind: after.kind, posSource: after.posSource } : {}),
-    ...(before.active !== after.active ? { active: after.active } : {}),
-  };
-}
-
 /** Silinebilir mi: sabit kayıtlar ve üzerinde verisi olan şube silinmez (veri sayısı çağırandan gelir) */
 export function branchDeleteError(branch: BranchRow, usageCount: number): string | null {
   if (FIXED_BRANCH_IDS.includes(branch.id)) return `${branch.name} silinemez`;

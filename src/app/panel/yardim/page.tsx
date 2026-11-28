@@ -749,19 +749,19 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
       },
       {
         id: "sube-ekleme",
-        q: "Şube ekleme ve kasa kurma (asıl yönetici)",
+        q: "Şube ekleme, kasa kurma ve yönetici hesapları (Yönetim konsolu)",
         a: (
           <>
-            Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasayı bilgisayara kurmak yalnız asıl yöneticinin işidir; öteki yöneticiler
-            şubenin adını, POS oranını ve e-postasını düzenler. <Path href="/panel/sube-ekleme" /> yalnız asıl yöneticinin menüsünde: yeni şube,
-            şubelerin kasa durumu ve Bilgisayara kur. Bilgisayara kur, şubenin e-postasına 14 gün geçerli, tek kurulumluk bir bağlantı gönderir;
-            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Yönetici hesaplarını yalnız asıl
-            yönetici Yönetim konsolu › Yöneticiler&apos;de yönetir; öteki yöneticiler müdür, muhasebeci ve personel hesaplarını yönetir.
+            Şube açmak, kapatmak, silmek, türü ve kasa programını değiştirmek, kasayı bilgisayara kurmak, kasa anahtarı, AsilPOS&apos;a geçiş günü
+            ve yönetici hesapları asıl yöneticinin işidir ve yalnız Yönetim konsolunda (yonetim.laffogato.net, kendi girişiyle) yapılır: Şubeler ve
+            kasalar, şubenin Şube işlemleri sayfası ve Yöneticiler. ladmin&apos;de bu alanlar salt okunurdur, yerlerinde &quot;Bu iş Yönetim
+            konsolunda yapılır&quot; yazar. <Path href="/panel/subeler" /> ekranında her yönetici şubenin adını, açılış gününü, POS oranını ve
+            e-postasını düzenler; <Path href="/panel/kullanicilar" /> ekranında müdür, muhasebeci ve personel hesaplarını yönetir.
           </>
         ),
         icon: MonitorDown,
         links: [
-          { href: "/panel/sube-ekleme", label: "Şube ekleme" },
+          { href: "/panel/subeler", label: "Şubeler" },
           { href: "/panel/kullanicilar", label: "Kullanıcılar & roller" },
         ],
       },
@@ -771,13 +771,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Yeni kasa gerçek kullanıma geçerken asıl yöneticinin ladmin e-postası ve parolasıyla girip şubesini seçer; kasası kurulu şube kasada
-            seçilemez. Bilgisayar değişecekse <Path href="/panel/sube-ekleme" /> › şubenin satırı › Kasayı serbest bırak (şubenin adı ve
-            parolanızla): eski kasa ladmin bağlantısını kaybeder, yeni bilgisayar şubeyi seçebilir. İlk personeli ayarla ile patron, müdür ve
-            baristanın adı ve PIN&apos;i girilir; PIN&apos;ler şifreli durur, kasa aldığını onaylayınca silinir.
+            seçilemez. Bilgisayar değişecekse Yönetim konsolu › Şubeler ve kasalar › şubenin satırı › Kasayı serbest bırak (şubenin adı ve
+            parolanızla): eski kasa ladmin bağlantısını kaybeder, yeni bilgisayar şubeyi seçebilir. İlk personeli ayarla (aynı satırda) ile patron,
+            müdür ve baristanın adı ve PIN&apos;i girilir; PIN&apos;ler şifreli durur, kasa aldığını onaylayınca silinir.
           </>
         ),
         icon: MonitorDown,
-        links: [{ href: "/panel/sube-ekleme", label: "Şube ekleme" }],
+        links: [{ href: "/panel/subeler", label: "Şubeler" }],
       },
       {
         id: "iki-kar",

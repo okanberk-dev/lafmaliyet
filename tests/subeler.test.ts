@@ -23,7 +23,6 @@ import {
   branchScopeIds,
   branchScopeLabel,
   branchSourceError,
-  changedGuardedFields,
   DEFAULT_BRANCH_ID,
   DEFAULT_BRANCHES,
   FIXED_BRANCH_IDS,
@@ -302,17 +301,12 @@ test("silme engelleri şubesiz kalır: çürütme turunda elenen yerler yeniden 
   }
 });
 
-test("düzenleme penceresi korunan alanları yalnız değiştiyse gönderir (changedGuardedFields; updateBranch eskisini korur)", () => {
-  const acik = { kind: "fiziksel" as const, posSource: "asilpos" as const, active: true };
-  // Yalnız ad değişti: açık / kapalı, tür ve kasa programı gitmez (konsolda kapatılan şube ad düzenlemesiyle açılmaz)
-  assert.deepEqual(changedGuardedFields(acik, acik), {});
-  assert.deepEqual(changedGuardedFields(acik, { ...acik, active: false }), { active: false });
-  // Kasa programı ya da tür değişince ikisi birlikte (branchSourceError ikisine birden bakar)
-  assert.deepEqual(changedGuardedFields(acik, { ...acik, posSource: "modpos" }), { kind: "fiziksel", posSource: "modpos" });
-  assert.deepEqual(changedGuardedFields(acik, { kind: "online", posSource: "yok", active: true }), { kind: "online", posSource: "yok" });
-  assert.deepEqual(changedGuardedFields(acik, { kind: "fiziksel", posSource: "modpos", active: false }), { kind: "fiziksel", posSource: "modpos", active: false });
-  // ladmin'in penceresi bunu kullanır; tür, kasa programı ve açık / kapalı düz gönderilmez
+test("ladmin'in düzenleme penceresi korunan alanları hiç göndermez (Yönetim konsolunda değişir; updateBranch eskisini korur)", () => {
+  // Açık / kapalı, tür ve kasa programı salt okunur (docs/planlar/yonetim-konsolu.md › K-C): pencerenin yükünde yok,
+  // sunucuda verilmeyen alanın eskisi kalır (konsolda kapatılan şube ladmin'deki ad düzenlemesiyle açılmaz)
   const admin = readFileSync(join(__dirname, "..", "src/app/panel/subeler/branches-admin.tsx"), "utf8");
-  assert.match(admin, /\.\.\.changedGuardedFields\(ilk, t\),/);
-  assert.doesNotMatch(admin, /\bactive: t\.active,|\bposSource: t\.posSource,|\bkind: t\.kind,/);
+  const gonder = admin.slice(admin.indexOf("const gonder = {"), admin.indexOf("};", admin.indexOf("const gonder = {")));
+  assert.ok(gonder.includes("name: t.name.trim(),"), gonder);
+  assert.doesNotMatch(gonder, /\bactive\b|\bposSource\b|\bkind:|confirmPosOff|changedGuardedFields/);
+  assert.doesNotMatch(admin, /<Select|<Checkbox|deleteAction|onDelete/, "tür, kasa programı ve açık / kapalı seçilemez; silme yok");
 });
