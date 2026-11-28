@@ -1676,10 +1676,10 @@ alır (kod ikinci kez geçmez).
 ### Kasayı serbest bırak
 
 Yönetim konsolu › Şubeler ve kasalar › şube satırı › **Kasayı serbest bırak** (`releaseBranchTill`; ladmin'de yok,
-K-C): yalnız asıl yönetici, yalnız konsol oturumuyla (`requireAnaAdmin("kasaSerbest")`), yalnız kasası kurulu şubede (düğme yalnız orada görünür); şubenin adı yazılır ve
-parolayla onaylanır (`requireStepUp`, "AsilPOS"). Onay cümlesi: "Bu şubenin kasası ladmin bağlantısını kaybeder; yeni
-bilgisayar şubeyi kasada seçebilir." Son 7 günde gün sonu gelen (canlı) şubede pencere kırmızı uyarı gösterir. Tek
-işlemde:
+K-C): yalnız asıl yönetici, yalnız konsol oturumuyla (`requireAnaAdmin("kasaSerbest")`), yalnız kasası kurulu şubede
+(düğme yalnız orada görünür); şubenin adı yazılır ve parolayla onaylanır (`requireStepUp`, "AsilPOS"). Onay cümlesi:
+"Bu şubenin kasası ladmin bağlantısını kaybeder; yeni bilgisayar şubeyi kasada seçebilir." Son 7 günde gün sonu gelen
+(canlı) şubede pencere kırmızı uyarı gösterir. Tek işlemde:
 
 1. şubenin kasa anahtarı yeniden üretilir: eski kasanın imzası 401 alır, panelle bağlantısını kaybeder;
 2. bekleyen kurulum bağlantıları iptal olur;
