@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 03:10)
+# Kalanlar ve devam (28 Kasım 2026, 13:50)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -64,6 +64,14 @@ kalanları, altyapı, sözleşme koruma listesi). Yeni işe başlamadan ilgili r
   `tests/sube-ayrimi-db.test.ts` düzeltmesi bununla main'e girdi. PR'daki kırmızı "CodeQL" denetimi testin karşılaştırma
   için bilerek tuttuğu eski desendi (`tests/satis-ozet-redos.test.ts`); engel değildi.
 
+**28 Kasım gündüz birleşenler:** panel #175 (kör sayımlı WhatsApp metni), #180 (belge), #181 (P-B1: asıl yönetici,
+hesap koruması, `/panel/sube-ekleme`); kasa #197 (siteden kurulum çalışan kasada da tamamlanır), #196 (eski kasa programı
+sorusu çıkmaz), #198 (kurulum hiçbir şey sormaz, yeni sürümü de kendisi alır). Marina Merkez'de "Otomatik"; 28 Kas
+09:44'te #196 derlemesini kurdu. Sahip: asıl yönetici hesabı canlıda açık.
+
+**Sürüyor (28 Kas 13:10):** panel dalı `kasa-acilis-uclari` (P-B2), kasa dalı `hizli-markali-acilis` (açılış sırası,
+markalı açılış penceresi, günlük, çöken pencere geri gelir). Aşağıdaki "Açık" listesi 03:10'a aittir; hepsi birleşti.
+
 **Açık:**
 - Panel **#175** personele kör sayımlı WhatsApp metni: main alındı (`docs/planlar/DEVAM.md` çakışması iki bölüm de
   korunarak çözüldü, asistan bilgisi yeniden üretildi; yerelde tip ve 3787 test yeşil), CI koşuyor. Yeşilse merge commit.
@@ -114,6 +122,11 @@ Aynı anda en çok iki iş: biri panel, biri kasa. Kullanım limiti dar: büyük
 4. **Panel P-B1:** asıl yönetici (şube açma, kapatma, silme, kasa kaynağı, kasa anahtarı ve geçiş günü yalnız onda;
    hesabı öteki yöneticilere karşı korunur; kapanan şubenin kodu iptal) ve yeni **"Şube ekleme"** sayfası
    (`/panel/sube-ekleme`, yalnız asıl yöneticiye; yeni şube, şube listesi ve durumu, "Bilgisayara kur"). Göç yok.
+4b. **Yönetim konsolu (sahibin isteği, 28 Kas):** `yonetim.laffogato.net`, yalnız asıl yönetici. Tasarım iki bağımsız
+   incelemeden geçti ve görevlere bölündü: `docs/planlar/yonetim-konsolu.md` › Görevler. Sıra: P-B2 → **K-A** (konsol
+   oturumu, alan adı kuralı, kabuk, Şubeler ve kasalar, Lisans bağlantısı; ladmin değişmez) → canlı adım (alan adını
+   Vercel'e ekle, dene) → **K-B** (yönetici hesapları yalnız asıl yöneticide, Yöneticiler sekmesi, kurtarma betiği) →
+   **K-C** (ladmin'den ayırma). Kasada: panel adresi olarak konsol adresinin reddi (K5 ile).
 5. **Panel P-B2:** kasa açılışı uçları (`/api/asilpos/acilis/giris`, `bagla`, `teslim`), kasa durumu, ilk personel,
    "Kasayı serbest bırak". Var olan uçların yolu, gövdesi ve imzası değişmez; Marina'nın anahtarı dönmez. Göç yok.
 6. **Kasa K5:** "Denemeyi bitir"de ladmin girişi ve şube seçimi (P-B2 canlıya girdikten sonra).
