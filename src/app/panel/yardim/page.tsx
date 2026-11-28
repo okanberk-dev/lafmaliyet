@@ -20,6 +20,7 @@ import {
   Lightbulb,
   ListChecks,
   ListTodo,
+  MonitorDown,
   Newspaper,
   Package,
   Palette,
@@ -745,6 +746,24 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ),
         icon: Landmark,
         links: [{ href: "/panel/subeler", label: "Şubeler" }],
+      },
+      {
+        id: "sube-ekleme",
+        q: "Şube ekleme ve kasa kurma (asıl yönetici)",
+        a: (
+          <>
+            Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasayı bilgisayara kurmak yalnız asıl yöneticinin işidir; öteki yöneticiler
+            şubenin adını, POS oranını ve e-postasını düzenler. <Path href="/panel/sube-ekleme" /> yalnız asıl yöneticinin menüsünde: yeni şube,
+            şubelerin kasa durumu ve Bilgisayara kur. Bilgisayara kur, şubenin e-postasına 14 gün geçerli, tek kurulumluk bir bağlantı gönderir;
+            şubede kurulu bir kasa varsa önce sorar. Şube kapatılınca bekleyen kurulum bağlantıları iptal olur. Asıl yöneticinin hesabını başka
+            yönetici değiştiremez; Kullanıcılar &amp; roller&apos;de satırı &quot;Asıl yönetici&quot; etiketlidir.
+          </>
+        ),
+        icon: MonitorDown,
+        links: [
+          { href: "/panel/sube-ekleme", label: "Şube ekleme" },
+          { href: "/panel/kullanicilar", label: "Kullanıcılar & roller" },
+        ],
       },
       {
         id: "iki-kar",

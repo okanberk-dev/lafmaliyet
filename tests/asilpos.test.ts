@@ -1070,7 +1070,8 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
   assert.deepEqual(exported, ["saveAsilposSwitchDay", "deleteAsilposDay", "testAsilposKeys"], "dosyada yardımcı dışa aktarım yok (her biri bir POST ucu)");
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport /)[0];
-    assert.match(body, /return attempt\(async \(\) => \{\s*const me = adminActor\(await requireAdmin\(\)\);/, `${name}: önce yönetici oturumu`);
+    // Geçiş günü yalnız asıl yöneticide (28 Kasım 2026; requireAnaAdmin önce requireAdmin'den geçer)
+    assert.match(body, /return attempt\(async \(\) => \{\s*const me = adminActor\(await (requireAdmin\(\)|requireAnaAdmin\("gecisGunu"\))\);/, `${name}: önce yönetici oturumu`);
   }
   const del = actions.slice(actions.indexOf("export async function deleteAsilposDay"));
   assert.ok(del.indexOf('requireStepUp(me, confirm, `AsilPOS günü silme: ${data.date}`, "AsilPOS")') > 0, "parola onayı, yeri AsilPOS");

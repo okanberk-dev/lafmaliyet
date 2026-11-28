@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { Skeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { adminTwoFactorRequired, TWO_FACTOR_RULE_TEXT } from "@/lib/admin-security";
+import { isAnaAdmin, isAnaAdminEmail } from "@/lib/asil-yonetici";
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { dateTimeTR, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
@@ -109,6 +110,8 @@ async function UsersContent() {
         loginUrl={`${appUrl()}/giris`}
         branches={branches}
         twoFactorRequired={twoFactor}
+        // Asıl yönetici (docs/ROLLER.md › Asıl yönetici): satırı etiketli, hesabını yalnız kendisi değiştirir
+        meAnaAdmin={isAnaAdmin(me)}
         users={rows.map((u) => ({
           id: u.id,
           name: u.name,
@@ -121,6 +124,7 @@ async function UsersContent() {
           locked: u.lockedUntil && u.lockedUntil > now ? "account" : deviceLocked.has(u.id) ? "device" : null,
           invite: isPendingInvite(u.passwordHash) ? (live.has(u.id) ? "pending" : "expired") : "none",
           liveLink: live.get(u.id) ?? null,
+          anaAdmin: isAnaAdminEmail(u.email),
         }))}
       />
       <RolesCard twoFactorRequired={twoFactor} />

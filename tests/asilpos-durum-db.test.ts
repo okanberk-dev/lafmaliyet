@@ -106,7 +106,8 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
       users[k].id = u.id;
     }
     // Eylemlerin oturumu: yönetici (personel çekirdekte reddedilir; requireAdmin personeli zaten yönlendirir)
-    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => users.admin, requireUser: async () => users.admin });
+    // Geçiş günü asıl yöneticinin (requireAnaAdmin; docs/ROLLER.md › Asıl yönetici): testin yöneticisi asıl yönetici sayılır
+    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => users.admin, requireAnaAdmin: async () => users.admin, requireUser: async () => users.admin });
     status = await import("../src/server/asilpos/status");
     core = await import("../src/server/asilpos/admin");
     kasa = await import("../src/server/data/asilpos-day");

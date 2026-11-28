@@ -6,6 +6,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
+import { asilYoneticiNotu } from "@/lib/asil-yonetici";
 import { durumMetni, hedefUyumlu, KASA_RAPORU_GUN } from "@/lib/asilpos/anahtar-uyumu";
 import { clearedText, isUnverifiedAfterOk, asilposCardSummary, rejectionText, unverifiedText } from "@/lib/asilpos/status";
 import { ASILPOS_SWITCH_MAX_AHEAD, ASILPOS_SWITCH_MIN, switchEffects } from "@/lib/asilpos/switch";
@@ -44,7 +45,18 @@ const UNVERIFIED_DAYS = 14;
  * kasanın adıyla bir bölüm; kasası AsilPOS olmayan şube ya da online kanal seçiliyken kart "Bu şubede kullanılmıyor"
  * satırına iner (durum okunmaz). İmzası doğrulanamayan isteklerin sayacı şubeye bağlanamaz: her bölümde görünür.
  */
-export async function AsilposCard({ products, scope, branches }: { products: ProductOption[]; scope: string; branches: readonly BranchRow[] }) {
+export async function AsilposCard({
+  products,
+  scope,
+  branches,
+  anaAdmin = false,
+}: {
+  products: ProductOption[];
+  scope: string;
+  branches: readonly BranchRow[];
+  /** Asıl yönetici: geçiş gününü değiştirir (docs/ROLLER.md › Asıl yönetici); öteki yöneticiye alan kapalı, nedeni yazılı */
+  anaAdmin?: boolean;
+}) {
   const view = asilposCardView(scope, branches);
   if (view.kind === "elsewhere") return <PosElsewhereCard id="asilpos" icon={<Store />} title="AsilPOS (kasa)" system="AsilPOS" users={view.users} />;
   const now = new Date();
@@ -98,6 +110,7 @@ export async function AsilposCard({ products, scope, branches }: { products: Pro
         {datas.map((data) => (
           <TillSection
             key={data.branchId}
+            anaAdmin={anaAdmin}
             data={data}
             now={now}
             products={products}
@@ -164,7 +177,21 @@ function KeySection({ data, nameOf }: { data: AnahtarUyumuKarti; nameOf: (id: st
 }
 
 /** Bir kasanın bölümü (şube adı yalnız "Tümü"de birden çok kasa varken) */
-function TillSection({ data, now, products, branchName, effects }: { data: AsilposCardData; now: Date; products: ProductOption[]; branchName: string | null; effects: string[] }) {
+function TillSection({
+  data,
+  now,
+  products,
+  branchName,
+  effects,
+  anaAdmin,
+}: {
+  data: AsilposCardData;
+  now: Date;
+  products: ProductOption[];
+  branchName: string | null;
+  effects: string[];
+  anaAdmin: boolean;
+}) {
   const sum = asilposCardSummary(data);
   const { state, today } = data;
   const linked = data.secretProblem === null;
@@ -227,7 +254,16 @@ function TillSection({ data, now, products, branchName, effects }: { data: Asilp
           <Notice tone={unverifiedLoud ? "warn" : "neutral"} size="sm" title={`${unverifiedText(unverified)}${unverifiedLoud ? "" : " O günden beri gün sonları geliyor."}`} />
         ) : null}
 
-        <AsilposSwitchDayForm branchId={data.branchId} effects={effects} value={data.switchDay} today={today} min={ASILPOS_SWITCH_MIN} max={addDays(today, ASILPOS_SWITCH_MAX_AHEAD)} linked={linked} />
+        <AsilposSwitchDayForm
+          branchId={data.branchId}
+          effects={effects}
+          value={data.switchDay}
+          today={today}
+          min={ASILPOS_SWITCH_MIN}
+          max={addDays(today, ASILPOS_SWITCH_MAX_AHEAD)}
+          linked={linked}
+          locked={anaAdmin ? null : asilYoneticiNotu("gecisGunu")}
+        />
 
         {data.days.length ? (
           <div className="space-y-2">

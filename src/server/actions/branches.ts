@@ -23,12 +23,15 @@ import {
   type BranchKind,
   type BranchPosSource,
 } from "@/lib/branches";
+import { anaAdminEmail } from "@/lib/asil-yonetici";
 import { ESKI_KASA_KAYNAGI } from "@/lib/asilpos/eski-adlar";
+import { YENI_KURULUM_ONEKI, yeniKurulumOnayi } from "@/lib/asilpos/kasa-durumu";
 import { posOffConfirmText } from "@/lib/pos/tills";
 import { requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
 import { INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { issueUserToken } from "@/server/auth/user-tokens";
-import { issueInstallCode, sendInstallMail } from "@/server/asilpos/kurulum";
+import { loadKasaDurumu } from "@/server/asilpos/kasa-durumu";
+import { issueInstallCode, revokePendingInstalls, sendInstallMail } from "@/server/asilpos/kurulum";
 import { staffBranchLock } from "@/server/branch-scope";
 import { branchSettingsCloseError, putBranchSetting } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
@@ -38,9 +41,11 @@ import { forgetPosBranches, asilposInUse } from "@/server/asilpos/branch";
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
 
-// Şube ve kanal yönetimi (/panel/subeler; docs/SUBE.md). Yalnız yönetici. Kimlik veriye yazılır: eklendikten sonra
-// değişmez. Kurallar saf dosyada (src/lib/branches.ts) ve tests/subeler.test.ts onları doğrudan çalıştırır; buradaki
-// eylemler yalnız yetki, doğrulama, yazma ve işlem geçmişi. "use server" dosyasındaki her dışa açık işlev bir uçtur.
+// Şube ve kanal yönetimi (/panel/subeler, /panel/sube-ekleme; docs/SUBE.md). Yalnız yönetici; şubeyi açmak, kapatmak,
+// silmek, kasa programını değiştirmek ve kasa kurmak yalnız asıl yöneticide (requireAnaAdmin; docs/ROLLER.md › Asıl
+// yönetici). Kimlik veriye yazılır: eklendikten sonra değişmez. Kurallar saf dosyada (src/lib/branches.ts) ve
+// tests/subeler.test.ts onları doğrudan çalıştırır; buradaki eylemler yalnız yetki, doğrulama, yazma ve işlem geçmişi.
+// "use server" dosyasındaki her dışa açık işlev bir uçtur.
 
 const kind = z.enum(BRANCH_KINDS as unknown as [BranchKind, ...BranchKind[]], { message: "Tür seçin" });
 const posSource = z.preprocess(
@@ -87,14 +92,14 @@ const createInput = z.object({
 });
 
 /**
- * Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. Yalnız ana yönetici (sahibin kararı,
+ * Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. Yalnız asıl yönetici (sahibin kararı,
  * 26 Kasım 2026). Fiziksel şubeye e-posta verilirse şube kurulumu da yapılır (docs/ASILPOS.md › Şube kurulumu): şubenin
  * panel hesabı açılır (personel, şubede kilitli, davetle), AsilPOS kurulum bağlantısı üretilir ve ikisi tek e-postayla
- * gider; e-posta gitmese de şube ve bağlantı kalır (Hesabım'da ve Şubeler'de görünür)
+ * gider; e-posta gitmese de şube ve bağlantı kalır (Hesabım'da ve Şube ekleme'de görünür)
  */
 export async function createBranch(input: z.input<typeof createInput>) {
   return attempt(async () => {
-    const me = await requireAnaAdmin();
+    const me = await requireAnaAdmin("subeAcma");
     const d = createInput.parse(input);
     const idHata = branchIdError(d.id);
     if (idHata) throw new UserError(idHata);
@@ -116,7 +121,7 @@ export async function createBranch(input: z.input<typeof createInput>) {
     await db.insert(s.branches).values({ ...alanlar, id, email, sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
     forgetPosBranches();
     await logActivity(me, "Şube eklendi", `${d.name} (${d.id})${email ? ` · ${email}` : ""}`);
-    const kurulum = email ? await onboard(me.id, { id, name: d.name, email }) : null;
+    const kurulum = email ? await onboard(me.id, { id, name: d.name.trim(), email }) : null;
     if (kurulum) await logActivity(me, "AsilPOS kurulumu gönderildi", `${d.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
     refresh();
     return { id, kurulum };
@@ -134,11 +139,28 @@ async function assertBranchEmailFree(db: ReturnType<typeof getDb>, email: string
 }
 
 /**
+ * Kurulumun sonucu ("Bilgisayara kur" penceresi): bağlantı ve son geçerliliği, şube, şubenin e-postası, kasada girişte
+ * kullanılacak hesap (asıl yöneticinin e-postası), e-postanın gidip gitmediği ve şube hesabı açıldı mı
+ */
+export interface KurulumSonucu {
+  link: string;
+  /** Bağlantının son geçerliliği (ISO) */
+  expiresAt: string;
+  mailError: string | null;
+  account: "acildi" | "vardi";
+  branch: { id: string; name: string };
+  /** Şubenin e-postası (bağlantının gittiği adres) */
+  email: string;
+  /** Kasada ladmin girişinde kullanılacak hesap: asıl yöneticinin e-postası */
+  girisHesabi: string;
+}
+
+/**
  * Şube kurulumu: şubenin panel hesabı (yoksa açılır: personel, şubede kilitli, davetle), yeni AsilPOS kurulum bağlantısı
  * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir). Adres bir hesaptaysa o hesap yeniden
  * kullanılır; çağıran önce `assertBranchEmailFree`'den geçirir, yani bu hep şubesiz ya da bu şubedeki personel hesabıdır
  */
-async function onboard(by: number, b: { id: string; name: string; email: string }): Promise<{ link: string; mailError: string | null; account: "acildi" | "vardi" }> {
+async function onboard(by: number, b: { id: string; name: string; email: string }): Promise<KurulumSonucu> {
   const db = getDb();
   const [existing] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, b.email)).limit(1);
   let inviteRaw: string | null = null;
@@ -151,18 +173,32 @@ async function onboard(by: number, b: { id: string; name: string; email: string 
   }
   const code = await issueInstallCode(db, { branchId: b.id, email: b.email, by });
   const mail = await sendInstallMail({ to: b.email, branchName: b.name, link: code.link, expiresAt: code.expiresAt, inviteRaw });
-  return { link: code.link, mailError: mail.ok ? null : (mail.error ?? "gönderilemedi"), account: existing ? "vardi" : "acildi" };
+  return {
+    link: code.link,
+    expiresAt: code.expiresAt.toISOString(),
+    mailError: mail.ok ? null : (mail.error ?? "gönderilemedi"),
+    account: existing ? "vardi" : "acildi",
+    branch: { id: b.id, name: b.name },
+    email: b.email,
+    girisHesabi: anaAdminEmail(),
+  };
 }
 
-const installInput = z.object({ id: z.string().trim().min(1), email: branchEmail });
+const installInput = z.object({
+  id: z.string().trim().min(1),
+  email: branchEmail,
+  /** Şubede kurulu kasa varken onay (yeniKurulumOnayi; sunucu sorar, ekran onaylatıp yeniden gönderir) */
+  confirmReplace: z.boolean().optional(),
+});
 
 /**
- * Var olan şubeye AsilPOS kurulum bağlantısı (yeni bağlantı eskisini iptal eder). E-posta verilirse şubeye yazılır;
- * verilmezse şubenin kayıtlı e-postası. Yalnız ana yönetici
+ * "Bilgisayara kur": var olan şubeye AsilPOS kurulum bağlantısı (yeni bağlantı eskisini iptal eder). E-posta verilirse
+ * şubeye yazılır; verilmezse şubenin kayıtlı e-postası. Şubede kurulu bir kasa varsa (src/lib/asilpos/kasa-durumu.ts)
+ * önce onay ister. Yalnız asıl yönetici
  */
 export async function sendBranchInstall(input: z.input<typeof installInput>) {
   return attempt(async () => {
-    const me = await requireAnaAdmin();
+    const me = await requireAnaAdmin("kasaKurma");
     const d = installInput.parse(input);
     const db = getDb();
     const [b] = await db.select({ id: s.branches.id, name: s.branches.name, kind: s.branches.kind, active: s.branches.active, email: s.branches.email }).from(s.branches).where(eq(s.branches.id, d.id)).limit(1);
@@ -170,6 +206,9 @@ export async function sendBranchInstall(input: z.input<typeof installInput>) {
     if (b.kind !== "fiziksel" || !b.active) throw new UserError("AsilPOS kurulumu yalnız açık fiziksel şubede");
     const email = d.email ?? b.email;
     if (!email) throw new UserError("Şubenin e-postasını yazın");
+    // Kurulu kasa varken yeni kurulum eskisinin yerine geçer: önce sorulur (bağlantı üretilmeden, adres yazılmadan)
+    const onay = d.confirmReplace ? null : yeniKurulumOnayi(await loadKasaDurumu(b.id, db));
+    if (onay) throw new UserError(`${YENI_KURULUM_ONEKI} ${onay}`);
     // Şubeye yazılmadan ve bağlantı üretilmeden önce (kayıtlı adres de: eskiden kabul edilmiş olabilir)
     await assertBranchEmailFree(db, email, b.id);
     if (email !== b.email) await db.update(s.branches).set({ email }).where(eq(s.branches.id, b.id));
@@ -188,14 +227,21 @@ const updateInput = z.object({
   openedOn,
   active: z.boolean(),
   posRate,
+  /**
+   * Şubenin e-postası (fiziksel şube; her yönetici). Verilmezse (undefined) eskisi kalır; boş metin siler. Hesap açmaz,
+   * bağlantı göndermez: kurulum Şube ekleme › "Bilgisayara kur"da
+   */
+  email: branchEmail.optional(),
   /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (posOffConfirmText) */
   confirmPosOff: z.boolean().optional(),
 });
 
 /**
- * Adı, türü, kasa kaynağını, açılış gününü, banka POS oranını ve açık / kapalı durumunu değiştirir (kimlik değişmez).
- * POS oranı verilmezse eskisi kalır. Kasa AsilPOS'tan ModPOS'a dönerken şube AsilPOS'u kullanıyorsa (geçiş günü ya da
- * kayıtlı gün) onay istenir; onaylanınca şubenin geçiş günü aynı işlemde silinir (çok şube, 27 Kasım 2026)
+ * Adı, türü, kasa kaynağını, açılış gününü, banka POS oranını, e-postasını ve açık / kapalı durumunu değiştirir (kimlik
+ * değişmez). POS oranı ve e-posta verilmezse eskisi kalır. Açık / kapalı durumu ve kasa programı (tür değişikliği de kasa
+ * programını değiştirir) yalnız asıl yöneticide; öteki alanlar her yöneticide. Kasa AsilPOS'tan ModPOS'a dönerken şube
+ * AsilPOS'u kullanıyorsa (geçiş günü ya da kayıtlı gün) onay istenir; onaylanınca şubenin geçiş günü aynı işlemde silinir
+ * (çok şube, 27 Kasım 2026). Şube kapatılınca bekleyen kurulum kodları aynı işlemde iptal olur (kasa kuramaz)
  */
 export async function updateBranch(input: z.input<typeof updateInput>) {
   return attempt(async () => {
@@ -205,6 +251,10 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     const hepsi = await listBranches(db);
     const mevcut = hepsi.find((b) => b.id === d.id);
     if (!mevcut) throw new UserError("Şube bulunamadı");
+    // Asıl yöneticinin işleri (docs/ROLLER.md › Asıl yönetici): değişmeyen alan sormaz, ad ya da oran değiştiren yönetici geçer
+    if (mevcut.active !== d.active) await requireAnaAdmin("subeKapatma");
+    if (mevcut.posSource !== d.posSource) await requireAnaAdmin("kasaProgrami");
+    const emailChange = d.email !== undefined && d.kind === "fiziksel";
     const hata = branchChangeError(
       mevcut,
       { kind: d.kind, posSource: d.posSource, active: d.active },
@@ -222,11 +272,15 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     if (hepsi.some((b) => b.id !== d.id && b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
+    // Şubenin e-postası şube hesabı olabilecek bir adres olmalı (yönetici, müdür ya da muhasebecinin değil)
+    const [onceki] = emailChange ? await db.select({ email: s.branches.email }).from(s.branches).where(eq(s.branches.id, d.id)).limit(1) : [];
+    const yeniEposta = emailChange && (onceki?.email ?? null) !== d.email ? d.email : undefined;
+    if (yeniEposta) await assertBranchEmailFree(db, yeniEposta, d.id);
     // Kapatılan şubenin tek şubelik özelliği (karaoke) düşer: başka şubede açılabilsin, şube yeniden açılınca iki şubede
     // birden açık kalmasın (src/lib/branch-features.ts featureChangeError)
     const closing = mevcut.active && !d.active;
     const kept = closing ? BRANCH_FEATURES.filter((f) => f.single).reduce((acc, f) => withFeature(acc, f.id, false), branchFeatures(mevcut)) : null;
-    await db.transaction(async (tx) => {
+    const iptal = await db.transaction(async (tx) => {
       if (posOff) await putBranchSetting(tx, ASILPOS_GROUP, d.id, { switchDay: null }, me.name);
       await tx
       .update(s.branches)
@@ -238,9 +292,12 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
         active: d.active,
         ...(kept ? { features: kept } : {}),
         ...(d.posRate !== undefined ? { posRate: d.posRate } : {}),
+        ...(yeniEposta !== undefined ? { email: yeniEposta } : {}),
         updatedAt: new Date(),
       })
       .where(eq(s.branches.id, d.id));
+      // Kapanan şubenin bekleyen kurulum kodları iptal (kurulu kasanın anahtarı değişmez)
+      return closing ? revokePendingInstalls(tx, d.id) : 0;
     });
     // Kasa kaynağı ya da durum değiştiyse AsilPOS kasaları değişmiş olabilir: bu sunucunun önbelleği hemen düşer
     forgetPosBranches();
@@ -250,6 +307,8 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
       d.posRate === undefined || mevcut.posRate === d.posRate ? null : `POS oranı: ${mevcut.posRate === undefined ? "?" : oranMetni(mevcut.posRate)} → ${oranMetni(d.posRate)}`,
       mevcut.active === d.active ? null : d.active ? "açıldı" : "kapatıldı",
       posOff ? "AsilPOS geçiş günü silindi" : null,
+      yeniEposta === undefined ? null : yeniEposta ? `e-posta: ${yeniEposta}` : "e-posta silindi",
+      iptal ? `${iptal} bekleyen kurulum bağlantısı iptal edildi` : null,
     ].filter(Boolean);
     await logActivity(me, "Şube güncellendi", [d.name, ...degisen].join(" · "));
     refresh();
@@ -259,10 +318,13 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
 
 const deleteInput = z.object({ id: z.string().trim().min(1) });
 
-/** Hiç kaydı olmayan, sabit olmayan şubeyi siler (yanlış açılan kayıt için). Verisi olan şube yalnız kapatılır. */
+/**
+ * Hiç kaydı olmayan, sabit olmayan şubeyi siler (yanlış açılan kayıt için). Verisi olan şube yalnız kapatılır. Yalnız
+ * asıl yönetici
+ */
 export async function deleteBranch(input: z.input<typeof deleteInput>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = await requireAnaAdmin("subeSilme");
     const { id } = deleteInput.parse(input);
     const db = getDb();
     const mevcut = await getBranch(db, id);

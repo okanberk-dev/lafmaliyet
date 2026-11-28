@@ -188,7 +188,7 @@ test("kaynak: KARAOKE_BRANCH_ID sabiti kalktı; canlı uç, push, Bugün ve sayf
   assert.match(read("src/app/panel/komisyonlar/page.tsx"), /if \(!featureInScope\("yemek_karti", view\.scope, view\.branches\)\) \{/);
   // Kenar çubuğu ve alt menü seçili kapsamın özellikleriyle
   const sidebar = read("src/components/panel/sidebar.tsx");
-  assert.match(sidebar, /const tree = navTreeFor\(user\.role, features\);/);
+  assert.match(sidebar, /const tree = navTreeFor\(user\.role, features(, anaAdmin)?\);/);
   assert.match(sidebar, /features=\{features\}/);
   // Şube seçimi değişince canlı veri yeniden istenir
   assert.match(read("src/components/panel/live/alert-center.tsx"), /shownScope\.current = branchScope;\n\s+void refreshLive\(\);/);

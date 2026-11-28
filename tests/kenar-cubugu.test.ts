@@ -17,6 +17,7 @@ import {
   groupLabelOf,
   isSamePage,
   keepGroupOpen,
+  mobileTitleFor,
   NAV_FOOTER,
   NAV_GROUPS,
   NAV_TREE,
@@ -521,4 +522,26 @@ test("bölüm sekmeleri: Raporlar grubundan türer (Vergi'nin sekmeleri kalktı)
     sectionTabsFor("giderler", "admin").map((t) => t.label),
     ["Sabit giderler", "Aylık harcamalar", "Maaşlar", "Belgeler", "Avanslar"],
   );
+});
+
+test("Şube ekleme yalnız asıl yöneticinin menüsünde: Ayarlar grubunda, Şubeler'in ardında; bayrak sunucuda", () => {
+  const ana = navTreeFor("admin", undefined, true);
+  const ayarlar = ana.find((n) => n.id === "ayarlar")!;
+  const ids = ayarlar.children!.map((c) => c.id);
+  assert.equal(ids[ids.indexOf("subeler") + 1], "sube-ekleme", ids.join(", "));
+  assert.ok(reaches(ana, "/panel/sube-ekleme"));
+  // Asıl yönetici olmayan yönetici ve öteki roller görmez (varsayılan: yok)
+  for (const role of ROLE_ORDER) assert.ok(!reaches(navTreeFor(role), "/panel/sube-ekleme"), role);
+  for (const role of ROLE_ORDER.filter((r) => r !== "admin")) assert.ok(!reaches(navTreeFor(role, undefined, true), "/panel/sube-ekleme"), role);
+  // Palet kaydı da yalnız asıl yöneticiye (sidebar.tsx allowed); sayfanın başlığı Ayarlar grubunu söyler
+  const item = NAV_FOOTER.find((i) => i.href === "/panel/sube-ekleme");
+  assert.equal(item?.anaAdmin, true);
+  assert.equal(groupLabelOf("/panel/sube-ekleme", "admin"), "Ayarlar");
+  const sidebar = src("sidebar.tsx");
+  assert.match(sidebar, /navTreeFor\(user\.role, features, anaAdmin\)/);
+  assert.match(sidebar, /\(!i\.anaAdmin \|\| anaAdmin\)/);
+  // Tarayıcı LADMIN_ANA_ADMIN'i göremez: bayrak düzende (sunucu) hesaplanır
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/layout.tsx"), "utf8"), /anaAdmin=\{isAnaAdmin\(user\)\}/);
+  // Telefonun üst çubuk başlığı
+  assert.equal(mobileTitleFor("/panel/sube-ekleme"), "Şube ekleme");
 });

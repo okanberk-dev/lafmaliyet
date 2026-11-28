@@ -206,10 +206,11 @@ test("kaynak: AsilPOS'un imzalı uçları anahtarı şube ayarından okur (panel
   const branch = read("src/server/asilpos/branch.ts");
   // Ortamdaki anahtar yalnız eski kurulumun şubesinin, o şubenin saklanan anahtarı yokken
   assert.match(branch, /if \(!raw\.has\(LEGACY_POS_BRANCH_ID\) && env0\) raw\.set\(LEGACY_POS_BRANCH_ID, \{ value: env0, source: "ortam" \}\);/);
-  // Eylem: yalnız yönetici, yalnız AsilPOS'un şubesinde, sitenin anahtarı reddedilir; anahtar işlem geçmişine yazılmaz
+  // Eylem: yalnız asıl yönetici (28 Kasım 2026; docs/ROLLER.md › Asıl yönetici), yalnız AsilPOS'un şubesinde, sitenin
+  // anahtarı reddedilir; anahtar işlem geçmişine yazılmaz
   const action = read("src/server/actions/branch-settings.ts");
   const save = action.slice(action.indexOf("export async function saveAsilposSecret"));
-  assert.match(save, /const me = await requireAdmin\(\);/);
+  assert.match(save, /const me = await requireAnaAdmin\("kasaAnahtari"\);/);
   assert.match(save, /if \(!ids\.includes\(d\.branchId\) && !install\) throw new UserError/);
   assert.match(save, /const taken = await posKeyTaken\(d\.branchId, d\.secret, db\);/, "başka şubenin anahtarı reddedilir");
   // Parolayla (anahtar gün sonu yazımlarının güven kökü), denetimlerden sonra, yazımdan önce
@@ -234,7 +235,8 @@ test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bil
   // AsilPOS kartı kasası AsilPOS olan ya da kurulumu yapılmış şubede (çok şube; sunucu aynı kurala bakar)
   assert.match(page, /const asilposHere = tillHere \|\| Boolean\(installed\);/);
   assert.match(page, /sourceModpos: branch\.posSource !== "asilpos",/);
-  assert.match(page, /<AsilposOldSecretCard branchId=\{branch\.id\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
+  // Silmek yalnız asıl yöneticide (docs/ROLLER.md › Asıl yönetici): öteki yöneticiye düğme kapalı
+  assert.match(page, /<AsilposOldSecretCard branchId=\{branch\.id\} anaAdmin=\{isAnaAdmin\(me\)\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
   // "X şubesinde düzenle" bağlantısı kartı olan sayfaya çıkar: başka şube bu şubenin ayarını kullanıyorsa kart çizilir
   assert.match(page, /\{modposHere \|\| modpos\.link\?\.sharedWith\.length \? \(/);
   assert.match(page, /\{hasFeature\(branch, "yemek_karti"\) \|\| commission\.link\?\.sharedWith\.length \? \(/);

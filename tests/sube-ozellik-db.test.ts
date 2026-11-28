@@ -82,6 +82,11 @@ describe("Şube özellikleri", { skip: !SERVER_URL && "SUBE_OZELLIK_TEST_DATABAS
         if (me.role !== "admin") throw new Error("yönetici değil");
         return session();
       },
+      // Şube kapatma asıl yöneticinin (requireAnaAdmin); testin yöneticisi asıl yönetici sayılır
+      requireAnaAdmin: async () => {
+        if (me.role !== "admin") throw new Error("yönetici değil");
+        return session();
+      },
     });
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();

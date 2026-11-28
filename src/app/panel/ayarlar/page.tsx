@@ -19,6 +19,7 @@ import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
 import { missedPingShown } from "@/lib/site-orders/follow";
 import { activityActionLabel } from "@/lib/import-labels";
+import { isAnaAdmin } from "@/lib/asil-yonetici";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
 import { areaScope, branchWhereWithShared, currentBranchScope, selectedBranchRow } from "@/server/branch-scope";
@@ -450,7 +451,7 @@ function fifoMonthOptions(counted: string[], start: string | null, current: stri
 }
 
 async function SettingsContent() {
-  await requireAdmin();
+  const me = await requireAdmin();
   const db = getDb();
   // İşlem geçmişi şube seçiliyken o şubenin ve şubesiz (işletme geneli, 0101'den önceki) kayıtları (şube ayrımı)
   const scope = await currentBranchScope();
@@ -521,6 +522,8 @@ async function SettingsContent() {
       <ErrorLogCard />
       <SiteLinksCard />
       <AsilposCard
+        // AsilPOS'a geçiş gününü değiştirmek yalnız asıl yöneticide (saveAsilposSwitchDay aynı denetimi yapar)
+        anaAdmin={isAnaAdmin(me)}
         products={model.products.map((p) => ({
           id: p.product.id,
           name: p.product.name,

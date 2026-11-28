@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { z } from "zod";
 
 import { nameTakenBy, sameName } from "@/lib/activity-person";
+import { ASIL_EPOSTA_SABIT, asilAdresRet, isAnaAdminEmail } from "@/lib/asil-yonetici";
 import { needsTwoFactorSetup, twoFactorSetupHref } from "@/lib/admin-security";
 import { PROFILE_LIST_REFUSAL, PROFILE_OWN_LIST_REFUSAL } from "@/lib/notify-recipients";
 import type { Role } from "@/lib/constants";
@@ -366,7 +367,8 @@ const profileSchema = z.object({
 
 /**
  * Ad ve giriş e-postası; parola ile onaylanır. Ad başka bir hesabın adı olamaz: işlem geçmişinde ve sitenin olay
- * kaydında o kişi gibi görünmesin (İşlem geçmişi hesabın e-postasını da gösterir, src/lib/activity-person.ts).
+ * kaydında o kişi gibi görünmesin (İşlem geçmişi hesabın e-postasını da gösterir, src/lib/activity-person.ts). Asıl
+ * yöneticinin e-postası değişmez (yetki adrese bağlı) ve hiçbir hesap adresini asıl yöneticinin adresine çeviremez.
  */
 export async function updateProfile(input: z.input<typeof profileSchema>) {
   return attempt(async () => {
@@ -374,6 +376,10 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
     const data = profileSchema.parse(input);
     const db = getDb();
     const u = await requirePassword(me, data.password, "Hesabım");
+    // Asıl yöneticinin adresi sabit (yetki ona bağlı) ve başka bir hesaba verilemez (docs/ROLLER.md › Asıl yönetici)
+    if (data.email !== u.email && isAnaAdminEmail(u.email)) throw new UserError(ASIL_EPOSTA_SABIT);
+    const address = asilAdresRet({ next: data.email, before: u.email, accountExists: true });
+    if (address) throw new UserError(address);
     const [{ n }] = await db
       .select({ n: count() })
       .from(s.users)

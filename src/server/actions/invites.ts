@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { ACCESS_REASONS, accessEmail, linkAccessInfo, type AccessInfo, type AccessKind } from "@/app/panel/kullanicilar/access";
+import { asilHesapRet } from "@/lib/asil-yonetici";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { openAccessMailHandle } from "@/server/auth/access-handle";
 import { requireAdmin } from "@/server/auth/dal";
@@ -50,6 +51,9 @@ export async function createAccessLink(id: number, confirm?: StepUpConfirm) {
       .where(eq(s.users.id, userId))
       .limit(1);
     if (!u) throw new UserError("Kullanıcı bulunamadı");
+    // Asıl yöneticiye bağlantıyı yalnız kendisi (docs/ROLLER.md › Asıl yönetici): bağlantıyı alan hesabına parola belirler
+    const guarded = asilHesapRet(me, u, "hesapBaglantisi");
+    if (guarded) throw new UserError(guarded);
     if (!u.active) throw new UserError("Pasif kullanıcıya bağlantı oluşturulamaz; önce aktif yapın");
     const change: StepUpCase = { kind: "link", targetRole: u.role };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${u.email}`);

@@ -10,7 +10,7 @@ import { dagitilanBaglantilar } from "@/lib/asilpos/baglanti-dagitim";
 import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import type { StepUpConfirm } from "@/lib/step-up";
 import { adminActor } from "@/lib/roles";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireAdmin, requireAnaAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { getDb, schema as s } from "@/server/db";
 import { removeAsilposDay, writeAsilposSwitchDay } from "@/server/asilpos/admin";
@@ -30,10 +30,11 @@ const switchSchema = z.object({ branchId: z.string().min(1).max(24), day: z.unio
  * Bir kasanın AsilPOS'a geçiş günü (null: boşalt, kasa ModPOS gibi). Çok şube: `branchId` bölümün şubesi; yalnız kasası
  * AsilPOS olan şube. Ayarlar'daki onay penceresinden sonra; FIFO başlangıcı gibi parola istemez (veri yazılmaz ya da
  * silinmez, yalnız okuyanlar değişir), işlem geçmişine eski → yeni düşer. Kapalı dönemi etkileyen değişiklik yazılmaz.
+ * Yalnız asıl yönetici (docs/ROLLER.md › Asıl yönetici; 28 Kasım 2026).
  */
 export async function saveAsilposSwitchDay(input: z.input<typeof switchSchema>) {
   return attempt(async () => {
-    const me = adminActor(await requireAdmin());
+    const me = adminActor(await requireAnaAdmin("gecisGunu"));
     const { branchId, day } = switchSchema.parse(input);
     const change = await writeAsilposSwitchDay(getDb(), me, branchId, day, businessDate());
     if (change) {

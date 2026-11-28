@@ -5,7 +5,7 @@
 // Çalıştırma: npx tsx --test tests/asilpos-kurulum.test.ts
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -151,10 +151,10 @@ test("kurulum e-postası: indirme düğmesi, davet bağlantısı (hesap açıld�
   assert.ok(!noInvite.html.includes("davet?t="));
 });
 
-test("bağlantılar kurulu: şube eklemek ana yöneticide, uçlar herkese açık (oturumsuz), şema ve göç var", () => {
+test("bağlantılar kurulu: şube eklemek asıl yöneticide, uçlar herkese açık (oturumsuz), şema ve göç var", () => {
   const actions = read("src/server/actions/branches.ts");
-  assert.match(actions, /export async function createBranch[\s\S]*?requireAnaAdmin\(\)/);
-  assert.match(actions, /export async function sendBranchInstall[\s\S]*?requireAnaAdmin\(\)/);
+  assert.match(actions, /export async function createBranch[\s\S]*?requireAnaAdmin\("subeAcma"\)/);
+  assert.match(actions, /export async function sendBranchInstall[\s\S]*?requireAnaAdmin\("kasaKurma"\)/);
   // Yeni ve eski yol aynı işleyiciyi (ve aynı IP sınırını) dışa verir: kurulu kasa eski yolu, yeni kasa yenisini çağırır
   assert.ok(read("src/server/asilpos/kurulum-route.ts").includes("redeemInstallCode"));
   assert.ok(read("src/server/asilpos/indir-route.ts").includes("kurucuWithCode"));
@@ -176,15 +176,19 @@ test("bağlantılar kurulu: şube eklemek ana yöneticide, uçlar herkese açık
   assert.ok(!hesap.includes("listInstalls("), "Hesabım listInstalls'u çağırmaz");
 });
 
-test("AsilPOS kasası kur: şube listeden seçilir ya da aynı pencerede yeni şube eklenir; kart yalnız ana yöneticiye", () => {
+test("Bilgisayara kur Şube ekleme sayfasında (yalnız asıl yönetici); Şubeler'deki kurulum kartı kalktı", () => {
+  // Şubeler: "AsilPOS kasası kur" kartı ve "Şube ekle" düğmesi yok, asıl yöneticiye Şube ekleme bağlantısı
   const page = read("src/app/panel/subeler/page.tsx");
-  assert.match(page, /canCreate \? <AsilposInstallCard/);
-  const card = read("src/app/panel/subeler/asilpos-install.tsx");
-  assert.ok(card.includes("Kasa hangi şubeye bağlanacak"));
-  assert.ok(card.includes("+ Yeni şube ekle"));
-  // Var olan şubeye bağlantı, yeni şubede ekleme ve bağlantı tek eylemle
-  assert.ok(card.includes("installAction({ id: t.branch"));
-  assert.match(card, /createAction\(\{[^}]*email: t\.email\.trim\(\)/);
+  assert.ok(!page.includes("AsilposInstallCard") && !page.includes("createBranch") && !page.includes("sendBranchInstall"));
+  assert.ok(!existsSync(join(__dirname, "..", "src/app/panel/subeler/asilpos-install.tsx")), "eski kart dosyası silindi");
+  assert.ok(read("src/app/panel/subeler/branches-admin.tsx").includes('href="/panel/sube-ekleme"'));
+  // Şube ekleme: yeni şube (e-postayla kurulum da gider) ve var olan şubeye bağlantı
+  const client = read("src/app/panel/sube-ekleme/sube-ekleme-client.tsx");
+  assert.match(client, /createAction\(\{[\s\S]*?\.\.\.\(email \? \{ email \} : \{\}\)/);
+  assert.match(client, /installAction\(\{ id: b\.id, \.\.\.\(email\.trim\(\) \? \{ email: email\.trim\(\) \} : \{\}\)/);
+  assert.ok(client.includes("Bilgisayara kur"));
+  // Bayat ipucu ("AsilPOS bugün yalnız bir şubenin gün sonunu alır") hiçbir ekranda kalmadı
+  for (const f of ["src/app/panel/sube-ekleme/sube-ekleme-client.tsx", "src/app/panel/subeler/branches-admin.tsx"]) assert.ok(!read(f).includes("yalnız bir şubenin gün sonunu"), f);
 });
 
 test("var olan kasalara giden bağlantılar: Uzaktan ve site (lafmaliyet hariç), sürüm değerlerin özeti", async () => {

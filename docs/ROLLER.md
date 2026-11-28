@@ -11,6 +11,9 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 | **Personel** (`staff`) | Günün işleri (değişmedi; [planlar/personel-yetki.md](planlar/personel-yetki.md)). |
 | **Muhasebeci** (`accountant`) | Salt okunur: faturalar, gelir-gider, harcamalar, kasa raporları, muhasebeci paketi. |
 
+Yöneticilerden biri **asıl yönetici**dir: şube açma, kapatma ve kasa kurma yalnız onda; hesabı öteki yöneticilere karşı
+korunur (aşağıda [Asıl yönetici](#asıl-yönetici)). Bu bir rol değil, adresiyle tanımlı tek bir yönetici hesabıdır.
+
 ## Tek kaynak: `src/lib/roles.ts`
 
 - **Ekranlar** (`canOpen(rol, yol)`): `STAFF_PATHS`, `MANAGER_EXTRA_PATHS`, `ACCOUNTANT_PATHS` ve her rolün altında kapalı
@@ -155,6 +158,55 @@ muhasebeci yürütüyor); eski adresler Muhasebe'ye kısa notla döner (`?kaldir
   (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)). Şube seçiliyken paketin elle indirmesi o şubenin
   (`?sube=`, işletme geneli kalemler muhasebecinin İşletme geneli giderler kipiyle: varsayılanı "Tutarla göster"); aylık
   e-posta bütün şubeler (şube ayrımı parça 6).
+
+## Asıl yönetici
+
+Sahibin kararı (26 ve 28 Kasım 2026). Asıl yönetici, **yönetici rolündeki ve e-postası ortamdaki `LADMIN_ANA_ADMIN`
+olan** hesaptır (tanımlı değilse `info@nextgenlab.com.tr`; büyük-küçük harf fark etmez). Rol değil, adres: göç yok.
+Tek tanım `src/lib/asil-yonetici.ts` (`isAnaAdmin`, `ASIL_YONETICI_ISLERI`, ret metinleri); sunucu eylemleri
+`requireAnaAdmin(iş)` (`src/server/auth/dal.ts`) ile, ekranlar aynı `isAnaAdmin` ile karar verir. Tarayıcı ortam
+değişkenini göremez: bayrak sunucuda hesaplanıp bileşene verilir (`src/app/panel/layout.tsx` → kenar çubuğu, çekmece ve
+palet). Kodda eski ad ("ana yönetici": `isAnaAdmin`, `LADMIN_ANA_ADMIN`) kalır; arayüzde tek ad "Asıl yönetici".
+
+**Yalnız asıl yöneticinin işleri.** Öteki yönetici okunur bir cümle alır: "Bu işlemi yalnız asıl yönetici yapar: …".
+
+| İş | Eylem |
+| --- | --- |
+| Şube açmak | `createBranch` |
+| Şube silmek | `deleteBranch` |
+| Şubeyi kapatmak ya da yeniden açmak | `updateBranch` (yalnız `active` değişince) |
+| Kasa programını değiştirmek (tür değişikliği de) | `updateBranch` (yalnız `posSource` değişince) |
+| Kasa kurmak (kurulum bağlantısı) | `sendBranchInstall` |
+| Kasa anahtarını değiştirmek ya da silmek | `saveAsilposSecret` |
+| AsilPOS'a geçiş gününü değiştirmek | `saveAsilposSwitchDay` |
+
+Şubenin öteki alanları (ad, açılış günü, sıra, POS oranı, özellikler, e-posta) her yöneticide kalır. Ekranlarda asıl
+yönetici olmayan yöneticiye bu alanlar ve düğmeler kapalıdır, nedeni yanında yazılıdır (Şubeler'in düzenleme penceresi,
+Şube ayarları › AsilPOS bağlantısı, Ayarlar › AsilPOS (kasa) › geçiş günü). **Şube ekleme** sayfası
+(`/panel/sube-ekleme`, [SUBE.md › Şube ekleme](SUBE.md#şube-ekleme)) menüde yalnız ona görünür; başka yönetici adresle
+açarsa içerik yerine tek cümle görür.
+
+**Hesabı korunur.** Başka yönetici asıl yöneticinin hesabında şunları yapamaz (adını değiştirebilir):
+
+- e-postasını, parolasını, rolünü ve erişimini değiştirmek (`saveUser`, `setUserActive`);
+- hesabı silmek (`deleteUser`), iki adımlısını sıfırlamak (`resetUserTwoFactor`), kilidini açmak (`unlockUser`), her
+  yerden çıkış yaptırmak (`signOutUserEverywhere`);
+- ona giriş ya da parola sıfırlama bağlantısı üretmek (`createAccessLink`).
+
+Kullanıcılar & roller'de satırı **"Asıl yönetici"** etiketini taşır; başka yöneticiye anahtarı, güvenlik düğmeleri ve
+alanları kapalıdır. Hiçbir hesap e-postasını asıl yöneticinin adresine çeviremez (`saveUser`, Hesabım › `updateProfile`).
+Asıl yönetici kendi e-postasını Hesabım'dan değiştiremez: yetki bu adrese bağlıdır, ekran nedenini söyler.
+
+**Adres boştayken** (o adresle hiç hesap yokken) bugünkü davranış kalır: bir yönetici o adresle hesap açabilir ya da
+davet edebilir (`createUser`). Canlıda hesabın olup olmadığı bilinmiyordu; kilitlenme olmasın diye. **Asıl yönetici
+hesabı açıldıktan sonra kimse adresi devralamaz**: adres benzersiz, hesap silinemez, adresi değiştirilemez, o adresle
+yeni hesap açılamaz. Hesap pasif ya da yönetici olmayan bir hesapsa yalnız veritabanından ya da `LADMIN_ANA_ADMIN`
+değiştirilerek düzelir.
+
+Testler: `tests/asil-yonetici.test.ts` (saf kurallar ve kaynak taraması), `tests/asil-yonetici-db.test.ts` (gerçek
+Postgres, `ASIL_YONETICI_TEST_DATABASE_URL`): her korunan eylemde asıl yönetici geçer, öteki yönetici okunur hata alır,
+müdür, muhasebeci ve personel reddedilir; hesap korumasının her eylemi; kapanan şubenin bekleyen kodları iptal olur ve
+kodu reddedilir; Marina'nın anahtarı bütün senaryolardan sonra baştakiyle aynı.
 
 ## Kullanıcı yönetimi ve davet
 

@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
 import type { Role } from "@/lib/constants";
-import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/asilpos/kurulum";
+import { isAnaAdmin, yalnizAsilYonetici, type AsilYoneticiIsi } from "@/lib/asil-yonetici";
 import { BRANCH_ROLES, can, homeFor, managerWithoutBranch, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
 import { UserError } from "@/server/user-error";
@@ -182,12 +182,14 @@ export async function requireCan(cap: Capability): Promise<CurrentUser> {
 }
 
 /**
- * Ana yönetici (şube ekleme; docs/ASILPOS.md › Şube kurulumu): yönetici ve e-postası ana yöneticininki
- * (src/lib/asilpos/kurulum.ts `isAnaAdmin`). Değilse eylemde okunur hata (sayfa açılır, yalnız ekleme kapalıdır)
+ * Asıl yönetici (docs/ROLLER.md › Asıl yönetici; src/lib/asil-yonetici.ts): yönetici ve e-postası asıl yöneticininki
+ * (`isAnaAdmin`). Önce yönetici kapısı (başka rol kendi ana ekranına, muhasebeci "salt okunur"); asıl yönetici olmayan
+ * yöneticiye eylemde okunur hata: "Bu işlemi yalnız asıl yönetici yapar: …" (`is`: hangi işlem). Arayüz aynı `isAnaAdmin`
+ * ile düğmeleri kapatır
  */
-export async function requireAnaAdmin(): Promise<CurrentUser> {
+export async function requireAnaAdmin(is: AsilYoneticiIsi = "subeAcma"): Promise<CurrentUser> {
   const user = await requireAdmin();
-  if (!isAnaAdmin(user)) throw new UserError(ANA_ADMIN_ONLY);
+  if (!isAnaAdmin(user)) throw new UserError(yalnizAsilYonetici(is));
   return user;
 }
 
