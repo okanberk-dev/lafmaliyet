@@ -275,11 +275,10 @@ function PersonelAlanlari({ rows, onChange, idPrefix, error }: { rows: PersonelS
               <Input id={`${idPrefix}-${rol}-ad`} value={r.ad} maxLength={40} autoComplete="off" onChange={(e) => set(rol, { ad: e.target.value })} />
             </Field>
             <Field label={`${etiket}: PIN`} htmlFor={`${idPrefix}-${rol}-pin`}>
-              <Input
+              <PasswordInput
                 id={`${idPrefix}-${rol}-pin`}
-                type="password"
-                inputMode="numeric"
                 autoComplete="new-password"
+                inputMode="numeric"
                 maxLength={6}
                 value={r.pin}
                 onChange={(e) => set(rol, { pin: e.target.value.replace(/\D/g, "") })}
