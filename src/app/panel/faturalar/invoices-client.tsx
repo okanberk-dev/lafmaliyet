@@ -29,10 +29,11 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { isPartiallyPaid, openBalance } from "@/lib/calc/insights";
 import type { InvoiceCariLinks } from "@/lib/cari/account";
 import { parasutDifference } from "@/lib/cari/balance";
-import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES, type Role } from "@/lib/constants";
 import { invoiceBranchCols, invoiceBranchLabel, isUnassigned, UNASSIGNED_LABEL } from "@/lib/invoice-branch";
 import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
+import { isReadOnly, openableHref } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   confirmInvoices,
@@ -52,6 +53,7 @@ import { canHaveDocument, isParasutDocument } from "./document-rules";
 import { DocumentSheet } from "./document-sheet";
 import { CashOutInvoicesCard, type PendingCashOut } from "./cash-out-invoices";
 import { InvoiceDialog } from "./invoice-dialog";
+import { InvoiceView } from "./invoice-view";
 import {
   confirmToast,
   isEInvoiceOnly,
@@ -212,7 +214,14 @@ export function InvoicesClient({
   cashOutCategories = [],
   branchOptions = [],
   defaultBranch = "",
+  role = "admin",
 }: {
+  /**
+   * Ekrana bakanın rolü. Salt okunur hesapta (muhasebeci; src/lib/roles.ts › isReadOnly) liste yalnız okunur: ekleme,
+   * düzenleme, silme, ödendi işareti, kategori ve şube seçimi, onay ve toplu seçim çizilmez; satır faturayı salt okunur
+   * pencerede açar. Rolün açamadığı ekrana bağlantı da çizilmez (openableHref)
+   */
+  role?: Role;
   /**
    * Faturanın şubesinin seçenekleri (birden çok kasa açıkken; invoiceBranchOptions): pencerede alan, toplu "Şube ata…",
    * "Şubesi seçilmemiş" süzgeci. Boşsa (tek kasa) hiçbiri çizilmez
@@ -245,6 +254,7 @@ export function InvoicesClient({
   cashOutCategories?: { id: number; name: string }[];
 }) {
   const reduce = useCalmMotion();
+  const readOnly = isReadOnly(role);
   useSettleScroll(invoices);
   // Doğrudan açılan /panel/faturalar?…#fatura-listesi: liste sonradan aktığı için tarayıcının çapa kaydırması
   // listeye ulaşamaz; liste çizilince bir kez kaydırılır
@@ -645,28 +655,34 @@ export function InvoicesClient({
   }
 
   /** "Ödenmedi" rozeti: tıklayınca ödendi işaretlenir; ödenmişte yaylı beliren "Ödendi". Kısmi ödemede kalan yazar. */
+  const unpaidBadge = (i: InvoiceRow) =>
+    i.paymentRequestedAt ? (
+      <Badge tone="blue" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-info/30" title={`Ödemesi ${dateTR(i.paymentRequestedAt)} tarihinde talep edildi (Tedarikçiler)`}>
+        Talep edildi
+      </Badge>
+    ) : (
+      <Badge tone="red" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-bad/30">
+        Ödenmedi
+      </Badge>
+    );
   const statusBadge = (i: InvoiceRow) =>
     i.unpaid ? (
       <span className="inline-flex flex-col items-start gap-0.5">
-        <motion.button
-          type="button"
-          onClick={() => setPaid([i], true)}
-          whileTap={reduce ? undefined : { scale: 0.94 }}
-          transition={SPRING_PRESS}
-          title="Ödendi olarak işaretle"
-          aria-label={`${i.supplier}: ödenmedi. Ödendi olarak işaretle`}
-          className="group/pay -my-1 inline-flex min-h-8 cursor-pointer items-center rounded-full pointer-coarse:min-h-11"
-        >
-          {i.paymentRequestedAt ? (
-            <Badge tone="blue" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-info/30" title={`Ödemesi ${dateTR(i.paymentRequestedAt)} tarihinde talep edildi (Tedarikçiler)`}>
-              Talep edildi
-            </Badge>
-          ) : (
-            <Badge tone="red" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-bad/30">
-              Ödenmedi
-            </Badge>
-          )}
-        </motion.button>
+        {readOnly ? (
+          unpaidBadge(i)
+        ) : (
+          <motion.button
+            type="button"
+            onClick={() => setPaid([i], true)}
+            whileTap={reduce ? undefined : { scale: 0.94 }}
+            transition={SPRING_PRESS}
+            title="Ödendi olarak işaretle"
+            aria-label={`${i.supplier}: ödenmedi. Ödendi olarak işaretle`}
+            className="group/pay -my-1 inline-flex min-h-8 cursor-pointer items-center rounded-full pointer-coarse:min-h-11"
+          >
+            {unpaidBadge(i)}
+          </motion.button>
+        )}
         {isPartiallyPaid(i) ? (
           <span className="text-xs whitespace-nowrap text-warn tabular" title={`Ödenecek ${tl(i.payable, 2)}; ${i.ledgerBase != null ? "panelde kısmen ödendi" : "Paraşüt'e göre kısmen ödendi"}`}>
             Kalan {tl(openBalance(i), 2)}
@@ -749,7 +765,7 @@ export function InvoicesClient({
         </Badge>
       )
     ) : i.needsReview ? (
-      <Badge tone="amber" dot title="Kategori eşitlemede tahminle yazıldı: doğruysa onaylayın, değilse kategoriyi değiştirin (değiştirmek de onaylar)">
+      <Badge tone="amber" dot title={readOnly ? "Kategori eşitlemede tahminle yazıldı; yönetici onaylayınca kesinleşir" : "Kategori eşitlemede tahminle yazıldı: doğruysa onaylayın, değilse kategoriyi değiştirin (değiştirmek de onaylar)"}>
         Kontrol
       </Badge>
     ) : null;
@@ -761,7 +777,7 @@ export function InvoicesClient({
         label="Belgeyi aç"
         aria-haspopup="dialog"
         onClick={(e) => {
-          // Masaüstünde satıra tıklamak düzenleme penceresini açar
+          // Masaüstünde satıra tıklamak fatura penceresini açar
           e.stopPropagation();
           setDocFor(i.id);
         }}
@@ -771,13 +787,16 @@ export function InvoicesClient({
       </IconButton>
     ) : null;
 
-  const categoryPicker = (i: InvoiceRow) => (
-    <CategorySelect
-      value={i.category}
-      label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori`}
-      onChange={(c) => changeCategory([{ id: i.id, category: c }], { from: i })}
-    />
-  );
+  const categoryPicker = (i: InvoiceRow) =>
+    readOnly ? (
+      <Badge tone={categoryTone(i.category)}>{i.category}</Badge>
+    ) : (
+      <CategorySelect
+        value={i.category}
+        label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori`}
+        onChange={(c) => changeCategory([{ id: i.id, category: c }], { from: i })}
+      />
+    );
 
   const checkbox = (i: InvoiceRow, className?: string) => (
     <label className={cn("relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-ink/[0.04] pointer-coarse:size-11", className)}>
@@ -799,7 +818,7 @@ export function InvoicesClient({
   const reviewGuessed = visible.filter((i) => i.needsReview && !reviewStockOnly.includes(i));
   const [keepAll, setKeepAll] = useState(false);
   /** "Kontrol bekleyen" süzgecinde seçim yokken alttaki çubuk "Hepsini onayla"yı gösterir */
-  const reviewBar = status === "kontrol" && visible.length > 0 && selected.length === 0;
+  const reviewBar = !readOnly && status === "kontrol" && visible.length > 0 && selected.length === 0;
   const barOpen = selected.length > 0 || reviewBar;
   const allSelected = selected.length > 0 && selected.length === visible.length;
   const confirmLabel =
@@ -820,6 +839,7 @@ export function InvoicesClient({
         rows={cashOuts}
         duplicates={cashOutDuplicates}
         categories={cashOutCategories}
+        readOnly={readOnly}
         onAddInvoice={(r) => {
           setFromCashOut(r);
           setEditing("new");
@@ -834,12 +854,19 @@ export function InvoicesClient({
         icon={<FileText />}
         title="Fatura listesi"
         description={
-          <>
-            <span className="lg:hidden">
-              Karta dokunun: düzenlenir; sağdaki anahtar ödendi durumunu değiştirir, belge simgesi faturanın PDF&apos;ini açar. Birden çok faturayı “Seç” ile seçip toplu değiştirebilirsiniz.
-            </span>
-            <span className="max-lg:hidden">Satıra tıklayınca düzenlenir. Kategori satırdan değişir; birden çok faturayı seçip toplu değiştirebilirsiniz.</span>
-          </>
+          readOnly ? (
+            <>
+              <span className="lg:hidden">Karta dokunun: fatura açılır; belge simgesi faturanın PDF&apos;ini açar.</span>
+              <span className="max-lg:hidden">Satıra tıklayınca fatura açılır; belge simgesi PDF&apos;ini açar.</span>
+            </>
+          ) : (
+            <>
+              <span className="lg:hidden">
+                Karta dokunun: düzenlenir; sağdaki anahtar ödendi durumunu değiştirir, belge simgesi faturanın PDF&apos;ini açar. Birden çok faturayı “Seç” ile seçip toplu değiştirebilirsiniz.
+              </span>
+              <span className="max-lg:hidden">Satıra tıklayınca düzenlenir. Kategori satırdan değişir; birden çok faturayı seçip toplu değiştirebilirsiniz.</span>
+            </>
+          )
         }
         meta={
           <>
@@ -878,9 +905,11 @@ export function InvoicesClient({
         actions={
           // Telefonda aynı düğme başparmağın altında yüzer (aşağıda). Tablette başlıkta: yüzen düğme ilk kartın
           // ödendi anahtarını örtüyordu (kartlar tam genişlikte, anahtar sağ kenarda)
-          <Button onClick={() => setEditing("new")} className="pointer-coarse:h-11 max-sm:hidden">
-            <Plus size={16} /> Fatura ekle
-          </Button>
+          readOnly ? undefined : (
+            <Button onClick={() => setEditing("new")} className="pointer-coarse:h-11 max-sm:hidden">
+              <Plus size={16} /> Fatura ekle
+            </Button>
+          )
         }
       />
 
@@ -1058,31 +1087,33 @@ export function InvoicesClient({
       {visible.length ? (
         <>
           {/* Telefon: seçim kipi (masaüstündeki başlık kutusunun karşılığı); kipte karta dokunmak seçer */}
-          <div className="flex items-center justify-between gap-3 border-t border-line pr-2 pl-4 text-[13px] text-ink-mute lg:hidden">
+          <div className={cn("flex items-center justify-between gap-3 border-t border-line pr-2 pl-4 text-[13px] text-ink-mute lg:hidden", readOnly && "min-h-11")}>
             <span className="tabular">{picking ? `${num(selectedIds.length)} seçili` : `${num(pageIds.length)} fatura bu sayfada`}</span>
-            <span className="flex items-center">
-              {picking ? (
+            {readOnly ? null : (
+              <span className="flex items-center">
+                {picking ? (
+                  <button
+                    type="button"
+                    onClick={() => selectIds(pageIds, !pageAll)}
+                    className="min-h-11 cursor-pointer px-2.5 font-medium text-info underline-offset-2 hover:underline"
+                  >
+                    {pageAll ? "Sayfadakileri bırak" : "Sayfadakileri seç"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => selectIds(pageIds, !pageAll)}
-                  className="min-h-11 cursor-pointer px-2.5 font-medium text-info underline-offset-2 hover:underline"
+                  onClick={() => {
+                    if (!picking) return setSelectMode(true);
+                    clearSelection();
+                    setSelectMode(false);
+                  }}
+                  aria-pressed={picking}
+                  className="min-h-11 min-w-11 cursor-pointer px-2.5 font-medium text-ink underline-offset-2 hover:underline"
                 >
-                  {pageAll ? "Sayfadakileri bırak" : "Sayfadakileri seç"}
+                  {picking ? "Bitti" : "Seç"}
                 </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!picking) return setSelectMode(true);
-                  clearSelection();
-                  setSelectMode(false);
-                }}
-                aria-pressed={picking}
-                className="min-h-11 min-w-11 cursor-pointer px-2.5 font-medium text-ink underline-offset-2 hover:underline"
-              >
-                {picking ? "Bitti" : "Seç"}
-              </button>
-            </span>
+              </span>
+            )}
           </div>
           {/* Telefon: kart listesi. Tedarikçi, tarih, tutar, rozetler ve belge, kategori hapı ve ödendi anahtarı. Kartın
               üst bölümü tek düğme; görünmez katmanı (before) bütün kartı kaplar, kartın içindeki öteki denetimler (seçim
@@ -1135,19 +1166,33 @@ export function InvoicesClient({
                   <div className="relative z-10 mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">
                       {/* Telefonda yerel seçici yerine alt sayfa: 48px satırlar, rozet 13px kalır (iOS yakınlaştırmaz) */}
-                      <CategoryPill value={i.category} label={`${base}, ${dateTR(i.date)}: kategori ${i.category}. Değiştir`} onClick={() => setCatFor(i.id)} />
-                      {i.needsReview ? <ConfirmPill onClick={() => confirmRows([i])} label={`${base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} /> : null}
+                      {readOnly ? (
+                        <Badge tone={categoryTone(i.category)}>{i.category}</Badge>
+                      ) : (
+                        <CategoryPill value={i.category} label={`${base}, ${dateTR(i.date)}: kategori ${i.category}. Değiştir`} onClick={() => setCatFor(i.id)} />
+                      )}
+                      {i.needsReview && !readOnly ? <ConfirmPill onClick={() => confirmRows([i])} label={`${base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} /> : null}
                     </span>
                     <span className="ml-auto flex flex-col items-end">
-                      <Switch
-                        checked={!i.unpaid}
-                        onChange={(paid) => setPaid([i], paid)}
-                        label={`${base}, ${dateTR(i.date)}: ödendi`}
-                        showText
-                        onText="Ödendi"
-                        offText="Ödenmedi"
-                        className={cn("mx-0 h-11 px-2 text-sm pointer-coarse:h-11", i.unpaid && "text-bad")}
-                      />
+                      {readOnly ? (
+                        i.unpaid ? (
+                          unpaidBadge(i)
+                        ) : (
+                          <Badge tone="green" dot>
+                            Ödendi
+                          </Badge>
+                        )
+                      ) : (
+                        <Switch
+                          checked={!i.unpaid}
+                          onChange={(paid) => setPaid([i], paid)}
+                          label={`${base}, ${dateTR(i.date)}: ödendi`}
+                          showText
+                          onText="Ödendi"
+                          offText="Ödenmedi"
+                          className={cn("mx-0 h-11 px-2 text-sm pointer-coarse:h-11", i.unpaid && "text-bad")}
+                        />
+                      )}
                     </span>
                   </div>
                   {i.unpaid && (isPartiallyPaid(i) || i.dueDate) ? (
@@ -1176,22 +1221,26 @@ export function InvoicesClient({
                 <tr>
                   <TH sticky>
                     <span className="inline-flex items-center gap-2">
-                      <label className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-ink/[0.04]" title="Bu sayfadakileri seç">
-                        <input
-                          type="checkbox"
-                          checked={pageAll}
-                          ref={(el) => {
-                            if (el) el.indeterminate = pageSome;
-                          }}
-                          onChange={() => selectIds(pageIds, !pageAll)}
-                          aria-label={pageAll ? "Bu sayfadaki seçimleri kaldır" : "Bu sayfadaki faturaları seç"}
-                          className="size-4 cursor-pointer rounded accent-ink"
-                        />
-                      </label>
+                      {readOnly ? null : (
+                        <label className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-ink/[0.04]" title="Bu sayfadakileri seç">
+                          <input
+                            type="checkbox"
+                            checked={pageAll}
+                            ref={(el) => {
+                              if (el) el.indeterminate = pageSome;
+                            }}
+                            onChange={() => selectIds(pageIds, !pageAll)}
+                            aria-label={pageAll ? "Bu sayfadaki seçimleri kaldır" : "Bu sayfadaki faturaları seç"}
+                            className="size-4 cursor-pointer rounded accent-ink"
+                          />
+                        </label>
+                      )}
                       <SortButton dir={dirOf("tedarikci")} onClick={() => toggleSort("tedarikci")}>
                         Tedarikçi
                       </SortButton>
-                      <InfoTip text="Adın sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” gelir-giderde “Kaldi” altında toplanır. Not ya da adında “tahmin” / “varsayım” geçen fatura turuncu “tahmini” işaretlenir. Soldaki kutuyla seçip toplu değiştirin." />
+                      <InfoTip
+                        text={`Adın sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” gelir-giderde “Kaldi” altında toplanır. Not ya da adında “tahmin” / “varsayım” geçen fatura turuncu “tahmini” işaretlenir.${readOnly ? "" : " Soldaki kutuyla seçip toplu değiştirin."}`}
+                      />
                     </span>
                   </TH>
                   <TH>
@@ -1202,7 +1251,7 @@ export function InvoicesClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Kategori
-                      <InfoTip text={`Kategoriyi satırdaki listeden değiştirin. ${CATEGORY_LEGEND} Paraşüt eşitlemesi kategoriyi korur.`} />
+                      <InfoTip text={readOnly ? CATEGORY_LEGEND : `Kategoriyi satırdaki listeden değiştirin. ${CATEGORY_LEGEND} Paraşüt eşitlemesi kategoriyi korur.`} />
                     </span>
                   </TH>
                   <TH numeric>
@@ -1223,7 +1272,9 @@ export function InvoicesClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Durum
-                      <InfoTip text="“Ödenmedi” rozetine tıklayınca fatura ödendi olarak işaretlenir; bildirimdeki “Geri al” ile geri alınır. Kısmen ödenmiş Paraşüt faturasında kalan tutar altında yazar." />
+                      <InfoTip
+                        text={`${readOnly ? "" : "“Ödenmedi” rozetine tıklayınca fatura ödendi olarak işaretlenir; bildirimdeki “Geri al” ile geri alınır. "}Kısmen ödenmiş Paraşüt faturasında kalan tutar altında yazar.`}
+                      />
                     </span>
                   </TH>
                   <TH className="w-px px-2">
@@ -1247,24 +1298,28 @@ export function InvoicesClient({
                       <TD sticky className="min-w-56 max-w-96">
                         <div className="flex items-center gap-3">
                           {/* Avatar, satırın üzerine gelince / klavyeyle / seçim varken seçim kutusuna döner (dokunmatikte hep kutu) */}
-                          <span onClick={(e) => e.stopPropagation()} className="relative flex size-9 shrink-0 items-center justify-center">
-                            <span
-                              className={cn(
-                                "flex transition-opacity duration-150",
-                                hasSelection ? "opacity-0" : "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0",
-                              )}
-                            >
-                              <Avatar name={base} />
+                          {readOnly ? (
+                            <Avatar name={base} />
+                          ) : (
+                            <span onClick={(e) => e.stopPropagation()} className="relative flex size-9 shrink-0 items-center justify-center">
+                              <span
+                                className={cn(
+                                  "flex transition-opacity duration-150",
+                                  hasSelection ? "opacity-0" : "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0",
+                                )}
+                              >
+                                <Avatar name={base} />
+                              </span>
+                              <span
+                                className={cn(
+                                  "absolute inset-0 flex items-center justify-center transition-opacity duration-150",
+                                  hasSelection ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+                                )}
+                              >
+                                {checkbox(i)}
+                              </span>
                             </span>
-                            <span
-                              className={cn(
-                                "absolute inset-0 flex items-center justify-center transition-opacity duration-150",
-                                hasSelection ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
-                              )}
-                            >
-                              {checkbox(i)}
-                            </span>
-                          </span>
+                          )}
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium break-words text-ink">{base}</span>
@@ -1288,7 +1343,9 @@ export function InvoicesClient({
                             {categoryPicker(i)}
                             <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               {reviewBadge(i)}
-                              <ConfirmPill size="sm" onClick={() => confirmRows([i])} label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} />
+                              {readOnly ? null : (
+                                <ConfirmPill size="sm" onClick={() => confirmRows([i])} label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} />
+                              )}
                             </span>
                           </div>
                         ) : i.stockOnly && stockOnlyCategory(i.category) ? (
@@ -1314,23 +1371,26 @@ export function InvoicesClient({
                         {tl(i.payable, 2)}
                         <span className="block text-xs text-ink-mute">KDV {tl(i.payable - net, 2)}</span>
                       </TD>
-                      <TD onClick={(e) => e.stopPropagation()} className="cursor-default">
+                      <TD onClick={readOnly ? undefined : (e) => e.stopPropagation()} className={readOnly ? undefined : "cursor-default"}>
                         {statusBadge(i)}
                       </TD>
                       <TD onClick={(e) => e.stopPropagation()} className="cursor-default px-2">
-                        <div className="flex justify-end gap-1">
-                          {i.unpaid ? (
-                            <IconButton label="Ödendi olarak işaretle" onClick={() => setPaid([i], true)}>
-                              <Check size={15} />
+                        {/* Salt okunur hesapta eylem yok: satırın kendisi faturayı açar */}
+                        {readOnly ? null : (
+                          <div className="flex justify-end gap-1">
+                            {i.unpaid ? (
+                              <IconButton label="Ödendi olarak işaretle" onClick={() => setPaid([i], true)}>
+                                <Check size={15} />
+                              </IconButton>
+                            ) : null}
+                            <IconButton label="Düzenle" onClick={() => setEditing(i)}>
+                              <Pencil size={15} />
                             </IconButton>
-                          ) : null}
-                          <IconButton label="Düzenle" onClick={() => setEditing(i)}>
-                            <Pencil size={15} />
-                          </IconButton>
-                          <IconButton label="Sil" tone="danger" onClick={() => setDeleting(i)}>
-                            <Trash2 size={15} />
-                          </IconButton>
-                        </div>
+                            <IconButton label="Sil" tone="danger" onClick={() => setDeleting(i)}>
+                              <Trash2 size={15} />
+                            </IconButton>
+                          </div>
+                        )}
                       </TD>
                     </TR>
                   );
@@ -1397,19 +1457,25 @@ export function InvoicesClient({
               description={
                 q.trim()
                   ? `“${q.trim()}” için sonuç bulunamadı. Aramayı kısaltın ya da süzgeci temizleyin.`
-                  : "Seçili durum, kategori ya da ayda fatura yok. Süzgeci temizleyin ya da yeni fatura ekleyin."
+                  : readOnly
+                    ? "Seçili durum, kategori ya da ayda fatura yok. Süzgeci temizleyin."
+                    : "Seçili durum, kategori ya da ayda fatura yok. Süzgeci temizleyin ya da yeni fatura ekleyin."
               }
               action={
                 <>
                   <Button variant="secondary" onClick={clearFilters}>
                     Süzgeci temizle
                   </Button>
-                  <Button onClick={() => setEditing("new")}>
-                    <Plus size={16} /> Fatura ekle
-                  </Button>
+                  {readOnly ? null : (
+                    <Button onClick={() => setEditing("new")}>
+                      <Plus size={16} /> Fatura ekle
+                    </Button>
+                  )}
                 </>
               }
             />
+          ) : readOnly ? (
+            <EmptyState title="Henüz fatura yok" description="Alış faturaları Paraşüt'ten gelince ya da yönetici ekleyince burada listelenir." />
           ) : (
             <EmptyState
               title="Henüz fatura yok"
@@ -1534,7 +1600,7 @@ export function InvoicesClient({
       {/* Telefon: "Fatura ekle" başparmağın altında, alt gezinme çubuğunun üstünde (alttaki çubuk açıkken gizli).
           Aşağı kaydırırken kaybolur. Tablette (sm ve üstü) düğme kartın başlığında: tam genişlikteki kartlarda yüzen
           düğme ilk kartın ödendi anahtarını örtüyordu. */}
-      {barOpen ? null : (
+      {barOpen || readOnly ? null : (
         <Fab onClick={() => setEditing("new")} className="h-12 pr-5 pl-4 sm:hidden">
           <Plus size={18} aria-hidden="true" /> Fatura ekle
         </Fab>
@@ -1611,7 +1677,19 @@ export function InvoicesClient({
         ) : null}
       </Dialog>
 
-      {editing ? (
+      {editing && editing !== "new" && readOnly ? (
+        <InvoiceView
+          key={editing.id}
+          invoice={editing}
+          role={role}
+          onClose={() => setEditing(null)}
+          parasutCompanyId={editing.parasutAccount ? (parasutCompanies[editing.parasutAccount] ?? null) : (parasutCompanyId ?? null)}
+          hasDocument={canHaveDocument(editing, docsOf(editing.id).length)}
+          documents={docsOf(editing.id)}
+          onOpenDocuments={() => setDocFor(editing.id)}
+          cari={cariLinks[editing.id]}
+        />
+      ) : editing && !readOnly ? (
         <InvoiceDialog
           key={editing === "new" ? (fromCashOut ? `kasa-${fromCashOut.id}` : "new") : editing.id}
           invoice={editing === "new" ? null : editing}
@@ -1632,12 +1710,12 @@ export function InvoicesClient({
           cari={editing === "new" ? undefined : cariLinks[editing.id]}
           supplierHref={(i) => {
             const slug = supplierSlugs?.[supplierPairKey(i.supplier, i.supplierTaxNumber)];
-            return slug ? `/panel/tedarikciler/${slug}` : null;
+            return slug ? openableHref(role, `/panel/tedarikciler/${slug}`) : null;
           }}
         />
       ) : null}
       {/* Fatura penceresinden açılınca onun üstünde durur (sonra açılan modal en üstte) */}
-      {docRow ? <DocumentSheet key={`belge-${docRow.id}`} invoice={docRow} documents={docsOf(docRow.id)} onClose={() => setDocFor(null)} /> : null}
+      {docRow ? <DocumentSheet key={`belge-${docRow.id}`} invoice={docRow} documents={docsOf(docRow.id)} readOnly={readOnly} onClose={() => setDocFor(null)} /> : null}
       <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}

@@ -19,7 +19,13 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   döndürür; menü, alt menü, sekme ve arama aynı kurala bakar (`src/components/panel/nav.ts`). Ekranın içindeki
   bağlantı da: rolün açamadığı ekrana bağlantı çizilmez (`openableHref(rol, adres)`, açamıyorsa null; tıklayan ana
   ekranına dönerdi).
+- **Yükleme iskeleti en dar rolle** (28 Kasım 2026): sayfa yüklenirken rol henüz okunmamıştır; iskelet (Suspense
+  `fallback`'i) ekranı açabilen rollerin en darıyla çizilir, yöneticinin sekmeleri ve açıklaması içerik gelince eklenir.
+  Başlık bileşenlerinde rol zorunludur (varsayılan "yönetici" değil): İşçilik / ciro yüklenirken müdür Raporlar'ın,
+  Aylık harcamalar yüklenirken muhasebeci Giderler'in yönetici sekmelerini görüyordu.
 - **Yetenekler** (`CAPABILITIES`, `can(rol, yetenek)`): eylem düzeyi. Tabloda olmayan rol için her yetenek KAPALI.
+  Salt okunur hesap tek soruyla sorulur: `isReadOnly(rol)` (`kayit.yaz` yok). Ekranlar yazma düğmesini, formunu ve satır
+  içi düzenlemeyi buna bakarak çizmez; rol adıyla karşılaştırılmaz.
 
 | Yetenek | Ne | Roller |
 | --- | --- | --- |
@@ -65,8 +71,10 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   fotoğraf bağlanır (`src/lib/roles.ts` › `linksAnyPhoto`).
 - Tedarikçiler (cari) yöneticinin: tedarikçi ödemesine bağlı kasadan çıkan satırı müdüre de personel gibi kilitli
   (düzeltemez, silemez; yanıt tedarikçinin adını söylemez; Kasa'da kilit simgesiyle görünür).
-- Şubesi pasife alınırsa oturumu yok sayılır, giriş de reddedilir (`managerWithoutBranch`). Personelde kilit kalkar
-  ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü.
+- Şubesi pasife alınırsa oturumu yok sayılır, giriş de reddedilir (`managerWithoutBranch`, `src/lib/roles.ts`).
+  Personelde kilit kalkar ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü. **Bildirim de almaz** (28 Kasım 2026):
+  hesabı "etkin" kaldığı için Web Push ve kişiye giden e-postalar (vardiya, kontrol listesi, karaoke) gitmeye devam
+  ediyordu; alıcı kuralı tek yerde (`src/server/notify/reachable.ts`), şube yeniden açılınca kendiliğinden yeniden alır.
 - Onaylar'da yalnız şubesinin kasa ve zayi / ikram isteklerini görür ve karara bağlar; şubesi bilinmeyen istek ona
   kapalı (`reviewBranchRefusal`, `loadCashRequestQueue(…, strict)`). Kartın gösterdiği, isteğin tuttuğu fotoğrafı
   (geç kasa raporunun Z'si, kasadan çıkan isteğinin fişi; onaya kadar bağlanmaz, yükleyeni personel) /api/foto ona
@@ -111,10 +119,19 @@ kontrol listelerini düzenleme, panel asistanı (yalnız yönetici), öteki şub
 
 **Salt okunur.** Ekranları: **Muhasebe** (ana ekranı: ekranların listesi ve muhasebeci paketi), **Faturalar** (belge
 ve kalemleriyle), **Gelir-gider**, **Aylık harcamalar**, **Kasa raporu** (rakamlarıyla, bütün şubeler) ve **Hesabım**.
-Her ekranın başında "Salt okunur hesap" şeridi; yazma düğmeleri gizli. Alt menüsü: Muhasebe, Faturalar, Gelir-gider,
-Harcamalar, Kasa. **Vergi** 27 Kasım 2026'da ekranlarından çıktı (sahibin kararı: Vergi bölümü kaldırıldı, vergiyi
+Her ekranın başında "Salt okunur hesap" şeridi; yazma düğmeleri gizli (aşağıda "Ekranlarda ne çizilmez"). Alt menüsü:
+Muhasebe, Faturalar, Gelir-gider, Harcamalar, Kasa. **Vergi** 27 Kasım 2026'da ekranlarından çıktı (sahibin kararı: Vergi bölümü kaldırıldı, vergiyi
 muhasebeci yürütüyor); eski adresler Muhasebe'ye kısa notla döner (`?kaldirildi=vergi`).
 
+- **Ekranlarda ne çizilmez** (28 Kasım 2026; `isReadOnly`, `openableHref`; sayfa rolü istemci bileşenine verir).
+  Faturalar: ekleme, düzenleme, silme, ödendi işareti, kategori ve şube seçimi, onay, toplu seçim, şube atama kutusu,
+  silinen faturaları geri alma; satır faturayı salt okunur pencerede açar (belge açılır ve indirilir, eklenmez,
+  silinmez), kalemlerde Hammaddeler ve Paraşüt bağlantısı yok. Gelir-gider: hücreler düğme değil (rakam, uyarı, açıklama
+  ve not okunur), ay notu ve "Siteden yenile" yok; tutarların kaynak bağlantısı yalnız Faturalar ve Aylık harcamalar'a
+  (Satışlar, Stok sayımı, Maaşlar, Sabit giderler ve Tedarikçiler ona kapalı), "Sayım gir" yok. Aylık harcamalar: ekleme
+  formu, kategori düğmeleri, sabit gideri aylığa çevirme yok; kayıt salt okunur pencerede açılır. Kasa raporu: zayi
+  "Ekle", raporu olmayan günün formu, gün sonu fotoğrafı seçicisi, "Banka POS'a yaz", "Kümülatifi temizle", e-postayı
+  yeniden gönderme, ay listesinde "Gir" ve "İncele" yok. Rakamlar, belgeler ve fotoğraflar okunur.
 - Hiçbir kayıt değiştiremez: her sunucu eylemi reddeder. Geçenler yalnız kendi hesabının eylemleri (parola, iki
   adımlı, oturumlar, bu cihazın bildirim aboneliği, şube görünümü tercihi) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
   metni). Veri uçları da: fotoğraf yükleyemez, sipariş eşitleyemez, vardiya PDF'ini alamaz, belge taramada yapay
@@ -230,6 +247,15 @@ oturumları kapanır (oturum sürümü).
 
 ## Testler
 
+- `tests/muhasebeci-salt-okunur.test.ts`: muhasebecinin ekranlarının istemci bileşenleri iki rolle çizilir (HTML);
+  muhasebecide yazma düğmesi ve açamayacağı ekrana bağlantı yok, yöneticide aynı düğmeler duruyor.
+  `tests/muhasebeci-ekran-db.test.ts` (gerçek Postgres, `MUHASEBECI_EKRAN_TEST_DATABASE_URL`): Faturalar, Gelir-gider,
+  Aylık harcamalar ve Kasa raporu muhasebecinin oturumuyla çağrılır; ağaçta kapalı ekrana bağlantı, şube atama kutusu
+  ve raporu olmayan günün formu yok.
+- `tests/yukleme-iskeleti-rol.test.ts`: yönetici dışında bir rolün açabildiği her sayfanın yükleme iskeletindeki her
+  bağlantıyı o roller açabilir (bütün sayfalar taranır).
+- `tests/kapali-sube-mudur-bildirim-db.test.ts` (gerçek Postgres, `KAPALI_SUBE_TEST_DATABASE_URL`): şubesi kapanan
+  müdüre Web Push (bütün konular), hatırlatıcı özeti ve vardiya bildirimi gitmez; personeli ve öbür müdür alır.
 - `tests/roller.test.ts`: her rolün ekranları ve yetenekleri; menüdeki her öğe ↔ rol kuralı; proxy yönlendirmesi (her
   rol için birkaç yol); yetki tablosu; iki adımlı ve e-posta kuralları; **kaynak taraması**: her `"use server"`
   dosyasının dışa verdiği her eylem bir kapı çağırır (`tests/helpers/action-gates.ts`) ve hiçbiri muhasebeciye yazma

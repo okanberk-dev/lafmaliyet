@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Notice } from "@/components/ui/notice";
-import { SEPARATE_CATEGORIES } from "@/lib/constants";
+import { SEPARATE_CATEGORIES, type Role } from "@/lib/constants";
 import { num, tl2 } from "@/lib/format";
 import { isLinkableCategory } from "@/lib/invoice-linking";
 import { ingredientPriceOf, linesTotal, netUnitPrice, type InvoiceLinesResponse } from "@/lib/invoice-lines";
+import { openableHref } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /** Uzun faturada (demirbaş, ambalaj siparişi) ilk bu kadar kalem; kalanı "Tümünü göster" ile */
@@ -17,13 +18,27 @@ const FIRST = 6;
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ok"; data: InvoiceLinesResponse };
 
 /**
+ * Bir kalemin bağlantıları, bakanın rolüne göre (src/lib/roles.ts › openableHref): `ingredient` bağlı hammaddenin
+ * Hammaddeler'deki araması, `link` bağlı olmayan kalemin Paraşüt'teki bekleyen satırı. Rol ekranı açamıyorsa null:
+ * muhasebeciye ikisi de kapalı (hammaddenin adı düz metin kalır, "Hammaddeye bağla" çizilmez)
+ */
+export function lineLinks(role: Role, line: { productName: string; ingredient?: { name: string } | null }): { ingredient: string | null; link: string | null } {
+  return {
+    ingredient: line.ingredient ? openableHref(role, `/panel/hammaddeler?ara=${encodeURIComponent(line.ingredient.name)}`) : null,
+    link: openableHref(role, `/panel/parasut?ara=${encodeURIComponent(line.productName)}&durum=bekleyen`),
+  };
+}
+
+/**
  * Fatura penceresindeki "Kalemler": e-fatura belgesinden (ya da Paraşüt gider faturasından) okunan ürünler, miktar,
  * net birim fiyat, KDV; hammaddeye bağlı olanın bu faturadaki fiyatı. Bağlı olmayan ürün Paraşüt sayfasında
  * bağlanır (bir kez bağlamak yeter, sonraki faturalar kendiliğinden işlenir). Paraşüt'ün bekleyen listesi yalnız mal
  * ve "Diğer" faturalarının kalemlerini gösterir: öbür kategorilerde "Hammaddeye bağla" boş listeye götürürdü, çıkmaz.
  * `category` faturanın kayıtlı kategorisidir (liste de kayıtlı kategoriye göre süzülür; formda seçilen değil).
+ * Bağlantılar bakanın rolüne göre (`role`; openableHref): Paraşüt ve Hammaddeler muhasebeciye kapalıdır, ona hammaddenin
+ * adı düz metin, "Hammaddeye bağla" ve "Paraşüt sayfası" çizilmez.
  */
-export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: number; invoiceNet: number; category: string }) {
+export function InvoiceLines({ invoiceId, invoiceNet, category, role = "admin" }: { invoiceId: number; invoiceNet: number; category: string; role?: Role }) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [open, setOpen] = useState(false);
 
@@ -50,6 +65,7 @@ export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: n
   const linked = lines.filter((l) => l.ingredient).length;
   const linkable = isLinkableCategory(category);
   const separate = SEPARATE_CATEGORIES.includes(category);
+  const parasutHref = openableHref(role, "/panel/parasut");
 
   return (
     <section className="rounded-2xl bg-panel p-4 sm:col-span-2" aria-labelledby={`lines-${invoiceId}`}>
@@ -69,7 +85,7 @@ export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: n
         <p className="mt-1 text-xs text-pretty text-ink-mute">
           {separate
             ? `Kafe dışı fatura (${category}): kalemleri hammaddelerin alınan miktarına ve fiyatına girmez.`
-            : "Bu kategorideki kalemler hammaddeye bağlama listesine girmez. Mal alışıysa kategoriyi değiştirip kaydedin."}
+            : `Bu kategorideki kalemler hammaddeye bağlama listesine girmez.${parasutHref ? " Mal alışıysa kategoriyi değiştirip kaydedin." : ""}`}
         </p>
       ) : null}
 
@@ -79,10 +95,15 @@ export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: n
         <p className="mt-2 text-xs text-bad">{state.message}</p>
       ) : !lines.length ? (
         <p className="mt-2 text-xs text-pretty text-ink-mute">
-          Kalemler sıradaki Paraşüt eşitlemesinde e-fatura belgesinden okunacak.{" "}
-          <Link href="/panel/parasut" className="font-medium text-ink underline-offset-2 hover:underline">
-            Şimdi okumak için Paraşüt sayfası →
-          </Link>
+          Kalemler sıradaki Paraşüt eşitlemesinde e-fatura belgesinden okunacak.
+          {parasutHref ? (
+            <>
+              {" "}
+              <Link href={parasutHref} className="font-medium text-ink underline-offset-2 hover:underline">
+                Şimdi okumak için Paraşüt sayfası →
+              </Link>
+            </>
+          ) : null}
         </p>
       ) : (
         <>
@@ -90,6 +111,7 @@ export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: n
             {shown.map((l) => {
               const price = ingredientPriceOf(l);
               const unitNet = netUnitPrice(l);
+              const { ingredient: ingredientHref, link: linkHref } = lineLinks(role, l);
               return (
                 <li key={l.id} className="py-2.5 first:pt-1.5">
                   <div className="flex items-start justify-between gap-3">
@@ -108,16 +130,17 @@ export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: n
                   {l.ingredient ? (
                     <p className="mt-1 text-xs text-ink-soft">
                       <Link2 size={12} className="mr-1 inline align-[-2px] text-good" aria-hidden="true" />
-                      <Link href={`/panel/hammaddeler?ara=${encodeURIComponent(l.ingredient.name)}`} className="font-medium text-ink hover:underline pointer-coarse:py-3.5">
-                        {l.ingredient.name}
-                      </Link>
+                      {ingredientHref ? (
+                        <Link href={ingredientHref} className="font-medium text-ink hover:underline pointer-coarse:py-3.5">
+                          {l.ingredient.name}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-ink">{l.ingredient.name}</span>
+                      )}
                       {price ? <span className="tabular text-ink-mute"> · bu faturada {tl2(price.value)}/{price.per}</span> : null}
                     </p>
-                  ) : linkable ? (
-                    <Link
-                      href={`/panel/parasut?ara=${encodeURIComponent(l.productName)}&durum=bekleyen`}
-                      className="mt-1 inline-flex items-center gap-1 text-xs text-info hover:underline pointer-coarse:min-h-11"
-                    >
+                  ) : linkable && linkHref ? (
+                    <Link href={linkHref} className="mt-1 inline-flex items-center gap-1 text-xs text-info hover:underline pointer-coarse:min-h-11">
                       <Link2 size={12} aria-hidden="true" /> Hammaddeye bağla
                     </Link>
                   ) : null}

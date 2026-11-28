@@ -442,6 +442,7 @@ export function CashForm({
   whatsapp,
   recipients,
   canEdit,
+  readOnly = false,
   photoUi,
   saved,
   cashOuts,
@@ -484,6 +485,11 @@ export function CashForm({
   /** Kaç adrese e-posta gider (adresler personele gösterilmez); e-posta kapalıysa ya da gönderim kurulmamışsa 0 */
   recipients: number;
   canEdit: boolean;
+  /**
+   * Salt okunur hesap (muhasebeci; src/lib/roles.ts › isReadOnly): kayıtlı raporu rakamlarıyla okur. `canEdit` zaten
+   * kapalıdır (Düzenle yok); buna ek olarak e-postayı yeniden göndermek de çizilmez (o da yazan bir eylem)
+   */
+  readOnly?: boolean;
   /** Fotoğraf deposu var mı, okuma durumu, bakan yönetici mi */
   photoUi: { storage: boolean; reading: ReadingState; admin: boolean; me: string };
   /** Kayıtlı raporun fotoğrafları (görebilene; kapanmış günde personele boş) ve okumaları ("Fotoğraftan farklı") */
@@ -1242,7 +1248,7 @@ export function CashForm({
               size="sm"
               title={mail.text}
               action={
-                report.emailStatus === "failed" ? (
+                report.emailStatus === "failed" && !readOnly ? (
                   <Button size="xs" variant="secondary" onClick={() => void resend()} disabled={resending}>
                     <RotateCw size={13} /> {resending ? "Gönderiliyor…" : "Yeniden dene"}
                   </Button>

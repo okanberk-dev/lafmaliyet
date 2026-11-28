@@ -71,6 +71,15 @@ export function can(role: Role | null | undefined, cap: Capability): boolean {
   return !!role && (CAPABILITIES[cap] as readonly Role[]).includes(role);
 }
 
+/**
+ * Salt okunur hesap mı (muhasebeci): hiçbir iş kaydı yazamaz. Ekranlar yazma düğmesini, formunu ve satır içi düzenlemeyi
+ * buna bakarak çizmez (sunucu eylemleri ayrıca reddeder); ekranın içindeki bağlantı için `openableHref`. Rol adıyla
+ * karşılaştırma yerine tek soru: yeni bir salt okunur rol eklenince ekranlar kendiliğinden uyar
+ */
+export function isReadOnly(role: Role | null | undefined): boolean {
+  return !can(role, "kayit.yaz");
+}
+
 /** Bilinen bir rol mü (oturum çerezi ve veritabanı satırı için) */
 export function isRole(v: unknown): v is Role {
   return v === "admin" || v === "manager" || v === "staff" || v === "accountant";
@@ -82,6 +91,16 @@ export function isRole(v: unknown): v is Role {
  * gelen `role` değerine güvenilmez.
  */
 export const BRANCH_ROLES: readonly Role[] = ["manager", "staff"];
+
+/**
+ * Müdür şubesine kilitli olmak ZORUNDA (docs/ROLLER.md): şubesi yoksa (veritabanı kısıtı bunu zaten engeller) ya da şubesi
+ * pasife alındıysa hesabı kullanılmaz. Oturumu yok sayılır, girişi reddedilir (src/server/auth/dal.ts,
+ * src/server/actions/auth.ts) ve bildirim almaz (src/server/notify/reachable.ts aynı kuralı sorguda söyler). Personelde
+ * şube pasife alınınca kilit kalkar ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü, o yüzden kapalı.
+ */
+export function managerWithoutBranch(u: { role: string; branchId: string | null; branchActive: boolean | null }): boolean {
+  return u.role === "manager" && (!u.branchId || u.branchActive !== true);
+}
 
 /** Hesabında şube zorunlu olan roller (Kullanıcılar & roller, davet ve veritabanı kısıtı users_manager_branch_ck) */
 export const BRANCH_REQUIRED_ROLES: readonly Role[] = ["manager"];

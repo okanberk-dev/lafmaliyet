@@ -37,7 +37,7 @@ export default function BranchComparePage({ searchParams }: PageProps<"/panel/ra
     <Suspense
       fallback={
         <>
-          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} />
+          <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={<MonthPickerSkeleton />} role="admin" />
           <PageSkeleton rows={14} />
         </>
       }
@@ -69,7 +69,7 @@ async function BranchCompareContent({ searchParams }: { searchParams: PageProps<
   if (!data) {
     return (
       <>
-        <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
+        <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role="admin" />
         <BranchViewChip area="karsilastirma" className="mb-4" />
         <EmptyState icon={<Store />} {...(await compareEmpty())} />
       </>
@@ -77,7 +77,7 @@ async function BranchCompareContent({ searchParams }: { searchParams: PageProps<
   }
   return (
     <>
-      <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
+      <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role="admin" />
       <BranchViewChip area="karsilastirma" className="mb-4" />
       {data.branches.length < 2 && !data.only ? (
         <Notice tone="neutral" size="sm" className="mb-4" title="Tek şube açık">

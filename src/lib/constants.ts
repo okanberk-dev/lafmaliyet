@@ -275,9 +275,15 @@ export function groupVatRate(settings: Pick<Settings, "alisKdvAmbalaj" | "alisKd
 /** Satış listesinde ürün sayılmaması gereken satırlar (toplam / başlık) */
 // "Genel / ara / alt toplam …" her zaman özet; yalın "Toplam" yalnızca ardından tutar sözcükleri geliyorsa
 // ("Toplam KDV dahil", "Toplam tutar"): "Toplam Kahve Paketi" gibi gerçek bir ürün adı özet sayılmaz.
+//
+// Desenler doğrusal zamanda çalışmalı: ad sunucuda da sınanır (İçe aktar, dosya yükleme, Genel bakış). İkinci desenin
+// eski hali `(\s*(…|[\d.,]+|₺))*` idi: yinelemenin içinde yineleme, "toplam 111…1x" gibi bir adda rakamların her
+// bölünüşünü dener, süre her rakamda ikiye katlanırdı (ReDoS). Şimdi her tur tek parça tüketir (bir sözcük, TEK rakam
+// ya da simge), boşluk yalnız turun başında, ayraç ayrı dalda: bir metnin tek okunuşu var. Kabul ettiği adlar aynı
+// (tests/satis-ozet-redos.test.ts eski desenle karşılaştırır).
 export const SALES_SUMMARY_PATTERNS = [
   /^(genel|ara|alt)\s*toplam(lar|i)?(\s.*)?$/,
-  /^toplam(lar|i)?\s*[:=]?(\s*(kdv|dahil|haric|tutar|tutari|ciro|cirosu|satis|satislar|adet|tl|try|net|brut|genel|[\d.,]+|₺))*$/,
+  /^toplam(?:lar|i)?(?:\s*|(?:\s*[:=])?(?:\s*(?:kdv|dahil|haric|tutari?|ciro(?:su)?|satis(?:lar)?|adet|tl|try|net|brut|genel|[\d.,]|₺))*)$/,
   /^(grand\s+|sub\s*)?totals?$/,
 ];
 export const SALES_HEADER_NAMES = ["urun", "urun adi", "urunler", "urun ismi", "stok adi", "stok", "ad", "adi", "isim", "product", "product name", "item", "kalem"];

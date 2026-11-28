@@ -150,8 +150,9 @@ test("Kasa sayfası: AsilPOS gününde personel ekle düğmeleri yerine kısa sa
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /const entryClosed = staffAsilposEntryClosed\(\{ admin, asilposDay: asilposState\.asilpos \}\);/);
   assert.match(page, /asilposEntryClosed=\{entryClosed\}/, "kasadan çıkanlar kartı");
-  // Zayi / ikram satırı: AsilPOS gününde personelde Ekle yok (kısa satır Kasadan çıkanlar kartında, iki kez yazılmaz)
-  assert.match(page, /\{entryClosed \? null : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
+  // Zayi / ikram satırı: AsilPOS gününde personelde Ekle yok (kısa satır Kasadan çıkanlar kartında, iki kez yazılmaz);
+  // salt okunur hesapta da yok (muhasebeci Zayi & ikram'ı açamaz; tests/muhasebeci-ekran-db.test.ts)
+  assert.match(page, /\{entryClosed \|\| readOnly \? null : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
   // Geç rapor görünümü de aynı kuralla
   assert.match(page, /staffAsilposEntryClosed\(\{ admin: false, asilposDay: asilposState\.asilpos \}\)/);
   const outs = read("src/app/panel/kasa/cash-outs.tsx");

@@ -19,6 +19,7 @@ import {
 import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { renderStaffMorning, renderStaffSoon } from "@/server/notify/karaoke-staff-template";
+import { reachableUsers } from "@/server/notify/reachable";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 
@@ -103,7 +104,8 @@ export async function runStaffKaraokeMails(now: Date = new Date(), deadlineAt: n
   if (!mails.length) return none();
 
   const [users, onShift] = await Promise.all([
-    db.select({ id: s.users.id, email: s.users.email, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
+    // Bildirim alabilen hesaplar: şubesi kapalı müdür (panele giremez) vardiyada yazılı olsa da e-posta almaz
+    reachableUsers(db),
     onShiftUserIds(today, karaokeAt),
   ]);
   const recipients = staffMailRecipients(users, onShift, karaokeAt);

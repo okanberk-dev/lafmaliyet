@@ -84,11 +84,13 @@ kaldırıldı (muhasebeci yürütüyor; veriler silinmedi). Kasa deposunda #187�
 masaüstü programı); sitede #302.
 
 Sıra:
-1. ACİL site: Next.js 16.4.6'ya (açıklı 16.3.8), zod ≥ 4.6.6.
-2. ACİL 10 Aralık'tan önce: sitenin e-Arşiv'i Paraşüt'e eski şifreli girişle bağlanıyor; panelin OAuth girişi siteye taşınır
-   (sahip Paraşüt'te bir kez onay verir). Sitenin Vercel'indeki PARASUT_USERNAME / PASSWORD o zamana dek silinmez.
+1. ACİL site: Next.js 16.4.6'ya (açıklı 16.3.8), zod ≥ 4.6.6. Next.js 16.4.6 bitti (laffogato #303, 28 Kasım).
+2. SON TARİH 10 Aralık: sitenin e-Arşiv'i Paraşüt'e eski şifreli girişle bağlanıyor, o gün duruyor; Paraşüt OAuth'a
+   geçmeli. Sahibin kararı (28 Kasım): şimdilik sıradan çıktı. Şart: bağlantı şube başına olacak, her şube kendi Paraşüt
+   hesabını kendisi ekleyebilecek, biri ötekini düşürmeyecek. DevHub uygulaması açıldı. Sitenin Vercel'indeki
+   PARASUT_USERNAME / PASSWORD geçişe dek silinmez.
 3. Denetimin küçük hataları (tek PR): satış yapıştırmada ReDoS, muhasebeciye yazma düğmeleri, yüklemede yönetici sekmeleri,
-   kapalı şubenin müdürüne bildirim, "Tümü"de kart komisyonu.
+   kapalı şubenin müdürüne bildirim, "Tümü"de kart komisyonu. (bitti, bu PR)
 4. Özel günler bölümü panelden kaldırılır (sahibin isteği; veriler silinmez). Dikkat: "kafe kapalı" günleri
    `special_days` tablosunda `kind = 'kapali'` satırıdır ve komisyon, eksik rapor, kontrol listesi, Z sürekliliği bunu okur.
    Kapalı gün akışı (Kasa raporu › Kafe kapalıydı, Onaylar, yöneticinin ileri tarihli kapalı günü) başka ekranda yaşamaya
@@ -101,6 +103,17 @@ Sıra:
 9. Kasa: Giderler "Günü kapat" içinde; kasaya hata kaydı.
 10. P8 fotoğraf okuma (+ banka POS Z ÖZET'inde Toplam KDV), P7 dönem kapanışı, P6 sabit listeler (ortağın adı koddan çıkar),
     P4 CI, P9 temizlik, A3 eski adlar (en erken 4 Aralık), asil-platform satışa hazırlık.
+
+28 Kasım'da eklenen kalanlar (sıraya girecek):
+- Kasada gerçek açılış (sahibin isteği): önce ladmin kullanıcı adı ve şifresi, sonra hangi şubenin açılacağı; şube zaten
+  kuruluysa "emin misin / başka şube" sorusu.
+- Panelde asıl yöneticinin şube açma, kapatma, silme ve kasa kurma yetkisi baştan sona. Bugün yalnız şube açma ve kurulum
+  gönderme asıl yöneticide; şube kapatma ve silme, kasa kaynağı (posSource), kasa anahtarını döndürme ve geçiş günü her
+  yöneticide; asıl yöneticinin hesabını (e-posta, parola, rol) başka yönetici değiştirebiliyor; kapatılan şubenin kurulum
+  kodu geçerli kalıyor; kasası olan şubeye ikinci kurulumda uyarı yok.
+- Kasa: "Kurulumu yap" fiş yazıcısını da bulup denetebilsin (sahibin isteği).
+- Kasa deposunun PR'ları: #192 Token sürücüsünün sessiz kurulumu, #193 müşteri ekranında çeviri balonu, yenileme simgesi
+  PR'ı.
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 

@@ -24,9 +24,10 @@ import { Switch } from "@/components/ui/switch";
 import { SHARED_COSTS_NOTE } from "@/lib/branch-view";
 import { EXPENSE_SHARED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { PANEL_FIXED_GROUPS } from "@/lib/constants";
+import { PANEL_FIXED_GROUPS, type Role } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { genitive } from "@/lib/recipe-change";
+import { isReadOnly } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   convertFixedToMonthly,
@@ -163,7 +164,14 @@ export function MonthlyExpenses({
   branches,
   branchName: viewBranch = null,
   sharedHidden = false,
+  role = "admin",
 }: {
+  /**
+   * Bakanın rolü. Salt okunur hesapta (muhasebeci; src/lib/roles.ts › isReadOnly) sayfa yalnız okunur: "Harcama ekle"
+   * formu, sabit gideri aylığa çevirme, kategori ekleme ve düzenleme çizilmez; kayıt salt okunur pencerede açılır
+   * (fişin fotoğrafı görülür, alanlar ve Kaydet / Sil yok)
+   */
+  role?: Role;
   month: string;
   isCurrent: boolean;
   /** Seçili şube (şube görünümü); "Tümü"de null. Toplam şubenin kendi kayıtları, işletme geneli ayrı (expenseSplit) */
@@ -178,6 +186,7 @@ export function MonthlyExpenses({
   branches: ExpenseBranchChoice;
 }) {
   const [pending, start] = useActionTransition();
+  const readOnly = isReadOnly(role);
   const defaultDate = isCurrent ? localToday() : `${month}-01`;
   const active = categories.filter((c) => c.active);
   const blank = (categoryId = ""): EntryDraft => ({
@@ -338,93 +347,95 @@ export function MonthlyExpenses({
           live="polite"
           className="mb-4"
           title={`${missing.map((c) => c.name).join(", ")} ${monthLabel(month)} için girilmedi`}
-          text="Girilmezse ayın gideri eksik görünür."
+          text={readOnly ? "Girilene kadar ayın gideri eksik görünür." : "Girilmezse ayın gideri eksik görünür."}
         />
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-5">
-          <CardHeader icon={<Plus />} title="Harcama ekle" description="Reklam, influencer ödemesi, nakit alım, bakım… Fatura Paraşüt'ten geliyorsa buraya ayrıca yazmayın." />
-          <CardContent>
-            {active.length ? (
-              <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
-                <Field label="Kategori" htmlFor="x-cat" className="sm:col-span-2">
-                  <Select
-                    id="x-cat"
-                    value={draft.categoryId}
-                    onChange={(e) => (e.target.value === "__new" ? setCatEdit("new") : setDraft((d) => ({ ...d, categoryId: e.target.value })))}
-                  >
-                    {active.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                    <option value="__new">＋ Yeni kategori…</option>
-                  </Select>
-                </Field>
-                <Field label="Tutar (₺)" htmlFor="x-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
-                  <NumberInput id="x-amt" inputMode="text" value={draft.amount} onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))} placeholder="0" enterKeyHint="done" />
-                </Field>
-                <Field label="Tarih" htmlFor="x-date">
-                  <Input id="x-date" type="date" value={draft.date} onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))} />
-                </Field>
-                <Field label="Açıklama" htmlFor="x-desc" className="sm:col-span-2">
-                  <Input
-                    id="x-desc"
-                    value={draft.description}
-                    onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                    placeholder="ör. @kahvesever story, Instagram kampanyası"
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field label="Ödeme" className="sm:col-span-2">
-                  <Segmented<Method | "">
-                    label="Ödeme şekli"
-                    stretch
-                    value={draft.paymentMethod ?? ""}
-                    onChange={(v) => setDraft((d) => ({ ...d, paymentMethod: v === d.paymentMethod ? null : (v as Method) || null }))}
-                    options={METHODS}
-                  />
-                </Field>
-                {branches.ask ? (
-                  <ExpenseBranchField
-                    id="x-branch"
-                    className="sm:col-span-2"
-                    choice={branches}
-                    value={draft.branchId}
-                    onChange={(v) => setDraft((d) => ({ ...d, branchId: v }))}
-                  />
-                ) : null}
-                <div className="sm:col-span-2">
-                  <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-                    <Plus size={16} /> {pending ? "Kaydediliyor…" : "Ekle"}
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <EmptyState
-                title="Önce bir kategori ekleyin"
-                description="ör. Reklam, Influencer, Nakit malzeme alımı"
-                action={
-                  <Button onClick={() => setCatEdit("new")}>
-                    <Plus size={16} /> Kategori ekle
-                  </Button>
-                }
-              />
-            )}
-          </CardContent>
-        </Card>
+        {readOnly ? null : (
+          <Card className="lg:col-span-5">
+            <CardHeader icon={<Plus />} title="Harcama ekle" description="Reklam, influencer ödemesi, nakit alım, bakım… Fatura Paraşüt'ten geliyorsa buraya ayrıca yazmayın." />
+            <CardContent>
+              {active.length ? (
+                <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
+                  <Field label="Kategori" htmlFor="x-cat" className="sm:col-span-2">
+                    <Select
+                      id="x-cat"
+                      value={draft.categoryId}
+                      onChange={(e) => (e.target.value === "__new" ? setCatEdit("new") : setDraft((d) => ({ ...d, categoryId: e.target.value })))}
+                    >
+                      {active.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                      <option value="__new">＋ Yeni kategori…</option>
+                    </Select>
+                  </Field>
+                  <Field label="Tutar (₺)" htmlFor="x-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
+                    <NumberInput id="x-amt" inputMode="text" value={draft.amount} onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))} placeholder="0" enterKeyHint="done" />
+                  </Field>
+                  <Field label="Tarih" htmlFor="x-date">
+                    <Input id="x-date" type="date" value={draft.date} onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))} />
+                  </Field>
+                  <Field label="Açıklama" htmlFor="x-desc" className="sm:col-span-2">
+                    <Input
+                      id="x-desc"
+                      value={draft.description}
+                      onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                      placeholder="ör. @kahvesever story, Instagram kampanyası"
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Field label="Ödeme" className="sm:col-span-2">
+                    <Segmented<Method | "">
+                      label="Ödeme şekli"
+                      stretch
+                      value={draft.paymentMethod ?? ""}
+                      onChange={(v) => setDraft((d) => ({ ...d, paymentMethod: v === d.paymentMethod ? null : (v as Method) || null }))}
+                      options={METHODS}
+                    />
+                  </Field>
+                  {branches.ask ? (
+                    <ExpenseBranchField
+                      id="x-branch"
+                      className="sm:col-span-2"
+                      choice={branches}
+                      value={draft.branchId}
+                      onChange={(v) => setDraft((d) => ({ ...d, branchId: v }))}
+                    />
+                  ) : null}
+                  <div className="sm:col-span-2">
+                    <Button type="submit" disabled={pending} className="w-full sm:w-auto">
+                      <Plus size={16} /> {pending ? "Kaydediliyor…" : "Ekle"}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <EmptyState
+                  title="Önce bir kategori ekleyin"
+                  description="ör. Reklam, Influencer, Nakit malzeme alımı"
+                  action={
+                    <Button onClick={() => setCatEdit("new")}>
+                      <Plus size={16} /> Kategori ekle
+                    </Button>
+                  }
+                />
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        <Card className="lg:col-span-7">
+        <Card className={readOnly ? "lg:col-span-12" : "lg:col-span-7"}>
           <CardHeader
             icon={<ReceiptText />}
             title={`${monthLabel(month)} harcamaları`}
-            description="Kategori kategori. Faturadan gelenler Faturalar'da düzeltilir; buradakiler kalemin üstüne dokunarak."
+            description={readOnly ? "Kategori kategori; kaleme dokununca ayrıntısı açılır." : "Kategori kategori. Faturadan gelenler Faturalar'da düzeltilir; buradakiler kalemin üstüne dokunarak."}
             meta={<span className="font-semibold text-ink tabular">{tl(total)}</span>}
           />
           <CardContent className="space-y-3">
             {categories.filter((c) => c.monthTotal || c.sharedTotal || c.sharedNote || c.expected).length === 0 ? (
-              <EmptyState title="Bu ay harcama yok" description="Soldan ekledikçe burada kategori kategori listelenir." />
+              <EmptyState title="Bu ay harcama yok" description={readOnly ? "Harcama girildikçe burada kategori kategori listelenir." : "Soldan ekledikçe burada kategori kategori listelenir."} />
             ) : (
               categories
                 .filter((c) => c.monthTotal || c.sharedTotal || c.sharedNote || c.expected)
@@ -515,7 +526,7 @@ export function MonthlyExpenses({
         </Card>
       </div>
 
-      {shownFixed.length || fixed.length ? (
+      {!readOnly && (shownFixed.length || fixed.length) ? (
         <Card className="mt-4">
           <CardHeader
             icon={<ArrowRightLeft />}
@@ -552,11 +563,17 @@ export function MonthlyExpenses({
         <CardHeader
           icon={<Tags />}
           title="Kategoriler"
-          description="Her kategori Gelir-gider'de kendi satırında, seçtiğiniz bölümde sayılır. İsterseniz Faturalar'daki bir kategorinin faturaları da buraya eklenir (ör. Reklam & Tabela)."
+          description={
+            readOnly
+              ? "Her kategori Gelir-gider'de kendi satırında, yazan bölümde sayılır; bağlı fatura kategorisinin faturaları da buraya eklenir."
+              : "Her kategori Gelir-gider'de kendi satırında, seçtiğiniz bölümde sayılır. İsterseniz Faturalar'daki bir kategorinin faturaları da buraya eklenir (ör. Reklam & Tabela)."
+          }
           meta={
-            <Button size="sm" variant="secondary" onClick={() => setCatEdit("new")}>
-              <Plus size={14} /> Kategori ekle
-            </Button>
+            readOnly ? undefined : (
+              <Button size="sm" variant="secondary" onClick={() => setCatEdit("new")}>
+                <Plus size={14} /> Kategori ekle
+              </Button>
+            )
           }
         />
         <CardContent>
@@ -574,9 +591,11 @@ export function MonthlyExpenses({
                     {c.invoiceCategory ? ` · + “${c.invoiceCategory}” faturaları` : ""}
                   </span>
                 </span>
-                <IconButton label={`${c.name} kategorisini düzenle`} onClick={() => setCatEdit(c)}>
-                  <Pencil size={15} />
-                </IconButton>
+                {readOnly ? null : (
+                  <IconButton label={`${c.name} kategorisini düzenle`} onClick={() => setCatEdit(c)}>
+                    <Pencil size={15} />
+                  </IconButton>
+                )}
               </li>
             ))}
           </ul>
@@ -588,6 +607,7 @@ export function MonthlyExpenses({
           draft={editing}
           categories={categories}
           branches={branches}
+          readOnly={readOnly}
           pending={pending}
           onChange={setEditing}
           onClose={() => setEditing(null)}
@@ -598,7 +618,7 @@ export function MonthlyExpenses({
           }}
         />
       ) : null}
-      {catEdit ? (
+      {catEdit && !readOnly ? (
         <CategoryDialog
           category={catEdit === "new" ? null : catEdit}
           invoiceCategories={invoiceCategories}
@@ -648,7 +668,10 @@ function EntryDialog({
   onClose,
   onSave,
   onDelete,
+  readOnly = false,
 }: {
+  /** Salt okunur hesap: alanlar kilitli, Kaydet ve Sil yok; fişin fotoğrafı ve kasa gününün bağlantısı kalır */
+  readOnly?: boolean;
   draft: EntryDraft;
   categories: CategoryRow[];
   branches: ExpenseBranchChoice;
@@ -667,21 +690,28 @@ function EntryDialog({
     <Dialog
       open
       onClose={onClose}
-      title="Harcamayı düzenle"
+      title={readOnly ? "Harcama" : "Harcamayı düzenle"}
+      description={readOnly ? "Salt okunur." : undefined}
       footerStart={
-        <Button variant="ghost" className="text-bad" disabled={pending} onClick={onDelete}>
-          <Trash2 size={15} /> Sil
-        </Button>
+        readOnly ? undefined : (
+          <Button variant="ghost" className="text-bad" disabled={pending} onClick={onDelete}>
+            <Trash2 size={15} /> Sil
+          </Button>
+        )
       }
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            Vazgeç
-          </Button>
-          <Button onClick={onSave} disabled={pending}>
-            {pending ? "Kaydediliyor…" : "Kaydet"}
-          </Button>
-        </>
+        readOnly ? (
+          <Button onClick={onClose}>Kapat</Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Vazgeç
+            </Button>
+            <Button onClick={onSave} disabled={pending}>
+              {pending ? "Kaydediliyor…" : "Kaydet"}
+            </Button>
+          </>
+        )
       }
     >
       <div className="grid gap-3 sm:grid-cols-2">
@@ -693,7 +723,7 @@ function EntryDialog({
             tone="warn"
             size="sm"
             className="sm:col-span-2"
-            title={`Bu harcama ${cari.name} tedarikçisinin faturasız alımından. Tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin.`}
+            title={`Bu harcama ${cari.name} tedarikçisinin faturasız alımından.${readOnly ? "" : " Tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin."}`}
             action={
               cari.href ? (
                 <Button
@@ -714,7 +744,7 @@ function EntryDialog({
             tone="neutral"
             size="sm"
             className="sm:col-span-2"
-            title={`Kasa raporundaki bir fişten (${dateTR(draft.cashOutDate!)}). Tutarı ve tarihi Kasa raporu'nda düzeltin.`}
+            title={`Kasa raporundaki bir fişten (${dateTR(draft.cashOutDate!)}).${readOnly ? "" : " Tutarı ve tarihi Kasa raporu'nda düzeltin."}`}
             action={
               <Button
                 size="xs"
@@ -730,49 +760,53 @@ function EntryDialog({
             }
           />
         ) : null}
-        <Field label="Kategori" htmlFor="e-cat" className="sm:col-span-2">
-          <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })} disabled={Boolean(cari)}>
-            {categories
-              .filter((c) => c.active || String(c.id) === draft.categoryId)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </Select>
-        </Field>
-        <Field label="Tutar (₺)" htmlFor="e-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
-          <NumberInput id="e-amt" inputMode="text" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} readOnly={linked} disabled={linked} />
-        </Field>
-        <Field label="Tarih" htmlFor="e-date">
-          <Input id="e-date" type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} readOnly={linked} disabled={linked} />
-        </Field>
-        <Field label="Açıklama" htmlFor="e-desc" className="sm:col-span-2">
-          <Input id="e-desc" value={draft.description} onChange={(e) => set({ description: e.target.value })} autoComplete="off" />
-        </Field>
-        <Field label="Ödeme" className="sm:col-span-2">
-          <Segmented<Method | "">
-            label="Ödeme şekli"
-            stretch
-            value={draft.paymentMethod ?? ""}
-            onChange={(v) => set({ paymentMethod: v === draft.paymentMethod ? null : (v as Method) || null })}
-            options={METHODS}
-          />
-        </Field>
-        {branches.ask ? (
-          <ExpenseBranchField
-            id="e-branch"
-            className="sm:col-span-2"
-            choice={branches}
-            value={draft.branchId}
-            onChange={(v) => set({ branchId: v })}
-            // Kaynağa bağlı kaydın şubesi kaynağın: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de
-            locked={cari ? "Şubesi Tedarikçiler'deki faturasız alımda seçilir." : draft.cashOutDate ? "Şubesi fişin çıktığı kasanın şubesidir." : null}
-          />
-        ) : null}
-        <Field label="Not" htmlFor="e-note" className="sm:col-span-2">
-          <Textarea id="e-note" rows={2} value={draft.note} onChange={(e) => set({ note: e.target.value })} />
-        </Field>
+        {/* Salt okunur hesapta alanların hepsi kilitli (fieldset): değer okunur, değiştirilemez */}
+        <fieldset disabled={readOnly} className="grid min-w-0 gap-3 sm:col-span-2 sm:grid-cols-2">
+          <legend className="sr-only">Harcamanın bilgileri</legend>
+          <Field label="Kategori" htmlFor="e-cat" className="sm:col-span-2">
+            <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })} disabled={Boolean(cari)}>
+              {categories
+                .filter((c) => c.active || String(c.id) === draft.categoryId)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="Tutar (₺)" htmlFor="e-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
+            <NumberInput id="e-amt" inputMode="text" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} readOnly={linked} disabled={linked} />
+          </Field>
+          <Field label="Tarih" htmlFor="e-date">
+            <Input id="e-date" type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} readOnly={linked} disabled={linked} />
+          </Field>
+          <Field label="Açıklama" htmlFor="e-desc" className="sm:col-span-2">
+            <Input id="e-desc" value={draft.description} onChange={(e) => set({ description: e.target.value })} autoComplete="off" />
+          </Field>
+          <Field label="Ödeme" className="sm:col-span-2">
+            <Segmented<Method | "">
+              label="Ödeme şekli"
+              stretch
+              value={draft.paymentMethod ?? ""}
+              onChange={(v) => set({ paymentMethod: v === draft.paymentMethod ? null : (v as Method) || null })}
+              options={METHODS}
+            />
+          </Field>
+          {branches.ask ? (
+            <ExpenseBranchField
+              id="e-branch"
+              className="sm:col-span-2"
+              choice={branches}
+              value={draft.branchId}
+              onChange={(v) => set({ branchId: v })}
+              // Kaynağa bağlı kaydın şubesi kaynağın: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de
+              locked={cari ? "Şubesi Tedarikçiler'deki faturasız alımda seçilir." : draft.cashOutDate ? "Şubesi fişin çıktığı kasanın şubesidir." : null}
+            />
+          ) : null}
+          <Field label="Not" htmlFor="e-note" className="sm:col-span-2">
+            <Textarea id="e-note" rows={2} value={draft.note} onChange={(e) => set({ note: e.target.value })} />
+          </Field>
+        </fieldset>
       </div>
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Dialog>

@@ -290,12 +290,16 @@ test("POS komisyonu: 'Tümü' şubelerin toplamı (her şube kendi kartı ve ora
   const model = createModel({ ...ds, months: [...ds.months.filter((m) => m.month !== "2026-11"), all], branchRates: rates(0.03, 0.02) });
   const pc = model.posCommission("2026-11");
   assert.ok(pc, "Marina'nın kasa kartı var");
-  // Marina: 24.774,25 × %2; Tuzla (elle yazılmış ciro): 15.000 × %3 × banka kartı payı
+  // Marina: 24.774,25 × %2 (kendi oranı, kuruşa). Tuzla (elle yazılmış ciro): kasa kartı yok, kendi görünümündeki eski
+  // formülle (15.000 × Ayarlar'daki oran × banka kartı payı, yuvarlanmaz); şubenin %3'ü kasa kartı gelince geçer.
+  // Tümü şube görünümlerinin toplamıdır (denetim 28 Kasım 2026; tests/kart-komisyonu-tumu.test.ts)
   assert.equal(pc.parts[0].amount, 495.49);
   assert.equal(pc.parts[1].branchId, "tuzla");
   assert.equal(pc.parts[1].card, null, "Tuzla'nın kasadan kartı uygulanmıyor");
+  assert.equal(pc.parts[1].rate, model.settings.komisyon, "kartsız şube Ayarlar'daki oranla (kendi görünümündeki gibi)");
+  assert.equal(pc.amount, pc.parts[0].amount + pc.parts[1].amount);
   assert.equal(model.pnlMonth("2026-11").cells.get("commission:pos")?.value, pc.amount);
-  assert.equal(round2(model.monthSales("2026-11").commission), pc.amount);
+  assert.equal(round2(model.monthSales("2026-11").commission), round2(pc.amount));
 });
 
 test("POS komisyonu: kasa kartı olmayan ay (Excel) eski formüllerle kalır", () => {

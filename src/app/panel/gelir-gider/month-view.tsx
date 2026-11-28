@@ -14,14 +14,15 @@ import { SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Notice } from "@/components/ui/notice";
 import { useIsPhone } from "@/components/ui/use-media";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
-import { MONTH_NAMES } from "@/lib/constants";
+import { MONTH_NAMES, type Role } from "@/lib/constants";
 import { money, monthLabel, num, pct, tl } from "@/lib/format";
 import { monthKasa } from "@/lib/asilpos/kasa";
+import { isReadOnly } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 import { CELL_NOTE_MAX, noteSaveEffect, openDaysError, planCellEdit, planCellRestore, sectionTotalKey, shiftMonth, type CellEditPlan, type CellField } from "./cell-rules";
 import type { GridSection } from "./pnl-grid";
-import { rowLink, type RowLink } from "./row-links";
+import { rowLink, rowLinkFor, type RowLink } from "./row-links";
 
 /**
  * Gelir-gider telefonda: tek ay. Üstte yapışkan ay seçici (yıl sınırını geçer), ayın özeti (kâr / zarar, ciro,
@@ -81,7 +82,13 @@ export function MonthView({
   expectedDebts,
   asilposSwitch = null,
   openDaysLocked = null,
+  role = "admin",
 }: {
+  /**
+   * Bakanın rolü. Salt okunur hesapta (muhasebeci) kaleme dokununca tutar sayfası açılmaz, ciro ve ay notu düğme
+   * değildir; kaynak bağlantıları rolün açabildiği ekranlara (rowLink)
+   */
+  role?: Role;
   year: number;
   months: string[];
   /** Seçili ay (bu yılın aylarından biri) */
@@ -111,6 +118,7 @@ export function MonthView({
   openDaysLocked?: string | null;
 }) {
   const router = useRouter();
+  const readOnly = isReadOnly(role);
   const [pending, start] = useTransition();
   const [target, setTarget] = useState<EditTarget | null>(null);
   const i = months.indexOf(month);
@@ -127,7 +135,7 @@ export function MonthView({
   const active = activeMonths.includes(month);
   const note = monthNotes[i];
   // Telefonda en sık girilen kalem (POS cirosu) listenin en altında: özetteki ciroya dokununca da açılır
-  const revenueRow = all.find((r) => r.def.key === "revenue" && r.def.editable);
+  const revenueRow = readOnly ? undefined : all.find((r) => r.def.key === "revenue" && r.def.editable);
 
   /** Ay değiştir: yılın dışına çıkınca o yılın sayfasına geçilir (?yil=…&ay=…) */
   const go = (m: string) => {
@@ -153,7 +161,7 @@ export function MonthView({
       kind: def.kind === "manual" && !(def.key === "revenue" && cell.computed !== null) ? "manual" : "auto",
       format: def.format,
       cell,
-      source: rowLink(def.key, month, { value: cell.value, current: currentMonth }),
+      source: rowLinkFor(role, rowLink(def.key, month, { value: cell.value, current: currentMonth })),
     });
   const daysKasa = openDaysKasa?.[i] ?? null;
   const daysManual = openDaysManual ? openDaysManual[i] !== null : openDays[i] !== null;
@@ -238,26 +246,44 @@ export function MonthView({
               </div>
             ) : null}
           </dl>
-          {!active ? <p className="mt-2 text-xs text-ink-mute">Bu ayda henüz veri yok. Tutar girdikçe hesaplanır.</p> : null}
-          <button
-            type="button"
-            onClick={() => onMonthNote(i)}
-            className="mt-3 flex min-h-11 w-full cursor-pointer items-start gap-2 rounded-xl bg-panel px-3 py-2.5 text-left text-[13px] text-ink-soft"
-          >
-            <MessageSquareText size={15} className={cn("mt-0.5 shrink-0", note ? "text-warn" : "text-ink-quiet")} aria-hidden="true" />
-            <span className="min-w-0 flex-1 break-words">{note ? note : <span className="text-ink-mute">Ay notu ekle</span>}</span>
-            <span className="sr-only">{note ? "Ay notunu düzenle" : ""}</span>
-          </button>
+          {!active ? <p className="mt-2 text-xs text-ink-mute">{readOnly ? "Bu ayda henüz veri yok." : "Bu ayda henüz veri yok. Tutar girdikçe hesaplanır."}</p> : null}
+          {readOnly ? (
+            // Salt okunur: ay notu varsa okunur, eklenmez
+            note ? (
+              <p className="mt-3 flex items-start gap-2 rounded-xl bg-panel px-3 py-2.5 text-[13px] text-ink-soft">
+                <MessageSquareText size={15} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
+                <span className="min-w-0 flex-1 break-words">
+                  <span className="sr-only">Ay notu: </span>
+                  {note}
+                </span>
+              </p>
+            ) : null
+          ) : (
+            <button
+              type="button"
+              onClick={() => onMonthNote(i)}
+              className="mt-3 flex min-h-11 w-full cursor-pointer items-start gap-2 rounded-xl bg-panel px-3 py-2.5 text-left text-[13px] text-ink-soft"
+            >
+              <MessageSquareText size={15} className={cn("mt-0.5 shrink-0", note ? "text-warn" : "text-ink-quiet")} aria-hidden="true" />
+              <span className="min-w-0 flex-1 break-words">{note ? note : <span className="text-ink-mute">Ay notu ekle</span>}</span>
+              <span className="sr-only">{note ? "Ay notunu düzenle" : ""}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {showOpenDays && openDaysLocked ? (
-        // "Tümü" birden çok şubenin toplamıyken açık gün yazılmaz (yazılan tek şubenin ay satırına inerdi)
+      {showOpenDays && (openDaysLocked || readOnly) ? (
+        // "Tümü" birden çok şubenin toplamıyken açık gün yazılmaz (yazılan tek şubenin ay satırına inerdi); salt okunur
+        // hesapta da düz rakam
         <ul className="mx-4 mt-3 rounded-2xl bg-surface ring-1 ring-line">
           <li className={ROW}>
             <span className="min-w-0 flex-1 text-[15px] font-medium text-ink">
               Açık gün sayısı
-              <span className="block text-xs font-normal text-ink-mute">{openDaysLocked}</span>
+              {openDaysLocked ? (
+                <span className="block text-xs font-normal text-ink-mute">{openDaysLocked}</span>
+              ) : daysKasa !== null && !daysManual ? (
+                <span className="block text-xs font-normal text-ink-mute">Kasa raporlarından</span>
+              ) : null}
             </span>
             <Value value={openDays[i]} format="days" suffix={`/${dims[i]}`} />
           </li>
@@ -323,12 +349,15 @@ export function MonthView({
                 {rows.map(({ def, cells }) => {
                   const c = cells[i];
                   const isProfit = def.key === "profit" || def.key === "ratio:profit";
-                  const source = rowLink(def.key, month, { value: c.value, current: currentMonth });
+                  const source = rowLinkFor(role, rowLink(def.key, month, { value: c.value, current: currentMonth }));
                   const label = (
                     <span className="min-w-0 flex-1">
                       <span className={cn("block text-[15px] leading-5 break-words", def.strong ? "font-semibold text-ink" : "text-ink-soft")}>{def.label}</span>
                       {def.sub ? <span className="mt-0.5 block text-xs leading-4 text-ink-mute">{def.sub}</span> : null}
                       {c.tag ? <span className="mt-0.5 block text-xs leading-4 text-ink-mute">{c.info ? `${c.tag}: ${c.info}` : c.tag}</span> : null}
+                      {/* Salt okunur hesapta girilebilen kalemin tutar sayfası açılmaz: o ayın hesabının açıklaması (yöneticide
+                          sayfada yazar) satırda okunur */}
+                      {readOnly && def.editable && c.info && !c.tag ? <span className="mt-0.5 block text-xs leading-4 text-ink-mute">{c.info}</span> : null}
                       {c.note ? (
                         <span className="mt-1 flex items-start gap-1 text-xs leading-4 text-warn">
                           <MessageSquareText size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -345,7 +374,7 @@ export function MonthView({
                     <li key={def.key}>
                       {/* Geçerlilik aralığının dışındaki sabit gider kaleminin boş hücresi salt okunur (setPnlCell de reddeder);
                           satır Sabit giderler'e götürür */}
-                      {def.editable && !(c.outOfRange && !c.overridden) ? (
+                      {!readOnly && def.editable && !(c.outOfRange && !c.overridden) ? (
                         <button type="button" onClick={() => openEdit(def, c)} className={cn(ROW, "cursor-pointer")}>
                           {label}
                           <Value
@@ -414,12 +443,14 @@ export function MonthView({
         );
       })}
 
-      <p className="px-5 pt-4 pb-5 text-xs leading-5 text-ink-mute">
-        Mavi tutarlar elle girilmiş; mavi zeminli olanlar hesaplananın üzerine yazılmış. Kaleme dokunup tutarı silerseniz hesaplanan değere
-        döner.
-      </p>
+      {readOnly ? null : (
+        <p className="px-5 pt-4 pb-5 text-xs leading-5 text-ink-mute">
+          Mavi tutarlar elle girilmiş; mavi zeminli olanlar hesaplananın üzerine yazılmış. Kaleme dokunup tutarı silerseniz hesaplanan değere
+          döner.
+        </p>
+      )}
 
-      {target ? (
+      {target && !readOnly ? (
         <CellSheet
           key={`${month}-${target.rowKey}`}
           target={target}

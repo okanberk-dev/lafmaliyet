@@ -12,9 +12,22 @@ import { parseStatus } from "./rules";
  * faturalı alımın faturası yok (`cashOuts`: hiçbir hesaba girmedi) ya da Aylık harcamalar'a yazılmış kasa alımının
  * faturası sonradan geldi (`cashOutDuplicates`: iki kez sayılıyor). Düğme listeyi "Kontrol
  * bekleyen" süzgecine alır (?durum=kontrol); süzgeç açıkken uyarı çekilir (liste ve alttaki çubuk aynı şeyi söyler).
- * Sayı sunucudan gelir; onaylayınca sunucu eylemi sayfayı yeniler.
+ * Sayı sunucudan gelir; onaylayınca sunucu eylemi sayfayı yeniler. Salt okunur hesapta (`readOnly`, muhasebeci) aynı
+ * gerçekler ne yapılacağını söylemeden yazılır: onay, kategori ve gider kaydı yöneticinin.
  */
-export function ReviewNotice({ count, stockOnly = 0, cashOuts = 0, cashOutDuplicates = 0 }: { count: number; stockOnly?: number; cashOuts?: number; cashOutDuplicates?: number }) {
+export function ReviewNotice({
+  count,
+  stockOnly = 0,
+  cashOuts = 0,
+  cashOutDuplicates = 0,
+  readOnly = false,
+}: {
+  count: number;
+  stockOnly?: number;
+  cashOuts?: number;
+  cashOutDuplicates?: number;
+  readOnly?: boolean;
+}) {
   const [rawStatus, setStatus] = useQueryState<string>("durum", "tumu");
   if ((!count && !cashOuts && !cashOutDuplicates) || parseStatus(rawStatus) === "kontrol") return null;
   const guessed = count - stockOnly;
@@ -32,20 +45,26 @@ export function ReviewNotice({ count, stockOnly = 0, cashOuts = 0, cashOutDuplic
 
   // Her gerçek bir kez: ilki başlık; birden çoksa ötekilerin başlığı ikinci satırda, açıklamaları Ayrıntı'da
   const facts = [
-    guessed > 0 ? { head: `${guessed} faturanın kategorisi tahmin: kontrol edin`, body: "Doğruysa onaylayın, değilse kategoriyi değiştirin." } : null,
+    guessed > 0
+      ? readOnly
+        ? { head: `${guessed} faturanın kategorisi tahmin`, body: "Eşitleme kategoriyi tahminle yazdı; yönetici onaylayınca kesinleşir." }
+        : { head: `${guessed} faturanın kategorisi tahmin: kontrol edin`, body: "Doğruysa onaylayın, değilse kategoriyi değiştirin." }
+      : null,
     stockOnly > 0
       ? {
           head: `${stockOnly} fatura mal alışı sayılmıyor`,
-          body: "Kalemleri hammaddeye bağlı, stoğa giriyor ama gelir-gidere girmiyor. Kategorisini mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) yapın.",
+          body: `Kalemleri hammaddeye bağlı, stoğa giriyor ama gelir-gidere girmiyor.${readOnly ? "" : " Kategorisini mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) yapın."}`,
         }
       : null,
     cashOuts > 0
       ? {
           head: `${cashOuts} kasadan faturalı alım bekliyor`,
-          body: "E-Arşiv ya da faturalı, faturası Faturalar'da yok ve gelir-gidere girmedi. Faturalar'a ekleyin ya da Aylık harcamalar'a yazın.",
+          body: `E-Arşiv ya da faturalı, faturası Faturalar'da yok ve gelir-gidere girmedi.${readOnly ? "" : " Faturalar'a ekleyin ya da Aylık harcamalar'a yazın."}`,
         }
       : null,
-    cashOutDuplicates > 0 ? { head: `${cashOutDuplicates} kasa alımı iki kez sayılıyor`, body: "Aylık harcamalar'a yazılmıştı, faturası sonra geldi. Gider kaydını silin." } : null,
+    cashOutDuplicates > 0
+      ? { head: `${cashOutDuplicates} kasa alımı iki kez sayılıyor`, body: `Aylık harcamalar'a yazılmıştı, faturası sonra geldi.${readOnly ? "" : " Gider kaydını silin."}` }
+      : null,
   ].filter((f) => f !== null);
   const [first, ...rest] = facts;
   if (!first) return null;

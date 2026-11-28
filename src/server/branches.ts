@@ -6,6 +6,7 @@ import { type BranchFeature, featureAudience, featureInScope, karaokeBranchOf } 
 import { type BranchRow, type BranchScope, sortBranches } from "@/lib/branches";
 
 import { getDb, schema as s, type DB } from "./db";
+import { reachableUsers } from "./notify/reachable";
 
 /**
  * Şube ve kanal kütüğünün okunması (docs/SUBE.md). Kurallar saf dosyada (src/lib/branches.ts); burada yalnız
@@ -72,10 +73,8 @@ export async function featureHere(feature: BranchFeature, scope: BranchScope, db
  * ve özelliğin açık olduğu şubenin personeli. Özellik hiçbir şubede açık değilse boş (bildirim gitmez)
  */
 export async function featureAudienceIds(feature: BranchFeature, db: DB = getDb()): Promise<number[]> {
-  const [branches, users] = await Promise.all([
-    listBranches(db),
-    db.select({ id: s.users.id, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
-  ]);
+  // Şubesi kapalı müdür kitleye girmez (kitle kuralı şubesi kapalı hesabı şubesiz sayar: personelde doğru, müdürde değil)
+  const [branches, users] = await Promise.all([listBranches(db), reachableUsers(db)]);
   return featureAudience(users, branches, feature).map((u) => u.id);
 }
 

@@ -1,13 +1,12 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
-
 import { countPushReaches, monthEndCountPushes } from "@/app/panel/sayim/logic";
 import { businessDate } from "@/lib/cash-report";
 import { isLastDayOfMonth } from "@/lib/reminders";
 import { countProgressByBranch } from "@/server/data/count-progress";
-import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
+
+import { reachableUsers } from "./reachable";
 
 /**
  * Ay sonu stok sayımının sabah bildirimi (günlük iş, /api/cron/gunluk; docs/BILDIRIMLER.md): ayın son iş günü, sayım
@@ -26,7 +25,8 @@ export async function pushMonthEndCount(now = new Date()): Promise<{ status: "se
   const { named, open, counts } = await countProgressByBranch(day.slice(0, 7));
   const pushes = monthEndCountPushes(day, counts, named);
   if (!pushes.length) return { status: "skip", sent: 0, failed: 0 };
-  const users = named ? await getDb().select({ id: s.users.id, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)) : [];
+  // Şubesi kapalı müdür alıcı değil (reachableUsers); `countPushReaches` şubesi kapalı personeli şubesiz sayar
+  const users = named ? await reachableUsers() : [];
   let sent = 0;
   let failed = 0;
   for (const { branchId, push } of pushes) {
