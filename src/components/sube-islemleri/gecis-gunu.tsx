@@ -14,16 +14,15 @@ import { dayMonthYearTR, switchAffectedMonths, switchDayProblem } from "@/lib/as
 import { saveAsilposSwitchDay } from "@/server/actions/asilpos";
 
 /*
- * AsilPOS'a geçiş günü (docs/ASILPOS.md › Geçiş günü): iki yerde aynı bileşen ve aynı sunucu eylemi
- * (saveAsilposSwitchDay; kapalı dönem kuralı sunucuda), ladmin'de Ayarlar › AsilPOS (kasa), Yönetim konsolunda Şubeler
- * ve kasalar › şube (/yonetim/sube/[id]).
+ * AsilPOS'a geçiş günü (docs/ASILPOS.md › Geçiş günü): Yönetim konsolunda Şubeler ve kasalar › şube (/yonetim/sube/[id]),
+ * sunucu eylemi saveAsilposSwitchDay (kapalı dönem kuralı sunucuda; yalnız konsol oturumuyla geçer). ladmin'in Ayarlar ›
+ * AsilPOS (kasa) kartı günü yalnız gösterir, yerinde "Bu iş Yönetim konsolunda yapılır" (docs/planlar/yonetim-konsolu.md › K-C).
  */
 
 /**
  * Bir kasanın AsilPOS'a geçiş günü (çok şube: `branchId` bölümün şubesi). Kaydetmeden önce
  * onay penceresi: bu günden itibaren ne değişir (`effects`: switchEffects, kodun bugün yaptığı) ve hangi ayların günleri
  * kaynak değiştirir (switchAffectedMonths). Boşaltmak da aynı pencereden: kasa yeniden ModPOS sayılır. Hiçbir kayıt silinmez.
- * `locked`: asıl yönetici değil (docs/ROLLER.md › Asıl yönetici); alan kapalı, düğme yok, nedeni alanın altında.
  */
 export function AsilposSwitchDayForm({
   branchId,
@@ -33,7 +32,6 @@ export function AsilposSwitchDayForm({
   min,
   max,
   linked,
-  locked = null,
 }: {
   branchId: string;
   effects: readonly string[];
@@ -42,7 +40,6 @@ export function AsilposSwitchDayForm({
   min: string;
   max: string;
   linked: boolean;
-  locked?: string | null;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState(value ?? "");
@@ -74,10 +71,7 @@ export function AsilposSwitchDayForm({
         label="AsilPOS'a geçiş günü"
         htmlFor={`asilpos-gecis-${branchId}`}
         error={problem}
-        hint={
-          locked ??
-          "Kasada AsilPOS'u kullanmaya başladığınız ilk iş günü. Boş bırakın: her şey bugünkü gibi ModPOS'a göre çalışır. Tercihen ayın 1'i (ModPOS'un o ayki listesi bölünmez)."
-        }
+        hint="Kasada AsilPOS'u kullanmaya başladığınız ilk iş günü. Boş bırakın: her şey bugünkü gibi ModPOS'a göre çalışır. Tercihen ayın 1'i (ModPOS'un o ayki listesi bölünmez)."
       >
         <Input
           id={`asilpos-gecis-${branchId}`}
@@ -85,14 +79,13 @@ export function AsilposSwitchDayForm({
           value={draft}
           min={min}
           max={max}
-          disabled={locked !== null}
           onChange={(e) => setDraft(e.target.value)}
           aria-invalid={problem ? true : undefined}
           className="h-11 max-w-56 max-sm:max-w-none"
         />
       </Field>
       <div className="flex flex-wrap gap-2 max-sm:flex-col">
-        {locked !== null ? null : dirty ? (
+        {dirty ? (
           <>
             <Button onClick={() => setConfirm(next)} disabled={pending || problem !== null} className="max-sm:h-11 max-sm:w-full">
               {next ? "Geçiş gününü kaydet" : "Geçiş gününü kaldır"}

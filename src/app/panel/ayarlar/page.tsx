@@ -522,7 +522,8 @@ async function SettingsContent() {
       <ErrorLogCard />
       <SiteLinksCard />
       <AsilposCard
-        // AsilPOS'a geçiş gününü değiştirmek yalnız asıl yöneticide (saveAsilposSwitchDay aynı denetimi yapar)
+        // Geçiş günü burada salt okunur, Yönetim konsolunda değişir: asıl yöneticiye konsola bağlantı (saveAsilposSwitchDay
+        // yalnız konsol oturumunu kabul eder)
         anaAdmin={isAnaAdmin(me)}
         products={model.products.map((p) => ({
           id: p.product.id,

@@ -46,9 +46,10 @@ import { forgetPosBranches, asilposInUse } from "@/server/asilpos/branch";
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
 
-// Şube ve kanal yönetimi (/panel/subeler, /panel/sube-ekleme; docs/SUBE.md). Yalnız yönetici; şubeyi açmak, kapatmak,
-// silmek, kasa programını değiştirmek ve kasa kurmak yalnız asıl yöneticide (requireAnaAdmin; docs/ROLLER.md › Asıl
-// yönetici). Kimlik veriye yazılır: eklendikten sonra değişmez. Kurallar saf dosyada (src/lib/branches.ts) ve
+// Şube ve kanal yönetimi (ladmin › Şubeler; Yönetim konsolu › Şubeler ve kasalar; docs/SUBE.md). Yalnız yönetici;
+// şubeyi açmak, kapatmak, silmek, kasa programını değiştirmek ve kasa kurmak yalnız asıl yöneticide ve yalnız Yönetim
+// konsolunun oturumuyla (requireAnaAdmin; docs/ROLLER.md › Asıl yönetici, docs/planlar/yonetim-konsolu.md › K-C): asıl
+// yönetici ladmin'den gelirse "Bu iş Yönetim konsolunda yapılır". Kimlik veriye yazılır: eklendikten sonra değişmez. Kurallar saf dosyada (src/lib/branches.ts) ve
 // tests/subeler.test.ts onları doğrudan çalıştırır; buradaki eylemler yalnız yetki, doğrulama, yazma ve işlem geçmişi.
 // "use server" dosyasındaki her dışa açık işlev bir uçtur.
 
@@ -128,7 +129,7 @@ const createInput = z.object({
  * Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. Yalnız asıl yönetici (sahibin kararı,
  * 26 Kasım 2026). Fiziksel şubeye e-posta verilirse şube kurulumu da yapılır (docs/ASILPOS.md › Şube kurulumu): şubenin
  * panel hesabı açılır (personel, şubede kilitli, davetle), AsilPOS kurulum bağlantısı üretilir ve ikisi tek e-postayla
- * gider; e-posta gitmese de şube ve bağlantı kalır (Hesabım'da ve Şube ekleme'de görünür)
+ * gider; e-posta gitmese de şube ve bağlantı kalır (Hesabım'da ve konsolun Şubeler ve kasalar sayfasında görünür)
  */
 export async function createBranch(input: z.input<typeof createInput>) {
   return attempt(async () => {
@@ -264,7 +265,7 @@ export async function sendBranchInstall(input: z.input<typeof installInput>) {
 const staffInput = z.object({ id: z.string().trim().min(1), personel: personelInput });
 
 /**
- * "İlk personeli ayarla" (Şube ekleme › şube satırı): patron, müdür ve baristanın adı ve PIN'i, mühürlü saklanır ve kasa
+ * "İlk personeli ayarla" (Yönetim konsolu › Şubeler ve kasalar › şube satırı): patron, müdür ve baristanın adı ve PIN'i, mühürlü saklanır ve kasa
  * bağlanınca kasanın açık anahtarıyla şifreli teslim edilir (docs/ASILPOS.md › Kasa açılışı › İlk personel). Eskisinin
  * yerine geçer; boş liste kaydı siler. Yalnız asıl yönetici. Yanıtta PIN yok
  */
@@ -291,7 +292,7 @@ const releaseInput = z.object({
 });
 
 /**
- * "Kasayı serbest bırak" (Şube ekleme › şube satırı; docs/ASILPOS.md › Kasa açılışı): bilgisayar değişecekse şubenin
+ * "Kasayı serbest bırak" (Yönetim konsolu › Şubeler ve kasalar › şube satırı; docs/ASILPOS.md › Kasa açılışı): bilgisayar değişecekse şubenin
  * kasa bağını çözer. Şubenin kasa anahtarı yeniden üretilir (eski kasa ladmin bağlantısını kaybeder), bekleyen kurulum
  * bağlantıları iptal olur, kasa kaydı "boş" yazılır; yeni bilgisayar şubeyi kasa açılışında seçebilir. Yalnız asıl
  * yönetici, yalnız kasası kurulu şubede; şubenin adı yazılır ve parolayla onaylanır. İşlem geçmişi ve asıl yöneticiye
@@ -318,9 +319,9 @@ export async function releaseBranchTill(input: z.input<typeof releaseInput>, con
 
 /**
  * Düzenleme: kimlikten başka her alan isteğe bağlı, verilmeyen alanın eskisi kalır (docs/planlar/yonetim-konsolu.md ›
- * Teknik çerçeve). ladmin'in penceresi açık / kapalı durumu, türü ve kasa programını yalnız kullanıcı pencerede
- * değiştirdiyse gönderir (konsolda kapatılan şubeyi ladmin'deki ad düzenlemesi yeniden açmasın; asıl yönetici olmayan
- * yönetici ad değiştirirken ret almasın); konsol yalnız kendi alanlarını gönderir (ad ve açılış günü gitmez)
+ * Teknik çerçeve). ladmin'in penceresi açık / kapalı durumu, türü ve kasa programını hiç göndermez (salt okunur; K-C):
+ * konsolda kapatılan şubeyi ladmin'deki ad düzenlemesi yeniden açmaz, kimse ad değiştirirken ret almaz. Konsol yalnız
+ * kendi alanlarını gönderir (ad ve açılış günü gitmez)
  */
 const updateInput = z.object({
   id: z.string().trim().min(1),
@@ -333,7 +334,7 @@ const updateInput = z.object({
   posRate,
   /**
    * Şubenin e-postası (fiziksel şube; her yönetici). Verilmezse (undefined) eskisi kalır; boş metin siler. Hesap açmaz,
-   * bağlantı göndermez: kurulum Şube ekleme › "Bilgisayara kur"da
+   * bağlantı göndermez: kurulum Yönetim konsolu › Şubeler ve kasalar › "Bilgisayara kur"da
    */
   email: branchEmail.optional(),
   /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (posOffConfirmText) */
@@ -343,8 +344,9 @@ const updateInput = z.object({
 /**
  * Adı, türü, kasa kaynağını, açılış gününü, banka POS oranını, e-postasını ve açık / kapalı durumunu değiştirir (kimlik
  * değişmez). Verilmeyen alanın eskisi kalır. Açık / kapalı durumu ve kasa programı (tür değişikliği de kasa programını
- * değiştirir) yalnız asıl yöneticide; öteki alanlar her yöneticide. Yönetim konsolunun oturumu (asıl yönetici) da geçer:
- * konsol › Şube işlemleri bu eylemi yalnız açık / kapalı, tür ve kasa programıyla çağırır. Kasa AsilPOS'tan ModPOS'a
+ * değiştirir) yalnız asıl yöneticide ve yalnız konsol oturumuyla (requireAnaAdmin; konsol › Şube işlemleri bu eylemi
+ * yalnız açık / kapalı, tür ve kasa programıyla çağırır); öteki alanlar (ad, açılış günü, POS oranı, e-posta) her
+ * yöneticide, ladmin'in panel oturumuyla da konsol oturumuyla da. Kasa AsilPOS'tan ModPOS'a
  * dönerken şube AsilPOS'u kullanıyorsa (geçiş günü ya da kayıtlı gün) onay istenir; onaylanınca şubenin geçiş günü aynı
  * işlemde silinir (çok şube, 27 Kasım 2026). Şube kapatılınca bekleyen kurulum kodları aynı işlemde iptal olur (kasa kuramaz)
  */
@@ -365,7 +367,8 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
       active: d.active ?? mevcut.active,
       openedOn: d.openedOn === undefined ? mevcut.openedOn : d.openedOn,
     };
-    // Asıl yöneticinin işleri (docs/ROLLER.md › Asıl yönetici): değişmeyen alan sormaz, ad ya da oran değiştiren yönetici geçer
+    // Asıl yöneticinin işleri (docs/ROLLER.md › Asıl yönetici): değişmeyen alan sormaz, ad ya da oran değiştiren yönetici
+    // geçer; değişen korunan alan yalnız konsol oturumuyla (asıl yönetici ladmin'den gelirse "Bu iş Yönetim konsolunda yapılır")
     if (mevcut.active !== yeni.active) await requireAnaAdmin("subeKapatma");
     if (mevcut.posSource !== yeni.posSource || mevcut.kind !== yeni.kind) await requireAnaAdmin("kasaProgrami");
     const emailChange = d.email !== undefined && yeni.kind === "fiziksel";

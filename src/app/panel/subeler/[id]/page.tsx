@@ -20,6 +20,7 @@ import { modposKeyProblem } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
 import { isAnaAdmin } from "@/lib/asil-yonetici";
 import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
+import { konsolSubeYolu, panelden } from "@/lib/yonetim-host";
 import { shiftPresetsOf } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
 import { branchSettingView } from "@/server/branch-settings-view";
@@ -94,6 +95,9 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
   // Kasa bağlantısı (çok şube): kasası AsilPOS olan şubede ya da AsilPOS kurulumu yapılmış şubede (deneme günleri) AsilPOS
   // kartı (şubenin kendi geçiş günü ve anahtarı), ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveAsilposSecret) aynı
   // kurala bakar
+  // Kasa anahtarı Yönetim konsolunda değişir (K-C): asıl yöneticiye konsolun şube sayfasına bağlantı, öteki yöneticiye yalnız
+  // cümle. Adres yonetim-host.ts kurucusundan (YONETIM_URL yoksa aynı adresteki /yonetim)
+  const konsolUrl = isAnaAdmin(me) ? panelden(`${konsolSubeYolu(branch.id)}#asilpos`) : null;
   const [{ ids: tillIds }, [installed]] = await Promise.all([
     loadPosTillIds(),
     getDb().select({ id: dbs.asilposInstalls.id }).from(dbs.asilposInstalls).where(eq(dbs.asilposInstalls.branchId, branch.id)).limit(1),
@@ -151,11 +155,11 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
               till: tillHere,
               legacy: branch.id === LEGACY_POS_BRANCH_ID,
             }}
-            // Kasa anahtarını döndürmek ve silmek yalnız asıl yöneticide (saveAsilposSecret aynı denetimi yapar)
-            anaAdmin={isAnaAdmin(me)}
+            // Burada salt okunur: döndürmek ve silmek Yönetim konsolunda (saveAsilposSecret yalnız konsol oturumunu kabul eder)
+            konsolUrl={konsolUrl}
           />
         ) : (asilpos.secrets.secret ?? "none") !== "none" ? (
-          <AsilposOldSecretCard branchId={branch.id} anaAdmin={isAnaAdmin(me)} />
+          <AsilposOldSecretCard branchId={branch.id} konsolUrl={konsolUrl} />
         ) : null}
         {/* Kasası ModPOS olmayan şubede de, başka şube bu şubenin ay yedeğini kullanıyorsa ("X ile aynı"; oradaki "X şubesinde
             düzenle" buraya gelir) */}

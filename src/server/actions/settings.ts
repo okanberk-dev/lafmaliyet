@@ -195,11 +195,12 @@ export async function saveStockValuationStart(input: string | null) {
 // ---------------------------------------------------------------- Kullanıcılar
 //
 // Yönetici hesapları (docs/ROLLER.md › Yönetici hesapları; 28 Kasım 2026): bir yönetici hesabına dokunan iş (işlemden
-// önceki ya da sonraki rol yönetici) yalnız asıl yöneticinindir: requireAnaAdmin(yonetici…), hedef okunduktan hemen
-// sonra, parola sorusundan ve ilk yazımdan önce. Öteki yöneticiler müdür, muhasebeci ve personel hesaplarını bugünkü
-// gibi yönetir, başka bir yöneticinin yalnız adını değiştirebilir; kendi hesapları Hesabım'da (auth.ts) değişmez.
-// Eylemler Yönetim konsolunun oturumunu da kabul eder (konsol › Yöneticiler bu eylemleri çağırır; panel adresinde konsol
-// çerezi yok, orada davranış aynı): `(await getYonetimUser()) ?? (await requireAdmin())`.
+// önceki ya da sonraki rol yönetici) yalnız asıl yöneticinindir ve yalnız Yönetim konsolunda yapılır:
+// requireAnaAdmin(yonetici…) yalnız konsol oturumunu kabul eder (K-C; asıl yönetici ladmin'den gelirse "Bu iş Yönetim
+// konsolunda yapılır"), hedef okunduktan hemen sonra, parola sorusundan ve ilk yazımdan önce. Öteki yöneticiler ve asıl
+// yönetici ladmin'de müdür, muhasebeci ve personel hesaplarını bugünkü gibi yönetir, başka bir yöneticinin yalnız adını
+// değiştirebilir; kendi hesapları Hesabım'da (auth.ts) değişmez. Eylemler iki oturumu da kabul eder (konsol ›
+// Yöneticiler bu eylemleri çağırır; panel adresinde konsol çerezi yok): `(await getYonetimUser()) ?? (await requireAdmin())`.
 
 /** Personelin şubesi: "" / null bütün şubeler; verilmezse (Aktif anahtarı) değişmez */
 const zUserBranch = z

@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
 import type { Role } from "@/lib/constants";
-import { isAnaAdmin, yalnizAsilYonetici, type AsilYoneticiIsi } from "@/lib/asil-yonetici";
+import { isAnaAdmin, KONSOLDA_YAPILIR, yalnizAsilYonetici, type AsilYoneticiIsi } from "@/lib/asil-yonetici";
 import { BRANCH_ROLES, can, homeFor, managerWithoutBranch, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
 import { YONETIM_GIRIS, YONETIM_OTURUM_BITTI } from "@/lib/yonetim-host";
 import { getDb, schema as s } from "@/server/db";
@@ -188,20 +188,17 @@ export async function requireCan(cap: Capability): Promise<CurrentUser> {
 }
 
 /**
- * Asıl yönetici (docs/ROLLER.md › Asıl yönetici; src/lib/asil-yonetici.ts): yönetici ve e-postası asıl yöneticininki
- * (`isAnaAdmin`). Önce yönetici kapısı (başka rol kendi ana ekranına, muhasebeci "salt okunur"); asıl yönetici olmayan
- * yöneticiye eylemde okunur hata: "Bu işlemi yalnız asıl yönetici yapar: …" (`is`: hangi işlem). Arayüz aynı `isAnaAdmin`
- * ile düğmeleri kapatır
+ * Asıl yöneticinin işleri (docs/ROLLER.md › Asıl yönetici; src/lib/asil-yonetici.ts) YALNIZ Yönetim konsolunun geçerli
+ * oturumuyla (getYonetimUser: asıl yönetici, hesap etkin, oturum sürümü aynı; docs/planlar/yonetim-konsolu.md › K-C).
+ * Panel (ladmin) oturumu hiçbir zaman geçmez: önce yönetici kapısı (oturumsuz istek girişe, başka rol kendi ana ekranına,
+ * muhasebeci "salt okunur"); asıl yönetici ladmin'den gelirse "Bu iş Yönetim konsolunda yapılır", öteki yönetici "Bu
+ * işlemi yalnız asıl yönetici yapar: …" (`is`: hangi işlem). Eylemler bunu ilk yazımdan ve parola sorusundan önce çağırır
  */
 export async function requireAnaAdmin(is: AsilYoneticiIsi = "subeAcma"): Promise<CurrentUser> {
-  // Yönetim konsolunun oturumu (asıl yönetici) varsa onunla: konsoldan çağrılan şube eylemleri. Bu aşamada panel yolu da
-  // kalır (ladmin değişmez; docs/planlar/yonetim-konsolu.md › K-A); panel adresinde konsol çerezi olmadığı için orada
-  // davranış aynı. Sonraki adımda (K-C) yalnız konsol oturumu kalır
   const konsol = await getYonetimUser();
   if (konsol) return konsol;
   const user = await requireAdmin();
-  if (!isAnaAdmin(user)) throw new UserError(yalnizAsilYonetici(is));
-  return user;
+  throw new UserError(isAnaAdmin(user) ? KONSOLDA_YAPILIR : yalnizAsilYonetici(is));
 }
 
 // ---------------------------------------------------------------- Yönetim konsolu

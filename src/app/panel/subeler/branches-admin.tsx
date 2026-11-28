@@ -1,27 +1,21 @@
 "use client";
 
-import { Building2, Globe, MonitorDown, Settings2 } from "lucide-react";
+import { Building2, Globe, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { KonsolNotu } from "@/components/panel/konsol-notu";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox, Field, Input, NumberInput, Select } from "@/components/ui/form";
+import { Field, Input, NumberInput } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
-import { asilYoneticiNotu } from "@/lib/asil-yonetici";
 import {
   BRANCH_KIND_LABEL,
-  BRANCH_KINDS,
   BRANCH_NAME_MAX,
   BRANCH_POS_SOURCE_LABEL,
-  BRANCH_POS_SOURCES,
-  branchSourceError,
-  changedGuardedFields,
   DEFAULT_POS_RATE,
   FIXED_BRANCH_IDS,
   posRateError,
@@ -33,7 +27,6 @@ import { hasFeature, offFeatureLabels } from "@/lib/branch-features";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
-import { POS_OFF_CONFIRM_PREFIX } from "@/lib/pos/tills";
 import type { ActionResult } from "@/server/actions/util";
 
 /** Kapalı özelliklerin çip metni (yoksa null; `offFeatureLabels`) */
@@ -44,10 +37,11 @@ function offFeatures(b: BranchRow): string | null {
 
 /*
  * Şubeler ve kanallar (/panel/subeler; docs/SUBE.md). Liste + satıra dokununca "Düzenle" penceresi. Kurallar saf
- * dosyadan (src/lib/branches.ts) okunur, böylece pencere sunucuyla aynı şeyi söyler: kimlik bir daha değişmez, Tuzla ve
- * laffogato.net silinemez / kapatılamaz, online kanalın kasası olmaz. Şubenin banka POS oranı ve e-postası da burada (her
- * yönetici). Şube açmak ve kasa kurmak Şube ekleme sayfasında; kapatmak, silmek ve kasa programını (türünü) değiştirmek
- * yalnız asıl yöneticide: öteki yöneticiye o alanlar kapalı ve nedeni yazılı (sunucu aynı denetimi yapar, requireAnaAdmin).
+ * dosyadan (src/lib/branches.ts) okunur, böylece pencere sunucuyla aynı şeyi söyler: kimlik bir daha değişmez, online
+ * kanalın kasası olmaz. Burada her yönetici şubenin adını, açılış gününü, banka POS oranını ve e-postasını düzenler.
+ * Şube açmak, kapatmak, silmek, türü ve kasa programı Yönetim konsolunda (docs/planlar/yonetim-konsolu.md › K-C): pencere
+ * bunları salt okunur gösterir ve hiç göndermez (updateBranch verilmeyen alanın eskisini korur); yerlerinde "Bu iş
+ * Yönetim konsolunda yapılır", asıl yöneticiye konsolun ilgili sayfasına bağlantıyla (sunucu da reddeder, requireAnaAdmin).
  */
 
 /** `posRate`: yüzde metni ("2", "1,5"); kaydederken 0,02 gibi orana çevrilir */
@@ -61,22 +55,28 @@ const oranOf = (text: string) => {
   return v === null ? Number.NaN : Math.round(v * 100) / 10_000;
 };
 
+/**
+ * Pencerenin gönderdiği alanlar: tür, kasa programı ve açık / kapalı hiç gitmez (Yönetim konsolunda değişir; sunucuda
+ * eskisi kalır). Silme de konsolda
+ */
 export interface BranchActions {
   updateAction: (input: {
     id: string;
     name?: string;
-    /** Tür, kasa programı ve açık / kapalı: yalnız pencerede değiştiyse (changedGuardedFields); verilmezse eskisi kalır */
-    kind?: BranchKind;
-    posSource?: BranchPosSource;
     openedOn?: string | null;
-    active?: boolean;
     posRate?: number;
     /** Şubenin e-postası (fiziksel; boş metin siler, verilmezse eskisi kalır) */
     email?: string;
-    /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (sunucu posOffConfirmText ile sorar) */
-    confirmPosOff?: boolean;
   }) => Promise<ActionResult<{ id: string }>>;
-  deleteAction: (input: { id: string }) => Promise<ActionResult<{ id: string }>>;
+}
+
+/**
+ * Yönetim konsoluna bağlantılar (yalnız sayfayı açan asıl yöneticiye; sunucu src/lib/yonetim-host.ts › panelden ile
+ * kurar): Şubeler ve kasalar ve her şubenin Şube işlemleri sayfası. Öteki yöneticiye null: yalnız cümle
+ */
+export interface KonsolBaglantilari {
+  subeler: string;
+  sube: Record<string, string>;
 }
 
 /**
@@ -90,62 +90,40 @@ export function BranchesAdmin({
   parasutText = {},
   emails = {},
   updateAction,
-  deleteAction,
-  anaAdmin = false,
+  konsol = null,
 }: {
   rows: BranchRow[];
   settingsText?: Record<string, string>;
   parasutText?: Record<string, string>;
   /** Şubelerin kayıtlı e-postası (düzenleme penceresi buradan dolar) */
   emails?: Record<string, string | null>;
-  /** Asıl yönetici: şubeyi kapatır, siler, kasa programını değiştirir; Şube ekleme bağlantısı */
-  anaAdmin?: boolean;
+  /** Yönetim konsoluna bağlantılar (yalnız asıl yöneticiye) */
+  konsol?: KonsolBaglantilari | null;
 } & BranchActions) {
   const [acik, setAcik] = useState<Taslak | null>(null);
-  const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
-  // AsilPOS'tan ModPOS'a dönüş onayı (çok şube): sunucunun sorduğu metin, kaydedilecek taslak ve pencerenin ilk hâli
-  const [posOff, setPosOff] = useState<{ taslak: Taslak; ilk: Taslak; text: string } | null>(null);
   const [bekliyor, basla] = useActionTransition();
 
   function duzenle(b: BranchRow) {
     setAcik({ id: b.id, name: b.name, kind: b.kind, posSource: b.posSource, openedOn: b.openedOn ?? "", active: b.active, posRate: oranMetni(b.posRate), email: emails[b.id] ?? "" });
   }
 
-  /** `ilk`: pencerenin açıldığı hâl; açık / kapalı, tür ve kasa programı yalnız ondan farklıysa gider (changedGuardedFields) */
-  function kaydet(t: Taslak, ilk: Taslak, confirmPosOff = false) {
+  /** Açık / kapalı, tür ve kasa programı gitmez: Yönetim konsolunda değişir, sunucuda eskisi kalır */
+  function kaydet(t: Taslak) {
     // Online kanalın kasası yok: POS oranı ve e-posta yalnız fiziksel şubede gider
     const fiziksel = t.kind === "fiziksel";
     const gonder = {
       id: t.id,
       name: t.name.trim(),
-      ...changedGuardedFields(ilk, t),
       openedOn: t.openedOn || null,
       ...(fiziksel ? { posRate: oranOf(t.posRate), email: t.email.trim() } : {}),
-      ...(confirmPosOff ? { confirmPosOff } : {}),
     };
     basla(async () => {
       const sonuc = await updateAction(gonder);
       if (!sonuc.ok) {
-        // Kasası AsilPOS olan şube ModPOS'a dönüyor: geçiş günü silinecek, onay sorulur
-        if (!confirmPosOff && sonuc.error.startsWith(POS_OFF_CONFIRM_PREFIX)) return void setPosOff({ taslak: t, ilk, text: sonuc.error.slice(POS_OFF_CONFIRM_PREFIX.length).trim() });
         toast.error(sonuc.error);
         return;
       }
-      setPosOff(null);
       toast.success("Şube güncellendi");
-      setAcik(null);
-    });
-  }
-
-  function sil(b: BranchRow) {
-    basla(async () => {
-      const sonuc = await deleteAction({ id: b.id });
-      if (!sonuc.ok) {
-        toast.error(sonuc.error);
-        return;
-      }
-      toast.success("Şube silindi");
-      setSilinecek(null);
       setAcik(null);
     });
   }
@@ -156,18 +134,8 @@ export function BranchesAdmin({
         <CardHeader
           icon={<Building2 />}
           title="Şubeler ve kanallar"
-          description={
-            anaAdmin
-              ? "Ciro, kasa ve giderler bu listeye göre ayrılır. Yeni şube ve kasa kurulumu Şube ekleme sayfasında."
-              : "Ciro, kasa ve giderler bu listeye göre ayrılır. Şube açmak ve kasa kurmak yalnız asıl yöneticinin işidir."
-          }
-          actions={
-            anaAdmin ? (
-              <ButtonLink href="/panel/sube-ekleme" size="sm" variant="secondary">
-                <MonitorDown className="size-4" aria-hidden="true" /> Şube ekleme
-              </ButtonLink>
-            ) : undefined
-          }
+          description="Ciro, kasa ve giderler bu listeye göre ayrılır."
+          meta={<KonsolNotu href={konsol?.subeler ?? null} konu="Şube açmak ve kasa kurmak" />}
         />
         {rows.length ? (
           <ul className="divide-y divide-line border-t border-line">
@@ -197,75 +165,37 @@ export function BranchesAdmin({
             ))}
           </ul>
         ) : (
-          <EmptyState
-            title="Henüz şube yok"
-            description={anaAdmin ? "İlk şubeyi Şube ekleme sayfasından açın." : "Şubeyi asıl yönetici açar."}
-            action={anaAdmin ? <ButtonLink href="/panel/sube-ekleme">Şube ekleme</ButtonLink> : undefined}
-          />
+          <EmptyState title="Henüz şube yok" action={<KonsolNotu href={konsol?.subeler ?? null} konu="Şube açmak" />} />
         )}
       </Card>
 
       {acik ? (
-        <BranchDialog
-          taslak={acik}
-          anaAdmin={anaAdmin}
-          bekliyor={bekliyor}
-          onClose={() => setAcik(null)}
-          onSave={(t) => kaydet(t, acik)}
-          onDelete={anaAdmin ? () => setSilinecek(rows.find((r) => r.id === acik.id) ?? null) : undefined}
-        />
+        <BranchDialog taslak={acik} konsolUrl={konsol?.sube[acik.id] ?? null} bekliyor={bekliyor} onClose={() => setAcik(null)} onSave={kaydet} />
       ) : null}
-
-      <ConfirmDialog
-        open={!!posOff}
-        onClose={() => setPosOff(null)}
-        onConfirm={() => posOff && kaydet(posOff.taslak, posOff.ilk, true)}
-        pending={bekliyor}
-        title="Kasa ModPOS'a dönsün mü?"
-        description={posOff?.text ?? ""}
-      />
-
-      <ConfirmDialog
-        open={!!silinecek}
-        onClose={() => setSilinecek(null)}
-        onConfirm={() => silinecek && sil(silinecek)}
-        pending={bekliyor}
-        title={`${silinecek?.name ?? "Şube"} silinsin mi?`}
-        description="Yalnız hiç kaydı olmayan şube silinir. Verisi olan şubeyi silmek yerine kapatın."
-      />
     </div>
   );
 }
 
 function BranchDialog({
   taslak,
-  anaAdmin,
+  konsolUrl,
   bekliyor,
   onClose,
   onSave,
-  onDelete,
 }: {
   taslak: Taslak;
-  /** Asıl yönetici: tür, kasa programı ve açık / kapalı durumu değişir, şube silinir */
-  anaAdmin: boolean;
+  /** Şubenin Yönetim konsolundaki Şube işlemleri sayfası (yalnız asıl yöneticiye; öteki yöneticiye null) */
+  konsolUrl: string | null;
   bekliyor: boolean;
   onClose: () => void;
   onSave: (t: Taslak) => void;
-  /** Yalnız asıl yöneticiye */
-  onDelete?: () => void;
 }) {
   const [t, setT] = useState(taslak);
   const sabit = FIXED_BRANCH_IDS.includes(t.id);
-  const kaynakHata = branchSourceError(t.kind, t.posSource);
   const adHata = t.name.trim() ? null : "Şube adı gerekli";
   const oranHata = t.kind === "fiziksel" ? posRateError(oranOf(t.posRate)) : null;
   const epostaHata = t.kind === "fiziksel" && t.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t.email.trim()) ? "E-posta adresi geçersiz" : null;
-  const hata = adHata ?? kaynakHata ?? oranHata ?? epostaHata;
-
-  /** Tür değişince kasa kaynağı kendiliğinden uyar: online kanalın kasası olmaz */
-  function turDegis(kind: BranchKind) {
-    setT((o) => ({ ...o, kind, posSource: kind === "online" ? "yok" : o.posSource === "yok" ? "modpos" : o.posSource }));
-  }
+  const hata = adHata ?? oranHata ?? epostaHata;
 
   return (
     <Dialog
@@ -273,10 +203,6 @@ function BranchDialog({
       onClose={onClose}
       title={t.name || taslak.name}
       description={`Kimlik: ${t.id} (değişmez)`}
-      footerStart={onDelete && !sabit ? <Button variant="danger" onClick={onDelete} disabled={bekliyor}>
-            Sil
-          </Button> : undefined}
-      footerStartOnPhone="body"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={bekliyor}>
@@ -291,24 +217,6 @@ function BranchDialog({
       <div className="space-y-4">
         <Field label="Şube adı" htmlFor="sube-ad" error={adHata}>
           <Input id="sube-ad" value={t.name} maxLength={BRANCH_NAME_MAX} autoFocus onChange={(e) => setT((o) => ({ ...o, name: e.target.value }))} />
-        </Field>
-        <Field label="Tür" htmlFor="sube-tur" hint={sabit ? "Bu kaydın türü değiştirilemez." : anaAdmin ? undefined : asilYoneticiNotu("kasaProgrami")}>
-          <Select id="sube-tur" value={t.kind} disabled={sabit || !anaAdmin} onChange={(e) => turDegis(e.target.value as BranchKind)}>
-            {BRANCH_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {BRANCH_KIND_LABEL[k]}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Kasa kaynağı" htmlFor="sube-kasa" error={kaynakHata} hint={anaAdmin ? "Gün sonu hangi sistemden gelir." : `Gün sonu hangi sistemden gelir. ${asilYoneticiNotu("kasaProgrami")}`}>
-          <Select id="sube-kasa" value={t.posSource} disabled={t.kind === "online" || !anaAdmin} onChange={(e) => setT((o) => ({ ...o, posSource: e.target.value as BranchPosSource }))}>
-            {BRANCH_POS_SOURCES.map((p) => (
-              <option key={p} value={p}>
-                {BRANCH_POS_SOURCE_LABEL[p]}
-              </option>
-            ))}
-          </Select>
         </Field>
         {t.kind === "fiziksel" ? (
           <Field
@@ -328,18 +236,23 @@ function BranchDialog({
             label="Şubenin e-postası"
             htmlFor="sube-eposta"
             error={epostaHata}
-            hint="Şubenin panel hesabı ve kasa kurulum bağlantısı bu adresle. Kaydetmek hesap açmaz, bağlantı göndermez (Şube ekleme › Bilgisayara kur)."
+            hint="Şubenin panel hesabı ve kasa kurulum bağlantısı bu adresle. Kaydetmek hesap açmaz, bağlantı göndermez (kasa kurulumu Yönetim konsolunda)."
           >
             <Input id="sube-eposta" type="email" inputMode="email" autoComplete="off" value={t.email} onChange={(e) => setT((o) => ({ ...o, email: e.target.value }))} />
           </Field>
         ) : null}
-        <Checkbox
-          label="Açık"
-          checked={t.active}
-          disabled={sabit || !anaAdmin}
-          onChange={(e) => setT((o) => ({ ...o, active: e.target.checked }))}
-        />
-        {!anaAdmin && !sabit ? <Notice tone="neutral" size="sm" title="Kapatmak, silmek ve kasa programını değiştirmek asıl yöneticinin işidir." /> : null}
+        {/* Salt okunur: tür, kasa programı ve açık / kapalı Yönetim konsolunda değişir (pencere bunları göndermez) */}
+        <div className="space-y-2 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+            <dt className="text-ink-mute">Tür</dt>
+            <dd className="text-ink">{BRANCH_KIND_LABEL[t.kind]}</dd>
+            <dt className="text-ink-mute">Kasa programı</dt>
+            <dd className="text-ink">{BRANCH_POS_SOURCE_LABEL[t.posSource]}</dd>
+            <dt className="text-ink-mute">Durum</dt>
+            <dd className="text-ink">{t.active ? "Açık" : "Kapalı"}</dd>
+          </dl>
+          <KonsolNotu href={konsolUrl} konu={sabit ? "Tür ve kasa programı" : "Kapatmak, silmek, tür ve kasa programı"} />
+        </div>
       </div>
     </Dialog>
   );

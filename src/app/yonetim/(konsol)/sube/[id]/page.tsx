@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: "Şube işlemleri" };
  * Yönetim konsolu › Şubeler ve kasalar › şube (docs/SUBE.md › Şube işlemleri; docs/planlar/yonetim-konsolu.md › K-A):
  * şubeyi kapatma ve yeniden açma, tür ve kasa programı, AsilPOS'a geçiş günü, kasa anahtarını döndürme ve silme, eski
  * anahtarı silme, şubeyi silme. Var olan sunucu eylemleri (updateBranch, saveAsilposSwitchDay, saveAsilposSecret,
- * deleteBranch; hepsi requireAnaAdmin ile konsol oturumunu kabul eder) ve ladmin'deki bileşenler
+ * deleteBranch; requireAnaAdmin yalnız konsol oturumunu kabul eder) ve ladmin'le ortak bileşenler
  * (src/components/sube-islemleri). Her yıkıcı işlem onaylı, kasa anahtarı parolayla; son günlerde kasadan gün sonu gelen
  * şubede (canlı) sayfanın başında ve pencerelerde kırmızı uyarı. Sayfa requireYonetim ister
  */
@@ -80,9 +80,9 @@ async function Icerik({ params }: { params: PageProps<"/yonetim/sube/[id]">["par
         <Notice tone="neutral" size="sm" title="Geçiş günü yalnız kasa programı AsilPOS olan şubede seçilir." />
       ) : null}
       {v.asilpos ? (
-        <AsilposBranchCard data={v.asilpos} anaAdmin yer="konsol" canli={canli} />
+        <AsilposBranchCard data={v.asilpos} yer="konsol" canli={canli} />
       ) : v.eskiAnahtar ? (
-        <AsilposOldSecretCard branchId={branch.id} anaAdmin />
+        <AsilposOldSecretCard branchId={branch.id} yer="konsol" />
       ) : null}
       <SilKarti branch={branch} silinemez={v.silinemez} canli={canli} />
     </div>

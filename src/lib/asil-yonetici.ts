@@ -5,7 +5,8 @@
 // yöneticilere karşı korunur. Yönetici hesaplarını da yalnız o yönetir (yonetici* işleri; Yönetim konsolu › Yöneticiler):
 // öteki yöneticiler müdür, muhasebeci ve personel hesaplarını bugünkü gibi yönetir, başka bir yöneticinin yalnız adını
 // değiştirebilir. Tek tanım burada: sunucu eylemleri `requireAnaAdmin` (src/server/auth/dal.ts) ve buradaki ret
-// metinleriyle, arayüz aynı `isAnaAdmin` ile karar verir. Bu dosya saf (tests/asil-yonetici.test.ts).
+// metinleriyle, arayüz aynı `isAnaAdmin` ile karar verir. Bu işler yalnız Yönetim konsolunun oturumuyla yapılır (K-C):
+// asıl yönetici ladmin'den gelirse KONSOLDA_YAPILIR alır. Bu dosya saf (tests/asil-yonetici.test.ts).
 //
 // Kodda eski ad ("ana yönetici": isAnaAdmin, LADMIN_ANA_ADMIN) kalır; arayüzde ve belgede tek ad "Asıl yönetici".
 
@@ -59,6 +60,13 @@ export type AsilYoneticiIsi = keyof typeof ASIL_YONETICI_ISLERI;
 export function yalnizAsilYonetici(is: AsilYoneticiIsi): string {
   return `Bu işlemi yalnız asıl yönetici yapar: ${ASIL_YONETICI_ISLERI[is]}`;
 }
+
+/**
+ * Asıl yöneticinin işleri yalnız Yönetim konsolunun oturumuyla yapılır (docs/planlar/yonetim-konsolu.md › K-C): asıl
+ * yönetici ladmin'in (panel) oturumuyla gelirse eylem bu cümleyle reddeder; ladmin'de taşınan düğmelerin yerinde de bu
+ * cümle durur (asıl yöneticiye konsolun ilgili sayfasına bağlantıyla). Öteki yönetici yalnizAsilYonetici'yi alır
+ */
+export const KONSOLDA_YAPILIR = "Bu iş Yönetim konsolunda yapılır";
 
 /** Adres asıl yöneticinin adresi mi (büyük-küçük harf ve boşluk fark etmez) */
 export function isAnaAdminEmail(email: string | null | undefined, env: Env = process.env): boolean {

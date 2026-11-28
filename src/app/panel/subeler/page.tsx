@@ -7,7 +7,8 @@ import { CASH_REPORT_GROUP, PARASUT_GROUP } from "@/lib/branch-settings/groups";
 import { settingMode, settingModeText } from "@/lib/branch-settings/rules";
 import { tillBranches } from "@/lib/branches";
 import { isAnaAdmin } from "@/lib/asil-yonetici";
-import { deleteBranch, updateBranch } from "@/server/actions/branches";
+import { konsolSubeYolu, panelden, YONETIM_YOLU } from "@/lib/yonetim-host";
+import { updateBranch } from "@/server/actions/branches";
 import { requireAdmin } from "@/server/auth/dal";
 import { settingLinks } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
@@ -21,8 +22,8 @@ export const metadata: Metadata = { title: "Şubeler" };
  * Şubeler ve kanallar (docs/SUBE.md): fiziksel şubeler (Tuzla, Marina) ile laffogato.net'in online kanalı tek
  * listede. Yalnız yönetici. Menü, reçete ve hammadde ortaktır; burada yalnız şubenin kimliği, adı, kasa kaynağı,
  * e-postası ve açık / kapalı durumu tutulur; şubeye göre değişen ayarlar her şubenin "Ayarlar"ında (/panel/subeler/[id]).
- * Şube açmak ve kasa kurmak Şube ekleme sayfasında (/panel/sube-ekleme); kapatmak, silmek ve kasa programını değiştirmek
- * burada, ama yalnız asıl yöneticide (docs/ROLLER.md › Asıl yönetici)
+ * Şube açmak, kapatmak, silmek, türü, kasa programı ve kasa kurmak yalnız asıl yöneticinin işi ve yalnız Yönetim
+ * konsolunda (docs/planlar/yonetim-konsolu.md › K-C): burada salt okunur, yerlerinde "Bu iş Yönetim konsolunda yapılır"
  */
 export default function BranchesPage() {
   return (
@@ -31,7 +32,7 @@ export default function BranchesPage() {
         path="/panel/subeler"
         title="Şubeler"
         description="Fiziksel şubeler ve laffogato.net'in online kanalı. Ciro, kasa ve giderler bu listeye göre ayrılır."
-        more="Menü, reçete, hammadde ve tedarikçiler bütün şubelerde ortaktır; şubeye göre değişen yalnız satış fiyatı ve Satışta / Tükendi durumudur. Bir şubenin kimliği eklendikten sonra değişmez: kayıtlar ona bağlanır. Tuzla ve laffogato.net silinemez, kapatılamaz. Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasa kurmak yalnız asıl yöneticinin işidir."
+        more="Menü, reçete, hammadde ve tedarikçiler bütün şubelerde ortaktır; şubeye göre değişen yalnız satış fiyatı ve Satışta / Tükendi durumudur. Bir şubenin kimliği eklendikten sonra değişmez: kayıtlar ona bağlanır. Tuzla ve laffogato.net silinemez, kapatılamaz. Şube açmak, kapatmak, silmek, kasa programını değiştirmek ve kasa kurmak asıl yöneticinin işidir ve Yönetim konsolunda yapılır; burada şubenin adı, açılış günü, POS oranı ve e-postası düzenlenir."
       />
       <Suspense fallback={<PageSkeleton rows={3} />}>
         <BranchesContent />
@@ -61,9 +62,9 @@ async function BranchesContent() {
       parasutText={parasutText}
       emails={Object.fromEntries(emailRows.map((r) => [r.id, r.email]))}
       updateAction={updateBranch}
-      deleteAction={deleteBranch}
-      // Asıl yönetici (sunucuda; eylemler aynı denetimi kullanır): kapatma, silme, kasa programı ve Şube ekleme bağlantısı
-      anaAdmin={isAnaAdmin(me)}
+      // Yönetim konsoluna bağlantılar yalnız asıl yöneticiye (sunucuda; adres yonetim-host.ts kurucusundan). Eylemler
+      // asıl yöneticinin işini yalnız konsol oturumuyla kabul eder (requireAnaAdmin)
+      konsol={isAnaAdmin(me) ? { subeler: panelden(YONETIM_YOLU), sube: Object.fromEntries(rows.map((b) => [b.id, panelden(konsolSubeYolu(b.id))])) } : null}
     />
   );
 }
