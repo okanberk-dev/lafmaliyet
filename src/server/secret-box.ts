@@ -7,12 +7,12 @@ import { KURULUM_SIFRE_AMACI } from "@/lib/asilpos/eski-adlar";
 /**
  * Veritabanında duran gizli değerler (Paraşüt belirteçleri ve panelden girilen client_secret, iki adımlı doğrulama
  * anahtarları, Web Push'un VAPID özel anahtarı, karaoke hatırlatması gidene kadar misafirin e-posta adresi, şube başına
- * ayarların gizli alanları) AES-256-GCM ile şifrelenir. Anahtar AUTH_SECRET'tan, kullanım amacına göre ayrı türetilir; AUTH_SECRET değişirse bu değerler
+ * ayarların gizli alanları, kasaya teslim edilene kadar ilk personelin PIN'leri) AES-256-GCM ile şifrelenir. Anahtar AUTH_SECRET'tan, kullanım amacına göre ayrı türetilir; AUTH_SECRET değişirse bu değerler
  * okunamaz (Paraşüt belirteci yeniden alınır, client_secret panelden yeniden girilir, iki adımlı doğrulama yeniden
  * kurulur, bildirim anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur; bekleyen karaoke
  * hatırlatmaları gönderilmeden düşer).
  */
-export type SealPurpose = "parasut-token" | "parasut-connect" | "parasut-settings" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder" | "branch-settings" | typeof KURULUM_SIFRE_AMACI;
+export type SealPurpose = "parasut-token" | "parasut-connect" | "parasut-settings" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder" | "branch-settings" | "asilpos-ilk-personel" | typeof KURULUM_SIFRE_AMACI;
 
 function key(purpose: SealPurpose): Buffer {
   const secret = process.env.AUTH_SECRET;

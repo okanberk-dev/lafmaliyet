@@ -1,5 +1,6 @@
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 
+import { ACILIS_AMACI, BELIRTEC_DAKIKA } from "@/lib/asilpos/kasa-acilis";
 import type { Role } from "@/lib/constants";
 import { isRole } from "@/lib/roles";
 
@@ -110,6 +111,33 @@ export async function verifyPending(token: string | undefined): Promise<{ sub: s
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
     if (payload.typ !== "2fa" || !payload.sub || typeof payload.sv !== "number") return null;
     return { sub: payload.sub, sv: payload.sv, next: typeof payload.next === "string" ? payload.next : "" };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Kasa açılışının belirteci (docs/ASILPOS.md › Kasa açılışı): asıl yönetici kasada ladmin girişini geçince verilir,
+ * şubeye bağlama ucu ister. Oturum değildir, çerez olmaz (verifySession `typ` başka olduğu için kabul etmez); kişinin
+ * oturum sürümünü ve kasanın kimliğini taşır, BELIRTEC_DAKIKA dakika geçerli. Parola değişir ya da oturumlar kapatılırsa
+ * geçersiz olur (sürüm tutmaz). `now`: testler süresi geçmiş belirteç üretebilsin
+ */
+export async function signKasaAcilis(payload: { sub: string; sv: number; kasa: string }, now: Date = new Date()) {
+  const iat = Math.floor(now.getTime() / 1000);
+  return new SignJWT({ sv: payload.sv, kasa: payload.kasa, typ: ACILIS_AMACI })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(payload.sub)
+    .setIssuedAt(iat)
+    .setExpirationTime(iat + BELIRTEC_DAKIKA * 60)
+    .sign(secretKey());
+}
+
+export async function verifyKasaAcilis(token: string | undefined, now: Date = new Date()): Promise<{ sub: string; sv: number; kasa: string } | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"], currentDate: now });
+    if (payload.typ !== ACILIS_AMACI || !payload.sub || typeof payload.sv !== "number" || typeof payload.kasa !== "string") return null;
+    return { sub: payload.sub, sv: payload.sv, kasa: payload.kasa };
   } catch {
     return null;
   }

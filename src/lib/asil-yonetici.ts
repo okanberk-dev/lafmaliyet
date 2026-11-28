@@ -1,6 +1,7 @@
 // Asıl yönetici (docs/ROLLER.md › Asıl yönetici; sahibin kararı, 28 Kasım 2026): yönetici rolünde ve e-postası
 // LADMIN_ANA_ADMIN (varsayılan info@nextgenlab.com.tr) olan tek hesap. Şubeyi açmak, kapatmak, silmek, kasa programını
-// değiştirmek, kasasını kurmak, kasa anahtarını ve AsilPOS'a geçiş gününü değiştirmek yalnız onundur; hesabı öteki
+// değiştirmek, kasasını kurmak ve serbest bırakmak, ilk personelini ayarlamak, kasa anahtarını ve AsilPOS'a geçiş gününü
+// değiştirmek ve kasayı açılışta şubeye bağlamak (docs/ASILPOS.md › Kasa açılışı) yalnız onundur; hesabı öteki
 // yöneticilere karşı korunur. Tek tanım burada: sunucu eylemleri `requireAnaAdmin` (src/server/auth/dal.ts) ve buradaki
 // ret metinleriyle, arayüz aynı `isAnaAdmin` ile karar verir. Bu dosya saf (tests/asil-yonetici.test.ts).
 //
@@ -25,6 +26,8 @@ export const ASIL_YONETICI_ISLERI = {
   subeKapatma: "şubeyi kapatmak ya da yeniden açmak",
   kasaProgrami: "şubenin kasa programını değiştirmek",
   kasaKurma: "kasa kurmak (kurulum bağlantısı göndermek)",
+  kasaSerbest: "şubenin kasasını serbest bırakmak",
+  ilkPersonel: "şubenin ilk personelini (patron, müdür, barista PIN'leri) ayarlamak",
   kasaAnahtari: "kasa anahtarını değiştirmek ya da silmek",
   gecisGunu: "AsilPOS'a geçiş gününü değiştirmek",
   hesapDuzenleme: "asıl yöneticinin e-postasını, parolasını, rolünü ya da erişimini değiştirmek",

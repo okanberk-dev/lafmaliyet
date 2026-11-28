@@ -2,8 +2,10 @@ import "server-only";
 
 import { connection, type NextRequest } from "next/server";
 
+import { kodKasaBilgisi } from "@/lib/asilpos/kasa-acilis";
 import { KOD_RE } from "@/lib/asilpos/kurulum";
 import { clientIp, createLimiter } from "@/server/auth/rate-limit";
+import { getDb } from "@/server/db";
 import { redeemInstallCode } from "@/server/asilpos/kurulum";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -17,6 +19,7 @@ const ipLimit = createLimiter({ limit: 20, windowMs: 15 * 60_000 });
  * Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): ladmin'in şubeye özel kurucusuyla kurulan kasa ilk açılışta
  * tek kullanımlık kodu verir; yanıt şube (kimlik, ad) ve kasanın bağlantı bilgileri (lafmaliyet adresi ve anahtarı;
  * tanımlıysa AsilPOS Uzaktan ve site). 400 gövde, 404 kod yok, 410 kullanılmış / iptal / süresi dolmuş, 429 çok deneme.
+ * Gövde `{kod, surum?}`; yeni kasa ek olarak `kimlik` ve `acikAnahtar` gönderebilir (kasa kaydı ve ilk personel).
  * İki yol bunu dışa verir: src/app/api/asilpos/kurulum/route.ts ve eski yolun klasörü (ESKI_KURULUM_YOLU; yeni kasa
  * yeni yolu dener, 404'te eskisine düşer). Kasa tarafı: AsilPOS deposunda `server/sync/kurulum-kodu.ts`
  */
@@ -24,10 +27,12 @@ export async function POST(request: NextRequest) {
   await connection();
   const ip = clientIp(request.headers);
   if (!ipLimit.hit(ip)) return Response.json({ ok: false, error: "Çok fazla deneme; biraz sonra yeniden deneyin" }, { status: 429, headers: NO_STORE });
-  const body = (await request.json().catch(() => null)) as { kod?: unknown } | null;
+  const json = (await request.json().catch(() => null)) as unknown;
+  const body = json && typeof json === "object" && !Array.isArray(json) ? (json as Record<string, unknown>) : null;
   const kod = typeof body?.kod === "string" ? body.kod : "";
   if (!KOD_RE.test(kod)) return Response.json({ ok: false, error: "Kurulum kodu anlaşılamadı" }, { status: 400, headers: NO_STORE });
-  const res = await redeemInstallCode(kod);
+  // Yeni kasanın isteğe bağlı alanları (kimlik, surum, acikAnahtar; docs/ASILPOS.md › Kasa açılışı); bozuksa yok sayılır
+  const res = await redeemInstallCode(kod, getDb(), new Date(), kodKasaBilgisi(body));
   if (res.status === 200) ipLimit.undo(ip);
   return Response.json(res.body, { status: res.status, headers: NO_STORE });
 }
