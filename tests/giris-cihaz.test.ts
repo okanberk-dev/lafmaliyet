@@ -18,7 +18,8 @@ import { CASH_OUT_UNDO_MS, cashOutUndoJson, readCashOutUndo, type CashOutSnapsho
 import * as schema from "../src/server/db/schema";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
-const AUTH = read("src/server/actions/auth.ts");
+// Girişin korumaları kasa açılışının girişiyle ortak modülde (src/server/auth/giris-korumalari.ts): ikisi birlikte okunur
+const AUTH = read("src/server/actions/auth.ts") + "\n" + read("src/server/auth/giris-korumalari.ts");
 const fn = (name: string) => AUTH.slice(AUTH.indexOf(`export async function ${name}`), AUTH.indexOf("\nexport ", AUTH.indexOf(`export async function ${name}`) + 1));
 
 // ---------------------------------------------------------------- Bilinen cihaz

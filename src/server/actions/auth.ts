@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
@@ -16,10 +16,11 @@ import { WRONG_PASSWORD } from "@/lib/step-up";
 import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "@/lib/two-factor-setup";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
 import { clearPending, endSession, managerWithoutBranch, readDevice, readPending, rememberDevice, requireSignedIn, requireUser, startPending, startSession } from "@/server/auth/dal";
-import { clearDeviceAttempts, consumeRecoveryList, consumeTotpStep, DEVICE_MAX_FAILED, refundDeviceAttempt, reserveDeviceAttempt, type Reservation } from "@/server/auth/login-locks";
-import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
+import { charge, ghostAttempt, knownDeviceId, LOCK_MS, lockedMessage, logLock, loginIp, padTo, refund, slow, TOO_MANY, WRONG } from "@/server/auth/giris-korumalari";
+import { clearDeviceAttempts, consumeRecoveryList, consumeTotpStep } from "@/server/auth/login-locks";
+import { clientIp, createLimiter } from "@/server/auth/rate-limit";
 import { noteNewDevice } from "@/server/auth/new-device";
-import { deviceSeenBefore, isKnownDevice, verifyPending, type DeviceToken } from "@/server/auth/session";
+import { deviceSeenBefore, verifyPending } from "@/server/auth/session";
 import { confirmPassword, requirePassword } from "@/server/auth/step-up";
 import {
   consumeRecoveryCode,
@@ -39,35 +40,10 @@ import { open, seal } from "@/server/secret-box";
 import { logActivity } from "./log";
 import { attempt, UserError, zText } from "./util";
 
-/** Bu kadar denemeden sonra hesap kısa süre kilitlenir (parola ve kod adımı birlikte sayılır) */
-const MAX_FAILED = 5;
-const LOCK_MINUTES = 15;
-const LOCK_MS = LOCK_MINUTES * 60_000;
-
 /*
- * Kaba kuvvete karşı üç katman. Her deneme doğrulanmadan ÖNCE sayılır, denetim ve sayım tek adımdadır: aynı anda
- * gönderilen yüzlerce istek de sınırı aşamaz (önce sorup sonra sayınca hepsi kilitten önce geçiyordu). IP sınırı
- * bellekte, sunucusuz örnek başına sayılır, ilk savunmadır; iki kilit veritabanındadır.
- * - Aynı IP'den 15 dakikada en fazla 20 deneme, bilinen cihazınki de. Başarılı giriş geri verilir: kafedeki ortak IP
- *   kapanmasın.
- * - Hesap kilidi: 5 denemede 15 dakika. Bilinen cihaza (bu tarayıcıdan güncel oturum sürümüyle girilmiş) uygulanmaz;
- *   e-postayı bilen biri 5 yanlış parolayla sahibini panelden kapatamasın.
- * - Bilinen cihazın kendi payı (src/server/auth/login-locks.ts): cihaz + kişi başına 10 denemede 15 dakika. Bunu
- *   yalnızca o cihaz tüketebilir. Önceden bellekteydi ve kilidi yazılmazdı: ortak tablette biri sahibinin parolasını
- *   kimse görmeden deneyebiliyordu.
- * İki kilit de başlayınca işlem geçmişine yazılır. Parola doğruysa ve kod adımına geçiliyorsa deneme geri verilir; kod
- * adımı kendi denemelerini aynı paydan sayar.
+ * Girişin korumaları (IP sınırı, hesap kilidi, bilinen cihazın payı, kayıtsız e-postada sahte bekleme, kilidin işlem
+ * geçmişi) kasa açılışının girişiyle ortak: src/server/auth/giris-korumalari.ts. Davranış ve sayaçlar aynı.
  */
-const loginIp = createLimiter({ limit: 20, windowMs: LOCK_MS });
-/** Kayıtsız / pasif e-posta da 5. denemede aynı kilit mesajını alır: girişten hesap var mı yok mu anlaşılmasın */
-const ghostLock = createLockout({ max: MAX_FAILED, lockMs: LOCK_MS });
-/** Kayıtsız e-postada da bir parola özeti denenir (işlemci yükü kayıtlı hesapla aynı olsun) */
-let ghostHash: Promise<string> | undefined;
-
-const WRONG = "E-posta ya da parola hatalı";
-const TOO_MANY = `Çok fazla deneme yapıldı. ${LOCK_MINUTES} dakika sonra yeniden deneyin.`;
-/** Başarısız giriş yanıtı en erken bu sürede döner: özet, sorgu ve sayaç yazımı süreden okunmasın */
-const FAIL_MS = 900;
 
 export type LoginState = { error?: string; email?: string; step?: "password" | "totp" };
 
@@ -89,82 +65,6 @@ function safeNext(next: string | undefined, role: Role) {
 
 /** Şubesi olmayan ya da şubesi pasif müdürün girişi */
 const MANAGER_NO_BRANCH = "Müdür hesabınızın şubesi seçili değil ya da şube kapalı. Yöneticiden Kullanıcılar & roller'de şubenizi seçmesini isteyin.";
-
-const slow = () => new Promise((r) => setTimeout(r, 600));
-
-async function padTo(started: number) {
-  const left = FAIL_MS - (Date.now() - started);
-  if (left > 0) await new Promise((r) => setTimeout(r, left));
-}
-
-/** Veritabanındaki kilit sürüyorsa bitişi */
-const activeLock = (u: { lockedUntil: Date | null }) => (u.lockedUntil && u.lockedUntil > new Date() ? u.lockedUntil : null);
-
-/** Bu tarayıcı kişi için bilinen cihazsa (güncel oturum sürümüyle) cihazın kimliği (hata payının anahtarı), değilse null */
-const knownDeviceId = (user: { id: number; sessionVersion: number }, device: DeviceToken | null) => (device && isKnownDevice(device, user) ? device.did : null);
-
-function lockedMessage(until: Date) {
-  const min = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
-  return `Çok fazla hatalı deneme. ${min} dakika sonra yeniden deneyin.`;
-}
-
-/**
- * Denemeyi doğrulamadan ÖNCE hesabın sayacından düşer ve kilidi aynı UPDATE'te verir. Kilit sürüyorsa satır
- * güncellenmez (eşzamanlı istekler satır kilidinde sıraya girer; kilidi gören geri çevrilir). 5. deneme sayacı
- * sıfırlar ve 15 dakikalık kilidi başlatır, kendisi yine değerlendirilir; doğruysa completeLogin kilidi kaldırır.
- * Kilit bitince yeniden 5 hak. Sayaç hiçbir zaman kilitsiz 5'te kalmaz (yarıda kalan istek hesabı süresiz kilitlemez).
- */
-async function reserveAttempt(userId: number): Promise<Reservation> {
-  const db = getDb();
-  const [row] = await db
-    .update(s.users)
-    .set({
-      failedLogins: sql`CASE WHEN ${s.users.failedLogins} + 1 >= ${sql.raw(String(MAX_FAILED))} THEN 0 ELSE ${s.users.failedLogins} + 1 END`,
-      lockedUntil: sql`CASE WHEN ${s.users.failedLogins} + 1 >= ${sql.raw(String(MAX_FAILED))} THEN now() + interval '${sql.raw(String(LOCK_MINUTES))} minutes' ELSE ${s.users.lockedUntil} END`,
-    })
-    .where(and(eq(s.users.id, userId), or(isNull(s.users.lockedUntil), lte(s.users.lockedUntil, sql`now()`))))
-    .returning({ lockedUntil: s.users.lockedUntil });
-  if (row) return { ok: true, locked: activeLock(row) };
-  const [cur] = await db.select({ lockedUntil: s.users.lockedUntil }).from(s.users).where(eq(s.users.id, userId)).limit(1);
-  return { ok: false, until: (cur && activeLock(cur)) ?? new Date(Date.now() + LOCK_MS) };
-}
-
-/**
- * reserveAttempt'in saydığı denemeyi geri verir (parola doğru, kod adımına geçiliyor). Sayaç bir azalır, sıfırlanmaz:
- * parolayı bilen biri kod denemelerinin sayacını silemesin. Satırın o anki hâline bakılır (bellekteki kilidin
- * refund()'u gibi): sayaç sıfır ve kilit sürüyorsa kilit bu denemeden sonra (bu ya da eşzamanlı bir denemeyle)
- * başlamıştır; kilit kalkar, sayaç 4'te kalır. Kilitliyken yeni deneme sayılmadığı için bu kilit başkası olamaz.
- */
-async function refundAttempt(userId: number) {
-  const locked = sql`${s.users.failedLogins} = 0 AND ${s.users.lockedUntil} > now()`;
-  await getDb()
-    .update(s.users)
-    .set({
-      failedLogins: sql`CASE WHEN ${s.users.failedLogins} > 0 THEN ${s.users.failedLogins} - 1 WHEN ${locked} THEN ${sql.raw(String(MAX_FAILED - 1))} ELSE 0 END`,
-      lockedUntil: sql`CASE WHEN ${locked} THEN NULL ELSE ${s.users.lockedUntil} END`,
-    })
-    .where(eq(s.users.id, userId));
-}
-
-/** Denemeyi doğrulamadan önce sayar: bilinen cihazda cihazın payından, değilse hesabın kilidinden (ikisi de veritabanında) */
-const charge = (userId: number, deviceId: string | null): Promise<Reservation> => (deviceId ? reserveDeviceAttempt(getDb(), userId, deviceId) : reserveAttempt(userId));
-
-/** charge()'ın saydığı denemeyi geri verir */
-async function refund(userId: number, deviceId: string | null) {
-  if (deviceId) await refundDeviceAttempt(getDb(), userId, deviceId);
-  else await refundAttempt(userId);
-}
-
-/**
- * Kilit başladı: işlem geçmişine yazılır (sahibi kimin denediğini görsün). Bilinen cihazın kilidi de: yalnız o cihaz
- * kilitlenir ama ortak tablette sahibinin parolasını deneyen biri böyle görünür.
- */
-async function logLock(user: { id: number; name: string; email: string }, where: string, deviceId: string | null) {
-  const detail = deviceId
-    ? `${user.email}: ${where}, bilinen bir cihazdan ${DEVICE_MAX_FAILED} hatalı deneme · o cihaz ${LOCK_MINUTES} dakika`
-    : `${user.email}: ${where}, ${MAX_FAILED} hatalı deneme · ${LOCK_MINUTES} dakika`;
-  await logActivity({ id: user.id, name: user.name }, "Hesap kilitlendi", detail);
-}
 
 async function completeLogin(user: typeof s.users.$inferSelect, next: string | undefined) {
   await getDb().update(s.users).set({ lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, user.id));
@@ -217,13 +117,9 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   // Kayıtsız ya da pasif: parola yine bir özetle denenir, kilit bellekte tutulur (kayıtlı hesapla aynı kural)
   if (!user || !user.active) {
-    const r = ghostLock.attempt(email);
-    if (!r.ok) {
-      loginIp.undo(ip);
-      return fail(lockedMessage(r.until));
-    }
-    await verifyPassword(password, await (ghostHash ??= hashPassword("yok")));
-    return fail(r.locked ? lockedMessage(r.locked) : WRONG);
+    const g = await ghostAttempt(email, password);
+    if (g.undoIp) loginIp.undo(ip);
+    return fail(g.error);
   }
 
   const r = await charge(user.id, deviceId);
