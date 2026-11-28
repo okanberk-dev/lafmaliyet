@@ -67,7 +67,7 @@ export function staffBeforeAsilposDayEnd(o: { admin: boolean; asilposDay: boolea
 /**
  * Personelin AsilPOS gününde formdan yazımını sunucu reddeder (saveCashReport): rapor AsilPOS'tan gelir, otomatik raporun
  * rakamlarını yalnız yönetici düzeltir. Kör kasa (bulgu 0, src/lib/asilpos/kor-kasa.ts): yöneticinin elle girdiği AsilPOS
- * günü raporunu da personel değiştirmez, düzeltme önermez, WhatsApp metnini almaz (`manual`)
+ * günü raporunu da personel değiştirmez, düzeltme önermez (`manual`); WhatsApp metnini sayımsız alır (28 Kasım 2026)
  */
 export const ASILPOS_STAFF_WRITE_TEXT = {
   fresh: "AsilPOS gününün kasa raporu AsilPOS'tan gelir: kapanışta AsilPOS'ta Günü kapat'a basın. AsilPOS göndermezse yöneticinize yazın.",
@@ -82,8 +82,8 @@ export function staffAsilposDescriptionOf(state: { auto: boolean } | null): stri
 }
 
 /**
- * Personel bu raporu AsilPOS'un otomatik raporu olarak mı görür (rakamlar salt okunur; Düzenle, WhatsApp, Metni kopyala,
- * fotoğraf farkı ve notun yönetici yönergesi yok). Kapalı kalır: fotoğraf durumu okunamadıysa (`photoAuto` null) raporun
+ * Personel bu raporu AsilPOS'un otomatik raporu olarak mı görür (rakamlar salt okunur; Düzenle, silme isteği, fotoğraf
+ * farkı ve notun yönetici yönergesi yok; WhatsApp ve Metni kopyala sayımsız metinle, 28 Kasım 2026). Kapalı kalır: fotoğraf durumu okunamadıysa (`photoAuto` null) raporun
  * kendi kaydı (asilpos_day_ends.report_id) karar verir, o da okunamadıysa ("error") gizli
  */
 export function staffAsilposAutoOf(o: { admin: boolean; hasReport: boolean; photoAuto: boolean | null; reportAuto: boolean | "error" }): boolean {

@@ -523,6 +523,81 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
+    test("kör kasa (28 Kasım 2026): personel AsilPOS gününün WhatsApp metnini sayımsız alır (red yok); yönetici bütün metni, geçişten önceki gün eskisi gibi", async () => {
+      const { businessDate } = await import("../src/lib/cash-report");
+      const { BLIND_TEXT } = await import("../src/lib/asilpos/kor-kasa");
+      const store = await import("../src/server/cash/report-store");
+      const reportActions = await import("../src/server/actions/cash-report");
+      const date = businessDate();
+      // Ayırt edilen tutarlar: açılış 1.234, sayılan 5.678, teslim 4.321; olması gereken 1.234 + 6.010 − 420 = 6.824, fark 1.146 eksik, devir 1.357
+      const fields: CashReportFields & { discounts: number | null } = {
+        date,
+        zNo: "4242",
+        receipts: 57,
+        zTotal: 9_870,
+        cash: 6_010,
+        card: 3_860,
+        mealCard: 0,
+        online: 0,
+        other: 0,
+        openingCash: 1_234,
+        cashIn: 0,
+        cashOut: 420,
+        cashOutNote: "süt",
+        countedCash: 5_678,
+        handedOver: 4_321,
+        bankPos: null,
+        offRevenue: null,
+        note: "Açılış notu (AsilPOS): bozuk para. Kapanış notu (AsilPOS): sakin.",
+        discounts: null,
+      };
+      const SECRETS = ["1.234", "5.678", "4.321", "6.824", "1.146", "1.357", "bozuk para"];
+      const WORDS = ["Açılış", "Sayılan", "Olması gereken", "olması gereken", "Kasa farkı", "Kasa tutuyor", "EKSİK", "Teslim edilen", "Ertesi güne devir"];
+      // Marina'nın geçiş günü (eski kayıt; ASILPOS_GROUP legacySettingsNew): yarın ise bugün henüz AsilPOS günü değil
+      const setSwitch = async (day: string) => {
+        await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
+        await db.insert(s.settings).values({ key: "asilposGecisGunu", value: day });
+      };
+      const textAs = async (k: Key) => {
+        await signIn(k);
+        asAction();
+        const res = await reportActions.cashReportWhatsapp(date, "marina");
+        assert.ok(res.ok, res.ok ? "" : `${k}: ${res.error}`);
+        return res.data.text.replace(/ /g, " ");
+      };
+      let reportId = 0;
+      try {
+        await setSwitch(addDays(date, 1));
+        await signIn("ali");
+        const saved = await scope.withBranchScope("marina", () => store.saveCashReport(db, { id: ids.ali, name: "Ali", role: "admin" }, { ...fields, countedBy: null, revision: 0, photos: [] }));
+        assert.equal(saved.kind, "saved", "yönetici Marina'nın raporunu girer");
+        reportId = saved.kind === "saved" ? saved.row.id : 0;
+
+        // Geçişten önceki gün (AsilPOS günü değil): personelin metni eskisi gibi, sayımla
+        const before = await textAs("ayse");
+        assert.ok(before.includes("Sayılan: 5.678 ₺") && before.includes("Açılış (devir): 1.234 ₺"), `AsilPOS günü değilken metin eskisi gibi:\n${before}`);
+        assert.ok(!before.includes(BLIND_TEXT.breakdown), "AsilPOS günü değilken kör sayım cümlesi yok");
+
+        // AsilPOS günü: personel reddedilmez, sayımsız metni alır
+        await setSwitch(date);
+        const staff = await textAs("ayse");
+        for (const v of SECRETS) assert.ok(!staff.includes(v), `personelin metninde ${v} var:\n${staff}`);
+        for (const w of WORDS) assert.ok(!staff.includes(w), `personelin metninde "${w}" var:\n${staff}`);
+        for (const v of ["*AsilPOS gün sonu (Z)*", "Z no: 4242 · 57 fiş", "Toplam satış: 9.870 ₺", "Nakit satış: 6.010 ₺", "− Gün içinde çıkan: 420 ₺ (süt)", BLIND_TEXT.breakdown, "Not: Kapanış notu (AsilPOS): sakin."]) {
+          assert.ok(staff.includes(v), `personelin metninde "${v}" yok:\n${staff}`);
+        }
+        // Yönetici bütün metni alır
+        const owner = await textAs("ali");
+        for (const v of ["Açılış (devir): 1.234 ₺", "= Olması gereken: 6.824 ₺", "Sayılan: 5.678 ₺", "1.146 ₺ EKSİK", "Ertesi güne devir: 1.357 ₺", "bozuk para"]) {
+          assert.ok(owner.includes(v), `yöneticinin metninde "${v}" yok:\n${owner}`);
+        }
+        assert.ok(!owner.includes(BLIND_TEXT.breakdown), "yöneticinin metninde kör sayım cümlesi yok");
+      } finally {
+        if (reportId) await db.delete(s.cashReports).where(eq(s.cashReports.id, reportId));
+        await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
+      }
+    });
+
     test("Onaylar: isteğin tuttuğu fotoğrafı (geç raporun Z'si, kasadan çıkan isteğinin fişi) müdür şubesininkini açar, öteki şubeninkini açamaz; personel ve muhasebeci açamaz; karardan sonra türün kuralı", async () => {
       const { businessDate } = await import("../src/lib/cash-report");
       const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
