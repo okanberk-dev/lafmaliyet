@@ -46,10 +46,41 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 
 ## Ekran
 
-**Ayarlar › Şubeler** (`/panel/subeler`, yalnız yönetici): liste, "Şube ekle" ve satıra dokununca düzenleme
-penceresi. **26 Kasım 2026:** şube eklemek yalnız ana yöneticide (`info@nextgenlab.com.tr`); e-postayla eklenen
-şubenin panel hesabı açılır ve AsilPOS kurulum bağlantısı gider ([ASILPOS.md › Şube kurulumu](ASILPOS.md#şube-kurulumu-26-kasım-2026)). Ad yazılırken kimlik kendiliğinden önerilir ("Laffogato Marina" → `laffogato-marina`), tür değişince
-kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
+**Ayarlar › Şubeler** (`/panel/subeler`, yalnız yönetici): liste ve satıra dokununca düzenleme penceresi (ad, tür,
+kasa kaynağı, POS oranı, açılış günü, şubenin e-postası, açık / kapalı). **28 Kasım 2026:** şubeyi kapatmak, yeniden
+açmak, silmek ve kasa programını (türünü) değiştirmek yalnız asıl yöneticide ([ROLLER.md › Asıl
+yönetici](ROLLER.md#asıl-yönetici)); öteki yöneticiye bu alanlar kapalı ve nedeni yazılı, sunucu da reddeder. Ad, POS
+oranı, açılış günü ve şubenin e-postası her yöneticide. Düzenleme penceresinin e-postası şubenin kendi kaydından dolar
+(eskiden son kurulum bağlantısından doluyordu); kaydetmek hesap açmaz, bağlantı göndermez. Listenin başındaki "AsilPOS
+kasası kur" kartı ve "Şube ekle" düğmesi kalktı: yerine asıl yöneticiye **Şube ekleme** bağlantısı, ötekine açıklama.
+Her değişiklik işlem geçmişine yazılır.
+
+### Şube ekleme
+
+**Ayarlar › Şube ekleme** (`/panel/sube-ekleme`, 28 Kasım 2026; yalnız asıl yönetici): menüde yalnız ona görünür
+(bayrak sunucuda hesaplanır), başka yönetici adresle açarsa içerik yerine tek cümle görür; eylemler ayrıca
+`requireAnaAdmin` ister. Üst düzey adres: `/panel/subeler/[id]` dinamik yoluyla çakışmasın. Üç bölüm:
+
+1. **Yeni şube:** ad (kimlik kendiliğinden önerilir: "Laffogato Marina" → `laffogato-marina`), tür, kasa programı, POS
+   oranı, açılış günü, şubenin e-postası. E-posta yazılırsa şubenin panel hesabı açılır ve kasa kurulum bağlantısı
+   gider ([ASILPOS.md › Şube kurulumu](ASILPOS.md#şube-kurulumu-26-kasım-2026)). Şube bugün ModPOS'la çalışıyorsa kasa
+   programı ModPOS kalır: AsilPOS kurulsa da deneme modunda çalışır, ModPOS çekimi durmaz.
+2. **Şubeler ve kasaları:** her fiziksel şubenin adı, kimliği, kasa programı ve kasa durumu: "Kasa kurulu değil",
+   "Kurulum bekliyor · son geçerlilik …" ya da "Kasa kurulu · son gün …". Kurulu sayılmak için kullanılabilen anahtar VE
+   (kullanılmış kurulum kodu ya da son 45 günde kabul edilmiş gün sonu) gerekir; tek bir eski deneme günü yetmez
+   (`src/lib/asilpos/kasa-durumu.ts`). Marina'nın satırında yıkıcı düğme yok.
+3. **Bilgisayara kur** (`sendBranchInstall`): şubenin e-postası sorulur (kayıtlıdan dolar), bağlantı gönderilir. Şubede
+   kurulu kasa varsa önce onay: "Bu şubede kurulu bir kasa var (son gün …). Yeni kurulum eski kasanın yerine geçer."
+   (sunucu da sorar). Sonuç penceresi şubenin adı ve kimliği, şubenin e-postası, kasada girişte kullanılacak hesap (asıl
+   yöneticinin e-postası), indirme bağlantısı ve son geçerliliği, dört adımlık yönerge ve e-postanın gidip gitmediğini
+   gösterir.
+
+İlk personel ve PIN, "Kasayı serbest bırak" ve kasa kaydı sonraki adımdadır (P-B2;
+[planlar/kasa-acilis-ve-asil-yonetici.md](planlar/kasa-acilis-ve-asil-yonetici.md)).
+
+**Şube kapatılınca** bekleyen kurulum kodları aynı işlemde iptal olur; kapalı şubenin kodu kasaya
+`410 {ok:false, error}` döner (bugünkü "geçersiz / süresi geçmiş kod" yanıtıyla aynı biçim). Kurulu kasanın anahtarı
+değişmez.
 
 ## Dalga 2'nin kararları (4 Kasım 2026)
 

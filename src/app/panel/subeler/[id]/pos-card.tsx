@@ -12,6 +12,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Field } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
+import { asilYoneticiNotu } from "@/lib/asil-yonetici";
 import type { ModposSetting } from "@/lib/branch-settings/groups";
 import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/secret-rules";
 import { dayMonthYearTR } from "@/lib/asilpos/switch";
@@ -65,8 +66,10 @@ const dropText = (legacy: boolean) => (legacy ? "Sunucudaki anahtar kullanılır
  * anahtarını kullanır (çok şube). Ortamdaki ASILPOS_SYNC_SECRET yalnız eski kurulumun şubesine (Marina) hizmet eder,
  * onun da saklanan anahtarı yokken (`legacy`); öbür şubede anahtar silinirse kasa bağlantısız kalır. Saklanan anahtar bir
  * daha gösterilmez; yalnız "kayıtlı" der, değiştirilir ya da silinir. "Diğer şubeyle aynı" yok: anahtar şubeyi tanıtır.
+ * Değiştirmek ve silmek yalnız asıl yöneticide (`anaAdmin`; sunucu aynı denetimi yapar): öteki yöneticiye alan ve
+ * düğmeler kapalı, nedeni yazılı.
  */
-export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
+export function AsilposBranchCard({ data, anaAdmin = false }: { data: AsilposBranchData; anaAdmin?: boolean }) {
   const [secret, setSecret] = useState("");
   /** Parola penceresi: yeni anahtarı kaydet ya da paneldekini sil */
   const [ask, setAsk] = useState<"save" | "drop" | null>(null);
@@ -136,7 +139,7 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
         <Field
           label={data.stored === "saved" ? "Anahtarı değiştir" : "Anahtarı panelde sakla"}
           htmlFor="asilpos-anahtar"
-          hint={`En az ${ASILPOS_SECRET_MIN} karakter; AsilPOS'taki bağlantı anahtarıyla aynı. Şifreli saklanır, bir daha gösterilmez.`}
+          hint={anaAdmin ? `En az ${ASILPOS_SECRET_MIN} karakter; AsilPOS'taki bağlantı anahtarıyla aynı. Şifreli saklanır, bir daha gösterilmez.` : asilYoneticiNotu("kasaAnahtari")}
           error={short ? `En az ${ASILPOS_SECRET_MIN} karakter` : undefined}
         >
           <PasswordInput
@@ -147,6 +150,7 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
             onChange={(e) => setSecret(e.target.value)}
             spellCheck={false}
             autoCapitalize="none"
+            disabled={!anaAdmin}
             aria-invalid={short ? true : undefined}
           />
         </Field>
@@ -161,11 +165,11 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
           />
         )}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setAsk("save")} disabled={!secret.trim() || short} className="max-sm:w-full">
+          <Button onClick={() => setAsk("save")} disabled={!anaAdmin || !secret.trim() || short} className="max-sm:w-full">
             Kaydet
           </Button>
           {data.stored !== "none" ? (
-            <Button variant="secondary" onClick={() => setAsk("drop")} className="max-sm:w-full">
+            <Button variant="secondary" onClick={() => setAsk("drop")} disabled={!anaAdmin} className="max-sm:w-full">
               Paneldeki anahtarı sil
             </Button>
           ) : null}
@@ -195,15 +199,16 @@ export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
  * Kasası artık AsilPOS olmayan (ve kurulumu olmayan) şubede kalan, panelde saklanmış AsilPOS anahtarı: kullanılmaz ama
  * kasa kaynağı AsilPOS'a dönerse yine geçerli olurdu. Burada yalnız silinir (parolayla); öbür şubelerin anahtarları değişmez
  */
-export function AsilposOldSecretCard({ branchId }: { branchId: string }) {
+export function AsilposOldSecretCard({ branchId, anaAdmin = false }: { branchId: string; anaAdmin?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <Card id="asilpos" className="scroll-mt-20">
       <CardHeader icon={<KeyRound />} title="Eski AsilPOS anahtarı" description="Bu şubenin kasası artık AsilPOS değil, ama panelde saklanan AsilPOS anahtarı duruyor. Kullanılmıyor; silebilirsiniz." />
-      <div className="px-5 pb-5">
-        <Button variant="secondary" onClick={() => setOpen(true)} className="max-sm:w-full">
+      <div className="space-y-2 px-5 pb-5">
+        <Button variant="secondary" onClick={() => setOpen(true)} disabled={!anaAdmin} className="max-sm:w-full">
           Paneldeki eski AsilPOS anahtarını sil
         </Button>
+        {anaAdmin ? null : <p className="text-[13px] text-ink-mute">{asilYoneticiNotu("kasaAnahtari")}</p>}
       </div>
       {open ? (
         <ConfirmPasswordDialog

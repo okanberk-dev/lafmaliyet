@@ -6,6 +6,7 @@ import "@/components/arc/foundation.css";
 import { PanelAssistantGate } from "@/components/panel/assistant/assistant-gate";
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
 import { Notice } from "@/components/ui/notice";
+import { isAnaAdmin } from "@/lib/asil-yonetici";
 import { assistantEnabled } from "@/lib/assistant/protocol";
 import { isReadOnly } from "@/lib/roles";
 import { getCurrentUser, requireUser } from "@/server/auth/dal";
@@ -30,6 +31,8 @@ async function SidebarWithUser() {
       branch={{ scope: branch.scope, branches: branch.branches, locked: branch.locked }}
       // Telefonda alt menünün "Asistan" sekmesi: asistanın kapısıyla aynı koşul (yönetici, ASISTAN_KAPALI değil)
       assistant={user.role === "admin" && assistantEnabled()}
+      // Asıl yönetici (Şube ekleme satırı): ortamdaki adresle sunucuda; eylemler aynı denetimi kullanır (requireAnaAdmin)
+      anaAdmin={isAnaAdmin(user)}
     />
   );
 }

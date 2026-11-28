@@ -114,8 +114,11 @@ export function PasswordForm({ email }: { email: string }) {
   );
 }
 
-/** Ad ve giriş e-postası; değişiklik parolayla onaylanır */
-export function ProfileForm({ name: initialName, email: initialEmail }: { name: string; email: string }) {
+/**
+ * Ad ve giriş e-postası; değişiklik parolayla onaylanır. `emailLocked`: asıl yöneticinin e-postası değişmez (yetki adrese
+ * bağlı; docs/ROLLER.md › Asıl yönetici): alan salt okunur, nedeni altında (sunucu da reddeder)
+ */
+export function ProfileForm({ name: initialName, email: initialEmail, emailLocked = null }: { name: string; email: string; emailLocked?: string | null }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
   const [email, setEmail] = useState(initialEmail);
@@ -142,8 +145,17 @@ export function ProfileForm({ name: initialName, email: initialEmail }: { name: 
         <Field label="Ad" htmlFor="pr-n">
           <Input id="pr-n" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required maxLength={80} />
         </Field>
-        <Field label="Giriş e-postası" htmlFor="pr-e">
-          <Input id="pr-e" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+        <Field label="Giriş e-postası" htmlFor="pr-e" hint={emailLocked ?? undefined}>
+          <Input
+            id="pr-e"
+            type="email"
+            value={email}
+            readOnly={emailLocked !== null}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+            className={emailLocked !== null ? "bg-panel text-ink-mute" : undefined}
+          />
         </Field>
       </div>
       {dirty ? (

@@ -17,6 +17,7 @@ import { effectiveSettings } from "@/lib/commission/report";
 import { blindCountSettingOn } from "@/lib/kor-sayim";
 import { modposKeyProblem } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
+import { isAnaAdmin } from "@/lib/asil-yonetici";
 import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import { shiftPresetsOf } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
@@ -62,7 +63,7 @@ export default function BranchSettingsPage({ params }: PageProps<"/panel/subeler
 }
 
 async function BranchSettingsContent({ params }: { params: PageProps<"/panel/subeler/[id]">["params"] }) {
-  await requireAdmin();
+  const me = await requireAdmin();
   const { id } = await params;
   if (!BRANCH_ID_PATTERN.test(id)) notFound();
   const branches = await listBranches();
@@ -149,9 +150,11 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
               till: tillHere,
               legacy: branch.id === LEGACY_POS_BRANCH_ID,
             }}
+            // Kasa anahtarını döndürmek ve silmek yalnız asıl yöneticide (saveAsilposSecret aynı denetimi yapar)
+            anaAdmin={isAnaAdmin(me)}
           />
         ) : (asilpos.secrets.secret ?? "none") !== "none" ? (
-          <AsilposOldSecretCard branchId={branch.id} />
+          <AsilposOldSecretCard branchId={branch.id} anaAdmin={isAnaAdmin(me)} />
         ) : null}
         {/* Kasası ModPOS olmayan şubede de, başka şube bu şubenin ay yedeğini kullanıyorsa ("X ile aynı"; oradaki "X şubesinde
             düzenle" buraya gelir) */}

@@ -9,6 +9,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
+import { ASIL_EPOSTA_SABIT, isAnaAdminEmail } from "@/lib/asil-yonetici";
 import { twoFactorRequiredFor } from "@/lib/admin-security";
 import {
   ALWAYS_COMPANY_WIDE,
@@ -123,7 +124,7 @@ async function Account() {
         <div className="border-t border-line">
           <CardHeader icon={<UserRound />} title="Hesap bilgileri" description="Giriş yaparken bu e-postayı kullanırsınız." />
           <CardContent>
-            <ProfileForm name={user.name} email={user.email} />
+            <ProfileForm name={user.name} email={user.email} emailLocked={isAnaAdminEmail(user.email) ? ASIL_EPOSTA_SABIT : null} />
           </CardContent>
         </div>
       </Card>

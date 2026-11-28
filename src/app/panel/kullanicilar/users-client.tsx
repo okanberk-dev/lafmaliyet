@@ -22,6 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { twoFactorRequiredFor, twoFactorResetTextFor } from "@/lib/admin-security";
+import { ASIL_EPOSTA_SABIT, ASIL_HESAP_KORUNUR, ASIL_YONETICI } from "@/lib/asil-yonetici";
 import { ROLE_ORDER, ROLES, type Role } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
@@ -175,6 +176,11 @@ export type UserRow = {
   invite: "none" | "pending" | "expired";
   /** Kullanılmamış, süresi geçmemiş davet ya da sıfırlama bağlantısı ("20.10.2026 14:30"a kadar) */
   liveLink: { kind: "invite" | "reset"; until: string } | null;
+  /**
+   * Asıl yöneticinin hesabı (adresi LADMIN_ANA_ADMIN; sunucuda hesaplanır): satırda "Asıl yönetici" etiketi; başka
+   * yönetici e-postasını, parolasını, rolünü, erişimini, iki adımlısını, kilidini ve oturumlarını değiştiremez
+   */
+  anaAdmin?: boolean;
 };
 
 type RoleFilter = "all" | Role;
@@ -200,6 +206,8 @@ export function UsersEditor({
   branches?: readonly UserBranchOption[];
   /** Zorunluluk açık (ADMIN_2FA_REQUIRED=1; src/lib/admin-security.ts): hedef yönetici, müdür ya da muhasebeciyse sıfırlama penceresi kurulum ekranını söyler */
   twoFactorRequired?: boolean;
+  /** Sayfayı açan asıl yönetici mi (asıl yöneticinin hesabını yalnız kendisi değiştirir; sunucu aynı denetimi yapar) */
+  meAnaAdmin?: boolean;
 }) {
   return (
     <BranchesContext.Provider value={branches}>
@@ -214,13 +222,17 @@ function UsersList({
   emailConfigured,
   loginUrl,
   twoFactorRequired = false,
+  meAnaAdmin = false,
 }: {
   users: UserRow[];
   meId: number;
   emailConfigured: boolean;
   loginUrl: string;
   twoFactorRequired?: boolean;
+  meAnaAdmin?: boolean;
 }) {
+  /** Asıl yöneticinin hesabı ve sayfayı açan başka bir yönetici: korunan alanlar kapalı */
+  const guardedRow = (u: UserRow) => Boolean(u.anaAdmin) && !meAnaAdmin;
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [access, setAccess] = useState<AccessInfo | null>(null);
   const [confirmOff, setConfirmOff] = useState<UserRow | null>(null);
@@ -375,15 +387,16 @@ function UsersList({
                       <span className="block text-[13px] wrap-anywhere text-ink-mute">{u.email}</span>
                       <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                         <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                        {u.anaAdmin ? <Badge tone="violet">{ASIL_YONETICI}</Badge> : null}
                         <BranchBadge user={u} />
                         <StatusBadge user={u} />
                         {u.invite === "none" ? <TwoFactorMark on={u.twoFactor} /> : null}
                       </span>
                       <span className="mt-1.5 block text-xs text-ink-mute tabular">{lastLoginText(u)}</span>
                     </button>
-                    <RowActions user={u} me={me} pending={pending} onToggle={(next) => toggle(u, next)} onEdit={() => setEditing(u)} />
+                    <RowActions user={u} me={me} guarded={guardedRow(u)} pending={pending} onToggle={(next) => toggle(u, next)} onEdit={() => setEditing(u)} />
                   </div>
-                  {u.invite !== "none" && u.active ? (
+                  {u.invite !== "none" && u.active && !guardedRow(u) ? (
                     <Button variant="secondary" className={cn(TAP, "mt-3 w-full")} disabled={linkBusy === u.id} onClick={() => newLink(u)}>
                       <Send size={15} /> {linkBusy === u.id ? "Oluşturuluyor…" : u.invite === "expired" ? "Yeni davet bağlantısı oluştur" : "Yeni davet bağlantısı (eskisi iptal)"}
                     </Button>
@@ -428,6 +441,7 @@ function UsersList({
                         <TD>
                           <div className="flex flex-wrap items-center gap-1.5">
                             <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                            {u.anaAdmin ? <Badge tone="violet">{ASIL_YONETICI}</Badge> : null}
                             <BranchBadge user={u} />
                           </div>
                         </TD>
@@ -449,9 +463,10 @@ function UsersList({
                           <RowActions
                             user={u}
                             me={me}
+                            guarded={guardedRow(u)}
                             pending={pending}
                             linkBusy={linkBusy === u.id}
-                            onLink={u.invite !== "none" && u.active ? () => newLink(u) : undefined}
+                            onLink={u.invite !== "none" && u.active && !guardedRow(u) ? () => newLink(u) : undefined}
                             onToggle={(next) => toggle(u, next)}
                             onEdit={() => setEditing(u)}
                           />
@@ -491,6 +506,7 @@ function UsersList({
           // Bağlantı oluşunca sayfa yenilenir: pencere kişinin güncel durumunu (geçerli bağlantı) görsün
           user={rows.find((u) => u.id === editing.id) ?? editing}
           meId={meId}
+          guarded={guardedRow(editing)}
           loginUrl={loginUrl}
           twoFactorRequired={twoFactorRequired}
           linkBusy={linkBusy === editing.id}
@@ -575,6 +591,7 @@ function TwoFactorMark({ on, labelled = false }: { on: boolean; labelled?: boole
 function RowActions({
   user,
   me,
+  guarded = false,
   pending,
   linkBusy,
   onLink,
@@ -583,6 +600,8 @@ function RowActions({
 }: {
   user: UserRow;
   me: boolean;
+  /** Asıl yöneticinin hesabı, sayfayı açan başka yönetici: anahtar kapalı */
+  guarded?: boolean;
   pending: boolean;
   linkBusy?: boolean;
   onLink?: () => void;
@@ -591,10 +610,10 @@ function RowActions({
 }) {
   return (
     <div className="flex shrink-0 items-center justify-end gap-2">
-      <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : undefined} onClick={(e) => e.stopPropagation()}>
+      <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : guarded ? ASIL_HESAP_KORUNUR : undefined} onClick={(e) => e.stopPropagation()}>
         <Switch
           checked={user.active}
-          disabled={me || pending}
+          disabled={me || guarded || pending}
           // Davetli parolasını belirleyene kadar giriş yapamaz; anahtar yalnızca hesabın açık olduğunu söyler
           label={user.invite === "none" ? `${user.name} giriş yapabilir` : `${user.name} hesabı aktif`}
           onChange={onToggle}
@@ -735,8 +754,8 @@ function NameEmailFields({
   errors: FormErrors;
   onName: (v: string) => void;
   onEmail: (v: string) => void;
-  /** Kendi hesabınız: giriş e-postası Hesabım'da (parolayla) değişir */
-  emailLocked?: boolean;
+  /** Kendi hesabınız: giriş e-postası Hesabım'da (parolayla) değişir; metin verilirse alanın altında o yazar */
+  emailLocked?: boolean | string;
 }) {
   return (
     <div className="grid gap-4">
@@ -757,11 +776,19 @@ function NameEmailFields({
         label="Giriş e-postası"
         htmlFor={ids.email}
         error={errors.email}
-        hint={errors.email ? undefined : emailLocked ? "Kendi e-postanızı ve parolanızı Hesabım'dan (mevcut parolanızla) değiştirin." : "Kişi panele bu adresle girer."}
+        hint={
+          errors.email
+            ? undefined
+            : typeof emailLocked === "string"
+              ? emailLocked
+              : emailLocked
+                ? "Kendi e-postanızı ve parolanızı Hesabım'dan (mevcut parolanızla) değiştirin."
+                : "Kişi panele bu adresle girer."
+        }
       >
         <Input
           id={ids.email}
-          readOnly={emailLocked}
+          readOnly={Boolean(emailLocked)}
           type="email"
           inputMode="email"
           autoCapitalize="none"
@@ -975,6 +1002,7 @@ type Confirm = "2fa" | "logout" | "delete";
 function UserDialog({
   user,
   meId,
+  guarded = false,
   loginUrl,
   twoFactorRequired,
   linkBusy,
@@ -984,6 +1012,8 @@ function UserDialog({
 }: {
   user: UserRow;
   meId: number;
+  /** Asıl yöneticinin hesabı, sayfayı açan başka yönetici: yalnız ad değişir */
+  guarded?: boolean;
   loginUrl: string;
   twoFactorRequired: boolean;
   linkBusy: boolean;
@@ -1154,7 +1184,7 @@ function UserDialog({
         onClose={requestClose}
         title="Kullanıcıyı düzenle"
         footerStart={
-          !self && !askDiscard ? (
+          !self && !guarded && !askDiscard ? (
             <Button variant="ghost" className={cn(TAP, "text-bad hover:bg-bad-soft hover:text-bad sm:pointer-fine:h-9")} disabled={pending} onClick={() => ask("delete")}>
               <Trash2 size={15} /> Sil
             </Button>
@@ -1182,6 +1212,7 @@ function UserDialog({
         }
       >
         <form id="user-form" onSubmit={submit} noValidate className="space-y-4 pb-2">
+          {guarded ? <Notice tone="neutral" size="sm" title={ASIL_HESAP_KORUNUR} /> : null}
           <NameEmailFields
             ids={EDIT_IDS}
             name={name}
@@ -1195,12 +1226,12 @@ function UserDialog({
               setEmail(v);
               setErrors((x) => ({ ...x, email: undefined }));
             }}
-            emailLocked={self}
+            emailLocked={guarded ? ASIL_HESAP_KORUNUR : self && user.anaAdmin ? ASIL_EPOSTA_SABIT : self}
           />
           <fieldset>
             <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Rol</legend>
             {/* Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder) */}
-            <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => self && v !== "admin"} />
+            <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => guarded || (self && v !== "admin")} />
             {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
             {hasBranch(role) ? (
               <div className="mt-3">
@@ -1208,7 +1239,7 @@ function UserDialog({
               </div>
             ) : null}
           </fieldset>
-          {self ? null : (
+          {self || guarded ? null : (
             <PasswordField
               id={EDIT_IDS.password}
               label={user.invite !== "none" ? "Parola (davet yerine siz belirleyin)" : "Yeni parola (değiştirmek için)"}
@@ -1228,7 +1259,7 @@ function UserDialog({
           )}
           {self ? (
             <Notice tone="neutral" size="sm" title="Kendi hesabınızı pasif yapamazsınız" />
-          ) : (
+          ) : guarded ? null : (
             <ToggleRow
               title={invited ? "Aktif" : "Aktif (giriş yapabilir)"}
               description={
@@ -1244,7 +1275,7 @@ function UserDialog({
             />
           )}
           {asksPassword ? <p className="px-1 text-xs leading-5 text-ink-mute">Bu değişiklik bir yönetici hesabını etkiliyor; kaydederken kendi parolanız sorulur.</p> : null}
-          {user.locked || !self ? security : null}
+          {guarded ? null : user.locked || !self ? security : null}
         </form>
       </Dialog>
       {/* Onay penceresi düzenleme penceresinin içinde değil yanında: React içteki <dialog>'un close/cancel olayını
