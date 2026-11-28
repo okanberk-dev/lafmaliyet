@@ -291,11 +291,14 @@ function under(pathname: string, base: string): boolean {
  * - Vergi, KDV, SGK bölümü ve alt sayfaları (27 Kasım 2026, sahibin kararı: vergiyi muhasebeci yürütüyor; kayıtlı
  *   veriler silinmedi): Genel bakış, kısa notla (`?kaldirildi=vergi`; REMOVED_NOTICES). Muhasebeci Genel bakış'ı
  *   açamaz: proxy notu onun ana ekranına (Muhasebe) taşır.
+ * - Kâr & ödemeler › Mutabakat (banka ve tedarikçi ekstresi, POS hakediş) ve sekmeleri (28 Kasım 2026, sahibin isteği;
+ *   yüklenen ekstreler silinmedi): Kâr & ödemeler'in ana ekranı Gelir-gider, kısa notla (`?kaldirildi=mutabakat`).
  */
 export const RETIRED_PATHS: readonly { path: string; target: string }[] = [
   { path: "/panel/hizli-sayim", target: "/panel/sayim" },
   { path: "/panel/mal-siparisi", target: "/panel/sayim" },
   { path: "/panel/vergi", target: "/panel?kaldirildi=vergi" },
+  { path: "/panel/mutabakat", target: "/panel/gelir-gider?kaldirildi=mutabakat" },
 ];
 
 /** Kaldırılan bir ekranın (ya da alt sayfasının) adresiyse gidilecek ekran (sorgusuyla), değilse null */
@@ -308,6 +311,10 @@ export const REMOVED_NOTICES: Readonly<Record<string, { title: string; text: str
   vergi: {
     title: "Vergi bölümü kaldırıldı",
     text: "Vergiyi ve beyannameleri muhasebeciniz yürütüyor; panel vergi tahmini yapmıyor. Kayıtlı veriler silinmedi. Vergi ödemelerini isterseniz Ödemeler'e tutarıyla yazın.",
+  },
+  mutabakat: {
+    title: "Mutabakat bölümü kaldırıldı",
+    text: "Banka ve tedarikçi ekstresi eşleştirmesi ile POS hakediş karşılaştırması panelden çıktı. Yüklenen ekstreler silinmedi; 90 günlük saklama süresi eskisi gibi işler. Gelir-gider, Ödemeler ve Nakit planı aynı.",
   },
 };
 
@@ -418,7 +425,6 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; manager
   { label: "Satışlar, komisyon ve analiz", admin: true, manager: false, staff: false, accountant: false },
   { label: "Maaşlar, kişisel ücretler, avanslar ve personel belgeleri; sabit giderleri düzenleme", admin: true, manager: false, staff: false, accountant: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, manager: false, staff: false, accountant: false },
-  { label: "Mutabakat: banka ve tedarikçi ekstresi, POS hakedişi", admin: true, manager: false, staff: false, accountant: false },
   { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu", admin: true, manager: false, staff: false, accountant: false },
   { label: "Paraşüt, ayarlar, yedek, tam dışa aktarım, kullanıcı yönetimi, Claude bağlantısı", admin: true, manager: false, staff: false, accountant: false },
 ];

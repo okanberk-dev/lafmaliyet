@@ -1,6 +1,5 @@
 import {
   AlarmClock,
-  ArrowLeftRight,
   Banknote,
   BarChart3,
   BellRing,
@@ -71,7 +70,8 @@ export interface NavItem {
  * ad `keywords`'te kalır, alışkanlıkla yazılan da bulunur. Kare adresli kayıtlar (ör. "Fatura kalemini hammaddeye bağla"
  * → /panel/parasut#urun-baglantilari) bir ekranın bölümünü adıyla açar; kenar çubuğuna ve telefon başlığına girmez.
  * Adresler değişmedi. Vergi, KDV, SGK grubu 27 Kasım 2026'da kaldırıldı (sahibin kararı: vergiyi muhasebeci yürütüyor;
- * eski adresler Genel bakış'a yönlenir, src/lib/roles.ts RETIRED_PATHS).
+ * eski adresler Genel bakış'a yönlenir, src/lib/roles.ts RETIRED_PATHS). Kâr & ödemeler › Mutabakat 28 Kasım 2026'da
+ * kaldırıldı (sahibin isteği; eski adresler Gelir-gider'e notla yönlenir, veriler silinmedi).
  */
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
@@ -263,14 +263,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık param yeter mi",
       },
-      // Banka ve tedarikçi ekstresi ile panel kayıtları, kart satışı ile bankaya gelen POS hakedişi (docs/MUTABAKAT.md)
-      {
-        href: "/panel/mutabakat",
-        label: "Mutabakat",
-        icon: ArrowLeftRight,
-        roles: ["admin"],
-        keywords: "mutabakat banka ekstresi hesap hareketleri cari ekstre tedarikçi ekstresi eşleştirme pos hakediş bloke valör kart satışı bankaya gelen excel csv",
-      },
     ],
   },
   {
@@ -449,7 +441,6 @@ export const NAV_TREE: NavNode[] = [
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin", "accountant"] },
       { id: "hatirlaticilar", label: "Ödemeler", href: "/panel/hatirlaticilar", roles: ["admin"] },
       { id: "nakit", label: "Nakit planı", href: "/panel/hatirlaticilar/nakit", roles: ["admin"] },
-      { id: "mutabakat", label: "Mutabakat", href: "/panel/mutabakat", roles: ["admin"] },
     ],
   },
   {

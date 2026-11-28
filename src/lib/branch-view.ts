@@ -9,6 +9,9 @@
  * bölümü aynı gün tümden kaldırıldı (vergiyi muhasebeci yürütüyor). Nakit planının şube kipinde vergi hatırlatıcıları ve
  * SGK yok (src/lib/cash-plan-branch.ts). Eski sürümün yazdığı `vergi` anahtarı okurken düşer (`parseBranchView`).
  *
+ * **Mutabakat'ın alanı yok** (28 Kasım 2026, sahibin isteği: Mutabakat bölümü kaldırıldı): eski sürümün yazdığı
+ * `mutabakat` anahtarı da okurken düşer; veritabanındaki tercih silinmez.
+ *
  * Saf: kurallar burada; okuma `src/server/branch-scope.ts` (`currentBranchView`, `areaScope`), yazma
  * `src/server/actions/branch-view.ts` (`saveBranchView`), ekran Hesabım › Şube görünümü ve ekranların çipi
  * (`src/components/panel/branch-view-chip.tsx`).
@@ -31,7 +34,7 @@ export const VIEW_MODES = ["sube", "firma"] as const;
 export type ViewMode = (typeof VIEW_MODES)[number];
 
 /** Alanların sırası: Hesabım'daki kartın satır sırası */
-export const VIEW_AREA_KEYS = ["odemeler", "nakit", "tutarlilik", "mutabakat", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"] as const;
+export const VIEW_AREA_KEYS = ["odemeler", "nakit", "tutarlilik", "tedarikciler", "stok_degeri", "komisyon", "karsilastirma", "ortak_gider"] as const;
 export type ViewArea = (typeof VIEW_AREA_KEYS)[number];
 
 /** Kişinin tercihi: yalnız seçtiği alanlar (eksik alan rolün varsayılanı) */
@@ -78,14 +81,6 @@ export const VIEW_AREAS: Record<ViewArea, ViewAreaDef> = {
     firmOnly: "Bulgular her görünümde firmanın (şube sütunu yok)",
     defaults: { admin: "sube", accountant: "firma" },
     screens: ["/panel/tutarlilik"],
-  },
-  mutabakat: {
-    label: "Mutabakat",
-    help: "Yalnız şube: şubenin POS hakedişi; ekstrede şubenin kayıtlarıyla eşleşen satırlar üstte, gerisi İşletme geneli'nde.",
-    modes: SUBE_FIRMA,
-    firmOnly: "Ekstrenin kendisi ve gelen POS parası her görünümde firmanın",
-    defaults: { admin: "sube", accountant: "firma" },
-    screens: ["/panel/mutabakat"],
   },
   tedarikciler: {
     label: "Tedarikçi bakiyeleri",
@@ -323,7 +318,7 @@ export const ALWAYS_COMPANY_WIDE: readonly { title: string; reason: string }[] =
     title: "Vergi ve SGK ödemeleri: Ödemeler'deki vergi hatırlatıcıları ve SGK, nakit planında",
     reason: "Vergi beyanı firmanın tek vergi numarasıyla; şubeye bölünmez (vergiyi muhasebeci yürütür).",
   },
-  { title: "Banka ve cari ekstresi, nakit açılış bakiyesi", reason: "Firmanın hesabı ve parasıdır." },
+  { title: "Nakit açılış bakiyesi", reason: "Firmanın hesabı ve parasıdır." },
   { title: "Paraşüt eşitlemesi", reason: "Hesap başınadır; ortak hesap “hesap geneli” yazar." },
   { title: "Hammadde fiyatı, menü, reçete, tedarikçi kütüğü", reason: "Şubelerin ortak verisi." },
   { title: "Su + buz litre fiyatı", reason: "Tek faturadan gelir; şube şube döküm yine görünür." },
@@ -340,7 +335,7 @@ export const ALWAYS_COMPANY_WIDE: readonly { title: string; reason: string }[] =
 
 /**
  * Şube seçiliyken de firmanın tamamını okuyan yerlerin türü:
- * - `yalniz-firma`: hep firmanın (ekstre, nakit açılış bakiyesi, firmaya giden e-posta, tam yedek);
+ * - `yalniz-firma`: hep firmanın (nakit açılış bakiyesi, firmaya giden e-posta, tam yedek);
  * - `alan`: kişinin tercihine bağlı (`areaScope(alan)`);
  * - `butunluk`: silme engeli gibi denetim, veri olarak gösterilmez;
  * - `ortak-veri`: şubelerin ortak verisi ya da işletmenin günü;
@@ -429,20 +424,13 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
     kind: "yalniz-firma",
     reason: "Nakit açılış bakiyesi firmanın parası: şubenin akışında da firmanın planından okunur (bakiye ve İşletme geneli satırı)",
   },
-  // Alanlar: parça 5 Tutarlılık, Mutabakat, Stok değeri
+  // Alanlar: parça 5 Tutarlılık, Stok değeri (Mutabakat'ın alanı bölümle kalktı, 28 Kasım 2026)
   {
     id: "alan.tutarlilik",
     where: "src/app/panel/tutarlilik/page.tsx#ConsistencyContent; src/app/api/export/route.ts#exportWorkbook",
     kind: "alan",
     area: "tutarlilik",
     reason: "Tutarlılık ve dışa aktarımın Tutarlılık sayfası: firma kipinde bütün şubelerin satışı, sayımı ve bütün faturaların alımı",
-  },
-  {
-    id: "alan.mutabakat",
-    where: "src/app/panel/mutabakat/page.tsx#ReconContent",
-    kind: "alan",
-    area: "mutabakat",
-    reason: "Mutabakat: firma kipinde ekstrenin bütün hareketleri ve bütün şubelerin POS hakedişi tek listede",
   },
   {
     id: "alan.stok_degeri",

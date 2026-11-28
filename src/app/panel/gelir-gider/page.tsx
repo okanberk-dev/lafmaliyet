@@ -20,7 +20,7 @@ import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { periodKasa } from "@/lib/asilpos/kasa";
-import { can, isReadOnly, openableHref } from "@/lib/roles";
+import { can, isReadOnly, openableHref, removedNotice } from "@/lib/roles";
 import { periodSalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
@@ -93,6 +93,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // istemciye (PnlGrid, ay görünümü) ipucu ve uyarısıyla gider, metin motorda kişisiz kurulur
   const personal = can(viewer.role, "maas");
   const sp = await searchParams;
+  // Kaldırılan Mutabakat'ın eski adresinden gelindi (/panel/mutabakat → ?kaldirildi=mutabakat; src/lib/roles.ts RETIRED_PATHS)
+  const removed = removedNotice(sp.kaldirildi);
   const [model, salesState, monthWrite, branchList] = await Promise.all([
     loadModel({ personal }),
     readSalesState(),
@@ -324,6 +326,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           )
         }
       />
+      {removed ? <Notice tone="neutral" size="sm" live="polite" className="mb-4" title={removed.title} text={removed.text} /> : null}
       {/* ⌘K "Kâr / zarar" (#kar-zarar) başka sayfadan gelince içerik akınca iner */}
       <HashScroll key={`capa-${year}`} />
       {/* ⌘K "Kâr / zarar" buraya iner (docs/planlar/ux-sade.md §3.7) */}
