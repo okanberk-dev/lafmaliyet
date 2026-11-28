@@ -132,7 +132,7 @@ test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / k
   // Kapı tek tanımdan: dal.ts isAnaAdmin + yalnizAsilYonetici
   const dal = read("src/server/auth/dal.ts");
   // Yönetim konsolunun oturumu (yalnız asıl yönetici, getYonetimUser) da geçer; yoksa panelin bugünkü yolu
-  assert.match(dal, /export async function requireAnaAdmin\(is: AsilYoneticiIsi = "subeAcma"\): Promise<CurrentUser> \{(?:\s*\/\/[^\n]*)*\s*const konsol = await getYonetimUser\(\);\s*if \(konsol\) return konsol;\s*const user = await requireAdmin\(\);\s*if \(!isAnaAdmin\(user\)\) throw new UserError\(yalnizAsilYonetici\(is\)\);/);
+  assert.match(dal, /export async function requireAnaAdmin\(is: AsilYoneticiIsi = "subeAcma"\): Promise<CurrentUser> \{\s*(?:\/\/[^\n]*\n\s*)*const konsol = await getYonetimUser\(\);\s*if \(konsol\) return konsol;\s*const user = await requireAdmin\(\);\s*if \(!isAnaAdmin\(user\)\) throw new UserError\(yalnizAsilYonetici\(is\)\);/);
   // Eylem kapısı taraması requireAnaAdmin'i yönetici kapısı sayar (muhasebeci "salt okunur", tests/roller.test.ts)
   for (const [file, name] of KORUNAN) assert.ok(actionGatesOf(ROOT, file).find((g) => g.name === name)?.gates.some((g) => g.kind === "requireAdmin"), name);
 });

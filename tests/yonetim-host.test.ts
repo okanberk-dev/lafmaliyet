@@ -97,7 +97,8 @@ test("eşleştirici: panel adresinde kapsam bugünküyle aynı; konsol girdileri
   for (const m of (config.matcher as unknown[]).slice(3)) {
     const has = (m as { has?: { type: string; value: string }[] }).has ?? [];
     assert.ok(has.length === 1 && has[0].type === "host", JSON.stringify(m));
-    assert.ok(YONETIM_HOSTLARI.some((h) => has[0].value === h.replace(/\./g, "\\.")), has[0].value);
+    // Değer bir düzenli ifade: noktalar kaçışlı (YONETIM_HOSTLARI'nın iki adı)
+    assert.ok(["yonetim\\.laffogato\\.net", "yonetim\\.localhost"].includes(has[0].value), has[0].value);
   }
   const yollar = [
     "/",
