@@ -18,6 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { yalnizAsilYonetici } from "../src/lib/asil-yonetici";
 import { ACCOUNTANT_HOME } from "../src/lib/roles";
 import { STEP_UP_REQUIRED } from "../src/lib/step-up";
 import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "../src/lib/two-factor-setup";
@@ -79,7 +80,9 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     await admin.unsafe(`CREATE DATABASE ${DB_NAME}`);
     const url = new URL(SERVER_URL!);
     url.pathname = `/${DB_NAME}`;
-    Object.assign(process.env, { DATABASE_URL: url.href, AUTH_SECRET: SECRET });
+    // Ali asıl yönetici (docs/ROLLER.md › Yönetici hesapları): yönetici hesaplarına dokunan işleri (Kemal'i yönetici
+    // yapıp pasif yapmak, Veli'yi pasif yapmak) yalnız o yapar; Veli öteki yöneticidir
+    Object.assign(process.env, { DATABASE_URL: url.href, AUTH_SECRET: SECRET, LADMIN_ANA_ADMIN: BASE.ali.email });
     delete process.env.RESEND_API_KEY;
     // "server-only" Next'in sunucu derlemesi dışında hata fırlatır; çerezler, yönlendirme ve sayfa yenileme taklit edilir
     const require = createRequire(import.meta.url);
@@ -191,6 +194,15 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     const live = await db.select().from(s.userTokens).where(and(eq(s.userTokens.userId, ids.kemal), sql`${s.userTokens.expiresAt} > now()`));
     assert.equal(live.length, 0, "bağlantı yeniden aktif yapılınca canlanmaz");
     assert.deepEqual(await settings.setUserActive(ids.veli, false), { ok: false, error: STEP_UP_REQUIRED });
+    // Öteki yönetici (Veli) bir yöneticinin erişimine dokunamaz: ret parola sorusundan önce (Kemal bu arada yönetici
+    // yapıldı; Ali'nin hesabında asıl yöneticinin hesap koruması önce gelir)
+    const ali = jar;
+    await db.update(s.users).set({ role: "admin" }).where(eq(s.users.id, ids.kemal));
+    await signIn("veli");
+    assert.deepEqual(await settings.setUserActive(ids.kemal, true, { password: "yanlis-parola" }), { ok: false, error: yalnizAsilYonetici("yoneticiErisimi") });
+    assert.deepEqual(await settings.setUserActive(ids.ali, false, { password: PASSWORD }), { ok: false, error: yalnizAsilYonetici("hesapErisimi") });
+    assert.ok(!(await actions()).some((a) => a.startsWith("Hatalı parola onayı")), "parola hiç sorulmadı");
+    jar = ali;
     assert.equal((await settings.setUserActive(ids.veli, false, { password: PASSWORD })).ok, true);
     const log = await db.select({ action: s.activityLog.action, detail: s.activityLog.detail }).from(s.activityLog);
     assert.deepEqual(log.at(-1), { action: "Kullanıcı pasif yapıldı", detail: "Veli (yönetici)" });

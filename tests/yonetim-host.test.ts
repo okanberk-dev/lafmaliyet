@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -22,6 +22,7 @@ import {
   LISANS_ACIKLAMA,
   merkezUrl,
   panelBaglantilari,
+  panelden,
   panelYonetimYonlendirmesi,
   sekmeAcik,
   YANLIS_ADRES,
@@ -161,7 +162,12 @@ test("bağlantılar APP_URL'den (isteğin adresinden değil); Merkez Uzaktan'ın
     ladmin: "https://ladmin.laffogato.net/panel",
     giris: "https://ladmin.laffogato.net/giris",
     parolaUnuttum: "https://ladmin.laffogato.net/giris?parola=unuttum",
+    hesabim: "https://ladmin.laffogato.net/panel/hesap",
   });
+  // ladmin'den konsola: YONETIM_URL açıkça tanımlıysa konsolun adresi, değilse aynı adresteki yol (alan adı eklenmeden)
+  assert.equal(panelden("/yonetim/yoneticiler", {}), "/yonetim/yoneticiler");
+  assert.equal(panelden("/yonetim/yoneticiler", { YONETIM_URL: "https://yonetim.laffogato.net/" }), "https://yonetim.laffogato.net/yonetim/yoneticiler");
+  assert.equal(panelden("/yonetim/yoneticiler", { YONETIM_URL: "https://baska.ornek.com" }), "/yonetim/yoneticiler", "izin listesinde olmayan ad yok sayılır");
   assert.equal(panelBaglantilari({}).ladmin, "https://ladmin.laffogato.net/panel");
   assert.equal(merkezUrl({}), `https://${KANAL_ALANI}/merkez`);
   assert.equal(merkezUrl({ ASILPOS_CLOUD_URL: "https://uzak.ornek.com/" }), "https://uzak.ornek.com/merkez");
@@ -173,11 +179,12 @@ test("bağlantılar APP_URL'den (isteğin adresinden değil); Merkez Uzaktan'ın
   assert.match(read("src/app/giris/login-form.tsx"), /params\.get\("parola"\) === "unuttum" \? "forgot" : "login"/);
 });
 
-test("kabuk ve sekmeler: panelin kabuğu yok, noindex, iki sekme, her sayfa requireYonetim ister, metinler sabit", () => {
+test("kabuk ve sekmeler: panelin kabuğu yok, noindex, üç sekme, her sayfa requireYonetim ister, metinler sabit", () => {
   assert.deepEqual(
     KONSOL_SEKMELERI.map((s) => [s.href, s.label]),
     [
       ["/yonetim", "Şubeler ve kasalar"],
+      ["/yonetim/yoneticiler", "Yöneticiler"],
       ["/yonetim/lisans", "Lisans ve güncelleme"],
     ],
   );
@@ -188,6 +195,7 @@ test("kabuk ve sekmeler: panelin kabuğu yok, noindex, iki sekme, her sayfa requ
   assert.ok(!layout.includes("@/components/panel/"), "panelin kabuğundan bileşen yok");
   assert.match(read("src/app/yonetim/giris/page.tsx"), /robots: \{ index: false, follow: false \}/);
   for (const f of ["src/app/yonetim/(konsol)/page.tsx", "src/app/yonetim/(konsol)/lisans/page.tsx", "src/app/yonetim/(konsol)/sube/[id]/page.tsx"]) assert.match(read(f), /await requireYonetim\(\);/, f);
+  assert.match(read("src/app/yonetim/(konsol)/yoneticiler/page.tsx"), /const me = await requireYonetim\(\);/);
   // Şubeler ve kasalar: ladmin'deki Şube ekleme ile aynı bileşen, veri ve eylemler
   for (const f of ["src/app/yonetim/(konsol)/page.tsx", "src/app/panel/sube-ekleme/page.tsx"]) {
     const t = read(f);
@@ -219,6 +227,9 @@ test("kabuk ve sekmeler: panelin kabuğu yok, noindex, iki sekme, her sayfa requ
     "src/server/sube-islemleri.ts",
     "src/components/sube-islemleri/kasa-anahtari.tsx",
     "src/components/sube-islemleri/gecis-gunu.tsx",
+    "src/app/yonetim/(konsol)/yoneticiler/page.tsx",
+    "src/app/yonetim/(konsol)/yoneticiler/yoneticiler-client.tsx",
+    "src/server/yonetici-hesaplari.ts",
   ]) {
     assert.doesNotMatch(read(f), /[–—]/, f);
   }
@@ -314,4 +325,23 @@ test("iki oturum türü birbirini reddeder: panel belirteci konsolu, konsol beli
   assert.notEqual(ss.YONETIM_COOKIE, ss.SESSION_COOKIE);
   assert.match(ss.YONETIM_COOKIE, /laf_yonetim$/);
   assert.notEqual(ss.YONETIM_PENDING_COOKIE, ss.YONETIM_COOKIE);
+});
+
+test("Yöneticiler sekmesi: var olan eylemler ve ladmin › Kullanıcılar'ın küçük ortak parçaları; büyük bileşen taşınmaz", () => {
+  const client = read("src/app/yonetim/(konsol)/yoneticiler/yoneticiler-client.tsx");
+  // Var olan sunucu eylemleri (yeni eylem ya da uç yok)
+  assert.match(client, /import \{ createAccessLink \} from "@\/server\/actions\/invites";/);
+  assert.match(client, /import \{ createUser, deleteUser, resetUserTwoFactor, saveUser, setUserActive, signOutUserEverywhere, unlockUser \} from "@\/server\/actions\/settings";/);
+  assert.ok(!existsSync(join(ROOT, "src/app/yonetim/(konsol)/yoneticiler/route.ts")));
+  // Ortak parçalar: Giriş bilgileri, parola alanı, onay metinleri, pencere koruması; users-client'tan yalnız tür
+  for (const parca of ["access-sheet", "password-field", "step-up-text", "close-guard"]) assert.ok(client.includes(`from "@/app/panel/kullanicilar/${parca}"`), parca);
+  assert.match(client, /import type \{ UserRow \} from "@\/app\/panel\/kullanicilar\/users-client";/);
+  assert.doesNotMatch(client, /import \{[^}]*\} from "@\/app\/panel\/kullanicilar\/users-client"/);
+  // Her yönetici işi parolayla (rol yönetici); asıl yöneticinin kendi satırında işlem yok, Hesabım'a bağlantı
+  assert.match(client, /role: "admin", active: q\.active, password: q\.password, branchId: null/);
+  assert.match(client, /\{ben \? \(\s*<a href=\{hesabim\}/);
+  // Sayfanın verisi: sır istemciye gitmez (yalnız kalan kurtarma kodu sayısı)
+  const veri = read("src/server/yonetici-hesaplari.ts");
+  assert.match(veri, /kalanKod: self\?\.totpEnabled \? \(self\.recoveryCodes\?\.length \?\? 0\) : 0/);
+  assert.ok(!/totpSecret|passwordHash: r\./.test(veri.slice(veri.indexOf("const yoneticiler"))), "satırlara parola özeti ya da anahtar girmez");
 });

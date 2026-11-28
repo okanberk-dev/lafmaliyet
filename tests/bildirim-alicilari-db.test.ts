@@ -123,6 +123,13 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
         if (me.role !== "admin") throw new Error("yönetici değil");
         return session();
       },
+      // Yönetici hesaplarına dokunan iş asıl yöneticinin (docs/ROLLER.md › Yönetici hesapları): testin yöneticisi Ali asıl
+      // yönetici sayılır (Veli'yi personele, müdüre indirmek, adresini değiştirmek); Yönetim konsolunun oturumu yok
+      requireAnaAdmin: async () => {
+        if (me.role !== "admin" || me.id !== users.ali.id) throw new Error("asıl yönetici değil");
+        return session();
+      },
+      getYonetimUser: async () => null,
       startSession: async () => {},
       endSession: async () => {},
       rememberDevice: async () => "cihaz",

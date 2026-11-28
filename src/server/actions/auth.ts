@@ -274,7 +274,7 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
     const u = await requirePassword(me, data.password, "Hesabım");
     // Asıl yöneticinin adresi sabit (yetki ona bağlı) ve başka bir hesaba verilemez (docs/ROLLER.md › Asıl yönetici)
     if (data.email !== u.email && isAnaAdminEmail(u.email)) throw new UserError(ASIL_EPOSTA_SABIT);
-    const address = asilAdresRet({ next: data.email, before: u.email, accountExists: true });
+    const address = asilAdresRet({ next: data.email, before: u.email });
     if (address) throw new UserError(address);
     const [{ n }] = await db
       .select({ n: count() })

@@ -102,17 +102,33 @@ export function yonetimLink(yol: string, env: Env = process.env): string {
 }
 
 /**
+ * ladmin'den konsola bağlantı (ör. Kullanıcılar › yönetici satırı): `YONETIM_URL` açıkça tanımlıysa konsolun adresiyle,
+ * değilse aynı adresteki yol (alan adı eklenmeden önce konsol panel adresinde açılır; varsayılan adrese giden bağlantı
+ * henüz çalışmazdı)
+ */
+export function panelden(yol: string, env: Env = process.env): string {
+  const kok = yonetimUrlAcik(env);
+  const p = yol.startsWith("/") ? yol : `/${yol}`;
+  return kok ? `${kok}${p}` : p;
+}
+
+/**
  * Konsolun panele verdiği bağlantılar: hepsi `APP_URL`'den, isteğin geldiği adresten değil (kasa kurulum bağlantısı ya
- * da parola sıfırlama konsolu göstermesin). "Parolamı unuttum" panelin giriş sayfasını sıfırlama adımında açar
+ * da parola sıfırlama konsolu göstermesin). "Parolamı unuttum" panelin giriş sayfasını sıfırlama adımında açar;
+ * "Hesabım" asıl yöneticinin kendi hesabı (parola, iki adımlı, oturumlar; konsolda ayrı Hesabım yok)
  */
 export function panelBaglantilari(env: Env = process.env) {
   const app = panelUrl(env);
-  return { ladmin: `${app}/panel`, giris: `${app}/giris`, parolaUnuttum: `${app}/giris?parola=unuttum` } as const;
+  return { ladmin: `${app}/panel`, giris: `${app}/giris`, parolaUnuttum: `${app}/giris?parola=unuttum`, hesabim: `${app}/panel/hesap` } as const;
 }
+
+/** Konsol › Yöneticiler (yönetici hesapları yalnız asıl yöneticinin; docs/ROLLER.md › Yönetici hesapları) */
+export const KONSOL_YONETICILER_YOLU = `${YONETIM_YOLU}/yoneticiler`;
 
 /** Konsolun sekmeleri (kabuk: src/app/yonetim/(konsol)/layout.tsx) */
 export const KONSOL_SEKMELERI = [
   { href: YONETIM_YOLU, label: "Şubeler ve kasalar" },
+  { href: KONSOL_YONETICILER_YOLU, label: "Yöneticiler" },
   { href: `${YONETIM_YOLU}/lisans`, label: "Lisans ve güncelleme" },
 ] as const;
 

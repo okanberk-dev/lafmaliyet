@@ -232,7 +232,7 @@ yonetim.laffogato.net`, takım kapsamı `okans-projects-fcf7250e`). Tersi olursa
   önce boş bırakın: konsol panel adresinde de kendi girişiyle açılır.
 - Konsolun oturumu ayrı çerezdedir (`__Host-laf_yonetim`); panelin oturumunu açmaz, panelinki de konsolu açmaz.
 - Canlıda denenecekler: konsolda giriş, başka bir yöneticiyle giriş (kayıtsız e-posta gibi yanıt), iki adımlı, çıkış,
-  iki sekme, `yonetim.laffogato.net/api/pos/gun` 404; Marina'nın kasası panel adresinde çalışmaya devam eder.
+  üç sekme (Yöneticiler dahil), `yonetim.laffogato.net/api/pos/gun` 404; Marina'nın kasası panel adresinde çalışmaya devam eder.
 
 ### Güvenlik başlıkları
 
@@ -310,7 +310,8 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
 ## 6a. Kullanıcılar ve iki adımlı doğrulama
 
 - **Ayarlar › Kullanıcılar & roller** (`/panel/kullanicilar`; Ayarlar sayfasının en üstündeki kart da oraya gider):
-  **Kullanıcı ekle** → ad, giriş e-postası, rol (Yönetici / Personel) ve parola adımı:
+  **Kullanıcı ekle** → ad, giriş e-postası, rol (Personel, Müdür, Muhasebeci; Yönetici burada kapalı, aşağıda
+  **Yönetici hesapları**) ve parola adımı:
   - **Parolayı ben belirleyeyim:** hazır gelen okunur güçlü parola (12 karakter, karışan harf yok; "Güçlü parola
     oluştur" ile yenisi), göster/gizle ve kopyala.
   - **Davet bağlantısı gönder:** kişi tek kullanımlık bağlantıdan (`/davet?t=…`, **72 saat**) parolasını kendisi
@@ -351,6 +352,12 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
   karaoke, siparişler) bellekten siler ve sayfayı sunucudan yeniden ister, sunucu giriş sayfasına gönderir; panelden
   çıkınca çalan alarm (sürekli sesli hatırlatma, karaoke) da susar. Ortak tablette sıradaki kişi önceki kişinin
   hatırlatıcısını ya da karaoke tutarını görmez; yeniden giren kişinin canlı verisi baştan istenir.
+- **Yönetici hesapları (28 Kasım 2026; [ROLLER.md › Yönetici hesapları](ROLLER.md#yönetici-hesapları)):** bir yönetici
+  hesabına dokunan işi (yönetici açmak, yöneticilik vermek ve almak, yöneticinin e-postası, parolası ve erişimi, silmek,
+  iki adımlıyı sıfırlamak, kilidi açmak, oturumları kapatmak, giriş bağlantısı) yalnız asıl yönetici yapar, Yönetim
+  konsolu › **Yöneticiler**'de (`/yonetim/yoneticiler`). Kullanıcılar'da yönetici satırları herkese salt okunurdur,
+  rol seçiminde Yönetici kapalıdır. Öteki yöneticiler müdür, muhasebeci ve personel hesaplarını aşağıdaki gibi yönetir,
+  başka bir yöneticinin yalnız adını değiştirebilir; kendi hesabı Hesabım'da. Ret parola sorusundan önce gelir.
 - **Parolayla onay (yönetici işlemleri):** yönetici gücü veren ya da bir yönetici hesabına dokunan işlemler, işlemi
   yapan yöneticinin **kendi parolasını** ister: yönetici ekleme (parolalı ya da davetli, aktif ya da pasif),
   personeli yönetici yapma ve yöneticiyi personel yapma; bir yöneticiyi pasif ya da yeniden aktif yapma; bir
@@ -403,7 +410,7 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
   kurulum parolayla yeniden başlar; pencereden Vazgeç'le çıkınca da anahtar silinir. İki adımlıyı açmak ve kapatmak,
   parola değiştirmek ve diğer cihazlardaki oturumları kapatmak öteki cihazların oturumlarını ve yöneticinin Claude
   bağlantısını kapatır; pencereler bunu önceden söyler. Telefon kaybolursa girişte "Telefonum yanımda değil" ile
-  kurtarma kodu kullanılır ya da bir yönetici sıfırlar; yanlış ya da daha önce kullanılmış kurtarma kodunda ekran her
+  kurtarma kodu kullanılır ya da bir yönetici sıfırlar (yöneticininkini yalnız asıl yönetici); yanlış ya da daha önce kullanılmış kurtarma kodunda ekran her
   kodun bir kez çalıştığını söyler. **Oturumlar › Diğer cihazlardaki oturumları kapat** (parolayla): kasa
   bilgisayarında ya da kaybolan telefonda açık kalan oturumları parolayı değiştirmeden kapatır. Hesabım'daki parola
   onayları kişi başına 15 dakikada 5 hatayla sınırlıdır (Kullanıcılar'daki yönetici onaylarıyla aynı pay;
@@ -421,9 +428,10 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
   eylemi `requireSignedIn`'den geçer (`tests/yonetici-guvenlik.test.ts` tutar). Personelde iki adımlı her zaman isteğe
   bağlı kalır.
   - **Kilitlenme olmasın:** kurulum hemen, aynı ekranda yapılır (telefona doğrulama uygulaması yeter). Telefonunu
-    kaybeden kişi (yönetici, müdür, muhasebeci) kurtarma koduyla girer; kodu da yoksa başka bir yönetici Kullanıcılar ›
-    Güvenlik › **İki adımlıyı sıfırla** der (hedef yöneticiyse kendi parolasıyla): kişi parolasıyla girer, kurulum
-    ekranı açılır, yeni telefonuyla kurar. Hesabım'da kapatmak da serbesttir (telefon değiştirirken), pencere kurulum
+    kaybeden kişi (yönetici, müdür, muhasebeci) kurtarma koduyla girer; kodu da yoksa bir yönetici Kullanıcılar ›
+    Güvenlik › **İki adımlıyı sıfırla** der (hedef yöneticiyse yalnız asıl yönetici, Yönetim konsolu › Yöneticiler'de,
+    kendi parolasıyla; asıl yöneticinin kendisi için aşağıda **Asıl yönetici kilitlenirse**): kişi parolasıyla girer,
+    kurulum ekranı açılır, yeni telefonuyla kurar. Hesabım'da kapatmak da serbesttir (telefon değiştirirken), pencere kurulum
     ekranının açılacağını söyler.
   - **Acil durum (zorunluluk açıkken):** başka yönetici de yoksa Vercel'de `ADMIN_2FA_OPTIONAL=1` (yeniden yayın
     gerekir) ya da `ADMIN_2FA_REQUIRED`'ı silmek zorunluluğu kapatır; iki adımlı yeniden isteğe bağlı olur. İki
@@ -448,11 +456,46 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
     e-posta `src/server/auth/new-device-notice.ts`, kurallar `src/lib/admin-security.ts`; testler
     `tests/yonetici-guvenlik.test.ts`, `tests/hesap-yetki-db.test.ts` ve (müdür, muhasebeci) `tests/roller-db.test.ts`.
 - Kurtarma kodları kişiye özel tuzlu, yavaş bir özetle (scrypt) saklanır; veritabanı sızsa bile kodlar denenerek
-  bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır.
+  bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır. Yönetim konsolu › Yöneticiler asıl yöneticinin
+  kalan kurtarma kodu sayısını gösterir (iki adımlı kapalıysa açmasını önerir).
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
   adımlı doğrulama yeniden kurulmalıdır.
 - **Claude bağlantısı:** yalnız yönetici, parolayla onay; Hesabım › Bağlı uygulamalar'dan kaldırılır; parola değişince
   ya da oturumlar kapatılınca kapanır. Kurulum ve güvenlik ayrıntısı [CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md).
+
+### Asıl yönetici kilitlenirse
+
+Yönetici hesaplarını yalnız asıl yönetici yönettiği için onun hesabını başka bir yönetici açamaz, iki adımlısını
+sıfırlayamaz. Sırayla:
+
+1. **15 dakika bekleyin.** 5 hatalı denemede hesap 15 dakika kilitlenir, sonra kendiliğinden açılır. Daha önce girilmiş
+   tarayıcı bu kilide takılmaz (onun kendi 10 deneme hakkı vardır); mümkünse o tarayıcıdan deneyin.
+2. **Parolamı unuttum.** Parola unutulduysa giriş sayfasındaki "Parolamı unuttum" asıl yöneticinin adresine 2 saatlik
+   sıfırlama bağlantısı gönderir (Resend kurulu olmalı). Bağlantıyla yeni parola belirlenir, açık oturumlar kapanır.
+3. **Kurtarma kodları.** İki adımlı açıksa ve telefon yoksa girişte "Telefonum yanımda değil" ile sekiz kurtarma
+   kodundan biri girilir (her kod bir kez). Girince Hesabım'dan iki adımlıyı kapatıp yeni telefonla yeniden kurun ya da
+   yeni kodlar alın.
+4. **En son: kurtarma betiği** (yalnız yazılımcı, komut satırından; `scripts/asil-yonetici-kurtar.ts`). Telefon ve
+   kurtarma kodları birlikte kaybolduysa (ya da hesap başka nedenle açılamıyorsa) asıl yöneticinin adresindeki hesabın
+   iki adımlısını sıfırlar (anahtar ve kurtarma kodları silinir), hesap ve cihaz kilitlerini açar, oturum sürümünü
+   artırır (panelde ve Yönetim konsolunda açık bütün oturumlar kapanır) ve işlem geçmişine "Asıl yönetici hesabı
+   kurtarıldı (komut satırı)" yazar. **Parolaya dokunmaz**: parola 2. adımdaki gibi "Parolamı unuttum" ile sıfırlanır.
+   Hesap yoksa ya da yönetici değilse açık bir iletiyle durur, hiçbir şey yazmaz; hesap pasifse etkinleştirmez (söyler).
+
+   ```bash
+   # Önce kuru çalışma: ne yapılacağını yazar, veritabanına dokunmaz
+   DATABASE_URL='<Neon bağlantı adresi>' npx tsx scripts/asil-yonetici-kurtar.ts
+   # Doğruysa uygula
+   DATABASE_URL='<Neon bağlantı adresi>' npx tsx scripts/asil-yonetici-kurtar.ts --uygula
+   ```
+
+   - Adres `LADMIN_ANA_ADMIN`'dir (yoksa `info@nextgenlab.com.tr`); canlıda tanımlıysa aynı değeri komut satırında da
+     verin (`LADMIN_ANA_ADMIN=… DATABASE_URL=… npx tsx …`). Betik `.env.local`'ı okumaz; hedef yalnız komut satırından.
+   - Ekrana yalnız hedefin sunucu ve veritabanı adı, hesabın adı ve adresi yazılır; parola, anahtar ve kod yazılmaz.
+   - Sonra: "Parolamı unuttum" ile yeni parola, giriş, Hesabım › İki adımlı doğrulama'yı yeniden kurun ve kurtarma
+     kodlarını saklayın.
+   - `ADMIN_2FA_OPTIONAL=1` bunun yerine geçmez: iki adımlısı açık hesabın girişindeki kod adımını kaldırmaz.
+   - Betiğin testi `tests/asil-yonetici-kurtar-db.test.ts` (kuru çalışma yazmaz, `--uygula` yazar, yanlış hesapta durur).
 
 **QR menü.** Müşterinin tam menüsü `https://laffogato.net/menu`'dedir: alerjenler (Gıda Etiketleme Yönetmeliği) ve
 fiyat listesinin tarihi (Fiyat Etiketi Yönetmeliği) oradadır, panelin menüsünde yoktur. Yeni QR basılacaksa

@@ -165,6 +165,23 @@ girdikten sonra).
 - Sıradaki: K-B (yönetici hesapları kuralı ve Yöneticiler sekmesi), sonra K-C (ladmin'den ayırma; konsol canlıda
   denendikten sonra).
 
+## 28 Kasım: yönetici hesaplarını yalnız asıl yönetici yönetir (dal yonetici-hesaplari; K-B)
+
+- Kural (`src/lib/asil-yonetici.ts` › `yoneticiHesabi`, `yoneticiDuzenlemeIsi`, `yonetici…` işleri): kullanıcı
+  eylemlerinde (`settings.ts`, `invites.ts › createAccessLink`) önceki ya da sonraki rol yöneticiyse
+  `requireAnaAdmin(yonetici…)`, hedef okunduktan hemen sonra, parola sorusundan önce; yalnız ad serbest. Eylemler konsol
+  oturumunu da kabul eder. `asilAdresRet` istisnası kapandı. Hesabım (`auth.ts`) değişmedi.
+- Konsol › Yöneticiler: `src/app/yonetim/(konsol)/yoneticiler/` (sayfa ve küçük istemci bileşeni), veri
+  `src/server/yonetici-hesaplari.ts`; sekme `src/lib/yonetim-host.ts › KONSOL_SEKMELERI`. ladmin'in ortak parçaları
+  (`access-sheet`, `password-field`, `step-up-text`, `close-guard`) yeniden kullanıldı; `users-client.tsx` taşınmadı.
+- ladmin › Kullanıcılar: yönetici satırları herkese salt okunur (`AdminAccountDialog`), Yönetici rolü kapalı,
+  asıl yöneticiye konsol bağlantısı (`panelden`).
+- Kurtarma: `scripts/asil-yonetici-kurtar.ts` (kuru çalışma, `--uygula`), docs/DEPLOY.md › Asıl yönetici kilitlenirse.
+- Testler: `tests/yonetici-hesaplari-db.test.ts`, `tests/asil-yonetici-kurtar-db.test.ts`; bilerek güncellenenler
+  `hesap-yetki-db`, `bildirim-alicilari-db`, `personel-baglanti-db`, `asil-yonetici-db`, `asil-yonetici`, `roller`,
+  `yonetim-host`. Göç yok; kasanın uçları ve anahtar çözümü değişmedi.
+- Sıradaki: K-C (ladmin'den ayırma; konsol canlıda denendikten sonra).
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)

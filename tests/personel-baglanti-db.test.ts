@@ -58,7 +58,8 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     const [t] = await db.insert(s.users).values({ email: "tuzla@laffogato.net", name: "Tuzla Personeli", passwordHash: "x", role: "staff", branchId: "tuzla" }).returning();
     users = { admin: a.id, ayse: ayse.id, tuzlaKilitli: t.id };
     const me = async () => ({ ...a, role: "admin" as const });
-    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
+    // Kullanıcı eylemleri Yönetim konsolunun oturumuna da bakar (yok); hesaplar personel, asıl yönetici kapısı sorulmaz
+    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me, getYonetimUser: async () => null });
     costs = await import("../src/server/actions/costs");
     dataset = await import("../src/server/data/dataset");
     settings = await import("../src/server/actions/settings");

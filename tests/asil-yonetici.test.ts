@@ -1,7 +1,8 @@
 // Asıl yönetici (docs/ROLLER.md › Asıl yönetici; sahibin kararı, 28 Kasım 2026): saf kurallar (src/lib/asil-yonetici.ts),
 // kasa durumu (src/lib/asilpos/kasa-durumu.ts) ve kaynak taraması: korunan her eylem aynı kapıyı (requireAnaAdmin) ve
-// aynı ret metnini kullanır, hesap korumasının her eylemi aynı denetimi çağırır, ekranlar bayrağı sunucuda hesaplar.
-// Veritabanında davranış: tests/asil-yonetici-db.test.ts.
+// aynı ret metnini kullanır, hesap korumasının her eylemi aynı denetimi çağırır, yönetici hesabına dokunan her kullanıcı
+// eylemi parola sorusundan önce requireAnaAdmin(yonetici…) ister, ekranlar bayrağı sunucuda hesaplar.
+// Veritabanında davranış: tests/asil-yonetici-db.test.ts ve tests/yonetici-hesaplari-db.test.ts.
 // Çalıştırma: npx tsx --test tests/asil-yonetici.test.ts
 
 import assert from "node:assert/strict";
@@ -19,6 +20,10 @@ import {
   isAnaAdmin,
   isAnaAdminEmail,
   yalnizAsilYonetici,
+  YONETICI_KONSOLDA,
+  YONETICI_ROLU_KAPALI,
+  yoneticiDuzenlemeIsi,
+  yoneticiHesabi,
 } from "../src/lib/asil-yonetici";
 import { ANA_ADMIN_ONLY } from "../src/lib/asilpos/kurulum";
 import { KASA_KURULU_GUN, kasaDurumMetni, kasaDurumu, YENI_KURULUM_ONEKI, yeniKurulumOnayi, type KasaKaniti } from "../src/lib/asilpos/kasa-durumu";
@@ -66,16 +71,39 @@ test("hesap koruması: asıl yöneticinin hesabında başka yönetici reddedilir
   assert.ok(asilHesapRet({ role: "manager", email: "asil@ornek.com" }, { email: "ASIL@ornek.com" }, "hesapKilidi", ENV));
 });
 
-test("adres: hiçbir hesap asıl yöneticinin adresine çevrilemez; yeni hesap yalnız o hesap yokken açılabilir", () => {
+test("adres: hiçbir hesap asıl yöneticinin adresine çevrilemez; o adresle yeni hesap hiçbir koşulda açılamaz", () => {
   // Ad değişikliği (adres aynı) serbest; başka adres serbest
-  assert.equal(asilAdresRet({ next: "asil@ornek.com", before: "asil@ornek.com", accountExists: true }, ENV), null);
-  assert.equal(asilAdresRet({ next: "yeni@ornek.com", before: "ali@ornek.com", accountExists: true }, ENV), null);
-  // Var olan hesabın adresi asıl yöneticinin adresine çevrilemez (hesap var da yok da)
-  assert.equal(asilAdresRet({ next: "ASIL@ornek.com", before: "ali@ornek.com", accountExists: true }, ENV), ASIL_ADRES_ALINAMAZ);
-  assert.equal(asilAdresRet({ next: "asil@ornek.com", before: "ali@ornek.com", accountExists: false }, ENV), ASIL_ADRES_ALINAMAZ);
-  // Yeni hesap: asıl yönetici hesabı varken reddedilir, yokken bugünkü gibi açılır (kilitlenme olmasın)
-  assert.equal(asilAdresRet({ next: "asil@ornek.com", before: null, accountExists: true }, ENV), ASIL_ADRES_ALINAMAZ);
-  assert.equal(asilAdresRet({ next: "asil@ornek.com", before: null, accountExists: false }, ENV), null);
+  assert.equal(asilAdresRet({ next: "asil@ornek.com", before: "asil@ornek.com" }, ENV), null);
+  assert.equal(asilAdresRet({ next: "yeni@ornek.com", before: "ali@ornek.com" }, ENV), null);
+  assert.equal(asilAdresRet({ next: "yeni@ornek.com", before: null }, ENV), null);
+  // Var olan hesabın adresi asıl yöneticinin adresine çevrilemez
+  assert.equal(asilAdresRet({ next: "ASIL@ornek.com", before: "ali@ornek.com" }, ENV), ASIL_ADRES_ALINAMAZ);
+  // Yeni hesap: "asıl yönetici hesabı yoksa bir yönetici açabilir" istisnası kapandı (28 Kasım 2026): hesap yokken de
+  assert.equal(asilAdresRet({ next: " asil@ORNEK.com ", before: null }, ENV), ASIL_ADRES_ALINAMAZ);
+  assert.equal(asilAdresRet.length, 1, "hesabın var olup olmadığı artık sorulmaz (env varsayılanlı)");
+});
+
+test("yönetici hesapları: önceki ya da sonraki rol yöneticiyse iş asıl yöneticinin; ret cümleleri tek biçim", () => {
+  assert.equal(yoneticiHesabi("admin"), true);
+  assert.equal(yoneticiHesabi("staff", "admin"), true);
+  assert.equal(yoneticiHesabi("admin", "manager"), true);
+  assert.equal(yoneticiHesabi("staff", "manager"), false);
+  assert.equal(yoneticiHesabi("accountant"), false);
+  assert.equal(yoneticiHesabi(null, undefined), false);
+  // Düzenleme: hangi iş (yalnız ad değişikliğinde eylem bunu hiç sormaz)
+  assert.equal(yoneticiDuzenlemeIsi("staff", "admin"), "yoneticilikVerme");
+  assert.equal(yoneticiDuzenlemeIsi("manager", "admin"), "yoneticilikVerme");
+  assert.equal(yoneticiDuzenlemeIsi("admin", "staff"), "yoneticilikAlma");
+  assert.equal(yoneticiDuzenlemeIsi("admin", "accountant"), "yoneticilikAlma");
+  assert.equal(yoneticiDuzenlemeIsi("admin", "admin"), "yoneticiDuzenleme");
+  assert.equal(yoneticiDuzenlemeIsi("staff", "manager"), null, "müdür, muhasebeci, personel: bugünkü gibi");
+  assert.equal(yoneticiDuzenlemeIsi("accountant", "accountant"), null);
+  assert.equal(yalnizAsilYonetici("yoneticiAcma"), "Bu işlemi yalnız asıl yönetici yapar: yönetici hesabı açmak");
+  assert.equal(yalnizAsilYonetici("yoneticilikVerme"), "Bu işlemi yalnız asıl yönetici yapar: bir hesaba yöneticilik vermek");
+  assert.equal(yalnizAsilYonetici("yoneticilikAlma"), "Bu işlemi yalnız asıl yönetici yapar: bir yöneticinin yöneticiliğini almak");
+  assert.equal(YONETICI_KONSOLDA, "Yönetici hesapları Yönetim konsolunda yönetilir");
+  assert.ok(YONETICI_ROLU_KAPALI.includes("Yönetim konsolunda"));
+  for (const t of [YONETICI_KONSOLDA, YONETICI_ROLU_KAPALI]) assert.doesNotMatch(t, /[–—]/);
 });
 
 const NOW = new Date("2026-11-28T12:00:00+03:00");
@@ -162,11 +190,53 @@ test("hesap koruması her eylemde: asilHesapRet hedefi okuduktan sonra, yazımda
     }
   }
   // Adres: saveUser (çevirme), createUser (hesap varken), updateProfile (çevirme ve asıl yöneticinin kendi adresi)
-  assert.match(body("src/server/actions/settings.ts", "saveUser"), /asilAdresRet\(\{ next: data\.email, before: current\.email, accountExists: true \}\)/);
-  assert.match(body("src/server/actions/settings.ts", "createUser"), /asilAdresRet\(\{ next: data\.email, before: null, accountExists: dup > 0 \}\)/);
+  assert.match(body("src/server/actions/settings.ts", "saveUser"), /asilAdresRet\(\{ next: data\.email, before: current\.email \}\)/);
+  assert.match(body("src/server/actions/settings.ts", "createUser"), /asilAdresRet\(\{ next: data\.email, before: null \}\)/);
   const profile = body("src/server/actions/auth.ts", "updateProfile");
   assert.match(profile, /if \(data\.email !== u\.email && isAnaAdminEmail\(u\.email\)\) throw new UserError\(ASIL_EPOSTA_SABIT\);/);
-  assert.match(profile, /asilAdresRet\(\{ next: data\.email, before: u\.email, accountExists: true \}\)/);
+  assert.match(profile, /asilAdresRet\(\{ next: data\.email, before: u\.email \}\)/);
+  // İstisna kapandı: hesabın var olup olmadığı hiçbir yerde sorulmaz
+  for (const f of ["src/server/actions/settings.ts", "src/server/actions/auth.ts", "src/lib/asil-yonetici.ts"]) assert.ok(!read(f).includes("accountExists"), f);
+});
+
+/** Yönetici hesabına dokunan kullanıcı eylemleri ve işleri (docs/ROLLER.md › Yönetici hesapları) */
+const YONETICI: [file: string, name: string, guard: RegExp][] = [
+  ["src/server/actions/settings.ts", "createUser", /if \(yoneticiHesabi\(data\.role\)\) await requireAnaAdmin\("yoneticiAcma"\);/],
+  ["src/server/actions/settings.ts", "saveUser", /const is = touches \? yoneticiDuzenlemeIsi\(current\.role, data\.role\) : null;\s*if \(is\) await requireAnaAdmin\(is\);/],
+  ["src/server/actions/settings.ts", "setUserActive", /if \(yoneticiHesabi\(before\.role\)\) await requireAnaAdmin\("yoneticiErisimi"\);/],
+  ["src/server/actions/settings.ts", "deleteUser", /if \(yoneticiHesabi\(u\.role\)\) await requireAnaAdmin\("yoneticiSilme"\);/],
+  ["src/server/actions/settings.ts", "resetUserTwoFactor", /if \(yoneticiHesabi\(target\.role\)\) await requireAnaAdmin\("yoneticiIkiAdim"\);/],
+  ["src/server/actions/settings.ts", "unlockUser", /if \(yoneticiHesabi\(target\.role\)\) await requireAnaAdmin\("yoneticiKilidi"\);/],
+  ["src/server/actions/settings.ts", "signOutUserEverywhere", /if \(yoneticiHesabi\(target\.role\)\) await requireAnaAdmin\("yoneticiOturumlari"\);/],
+  ["src/server/actions/invites.ts", "createAccessLink", /if \(yoneticiHesabi\(u\.role\)\) await requireAnaAdmin\("yoneticiBaglantisi"\);/],
+];
+
+test("yönetici hesabı: her kullanıcı eylemi requireAnaAdmin'i parola sorusundan ve ilk yazımdan önce ister; konsol oturumu da geçer", () => {
+  for (const [file, name, guard] of YONETICI) {
+    const b = body(file, name);
+    const m = guard.exec(b);
+    assert.ok(m, `${name}: yönetici hesabı kapısı yok`);
+    // Konsolun oturumu (asıl yönetici) varsa onunla, yoksa panelin yönetici kapısı
+    assert.match(b, /(?:const konsol = await getYonetimUser\(\);\s*const me = konsol \?\? \(await requireAdmin\(\)\);|const me = \(await getYonetimUser\(\)\) \?\? \(await requireAdmin\(\)\);)/, `${name}: konsol oturumu`);
+    for (const later of ["requireStepUp(", ".update(s.users)", ".delete(s.users)", ".insert(s.users)", "issueUserToken(", "expireUserTokens("]) {
+      const at = b.indexOf(later);
+      if (at >= 0) assert.ok(at > m.index, `${name}: ${later} kapıdan sonra`);
+    }
+  }
+  // Kendi hesabı (Hesabım, auth.ts) bu kurala girmez
+  assert.ok(!read("src/server/actions/auth.ts").includes("requireAnaAdmin"), "Hesabım asıl yönetici istemez");
+  // Konsoldan gelen kendi ad değişikliği panel oturumu açmaz
+  assert.match(body("src/server/actions/settings.ts", "saveUser"), /if \(after && after\.id === me\.id && !konsol\) await startSession\(after\);/);
+  // Son yönetici kuralı aynen (saveUser, setUserActive, deleteUser)
+  for (const name of ["saveUser", "setUserActive", "deleteUser"]) assert.ok(body("src/server/actions/settings.ts", name).includes('throw new UserError("En az bir aktif yönetici kalmalı")'), name);
+  // emailAccess konsoldan da (Giriş bilgileri penceresi): mühürlü kopya ya da bağlantı anahtarı ister, yönetici kapısı aynı
+  assert.match(body("src/server/actions/invites.ts", "emailAccess"), /const me = \(await getYonetimUser\(\)\) \?\? \(await requireAdmin\(\)\);/);
+  // Eylem kapısı taraması: yönetici kapısı (requireAdmin) ve asıl yönetici kapısı (requireAnaAdmin, yönetici sayılır)
+  for (const [file, name] of YONETICI) {
+    const gates = actionGatesOf(ROOT, file).find((g) => g.name === name)?.gates ?? [];
+    assert.ok(gates.some((g) => g.kind === "requireAdmin" && g.args.length === 0), `${name}: requireAdmin()`);
+    assert.ok(gates.some((g) => g.kind === "requireAdmin" && g.args.length === 1), `${name}: requireAnaAdmin(iş)`);
+  }
 });
 
 test("kapalı şubenin kurulum kodu: koşullu güncellemede şube açık olmalı, yanıt aynı 410 biçimiyle", () => {
@@ -201,11 +271,19 @@ test("ekranlar: Şube ekleme yalnız asıl yöneticiye, korunan alanlar öteki y
   // Kasa anahtarı ve geçiş günü
   assert.match(read("src/components/sube-islemleri/kasa-anahtari.tsx"), /disabled=\{!anaAdmin \|\| !secret\.trim\(\) \|\| short\}/);
   assert.match(read("src/app/panel/ayarlar/asilpos-card.tsx"), /locked=\{anaAdmin \? null : asilYoneticiNotu\("gecisGunu"\)\}/);
-  // Kullanıcılar & roller: etiket ve satır anahtarı; Hesabım: asıl yöneticinin e-postası sabit
+  // Kullanıcılar & roller: etiket ve satır anahtarı; yönetici satırları herkese salt okunur, satırda ve pencerede tek
+  // cümle; Yönetici rolü eklemede ve düzenlemede kapalı. Hesabım: asıl yöneticinin e-postası sabit
   const users = read("src/app/panel/kullanicilar/users-client.tsx");
   assert.equal((users.match(/\{u\.anaAdmin \? <Badge tone="violet">\{ASIL_YONETICI\}<\/Badge> : null\}/g) ?? []).length, 2, "telefon ve masaüstü satırı");
   assert.match(users, /disabled=\{me \|\| guarded \|\| pending\}/);
-  assert.match(read("src/app/panel/kullanicilar/page.tsx"), /anaAdmin: isAnaAdminEmail\(u\.email\)/);
+  assert.match(users, /const guardedRow = \(u: UserRow\) => u\.role === "admin";/, "asıl yönetici dahil herkese");
+  assert.equal((users.match(/\{guardedRow\(u\) \? \(\s*<p[^>]*>\s*<KonsolNotu konsolUrl=\{konsolUrl\} \/>/g) ?? []).length, 2, "telefon ve masaüstü satırında cümle");
+  assert.match(users, /if \(guarded\) return <AdminAccountDialog user=\{user\} self=\{self\} konsolUrl=\{konsolUrl\} onClose=\{onClose\} \/>;/, "pencere salt okunur");
+  assert.equal((users.match(/options=\{ROLE_OPTIONS\} disabled=\{\(v\) => v === "admin"\} \/>/g) ?? []).length, 2, "ekleme ve düzenlemede Yönetici rolü kapalı");
+  assert.equal((users.match(/<KonsolNotu konsolUrl=\{konsolUrl\} text=\{YONETICI_ROLU_KAPALI\} \/>/g) ?? []).length, 2, "nedeni yazılı");
+  const usersPage = read("src/app/panel/kullanicilar/page.tsx");
+  assert.match(usersPage, /anaAdmin: isAnaAdminEmail\(u\.email\)/);
+  assert.match(usersPage, /konsolUrl=\{isAnaAdmin\(me\) \? panelden\(KONSOL_YONETICILER_YOLU\) : null\}/, "konsol bağlantısı yalnız asıl yöneticiye");
   assert.match(read("src/app/panel/hesap/page.tsx"), /emailLocked=\{isAnaAdminEmail\(user\.email\) \? ASIL_EPOSTA_SABIT : null\}/);
 });
 
@@ -222,6 +300,10 @@ test("yeni metinde uzun tire yok; Şube ekleme sayfa, uç değil; kasa açılı�
     "src/server/auth/giris-korumalari.ts",
     "src/app/panel/sube-ekleme/page.tsx",
     "src/components/sube-ekleme/sube-ekleme-client.tsx",
+    "src/server/yonetici-hesaplari.ts",
+    "src/app/yonetim/(konsol)/yoneticiler/page.tsx",
+    "src/app/yonetim/(konsol)/yoneticiler/yoneticiler-client.tsx",
+    "scripts/asil-yonetici-kurtar.ts",
   ]) {
     assert.doesNotMatch(read(f), /[–—]/, f);
   }

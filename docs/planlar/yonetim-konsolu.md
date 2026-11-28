@@ -119,6 +119,18 @@ sayfasına ilk personeli ve "Kasayı serbest bırak"ı ekliyor.
    kilit aç, oturumları kapat, giriş bağlantısı); ladmin'de yönetici satırları salt okunur ve "Yönetici" rolü seçeneği
    kapalı; kurtarma betiği ve `docs/DEPLOY.md`; kalan kurtarma kodu sayısı. Kırılacağı bilinen testler düzeltilir
    (`hesap-yetki-db`, `bildirim-alicilari-db`).
+   **Yapıldı (28 Kasım 2026, dal `yonetici-hesaplari`):** kural sekiz kullanıcı eyleminde (`createUser`, `saveUser`,
+   `setUserActive`, `deleteUser`, `resetUserTwoFactor`, `unlockUser`, `signOutUserEverywhere`, `createAccessLink`):
+   önceki ya da sonraki rol yöneticiyse `requireAnaAdmin(yonetici…)`, hedef okunduktan hemen sonra, parola sorusundan
+   önce; yalnız ad değişikliği serbest. Eylemler konsol oturumunu da kabul eder (konsoldan gelen kendi ad değişikliği
+   panel oturumu açmaz); `emailAccess` de. "Adres boşsa" istisnası kapandı (`asilAdresRet`). Konsol › Yöneticiler
+   (`/yonetim/yoneticiler`; üçüncü sekme): liste, Yönetici ekle, Yöneticilik ver (e-postayla), İşlemler penceresi
+   (yöneticiliği al, pasif / aktif, sil, iki adımlı, kilit, oturumlar, giriş bağlantısı), üstte asıl yöneticinin iki
+   adımlı durumu ve kalan kurtarma kodu. ladmin › Kullanıcılar'da yönetici satırları herkese salt okunur ve Yönetici
+   rolü kapalı. `scripts/asil-yonetici-kurtar.ts` (varsayılan kuru çalışma, `--uygula` ile yazar) ve
+   [DEPLOY.md › Asıl yönetici kilitlenirse](../DEPLOY.md#asıl-yönetici-kilitlenirse). Testler
+   `tests/yonetici-hesaplari-db.test.ts`, `tests/asil-yonetici-kurtar-db.test.ts`; `hesap-yetki-db`,
+   `bildirim-alicilari-db`, `personel-baglanti-db`, `asil-yonetici-db`, `roller` bilerek güncellendi. K-B bununla bitti.
 4. **K-C: ladmin'den ayırma.** Asıl yönetici eylemleri yalnız konsol oturumunu kabul eder (`requireYonetim`); ladmin'de
    düğmeler yerine salt okunur durum ve not; menü, komut paleti, yardım, asistan kılavuzu, belgeler; `/panel/sube-ekleme`
    yönlendirmesi. (`updateBranch` alanlarının isteğe bağlı olması ve kasaya giden metinler K-A'nın ikinci yarısında

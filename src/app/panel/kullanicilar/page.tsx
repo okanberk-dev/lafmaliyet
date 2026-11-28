@@ -9,6 +9,7 @@ import { adminTwoFactorRequired, TWO_FACTOR_RULE_TEXT } from "@/lib/admin-securi
 import { isAnaAdmin, isAnaAdminEmail } from "@/lib/asil-yonetici";
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { dateTimeTR, num } from "@/lib/format";
+import { KONSOL_YONETICILER_YOLU, panelden } from "@/lib/yonetim-host";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl, isPendingInvite, MAX_TOKEN_ATTEMPTS } from "@/server/auth/tokens";
 import { currentBranchScope } from "@/server/branch-scope";
@@ -110,8 +111,9 @@ async function UsersContent() {
         loginUrl={`${appUrl()}/giris`}
         branches={branches}
         twoFactorRequired={twoFactor}
-        // Asıl yönetici (docs/ROLLER.md › Asıl yönetici): satırı etiketli, hesabını yalnız kendisi değiştirir
-        meAnaAdmin={isAnaAdmin(me)}
+        // Yönetici satırları herkese salt okunur (docs/ROLLER.md › Yönetici hesapları); asıl yöneticiye konsolun
+        // Yöneticiler sekmesine bağlantı (YONETIM_URL tanımlıysa konsolun adresi; src/lib/yonetim-host.ts › panelden)
+        konsolUrl={isAnaAdmin(me) ? panelden(KONSOL_YONETICILER_YOLU) : null}
         users={rows.map((u) => ({
           id: u.id,
           name: u.name,
