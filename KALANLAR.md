@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 18:15)
+# Kalanlar ve devam (28 Kasım 2026, 20:00)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %98'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -79,8 +79,9 @@ altında lafmaliyet ve `lafpos` klasörleri; çalışma ağaçları `~/Downloads
 - Marina Merkez'de "Otomatik"; 28 Kas 09:44'te #196 derlemesini kurdu. Sonrakiler (#198-#201) gün sonunda ya da 29 Kas
   sabah açılışta kurulur. Marina'da ModPOS artık yok (sahip); Tuzla ModPOS'ta.
 
-**Süren (28 Kas 18:15):** kasa dalı `kasa-bilgisayari-modu` (yeni betik `kasa-bilgisayari.ps1`, Yönetim kartı, geri alma,
-Windows CI adımları; yeni kurulumda açık, Marina'da kendiliğinden bir şey değişmez). Bitince incele, CI yeşilse squash.
+**Süren (28 Kas 20:00):** üç ajan: panel L1 (dal `ladminden-ayirma`) ve L2 (dal `mutabakat-kaldir`), kasa K1 (dal
+`kurulumda-fis-yazicisi`). 28 Kas akşamı main'e giren ek işler: kasa #202 Kasa bilgisayarı modu (Marina'da kapalı gelir,
+Yönetim › Ayarlar ve yedek'ten açılır). Görevlerin tamamı §4'te.
 
 **Kararlar (sahip onayladı ya da "önerdiğin gibi al" dedi):** kasadan devralma yok; yeni açılış akışı yalnız yeni kasada;
 kurulum hiçbir şey sormaz; yönetici hesaplarını yalnız asıl yönetici yönetir; SGK işveren oranı konusu kapandı (P5
@@ -96,42 +97,83 @@ zamanlanmış görevler: `asilpos-limit-sonrasi-devam`, `asilpos-bekci` (ana otu
 **Sahibe hatırlatılacak (karar beklenmez):** konsola girip denemek; Token denemesinin sonucu; 29 Kas sabah ilk fişte
 yazıcı; asıl yönetici hesabında iki adımlı doğrulamayı açmak; üç depo GitHub'da herkese açık ve main korumasız.
 
-## 4. Sıradaki işler, bu sırayla
+## 4. Görev listesi (28 Kasım 20:00; sahibin isteği: "hepsini görevlere ayır, kaybolmasın, kendin planla")
 
-Aynı anda en çok iki iş: biri panel, biri kasa. Ajan görevlerine "PR'ı birleştirme" açıkça yazılır; birleştirme incelemeden
-sonra ana oturumda.
+Kurallar: her görev ayrı dal ve ayrı PR; ajan PR'ı hazırlar ve CI yeşilde durur, inceleme ve birleştirme ana oturumda;
+birleştirme sırayla (önce origin/main alınır). Panelde kod içeren PR 22:00 ile 03:00 arasında birleşmez. Durumlar:
+SÜRÜYOR, SIRADA, BEKLİYOR (neyi beklediği yazılı). Biten görev buradan silinir, §3'e ve YAPILACAKLAR.md'ye geçer.
 
-1. **Kasa: "Kasa bilgisayarı modu"** (sürüyor): incele, CI yeşilse squash.
-2. **Panel K-C: ladmin'den ayırma.** Asıl yönetici eylemleri yalnız konsol oturumunu kabul eder; ladmin'de düğmeler
-   yerine salt okunur durum ve "Bu iş Yönetim konsolunda yapılır"; menü ve komut paletinden "Şube ekleme" kalkar,
-   `/panel/sube-ekleme` konsola yönlenir; yardım, asistan kılavuzu, belgeler. **Sahip konsolda giriş yapabildiğini
-   söylemeden başlanmaz ve birleşmez** (giremezse şube işleri kilitlenirdi).
-3. **Taşıma paketi ve anahtarlar:** Vercel'de panelin 42 değişkeninden 29'u, Uzaktan'ın 14'ünden 4'ü "sensitive" (geri
-   okunamaz; liste `anahtar-envanteri.md`). En kritiği `AUTH_SECRET`: oturumları imzalar ve mühürlü veriyi açar. İş:
-   konsolda yalnız asıl yöneticinin indirdiği, parolayla şifrelenmiş "taşıma paketi" (uygulamanın gördüğü ortam değerleri;
-   ekranda gösterilmez) ve veritabanı yedeği; sonra sensitive olanların okunabilir türde yeniden eklenmesi; kasa
-   deposundaki `scripts/vercel/baglanti-kur.sh` yeni anahtarı `--sensitive` ile ekliyor: kaldırılır; `docs/DEPLOY.md`'ye
-   "kendi sunucuya taşıma" bölümü.
-4. **Marina'da ModPOS kalıntıları:** ModPOS'u olmayan şubede ModPOS kartı ve yönergesi görünmez (panel: Ayarlar › ModPOS
-   API, Şubeler › şube kartı, zil metinleri); Tuzla'nın çekimi aynen. Marina'nın geçiş günü panelde girilmiş mi bakılır.
-5. **Kasa: "Kurulumu yap" fiş yazıcısını da bulsun ve denenebilsin.**
-6. Panel: **Özel günler bölümünü kaldır.** Dikkat: ileri tarihli kapalı gün, kapalı işaretini kaldırma ve personelin
-   "Kapalı gün bildirimlerim" listesi yalnız bu ekranda yaşıyor; önce Kasa raporu'na taşınır. Veriler silinmez, göç yok.
-7. Kasa: Giderler gün sonu penceresinden de girilir; kasaya hata kaydı (panelin #168'i örnek; göç var). Kurulum sırasında
-   elektrik kesilirse açılışta kendini onaran tek seferlik görev (yapılmadı).
-8. Panel P4'ün kalanı (CI'a şema ve göç denetimi; asistan bilgisi derlemede üretilsin), P7 dönem kapanışı.
-9. **Basitleştirme:** önce envanter belgesi (`SADELESTIRME.md`, henüz yok), sahibin onayı, sonra küçük PR'lar.
-10. **P5** (dal `p5-ay-ayarlari` bayat: main'le on dosyada çakışıyor): main'den yeni dal, commit'ler seçilerek; göç
-    `0102_ay_ayarlari`; gündüz ve canlı kopyada provayla. SGK işveren oranına dokunulmaz.
-11. Ürün görselleri (panel şema ve yükleme, panel ucu, kasa, site: dört PR), P8 (örnek Z fotoğrafı gerekir), P6, P9.
-12. A3 eski adları kaldıran daraltma göçü: en erken 4 Aralık, bütün kasalar yeni sürümdeyken.
-13. asil-platform (ayrı depo `okanberk-dev/posyazilim`) satışa hazırlık; Merkez'in lisans ve güncelleme ekranlarını
-    konsolda tek ekrana almak; yeni cihaz e-postasında adresin adı; konsolda "Oturumlar"; son rapor `RAPOR-son.md`.
+### Panel (ladmin)
 
-**Ertelenen (sahibin kararı, 28 Kas):** sitenin e-Arşiv'i Paraşüt OAuth'a geçmeli; **son tarih 10 Aralık** (eski
-şifreli giriş o gün duruyor). Şart: bağlantı şube başına, her şube kendi Paraşüt hesabını kendisi ekleyebilsin, biri
-ötekini düşürmesin. DevHub uygulaması açıldı. Taslak: `docs/planlar/site-earsiv-oauth.md`. 5 Aralık'a kadar
-başlanmadıysa sahibe hatırlat.
+- **L1 ladmin'den ayırma (K-C)**: SÜRÜYOR, dal `ladminden-ayirma`. Asıl yönetici işleri yalnız konsol oturumuyla; ladmin'de
+  düğmeler yerine "Bu iş Yönetim konsolunda yapılır"; `/panel/sube-ekleme` konsola yönlenir. Sahip konsola girebildiğini
+  doğruladı (28 Kas 19:00).
+- **L2 Mutabakat bölümünü kaldır**: SÜRÜYOR, dal `mutabakat-kaldir`. Yalnız Mutabakat; **Nakit planı KALIR** (sahip, 28 Kas
+  19:45). Veriler ve tablolar durur, göç yok; Nakit planı, Ödemeler ve Gelir-gider rakamları değişmez.
+- **L3 Ay sonu kâr tahmini ve başabaş** (sahibin isteği, 28 Kas 20:00: "böyle giderse ay sonu kâr yazsın; zarar etmemek için
+  minimum ne gerekiyor yazsın; sen kurgula"): SIRADA, iki adım.
+  1. Tasarım belgesi `docs/planlar/ay-sonu-tahmini.md` (koda bakarak: Gelir-gider motoru `src/lib/calc/engine.ts`, kasa
+     raporu günleri, giderler, maaşlar, Nakit planı `src/lib/cash-plan.ts`, Bugün ve Haftalık özet). Çerçeve:
+     - Kart "Ay sonu tahmini": Gelir-gider'in ay görünümünde ve Genel bakış'ta; şube şube ve Tümü; yalnız yönetici
+       (personel maliyet ve kâr görmez).
+     - "Bugüne kadar": ciro, değişken maliyet (ürün maliyeti, kart ve platform komisyonu), sabit giderler (kira, maaş,
+       faturalar; bu ay girilenler ve henüz girilmemiş ama her ay tekrarlananların tahmini), net.
+     - "Böyle giderse ay sonu": kalan günlerin cirosu haftanın gününe göre son haftaların ortalamasından (kapalı günler
+       hariç), tahmini kâr ve iyimser / temkinli aralık; neye dayandığı (kaç gün veri) yazılır, veri azsa "henüz erken" der.
+     - "Zarar etmemek için": başabaş cirosu (sabit gider ÷ katkı payı oranı), bugüne kadar yapılan, kalan ve "kalan N
+       günde günde ortalama en az şu kadar ciro"; tahmin başabaşın altındaysa açık uyarı.
+     - İsteğe bağlı "hedef kâr" ayarı: o kâra ulaşmak için gereken günlük ciro.
+     - Uyarı kanalı: zil ve Haftalık özet e-postasına tek satır (tahmin zararı gösteriyorsa).
+     - Tanımlar Gelir-gider tablosuyla birebir (aynı motor); saf modül ve altın testler; eksik veri (girilmemiş fatura,
+       maaş) tahmini bozuyorsa kart bunu söyler.
+  2. Uygulama PR'ı (tasarım ana oturumda okunduktan sonra).
+- **L4 Marina'da ModPOS kalıntıları**: SIRADA. ModPOS'u olmayan şubede ModPOS kartı ve yönergesi görünmez (Ayarlar › ModPOS
+  API, Şubeler › şube kartı, zil metinleri); Tuzla'nın çekimi aynen; Marina'nın geçiş günü panelde girilmiş mi bakılır.
+- **L5 Özel günler bölümünü kaldır**: SIRADA. Dikkat: ileri tarihli kapalı gün, kapalı işaretini kaldırma ve personelin
+  "Kapalı gün bildirimlerim" listesi yalnız bu ekranda; önce Kasa raporu'na taşınır. Veriler silinmez, göç yok.
+- **L6 CI ve kod sağlığı** (eski P4'ün kalanı): SIRADA. CI'a şema ve göç tutarlılığı adımı; asistan bilgisi derlemede
+  üretilsin (her PR'da çakışmasın); personel sızıntı taraması CI'da.
+- **L7 Dönem kapanışını genişlet** (eski P7): SIRADA. Kapalı aya sayım, ciro, kasa raporu yazımı reddedilir; kasanın gün
+  paketi kapalı aya düşse de kabul edilir.
+- **L8 Taşıma paketi ve anahtarlar**: SIRADA. Vercel'de panelin 42 değişkeninden 29'u, Uzaktan'ın 14'ünden 4'ü
+  "sensitive" (geri okunamaz; `~/Downloads/lafmaliyet-ekler/anahtar-envanteri.md`). En kritiği `AUTH_SECRET`. Konsolda
+  yalnız asıl yöneticinin indirdiği, parolayla şifrelenmiş "taşıma paketi" (ortam değerleri ekranda gösterilmez) ve
+  veritabanı yedeği; sonra sensitive olanların okunabilir türde yeniden eklenmesi; kasa deposundaki
+  `scripts/vercel/baglanti-kur.sh` yeni anahtarı `--sensitive` ile ekliyor: kaldırılır; `docs/DEPLOY.md`'ye "kendi sunucuya
+  taşıma" bölümü.
+- **L9 Basitleştirme**: SIRADA. Önce envanter belgesi (`SADELESTIRME.md`: her ekran için kalsın / gizle / ayara taşı /
+  kaldır ve gerekçesi), kararlar önerildiği gibi alınır, sonra küçük PR'lar.
+- **L10 Ay bazlı ayarlar** (eski P5; dal `p5-ay-ayarlari` bayat): SIRADA, yalnız GÜNDÜZ ve canlı kopyada provayla. main'den
+  yeni dal, commit'ler seçilerek; göç `0102_ay_ayarlari`. SGK işveren oranına dokunulmaz.
+- **L11 Ürün görselleri (panel payı), sabit listeler (eski P6), temizlik (eski P9)**: SIRADA. Fotoğraf okuma (eski P8)
+  BEKLİYOR: örnek Z fotoğrafı gerekir.
+- **L12 Eski adları kaldıran daraltma göçü (A3)**: BEKLİYOR, en erken 4 Aralık ve bütün kasalar yeni sürümdeyken.
+
+### Kasa (AsilPOS)
+
+- **K1 "Kurulumu yap" fiş yazıcısını da bulsun**: SÜRÜYOR, dal `kurulumda-fis-yazicisi`.
+- **K2 Açılış ekranı, erişilebilirlik ve estetik turu** (sahibin isteği, 28 Kas 19:45: "lafpos.laffogato.net'e girerken
+  'AsilPOS yükleniyor' diyor; orayı estetik ve yenilikçi aç; sitenin ve programın geneli estetik ve erişilebilir olsun,
+  denetimleri yapılarak"): SIRADA, küçük PR'larla. (a) açılış ekranı (Uzaktan ve kasa; hareket azaltma tercihine saygı);
+  (b) erişilebilirlik denetimi ve düzeltmeler (kontrast, klavye ve odak, etiketler, pencere rolleri, dokunmatik hedef);
+  (c) ekran ekran estetik (giriş, İndir sayfası, adisyon karoları, yönetim formları, rapor grafikleri). Depodaki
+  `asilpos-design`, `impeccable` ve `web-interface-guidelines` becerileri izlenir; her PR'da tam e2e taraması.
+- **K3 Giderler gün sonu penceresinden de girilir**: SIRADA.
+- **K4 Kasaya hata kaydı** (panelin #168'i örnek; göç var): SIRADA.
+- **K5 Kurulum sırasında elektrik kesilirse açılışta kendini onaran görev**: SIRADA.
+- **K6 Ürün görselleri (kasa payı)**: L11'den sonra. Ad kalanları: BEKLİYOR (4 Aralık).
+
+### Ortak ve sonra
+
+- **O1** Konsolda Merkez'in lisans ve güncelleme ekranları tek ekranda; yeni cihaz e-postasında adresin adı; konsolda
+  "Oturumlar".
+- **O2** Sitenin e-Arşiv'i Paraşüt OAuth'a geçmeli; **son tarih 10 Aralık** (eski şifreli giriş o gün duruyor). Şart:
+  bağlantı şube başına, her şube kendi Paraşüt hesabını kendisi ekleyebilsin. Taslak: `docs/planlar/site-earsiv-oauth.md`.
+  5 Aralık'a kadar başlanmadıysa sahibe hatırlat.
+- **O3** asil-platform (ayrı depo `okanberk-dev/posyazilim`) satışa hazırlık; son rapor `RAPOR-son.md`.
+
+**Sıra (aynı anda en çok bir panel ve bir kasa uygulayıcısı; hazırlık paralel olabilir, birleştirme sırayla):**
+panel L1 → L2 → L3 → L4 → L5 → L6 → L7 → L8 → L9 → L10 (gündüz) → L11; kasa K1 → K2a → K2b → K3 → K4 → K2c → K5.
 
 ## 5. Sahibin yapacakları (son raporda da hatırlat)
 
