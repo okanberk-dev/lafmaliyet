@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
-import { asilAdresRet, asilHesapRet } from "@/lib/asil-yonetici";
+import { asilAdresRet, asilHesapRet, yoneticiDuzenlemeIsi, yoneticiHesabi } from "@/lib/asil-yonetici";
 import { DEFAULT_SETTINGS, FIFO_OFF, ROLES, settingsFromRows, type Role } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 import { blockReasonOf, oldAddressNotice, userListNotice } from "@/lib/notify-recipients";
@@ -14,7 +14,7 @@ import { linkedDeleteText } from "@/lib/staff-link";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { accessMailHandle } from "@/server/auth/access-handle";
 import { hashPassword, passwordProblem } from "@/server/auth/password";
-import { requireAdmin, startSession } from "@/server/auth/dal";
+import { getYonetimUser, requireAdmin, requireAnaAdmin, startSession } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { expireUserTokens, issueUserToken } from "@/server/auth/user-tokens";
@@ -193,6 +193,13 @@ export async function saveStockValuationStart(input: string | null) {
 }
 
 // ---------------------------------------------------------------- Kullanıcılar
+//
+// Yönetici hesapları (docs/ROLLER.md › Yönetici hesapları; 28 Kasım 2026): bir yönetici hesabına dokunan iş (işlemden
+// önceki ya da sonraki rol yönetici) yalnız asıl yöneticinindir: requireAnaAdmin(yonetici…), hedef okunduktan hemen
+// sonra, parola sorusundan ve ilk yazımdan önce. Öteki yöneticiler müdür, muhasebeci ve personel hesaplarını bugünkü
+// gibi yönetir, başka bir yöneticinin yalnız adını değiştirebilir; kendi hesapları Hesabım'da (auth.ts) değişmez.
+// Eylemler Yönetim konsolunun oturumunu da kabul eder (konsol › Yöneticiler bu eylemleri çağırır; panel adresinde konsol
+// çerezi yok, orada davranış aynı): `(await getYonetimUser()) ?? (await requireAdmin())`.
 
 /** Personelin şubesi: "" / null bütün şubeler; verilmezse (Aktif anahtarı) değişmez */
 const zUserBranch = z
@@ -259,11 +266,13 @@ const STALE_USER = "Bu kullanıcı bu arada değişti; liste yenilendi, pencerey
  * tutmazsa yazılmaz: eski form bu arada yapılan değişikliği sessizce geri almasın (YO-01). Listedeki anahtar
  * setUserActive'i kullanır. Asıl yöneticinin hesabı korunur (docs/ROLLER.md › Asıl yönetici): başka yönetici onun
  * e-postasını, parolasını, rolünü ve erişimini değiştiremez (adı değişebilir); hiçbir hesabın adresi asıl yöneticinin
- * adresine çevrilemez.
+ * adresine çevrilemez. Yönetici hesabı (önceki ya da yeni rol yönetici): rol, erişim, e-posta ya da parola değişiyorsa
+ * yalnız asıl yönetici (yöneticilik vermek, almak, yöneticinin hesabını değiştirmek); yalnız ad serbest.
  */
 export async function saveUser(input: z.input<typeof userSchema>, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const konsol = await getYonetimUser();
+    const me = konsol ?? (await requireAdmin());
     const data = userSchema.parse(input);
     if (data.password) {
       const problem = passwordProblem(data.password, data.email);
@@ -275,7 +284,10 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
       const touches = current.email !== data.email || Boolean(data.password) || current.role !== data.role || current.active !== data.active;
       const guarded = touches ? asilHesapRet(me, current, "hesapDuzenleme") : null;
       if (guarded) throw new UserError(guarded);
-      const address = asilAdresRet({ next: data.email, before: current.email, accountExists: true });
+      // Yönetici hesabı: yalnız ad değişikliği serbest, gerisi asıl yöneticinin (parola sorusundan önce)
+      const is = touches ? yoneticiDuzenlemeIsi(current.role, data.role) : null;
+      if (is) await requireAnaAdmin(is);
+      const address = asilAdresRet({ next: data.email, before: current.email });
       if (address) throw new UserError(address);
     }
     const [{ dup }] = await db
@@ -331,8 +343,9 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     // Personelken (parola sorulmadan) oluşturulan bağlantı yönetici girişine dönüşmesin: yöneticiye yeni bağlantı
     // createAccessLink'te parolayla oluşturulur
     if (before.role !== "admin" && data.role === "admin") await expireUserTokens(data.id);
-    // Kendi adını buradan değiştiren yönetici bu cihazda oturumda kalır (ad oturum çerezinde de duruyor)
-    if (after && after.id === me.id) await startSession(after);
+    // Kendi adını buradan değiştiren yönetici bu cihazda oturumda kalır (ad oturum çerezinde de duruyor). Konsoldan
+    // gelen istekte panel oturumu açılmaz (konsol çerezi ayrı; panel çerezi konsolun adresine yazılmasın)
+    if (after && after.id === me.id && !konsol) await startSession(after);
     const branchChanged = branch && branch.id !== (before.branchId ?? null);
     await logActivity(
       me,
@@ -352,11 +365,12 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
  * anahtar saveUser'a satırın sayfa açıldığı andaki ad, e-posta ve rolünü gönderiyordu: liste açıkken başka sekmede
  * yapılan değişiklik sessizce geri yazılıyor, bu arada yönetici yapılan kişi personele düşüyordu (denetim YO-01).
  * Parola kuralı veritabanındaki role bakar: kişi bu arada yönetici yapıldıysa parola sorulur. İstenen hâl zaten
- * yazılmışsa (başka sekmede) hiçbir şey değişmez, liste yenilenir.
+ * yazılmışsa (başka sekmede) hiçbir şey değişmez, liste yenilenir. Yönetici hesabını pasif ya da yeniden aktif yapmak
+ * yalnız asıl yöneticinin.
  */
 export async function setUserActive(id: number, active: boolean, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const userId = z.number().int().positive().parse(id);
     const next = z.boolean().parse(active);
     if (userId === me.id) throw new UserError("Kendi hesabınızı pasif yapamazsınız");
@@ -365,6 +379,7 @@ export async function setUserActive(id: number, active: boolean, confirm?: StepU
     if (!before) throw new UserError("Kullanıcı bulunamadı");
     const guarded = asilHesapRet(me, before, "hesapErisimi");
     if (guarded) throw new UserError(guarded);
+    if (yoneticiHesabi(before.role)) await requireAnaAdmin("yoneticiErisimi");
     if (before.active === next) {
       refresh();
       return { notice: null };
@@ -417,20 +432,22 @@ const createSchema = z.discriminatedUnion("mode", [
  * Yeni kullanıcı: parolayı yönetici belirler ("password") ya da kişi tek kullanımlık davet bağlantısından kendisi
  * belirler ("invite", 72 saat; o zamana kadar parola alanında hiçbir parolayla eşleşmeyen işaret durur).
  * Dönen veri "Giriş bilgileri" penceresini doldurur; parola geri gönderilmez (pencere zaten biliyor). Yönetici
- * eklemek (aktif ya da pasif, parolalı ya da davetli) işlemi yapanın kendi parolasını ister.
+ * eklemek (aktif ya da pasif, parolalı ya da davetli) yalnız asıl yöneticinin ve işlemi yapanın kendi parolasını ister.
+ * Asıl yöneticinin adresiyle hiçbir koşulda hesap açılamaz.
  */
 export async function createUser(input: z.input<typeof createSchema>, confirm?: StepUpConfirm) {
   return attempt(async (): Promise<AccessInfo> => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const data = createSchema.parse(input);
+    if (yoneticiHesabi(data.role)) await requireAnaAdmin("yoneticiAcma");
     if (data.mode === "password") {
       const problem = passwordProblem(data.password, data.email);
       if (problem) throw new UserError(problem);
     }
     const db = getDb();
     const [{ dup }] = await db.select({ dup: count() }).from(s.users).where(eq(s.users.email, data.email));
-    // Asıl yöneticinin adresiyle hesap açılamaz, ama yalnız o hesap varken (yoksa bugünkü gibi açılır; docs/ROLLER.md)
-    const address = asilAdresRet({ next: data.email, before: null, accountExists: dup > 0 });
+    // Asıl yöneticinin adresiyle hesap açılamaz, o hesap yokken de (docs/ROLLER.md › Asıl yönetici)
+    const address = asilAdresRet({ next: data.email, before: null });
     if (address) throw new UserError(address);
     if (dup > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
     const branch = await userBranch(data.role, data.branchId ?? null);
@@ -457,13 +474,13 @@ export async function createUser(input: z.input<typeof createSchema>, confirm?: 
 /**
  * Kullanıcıyı kalıcı olarak siler (yanlış e-postayla eklenen ya da daveti hiç kabul edilmeyen kişi için).
  * İşlem geçmişindeki satırları adıyla durur. Kendinizi ve son aktif yöneticiyi silemezsiniz. Yönetici silmek (davetli
- * ve pasif de) işlemi yapanın kendi parolasını ister. Maaşlar'da bir satıra bağlı hesap (biten satır da) silinmez, pasif
+ * ve pasif de) yalnız asıl yöneticinin ve işlemi yapanın kendi parolasını ister. Maaşlar'da bir satıra bağlı hesap (biten satır da) silinmez, pasif
  * yapılır (denetim bulgusu 47: bağlantı boşalınca part-time'ın geçmiş ücreti 0'a düşerdi); denetim ve silme maaş satırı
  * bağlantılarının kilidi altında, tek işlemde.
  */
 export async function deleteUser(id: number, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const userId = z.number().int().positive().parse(id);
     if (userId === me.id) throw new UserError("Kendi hesabınızı silemezsiniz");
     const db = getDb();
@@ -471,6 +488,7 @@ export async function deleteUser(id: number, confirm?: StepUpConfirm) {
     if (!u) throw new UserError("Kullanıcı bulunamadı");
     const guarded = asilHesapRet(me, u, "hesapSilme");
     if (guarded) throw new UserError(guarded);
+    if (yoneticiHesabi(u.role)) await requireAnaAdmin("yoneticiSilme");
     if (u.role === "admin" && u.active) {
       const [{ n }] = await db
         .select({ n: count() })
@@ -499,12 +517,12 @@ export async function deleteUser(id: number, confirm?: StepUpConfirm) {
 
 /**
  * Telefonunu kaybeden kullanıcının iki adımlı doğrulamasını kapatır (yeniden kendisi kurar); oturumları kapanır.
- * Kendi iki adımlınız Hesabım'da parolayla kapanır. Yöneticininkini sıfırlamak işlemi yapanın kendi parolasını ister:
- * sıfırlama bağlantısından sonra yönetici hesabını koruyan iki adımlı doğrulamadır.
+ * Kendi iki adımlınız Hesabım'da parolayla kapanır. Yöneticininkini sıfırlamak yalnız asıl yöneticinin ve işlemi yapanın
+ * kendi parolasını ister: sıfırlama bağlantısından sonra yönetici hesabını koruyan iki adımlı doğrulamadır.
  */
 export async function resetUserTwoFactor(id: number, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const userId = z.number().int().positive().parse(id);
     if (userId === me.id) throw new UserError("Kendi iki adımlı doğrulamanızı Hesabım'dan (parolanızla) kapatın");
     const db = getDb();
@@ -512,6 +530,7 @@ export async function resetUserTwoFactor(id: number, confirm?: StepUpConfirm) {
     if (!target) throw new UserError("Kullanıcı bulunamadı");
     const guarded = asilHesapRet(me, target, "hesapIkiAdim");
     if (guarded) throw new UserError(guarded);
+    if (yoneticiHesabi(target.role)) await requireAnaAdmin("yoneticiIkiAdim");
     const change: StepUpCase = { kind: "2fa", targetRole: target.role };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${target.email}`);
     const [u] = await db
@@ -529,17 +548,19 @@ export async function resetUserTwoFactor(id: number, confirm?: StepUpConfirm) {
 /**
  * Hatalı denemeler yüzünden kilitlenen hesabı açar: hesabın kilidi ve bilinen cihazların kendi kilitleri (sayaçlarıyla
  * birlikte; src/server/auth/login-locks.ts). Kişi kendi tarayıcısında 10 kez yanlış parola girince kilit yalnız
- * cihazın satırına yazılır; önceden yönetici bunu ne görebiliyor ne açabiliyordu (denetim YO-03).
+ * cihazın satırına yazılır; önceden yönetici bunu ne görebiliyor ne açabiliyordu (denetim YO-03). Yöneticinin kilidini
+ * yalnız asıl yönetici açar.
  */
 export async function unlockUser(id: number) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const userId = z.number().int().positive().parse(id);
     const db = getDb();
-    const [target] = await db.select({ email: s.users.email }).from(s.users).where(eq(s.users.id, userId)).limit(1);
+    const [target] = await db.select({ email: s.users.email, role: s.users.role }).from(s.users).where(eq(s.users.id, userId)).limit(1);
     if (!target) throw new UserError("Kullanıcı bulunamadı");
     const guarded = asilHesapRet(me, target, "hesapKilidi");
     if (guarded) throw new UserError(guarded);
+    if (yoneticiHesabi(target.role)) await requireAnaAdmin("yoneticiKilidi");
     const [u] = await db.update(s.users).set({ failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, userId)).returning({ email: s.users.email });
     if (!u) throw new UserError("Kullanıcı bulunamadı");
     await db.delete(s.loginDeviceLocks).where(eq(s.loginDeviceLocks.userId, userId));
@@ -549,16 +570,17 @@ export async function unlockUser(id: number) {
   });
 }
 
-/** Kullanıcının bütün cihazlardaki oturumlarını kapatır */
+/** Kullanıcının bütün cihazlardaki oturumlarını kapatır (yöneticininkini yalnız asıl yönetici) */
 export async function signOutUserEverywhere(id: number) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const userId = z.number().int().positive().parse(id);
     if (userId === me.id) throw new UserError("Kendi oturumlarınız için Hesabım'daki parola değişikliğini kullanın");
-    const [target] = await getDb().select({ email: s.users.email }).from(s.users).where(eq(s.users.id, userId)).limit(1);
+    const [target] = await getDb().select({ email: s.users.email, role: s.users.role }).from(s.users).where(eq(s.users.id, userId)).limit(1);
     if (!target) throw new UserError("Kullanıcı bulunamadı");
     const guarded = asilHesapRet(me, target, "hesapOturumlari");
     if (guarded) throw new UserError(guarded);
+    if (yoneticiHesabi(target.role)) await requireAnaAdmin("yoneticiOturumlari");
     const [u] = await getDb()
       .update(s.users)
       .set({ sessionVersion: sql`${s.users.sessionVersion} + 1` })

@@ -7,10 +7,10 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { ACCESS_REASONS, accessEmail, linkAccessInfo, type AccessInfo, type AccessKind } from "@/app/panel/kullanicilar/access";
-import { asilHesapRet } from "@/lib/asil-yonetici";
+import { asilHesapRet, yoneticiHesabi } from "@/lib/asil-yonetici";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { openAccessMailHandle } from "@/server/auth/access-handle";
-import { requireAdmin } from "@/server/auth/dal";
+import { getYonetimUser, requireAdmin, requireAnaAdmin } from "@/server/auth/dal";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
 import { clientIp, createLimiter } from "@/server/auth/rate-limit";
 import { requireStepUp } from "@/server/auth/step-up";
@@ -24,9 +24,9 @@ import { logActivity } from "./log";
 import { attempt, UserError } from "./util";
 
 /*
- * Davet ve parola sıfırlama. Yönetici eylemleri requireAdmin ister; /davet ve "Parolamı unuttum" eylemleri
- * herkese açıktır, bu yüzden IP, e-posta ve bağlantı başına sınırlanır. Ham anahtar ve parola hiçbir zaman
- * günlüğe yazılmaz.
+ * Davet ve parola sıfırlama. Yönetici eylemleri requireAdmin ister (Yönetim konsolunun oturumu da geçer: konsol ›
+ * Yöneticiler aynı eylemleri çağırır); /davet ve "Parolamı unuttum" eylemleri herkese açıktır, bu yüzden IP, e-posta ve
+ * bağlantı başına sınırlanır. Ham anahtar ve parola hiçbir zaman günlüğe yazılmaz.
  */
 
 const zId = z.number().int().positive();
@@ -37,11 +37,12 @@ const linkInfo = (user: { id: number; name: string; email: string }, kind: Token
 /**
  * Yönetici: davet bekleyen kişiye yeni davet bağlantısı (72 saat), parolası olan kişiye parola sıfırlama
  * bağlantısı (24 saat). Eski bağlantı hemen geçersiz olur. Kişinin mevcut parolası bağlantı kullanılana kadar değişmez.
- * Yöneticiye bağlantı işlemi yapanın kendi parolasını ister: bağlantıyı alan kişi yönetici hesabına parola belirler.
+ * Yöneticiye bağlantı (daveti yenilemek de) yalnız asıl yöneticinin ve işlemi yapanın kendi parolasını ister: bağlantıyı
+ * alan kişi yönetici hesabına parola belirler (docs/ROLLER.md › Yönetici hesapları).
  */
 export async function createAccessLink(id: number, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const userId = zId.parse(id);
     // Kendi parolanız Hesabım'da (mevcut parolayla) değişir: kendine alınan bağlantı o parola onayını atlatmasın
     if (userId === me.id) throw new UserError("Kendi parolanızı Hesabım'dan değiştirin");
@@ -54,6 +55,7 @@ export async function createAccessLink(id: number, confirm?: StepUpConfirm) {
     // Asıl yöneticiye bağlantıyı yalnız kendisi (docs/ROLLER.md › Asıl yönetici): bağlantıyı alan hesabına parola belirler
     const guarded = asilHesapRet(me, u, "hesapBaglantisi");
     if (guarded) throw new UserError(guarded);
+    if (yoneticiHesabi(u.role)) await requireAnaAdmin("yoneticiBaglantisi");
     if (!u.active) throw new UserError("Pasif kullanıcıya bağlantı oluşturulamaz; önce aktif yapın");
     const change: StepUpCase = { kind: "link", targetRole: u.role };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${u.email}`);
@@ -77,11 +79,11 @@ const emailSchema = z.object({
 /**
  * Yönetici: "Giriş bilgileri"ni kişinin giriş e-postasına gönderir (Resend). Parola yerine kaydederken dönen mühürlü
  * kopya gelir (15 dakika; eylem parola tahmini için kullanılamasın); içindeki parola hâlâ kişinin parolası olmalı.
- * Bağlantı kişinin geçerli bağlantısıyla eşleşmelidir.
+ * Bağlantı kişinin geçerli bağlantısıyla eşleşmelidir. Konsolun "Giriş bilgileri" penceresi de çağırır (konsol oturumu).
  */
 export async function emailAccess(input: z.input<typeof emailSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = (await getYonetimUser()) ?? (await requireAdmin());
     const data = emailSchema.parse(input);
     if (!isEmailConfigured()) throw new UserError("E-posta gönderimi kapalı (RESEND_API_KEY tanımlı değil); bilgileri kopyalayıp iletin");
     const [u] = await getDb()
