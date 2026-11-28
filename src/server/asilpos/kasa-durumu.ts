@@ -69,7 +69,7 @@ export async function lastDayReceivedAt(id: string, db: Reader = getDb()): Promi
 }
 
 /**
- * Şubelerin AsilPOS kasa durumu (Şube ekleme sayfası, "Bilgisayara kur" onayı, kasa açılışı; kural
+ * Şubelerin AsilPOS kasa durumu (konsolun Şubeler ve kasalar sayfası, "Bilgisayara kur" onayı, kasa açılışı; kural
  * src/lib/asilpos/kasa-durumu.ts). Yalnız okur: açık kasa kaydı, anahtarın durumu (posKeyState, önbelleksiz), kurulum
  * kodları ve son kabul edilen gün sonu. Anahtar üretmez, kasanın çağırdığı uçlara dokunmaz
  */

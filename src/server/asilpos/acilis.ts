@@ -241,7 +241,7 @@ export async function acilisTeslim(subeId: string, db: DB = getDb(), now: Date =
 }
 
 /**
- * "Kasayı serbest bırak" (Yönetim konsolu › Şubeler ve kasalar ve ladmin › Şube ekleme; asıl yönetici, eylem
+ * "Kasayı serbest bırak" (Yönetim konsolu › Şubeler ve kasalar; asıl yönetici, yalnız konsol oturumuyla, eylem
  * src/server/actions/branches.ts): şubenin kasa anahtarı yeniden üretilir (eski kasa panelle bağlantısını kaybeder:
  * imzası 401), bekleyen kurulum kodları iptal olur, kasa kaydı "boş" yazılır. Tek işlemde. Anahtar ortam değişkenindeyse (eski tek kasalı kurulum, Marina) yeni anahtar
  * panelde saklanır ve ortamdakinin önüne geçer. Döner: iptal edilen kod sayısı

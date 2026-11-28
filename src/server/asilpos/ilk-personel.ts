@@ -18,8 +18,8 @@ import { getDb, schema as s, type DB } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
 /*
- * İlk personel (docs/ASILPOS.md › Kasa açılışı › İlk personel): asıl yönetici şube eklerken ya da Şube ekleme'deki
- * şube satırından patron, müdür ve baristanın adını ve PIN'ini girer. Kayıt integration_state'te, PIN'ler mühürlü
+ * İlk personel (docs/ASILPOS.md › Kasa açılışı › İlk personel): asıl yönetici şube eklerken ya da Yönetim konsolu ›
+ * Şubeler ve kasalar'daki şube satırından patron, müdür ve baristanın adını ve PIN'ini girer. Kayıt integration_state'te, PIN'ler mühürlü
  * (src/server/secret-box.ts, amaç "asilpos-ilk-personel"); düz PIN hiçbir sütunda, işlem geçmişinde ya da forma dönen
  * yanıtta olmaz, yedeğe girmez (src/lib/backup/format.ts › EXCLUDED_STATE_PREFIXES). Kasa açık anahtarını gönderirse
  * (bağlama ya da kurulum kodu yanıtı) her PIN kasanın RSA-OAEP açık anahtarıyla şifrelenip gider; kasa aldığını şube

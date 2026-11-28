@@ -11,7 +11,18 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
-- **Yönetici hesaplarını yalnız asıl yönetici yönetir; konsolda Yöneticiler sekmesi** (bu PR, 28 Kasım; K-B,
+- **Şube ve yönetici işleri yalnız Yönetim konsolunda; ladmin'de salt okunur** (bu PR, 28 Kasım; K-C,
+  docs/planlar/yonetim-konsolu.md, docs/ROLLER.md › Asıl yönetici): `requireAnaAdmin` yalnız geçerli konsol oturumunu
+  kabul eder; asıl yönetici ladmin'in oturumuyla gelirse "Bu iş Yönetim konsolunda yapılır", öteki yönetici bugünkü
+  "yalnız asıl yönetici" cümlesini alır (ret parola sorusundan önce, hiçbir şey yazılmadan). Şubenin adı, açılış günü,
+  POS oranı, e-postası; müdür, muhasebeci ve personel hesapları ladmin'de aynen. ladmin'de Şubeler'in şube ekleme
+  düğmesi, düzenleme penceresinin tür / kasa programı / açık-kapalı alanları ve silme, AsilPOS bağlantısı kartının
+  anahtar alanı ve düğmeleri, Ayarlar › AsilPOS'un geçiş günü düzenleyicisi yerine salt okunur durum ve tek cümle
+  (asıl yöneticiye konsola bağlantı). Menüden ve komut paletinden "Şube ekleme" kalktı; `/panel/sube-ekleme` asıl
+  yöneticiyi konsola yönlendirir. Konsol › Yöneticiler'e yöneticinin adı ve giriş e-postası eklendi. Yardım, asistan
+  kılavuzu ve belgeler konsolu gösterir. Göç yok; kasanın uçları ve kasa açılışı değişmedi.
+
+- **Yönetici hesaplarını yalnız asıl yönetici yönetir; konsolda Yöneticiler sekmesi** (#190, 28 Kasım; K-B,
   docs/planlar/yonetim-konsolu.md, docs/ROLLER.md › Yönetici hesapları): bir yönetici hesabına dokunan iş (önceki ya da
   sonraki rol yönetici: yönetici açmak, yöneticilik vermek ve almak, yöneticinin e-postası, parolası, erişimi, silme,
   iki adımlıyı sıfırlama, kilit açma, oturum kapatma, giriş bağlantısı) yalnız asıl yöneticinin; ret parola sorusundan
