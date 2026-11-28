@@ -6,9 +6,9 @@
 > Tablolar (`recon_statements`, `recon_lines`) ve ayar (`settings.mutabakatPosBlokeGunu`) yerinde; yedek onları taşır,
 > göç yok. Yerinde kalan tek kod KVKK saklama süresi: yüklenmiş ekstreler yüklendiği gün + 90'da günlük işte eskisi gibi
 > silinir (`src/server/mutabakat/store.ts` › `purgeExpiredStatements`). Nakit planı, Ödemeler ve Gelir-gider değişmedi;
-> Mutabakat onlara hiçbir rakam vermiyordu. **Geri getirmek:** kaldıran PR'ın ("Mutabakat bölümü kaldırıldı") kod
-> commit'leri geri alınır (`git revert`); menü satırı, yetki satırı, şube görünümünün `mutabakat` alanı geri gelir,
-> `RETIRED_PATHS` girdisi ve notu düşer. Göç gerekmez: tablolar ve son 90 günün ekstreleri yerinde. Aşağısı kaldırılan
+> Mutabakat onlara hiçbir rakam vermiyordu. **Geri getirmek:** kaldıran PR'ın ("Mutabakat bölümü kaldırıldı")
+> birleştirme commit'i geri alınır (`git revert -m 1`); menü satırı, yetki satırı, şube görünümünün `mutabakat` alanı geri
+> gelir, `RETIRED_PATHS` girdisi ve notu düşer. Göç gerekmez: tablolar ve son 90 günün ekstreleri yerinde. Aşağısı kaldırılan
 > bölümün o günkü belgesidir; içindeki dosya yolları artık yok.
 
 Ekran: **Kâr & ödemeler › Mutabakat** (`/panel/mutabakat`, yalnız yönetici; ⌘K'da "mutabakat", "banka ekstresi", "cari
