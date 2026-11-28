@@ -116,6 +116,9 @@ const KORUNAN: [file: string, name: string, is: keyof typeof ASIL_YONETICI_ISLER
   ["src/server/actions/branches.ts", "deleteBranch", "subeSilme"],
   ["src/server/actions/branch-settings.ts", "saveAsilposSecret", "kasaAnahtari"],
   ["src/server/actions/asilpos.ts", "saveAsilposSwitchDay", "gecisGunu"],
+  // Kasa açılışı (docs/ASILPOS.md › Kasa açılışı)
+  ["src/server/actions/branches.ts", "saveBranchStaff", "ilkPersonel"],
+  ["src/server/actions/branches.ts", "releaseBranchTill", "kasaSerbest"],
 ];
 
 test("korunan eylemler requireAnaAdmin(iş) ile; updateBranch yalnız açık / kapalı ve kasa programı değişince", () => {
