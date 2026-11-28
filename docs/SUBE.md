@@ -53,7 +53,9 @@ yönetici](ROLLER.md#asıl-yönetici)); öteki yöneticiye bu alanlar kapalı ve
 oranı, açılış günü ve şubenin e-postası her yöneticide. Düzenleme penceresinin e-postası şubenin kendi kaydından dolar
 (eskiden son kurulum bağlantısından doluyordu); kaydetmek hesap açmaz, bağlantı göndermez. Listenin başındaki "AsilPOS
 kasası kur" kartı ve "Şube ekle" düğmesi kalktı: yerine asıl yöneticiye **Şube ekleme** bağlantısı, ötekine açıklama.
-Her değişiklik işlem geçmişine yazılır.
+Her değişiklik işlem geçmişine yazılır. Pencere açık / kapalı durumu, türü ve kasa programını yalnız kullanıcı onları
+pencerede değiştirdiyse gönderir (`changedGuardedFields`, `src/lib/branches.ts`); `updateBranch` verilmeyen alanın
+eskisini korur. Konsolda kapatılan şube ladmin'deki ad düzenlemesiyle yeniden açılmaz.
 
 ### Şube ekleme
 
@@ -62,8 +64,10 @@ Her değişiklik işlem geçmişine yazılır.
 `requireAnaAdmin` ister. Üst düzey adres: `/panel/subeler/[id]` dinamik yoluyla çakışmasın. Bölümler:
 
 Aynı ekran **Yönetim konsolu › Şubeler ve kasalar**'da (`https://yonetim.laffogato.net/yonetim`) da açılır: aynı
-bileşen (`src/components/sube-ekleme`), aynı veri (`src/server/sube-ekleme.ts`) ve aynı eylemler. Konsolun öteki sekmesi
-**Lisans ve güncelleme**: AsilPOS Merkez'e bağlantı (Uzaktan'ın adresi) ve şubelerin kasa durumu özeti (salt okunur).
+bileşen (`src/components/sube-ekleme`), aynı veri (`src/server/sube-ekleme.ts`) ve aynı eylemler. Konsolda yön gösteren
+metin konsolun kendi adlarını kullanır (ladmin'e göndermez) ve her şube satırında **Şube işlemleri** vardır (aşağıda).
+Konsolun öteki sekmesi **Lisans ve güncelleme**: AsilPOS Merkez'e bağlantı (Uzaktan'ın adresi) ve şubelerin kasa
+durumu özeti (salt okunur).
 
 1. **Yeni şube:** ad (kimlik kendiliğinden önerilir: "Laffogato Marina" → `laffogato-marina`), tür, kasa programı, POS
    oranı, açılış günü, şubenin e-postası ve **İlk personel (isteğe bağlı)**: Patron, Müdür, Barista; her biri ad ve PIN
@@ -97,6 +101,29 @@ hazırlanmış şubeyi seçer ([ASILPOS.md › Kasa açılışı](ASILPOS.md#kas
 **Şube kapatılınca** bekleyen kurulum kodları aynı işlemde iptal olur; kapalı şubenin kodu kasaya
 `410 {ok:false, error}` döner (bugünkü "geçersiz / süresi geçmiş kod" yanıtıyla aynı biçim). Kurulu kasanın anahtarı
 değişmez.
+
+### Şube işlemleri (Yönetim konsolu)
+
+**Yönetim konsolu › Şubeler ve kasalar › şube** (`/yonetim/sube/[id]`, 28 Kasım 2026; yalnız asıl yönetici, sayfa
+`requireYonetim` ister): fiziksel şubenin satırındaki ve "Online kanallar" listesindeki **Şube işlemleri** düğmesiyle
+açılır (kapalı şubede de). Tasarımdaki K-A'nın ikinci yarısı ([planlar/yonetim-konsolu.md](planlar/yonetim-konsolu.md)).
+Var olan sunucu eylemleri, aynı kurallar ve aynı onaylar; ladmin'deki düğmeler de bu aşamada yerinde durur.
+
+| Kart | Eylem ve kural |
+|---|---|
+| Açık / kapalı | `updateBranch({id, active})`; onay penceresi. Sabit kayıt (Tuzla, laffogato.net) ve son açık şube kapatılmaz (`branchChangeError`, ekran önceden söyler) |
+| Tür ve kasa programı | `updateBranch({id, kind, posSource})`; onay penceresi ne değişeceğini söyler. AsilPOS'tan ModPOS'a dönüşte şube AsilPOS'u kullanıyorsa sunucunun onayı (`posOffConfirmText`), onaylanınca geçiş günü silinir |
+| AsilPOS'a geçiş günü | Yalnız kasa programı AsilPOS olan şubede; ladmin'in Ayarlar › AsilPOS'undaki form (`src/components/sube-islemleri/gecis-gunu.tsx`, `saveAsilposSwitchDay`); onay penceresi etkileri ve ayları sayar, kapalı dönemi etkileyen değişiklik yazılmaz |
+| AsilPOS bağlantısı (kasa anahtarı) | Kasası AsilPOS olan ya da kurulumu yapılmış şubede; ladmin'in Şube ayarları kartı (`src/components/sube-islemleri/kasa-anahtari.tsx`, `saveAsilposSecret`). Döndürme ve silme parolayla (`requireStepUp`, konsol oturumuyla) |
+| Eski AsilPOS anahtarı | Kasası artık AsilPOS olmayan şubede panelde kalan anahtar: yalnız silinir, parolayla |
+| Şubeyi sil | `deleteBranch`; yalnız hiç kaydı olmayan şube. Silinemezse neden önceden yazılı, düğme kapalı |
+
+**Canlı şube:** son 7 günde kasadan gün sonu gelen şubede (bugün Marina) sayfanın başında kırmızı uyarı; kapatma,
+kasa programı, kasa anahtarı ve silme pencerelerinde de aynı uyarı (`canliBaslik`, `src/lib/asilpos/kasa-acilis.ts`).
+Veri `src/server/sube-islemleri.ts`'ten (anahtarın değeri dönmez, yalnız kaynağı ve sorunu). İki yerde kullanılan
+bileşenler ladmin'in klasöründen `src/components/sube-islemleri/`'ye taşındı; ladmin'deki metinler aynı kaldı, konsolda
+yön gösteren metin ladmin'e göndermez. Testler: `tests/konsol-sube-db.test.ts` (`KONSOL_SUBE_TEST_DATABASE_URL`),
+`tests/yonetim-host.test.ts`.
 
 ## Dalga 2'nin kararları (4 Kasım 2026)
 

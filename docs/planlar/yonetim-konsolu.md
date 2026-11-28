@@ -78,9 +78,11 @@ e-postadan sıfırlanır; iki adımlı açıksa sekiz kurtarma kodu vardır. Hep
 - Konsol kabuğu panelin kabuğunu miras almaz (kenar çubuğu, zil, arama, asistan yok): başlık, üç sekme, çıkış,
   "ladmin'e git" ve "Hesabım (ladmin)" bağlantıları. Ayrı Hesabım yok.
 - `updateBranch`'te açık / kapalı durumu, kasa programı ve tür isteğe bağlı olur (verilmezse eskisi kalır); ladmin'in
-  düzenleme penceresi bunları göndermez (konsolda kapatılan şubeyi ladmin'deki ad düzenlemesi yeniden açmasın).
-- Kasaya giden metinler adres yazmaz: "değiştirmek için Yönetim konsolu". Kasa, panel adresi olarak konsol adresini
-  kabul etmez (ayrı kasa PR'ı).
+  düzenleme penceresi bunları yalnız pencerede değiştiyse gönderir (konsolda kapatılan şubeyi ladmin'deki ad düzenlemesi
+  yeniden açmasın). **Yapıldı (28 Kasım 2026, dal `konsol-sube-islemleri`)**: ad ve açılış günü de isteğe bağlı oldu
+  (konsol göndermez); `updateBranch` konsol oturumunu da kabul eder.
+- Kasaya giden metinler adres yazmaz: "değiştirmek için Yönetim konsolu". **Yapıldı (aynı dal).** Kasa, panel adresi
+  olarak konsol adresini kabul etmez (kasa #200).
 - Göç yok.
 
 ## Görevler (her biri ayrı PR; her PR tek başına canlıya çıkabilir ve ladmin'i bozmaz)
@@ -100,6 +102,15 @@ sayfasına ilk personeli ve "Kasayı serbest bırak"ı ekliyor.
    eşleşmelerle), kabuk, Şubeler ve kasalar (Şube ekleme'nin ortak bileşeni) ve Lisans ve güncelleme. Kalan ikinci yarı:
    kapatma / açma / silme, tür ve kasa programı, geçiş günü ve kasa anahtarı düğmelerinin konsola taşınması. Testler
    `tests/yonetim-host.test.ts` ve `tests/yonetim-konsolu-db.test.ts` (`YONETIM_KONSOLU_TEST_DATABASE_URL`).
+   **İkinci yarı (28 Kasım 2026, dal `konsol-sube-islemleri`):** Şubeler ve kasalar'da her şube satırından (ve "Online
+   kanallar" listesinden) **Şube işlemleri** sayfası (`/yonetim/sube/[id]`): kapatma ve yeniden açma, tür ve kasa
+   programı, AsilPOS'a geçiş günü, kasa anahtarını döndürme ve silme, eski anahtarı silme, şubeyi silme. Var olan
+   eylemler (`updateBranch`, `saveAsilposSwitchDay`, `saveAsilposSecret`, `deleteBranch`), aynı kurallar ve onaylar;
+   kasa anahtarının parola onayı konsol oturumuyla. Kasa anahtarı kartı ve geçiş günü formu ladmin'in klasöründen
+   `src/components/sube-islemleri/`'ye taşındı, iki yerden çağrılır. Canlı şubede (son 7 günde gün sonu) belirgin
+   uyarı. `updateBranch`'in alanları isteğe bağlı, ladmin'in penceresi yalnız değişeni gönderir; kasaya giden metinler
+   "Yönetim konsolu" der. ladmin'in görünümü değişmedi. Test: `tests/konsol-sube-db.test.ts`
+   (`KONSOL_SUBE_TEST_DATABASE_URL`). K-A bununla bitti.
 2. **Canlı adım:** K-A canlıya çıkar, sonra alan adı Vercel projesine eklenir (önce kod, sonra alan adı: tersi olursa
    konsol adresi tam paneli sunardı). Konsolda giriş, yanlış hesap, iki adımlı, çıkış, üç sekme ve `/api/pos/gun` 404
    denenir; Marina'nın bağlantı sorgusu 200 kalır.
@@ -110,7 +121,8 @@ sayfasına ilk personeli ve "Kasayı serbest bırak"ı ekliyor.
    (`hesap-yetki-db`, `bildirim-alicilari-db`).
 4. **K-C: ladmin'den ayırma.** Asıl yönetici eylemleri yalnız konsol oturumunu kabul eder (`requireYonetim`); ladmin'de
    düğmeler yerine salt okunur durum ve not; menü, komut paleti, yardım, asistan kılavuzu, belgeler; `/panel/sube-ekleme`
-   yönlendirmesi; `updateBranch` alanları isteğe bağlı; kasaya giden metinler. Konsol canlıda denenmeden bu PR birleşmez.
+   yönlendirmesi. (`updateBranch` alanlarının isteğe bağlı olması ve kasaya giden metinler K-A'nın ikinci yarısında
+   yapıldı.) Konsol canlıda denenmeden bu PR birleşmez.
 5. **Kasa (ayrı depo):** panel adresi olarak konsol adresinin reddi; açılış akışının metinleri (kasa K5 PR'ıyla).
 6. **Sonra, ayrı iş:** Merkez'in lisans ve güncelleme ekranlarını konsolda tek ekrana almak; yeni cihaz e-postasında
    adresin adı; konsolda "Oturumlar" bölümü.

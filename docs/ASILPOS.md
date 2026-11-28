@@ -1091,7 +1091,9 @@ AsilPOS'ta boş), ötekiler `z`, `payments`, `bank_pos` ve `off_device` jsonb'si
 
 ## Geçiş günü
 
-**Ayarlar › AsilPOS (kasa) › AsilPOS'a geçiş günü**, kasa başına (çok şube, 27 Kasım 2026): her AsilPOS kasasının
+**Ayarlar › AsilPOS (kasa) › AsilPOS'a geçiş günü**, kasa başına (çok şube, 27 Kasım 2026; 28 Kasım 2026'dan beri aynı
+form Yönetim konsolu › Şubeler ve kasalar › şube › Şube işlemleri'nde de, [SUBE.md › Şube
+işlemleri](SUBE.md#şube-işlemleri-yönetim-konsolu)): her AsilPOS kasasının
 geçiş günü kendi şubesinin şube ayarıdır (grup `pos.lafpos`, [SUBE.md](SUBE.md) › Şube başına ayarlar). Ayarlar'da şube
 seçiliyken yalnız o kasanın bölümü, "Tümü"de her kasanın adıyla bir bölüm görünür. Eski genel kayıt
 (`settings.lafposGecisGunu`) yalnız satırı olmayan Marina'nındır ve artık yazılmaz; göç 0099 onu Marina'nın satırına
@@ -1122,8 +1124,9 @@ kopyaladı. Okuyan her yer `src/server/pos/tills.ts`'ten geçer (`loadPosTills`,
   kaydedilmez: kapanmış ayların rakamı değişirdi. En erken 1 Ekim 2026, en çok 90 gün ileride. FIFO başlangıcı gibi
   parola istemez; işlem geçmişine "Marina: AsilPOS'a geçiş günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak
   günü siler (şube ayarına `null`).
-- **Her kasanın kendi anahtarı** (çok şube, 27 Kasım 2026): anahtar Şube ayarları › AsilPOS bağlantısı'nda (kasası
-  AsilPOS olan ya da AsilPOS kurulumu yapılmış şube; yalnız yönetici, **parolasıyla**) `secret-box` ile şifreli saklanır.
+- **Her kasanın kendi anahtarı** (çok şube, 27 Kasım 2026): anahtar Şube ayarları › AsilPOS bağlantısı'nda (Yönetim
+  konsolunda şubenin Şube işlemleri sayfasında aynı kart; kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şube;
+  yalnız asıl yönetici, **parolasıyla**) `secret-box` ile şifreli saklanır.
   Panel kasanın şubesini **anahtardan** tanır (`resolvePosCaller`, `src/server/asilpos/branch.ts`): imza hangi şubenin
   anahtarıyla tutuyorsa istek o şubenindir; kurulu kasa devir, ürün ve gider kategorisi isteklerinde şube göndermeyebilir.
   Ortamdaki `ASILPOS_SYNC_SECRET` (eski adı da okunur) yalnız eski tek kasalı kurulumun şubesinindir (Marina) ve yalnız
@@ -1480,8 +1483,10 @@ Sahibin isteği ([planlar/istek-28-kasim.md](planlar/istek-28-kasim.md) › C; t
 [planlar/kasa-acilis-ve-asil-yonetici.md](planlar/kasa-acilis-ve-asil-yonetici.md) › P-B2): yeni kurulan kasa deneme
 modunda açılır; "Denemeyi bitir, gerçek kullanıma başla" derken **asıl yöneticinin ladmin hesabıyla** girilir, şube
 seçilir, kasa şubeye bağlanır ve ilk personelin PIN'leri kasaya iner. **Kasası kurulu şube kasadan seçilemez**
-("Kurulu: değiştirmek için ladmin"); kasadan devralma yoktur. Bilgisayar değişecekse önce ladmin › Ayarlar › Şube
-ekleme › **Kasayı serbest bırak**. Göç yok: yeni veri `integration_state`'te ve imzalı kısa ömürlü belirteçte durur.
+("Kurulu: değiştirmek için Yönetim konsolu"); kasadan devralma yoktur. Bilgisayar değişecekse önce Yönetim konsolu ›
+Şubeler ve kasalar › **Kasayı serbest bırak** (ladmin › Ayarlar › Şube ekleme'de de var). Kasaya giden metinler adres
+yazmaz, "Yönetim konsolu" der (28 Kasım 2026). Göç yok: yeni veri `integration_state`'te ve imzalı kısa ömürlü
+belirteçte durur.
 
 Bu bölüm kasa tarafını yazacak mühendis için tam sözleşmedir. Var olan uçların (`/api/asilpos/kurulum`,
 `/api/lafpos/kurulum`, `/api/panel/pos/*`, `/api/pos/gun`) yolu, gövdesi, imzası, yanıt biçimi ve durum kodları
@@ -1547,13 +1552,13 @@ durmasın diye kasa programı ModPOS kalabilir; "Bilgisayara kur" onu kasada se�
 ```json
 { "id": "tuzla", "ad": "Tuzla", "kasa": { "durum": "bos", "sonGun": null }, "buKasa": false, "secilebilir": true }
 { "id": "marina", "ad": "Marina", "kasa": { "durum": "kurulu", "sonGun": "2026-11-27" }, "buKasa": false,
-  "secilebilir": false, "neden": "Kurulu: değiştirmek için ladmin" }
+  "secilebilir": false, "neden": "Kurulu: değiştirmek için Yönetim konsolu" }
 ```
 
 `kasa.durum`: `"kurulu"` ya da `"bos"` (aşağıda "Kurulu sayılmak"); `sonGun`: kurulu şubenin son kabul edilen gün sonu
 (YYYY-MM-DD) ya da null. `secilebilir`: boş ya da bu kasa. Seçilemeyen satırda `neden`. Tek seçilebilir şube varsa
-kasa liste göstermez, onaylatır. Hiç seçilebilir şube yoksa kasa nedenleriyle listeyi ve "ladmin › Şube ekleme'den
-şube açın ya da kasayı serbest bırakın" cümlesini gösterir.
+kasa liste göstermez, onaylatır. Hiç seçilebilir şube yoksa kasa nedenleriyle listeyi ve "Yönetim konsolundan şube
+açın ya da kasayı serbest bırakın" cümlesini gösterir (kasanın metni; adres yazmaz).
 
 İşlem geçmişi: "Kasa açılışı için giriş" (e-posta, kasa kimliği, sürüm) ve asıl olmayan yöneticide "Kasa açılışı
 reddedildi". Parola, kod ve belirteç hiçbir yere yazılmaz.
@@ -1572,8 +1577,8 @@ Belirteç ve kişi yeniden doğrulanır: etkin, hâlâ asıl yönetici, oturum s
 | 404 | `error: "sube_yok"` | Böyle şube yok |
 | 409 | `error: "sube_kapali"` | Şube kapalı |
 | 409 | `error: "sube_fiziksel_degil"` | Online kanal: kasası olmaz |
-| 409 | `error: "sube_hazir_degil"` | Kasa programı ModPOS ve şube hazırlanmamış: ladmin › Şube ekleme › Bilgisayara kur |
-| 409 | `{ ok: false, error: "zaten_kurulu", mesaj, sube: { id, ad }, kasa: { sonGun } }` | Şubede başka bir kasa kurulu |
+| 409 | `error: "sube_hazir_degil"` | Kasa programı ModPOS ve şube hazırlanmamış: `mesaj` "… hazırlanmadı: Yönetim konsolu › Şubeler ve kasalar › Bilgisayara kur" |
+| 409 | `{ ok: false, error: "zaten_kurulu", mesaj, sube: { id, ad }, kasa: { sonGun } }` | Şubede başka bir kasa kurulu; `mesaj` "… Bilgisayar değişecekse Yönetim konsolu › Şubeler ve kasalar › Kasayı serbest bırak." |
 | 429 | `error: "cok_deneme"` | IP başına 15 dakikada 30 istek |
 | 500 | `error: "sunucu"` | Yeniden denenir |
 
@@ -1666,7 +1671,8 @@ alır (kod ikinci kez geçmez).
 
 ### Kasayı serbest bırak
 
-Ayarlar › Şube ekleme › şube satırı › **Kasayı serbest bırak** (`releaseBranchTill`): yalnız asıl yönetici
+Yönetim konsolu › Şubeler ve kasalar (ve ladmin › Ayarlar › Şube ekleme) › şube satırı › **Kasayı serbest bırak**
+(`releaseBranchTill`): yalnız asıl yönetici
 (`requireAnaAdmin("kasaSerbest")`), yalnız kasası kurulu şubede (düğme yalnız orada görünür); şubenin adı yazılır ve
 parolayla onaylanır (`requireStepUp`, "AsilPOS"). Onay cümlesi: "Bu şubenin kasası ladmin bağlantısını kaybeder; yeni
 bilgisayar şubeyi kasada seçebilir." Son 7 günde gün sonu gelen (canlı) şubede pencere kırmızı uyarı gösterir. Tek
@@ -1838,6 +1844,7 @@ Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu es
 | `src/server/asilpos/admin.ts` | Geçiş gününün yazımı ve günün silinmesi (çekirdekler, rol denetimi) |
 | `src/server/actions/asilpos.ts` | Ayarlar'ın iki eylemi (yönetici; silme parolayla) |
 | `src/app/panel/ayarlar/asilpos-card.tsx`, `asilpos-client.tsx` | Ayarlar › AsilPOS (kasa) |
+| `src/components/sube-islemleri/gecis-gunu.tsx`, `kasa-anahtari.tsx` | Geçiş günü formu ve şubenin kasa anahtarı kartı: ladmin (Ayarlar › AsilPOS, Şube ayarları) ve Yönetim konsolu (Şube işlemleri) aynı bileşeni kullanır |
 | `src/server/asilpos/ingest.ts` | Gün sonunun denetimi ve tek işlemde yazımı |
 | `src/server/asilpos/products.ts` | Maliyet ucunun çekirdeği (maliyet modeli) |
 | `src/lib/asilpos/modpos-gunler.ts`, `src/server/asilpos/modpos-gunler.ts` | ModPOS dönemi ucu: isteğin denetimi, günün ve ürün bloğunun biçimi (saf); kasa raporu, föy ve ModPOS listesinin okunması |

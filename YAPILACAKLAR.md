@@ -11,13 +11,23 @@ AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–28 Kasım 2026)
 
-- **Yönetim konsolu: ayrı oturum ve giriş, kabuk, Şubeler ve kasalar** (bu PR, 28 Kasım; K-A'nın ilk yarısı,
+- **Yönetim konsolu: şube işlemleri** (bu PR, 28 Kasım; K-A'nın ikinci yarısı, docs/planlar/yonetim-konsolu.md,
+  docs/SUBE.md › Şube işlemleri): Şubeler ve kasalar'da her şube satırından "Şube işlemleri" sayfası (`/yonetim/sube/[id]`):
+  kapatma ve yeniden açma, tür ve kasa programı (AsilPOS'tan ModPOS'a dönüşün onayı aynen), AsilPOS'a geçiş günü (kapalı
+  dönem kuralı aynen), kasa anahtarını döndürme ve silme, eski anahtarı silme (parolayla, konsol oturumuyla), şubeyi
+  silme (yalnız kaydı olmayan). Canlı şubede (son 7 günde gün sonu; bugün Marina) belirgin uyarı. Kasa anahtarı kartı ve
+  geçiş günü formu `src/components/sube-islemleri/`'ye taşındı (ladmin ve konsol aynı bileşen). `updateBranch`'te
+  kimlikten başka her alan isteğe bağlı; ladmin'in penceresi açık / kapalı, tür ve kasa programını yalnız değiştiyse
+  gönderir. Kasaya giden metinler "Yönetim konsolu" der (adres yok). ladmin'in görünümü değişmedi; göç yok.
+  Kalan: K-B (yönetici hesapları kuralı, Yöneticiler sekmesi), K-C (ladmin'deki düğmelerin kaldırılması,
+  `/panel/sube-ekleme` yönlendirmesi, asıl yönetici eylemlerinin yalnız konsol oturumunu kabul etmesi).
+
+- **Yönetim konsolu: ayrı oturum ve giriş, kabuk, Şubeler ve kasalar** (#187, 28 Kasım; K-A'nın ilk yarısı,
   docs/planlar/yonetim-konsolu.md): `yonetim.laffogato.net` (yalnız asıl yönetici), ayrı belirteç ve çerez,
   `requireYonetim`, kendi girişi (başka her e-posta kayıtsız adres gibi yanıtlanır), alan adı kuralı (konsolda yalnız
   `/yonetim/*`; `/api/*` 404 `yanlis_adres`; panel adresinde proxy aynı), iki sekme: Şubeler ve kasalar (Şube ekleme'nin
   ortak bileşeni) ve Lisans ve güncelleme (Merkez bağlantısı, kasa durumu özeti). ladmin'in ekranları değişmedi.
-  Kalan: şube kapatma / silme / tür / kasa programı / geçiş günü / kasa anahtarı düğmelerinin konsola taşınması (K-A
-  ikinci yarı); alan adının Vercel'e eklenmesi (kod canlıya çıktıktan sonra; docs/DEPLOY.md › Yönetim konsolu alan adı).
+  Kalan: alan adının Vercel'e eklenmesi (kod canlıya çıktıktan sonra; docs/DEPLOY.md › Yönetim konsolu alan adı).
 
 - **Kasa açılışı uçları, ilk personel, Kasayı serbest bırak** (bu PR, 28 Kasım; P-B2,
   docs/planlar/kasa-acilis-ve-asil-yonetici.md): `POST /api/asilpos/acilis/giris` (asıl yöneticinin ladmin girişi;
